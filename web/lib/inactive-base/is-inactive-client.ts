@@ -7,6 +7,11 @@ import {
   hasScheduledPaidServiceKeepingActiveBaseOnKyivDay,
   type LastAttendedVisitClient,
 } from '@/lib/inactive-base/days-since-last-visit';
+import {
+  inactiveSinceKyivDay,
+  isRestoredByFutureBooking,
+  type LifecycleClient,
+} from '@/lib/inactive-base/lifecycle';
 
 export const INACTIVE_BASE_DAYS_THRESHOLD = ACTIVE_BASE_MAX_DAYS;
 
@@ -37,4 +42,20 @@ export function isInactiveBaseByDaysSinceLastVisit(
     return true;
   }
   return daysSinceLastVisit > INACTIVE_BASE_DAYS_THRESHOLD;
+}
+
+/**
+ * Список неактивної бази: досі 101+ без запису АБО відновлені майбутнім записом
+ * (вже перетнули поріг 101, потім з’явився запис).
+ */
+export function isInactiveBaseListMember(
+  c: Parameters<typeof hasPaidServiceVisitForInactiveBase>[0] & LifecycleClient,
+  daysSinceLastVisit: number | undefined,
+  referenceKyivDay: string = kyivDayFromISO(new Date().toISOString())
+): boolean {
+  if (!hasPaidServiceVisitForInactiveBase(c)) return false;
+  const since = inactiveSinceKyivDay(c, referenceKyivDay);
+  if (!since || since > referenceKyivDay) return false;
+  if (isRestoredByFutureBooking(c, referenceKyivDay)) return true;
+  return isInactiveBaseByDaysSinceLastVisit(c, daysSinceLastVisit, referenceKyivDay);
 }

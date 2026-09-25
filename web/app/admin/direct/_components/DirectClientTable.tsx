@@ -9,6 +9,7 @@ import { createPortal } from "react-dom";
 import type { DirectClient, DirectStatus, DirectChatStatus, DirectCallStatus } from "@/lib/direct-types";
 import { ClientForm } from "./ClientForm";
 import { StateHistoryModal } from "./StateHistoryModal";
+import { InactiveLifecycleHistoryModal } from "./InactiveLifecycleHistoryModal";
 import { CallbackReminderModal } from "./CallbackReminderModal";
 import { MessagesHistoryModal } from "./MessagesHistoryModal";
 import { BinotelCallHistoryModal } from "./BinotelCallHistoryModal";
@@ -770,6 +771,7 @@ export function DirectClientTable({
     }
   }, [shouldOpenAddClient, onOpenAddClientChange]);
   const [stateHistoryClient, setStateHistoryClient] = useState<DirectClient | null>(null);
+  const [lifecycleHistoryClient, setLifecycleHistoryClient] = useState<DirectClient | null>(null);
   const [messagesHistoryClient, setMessagesHistoryClient] = useState<DirectClient | null>(null);
   const [binotelHistoryClient, setBinotelHistoryClient] = useState<DirectClient | null>(null);
   const [inlineRecordingUrl, setInlineRecordingUrl] = useState<string | null>(null);
@@ -1049,6 +1051,7 @@ export function DirectClientTable({
       setBinotelHistoryClient,
       setInlineRecordingUrl,
       setStateHistoryClient,
+      setLifecycleHistoryClient,
       setRecordHistoryClient,
       setRecordHistoryType,
       setMasterHistoryClient,
@@ -1085,6 +1088,7 @@ export function DirectClientTable({
     setBinotelHistoryClient,
     setInlineRecordingUrl,
     setStateHistoryClient,
+    setLifecycleHistoryClient,
     setRecordHistoryClient,
     setRecordHistoryType,
     setMasterHistoryClient,
@@ -1361,6 +1365,18 @@ export function DirectClientTable({
         isOpen={!!stateHistoryClient}
         onClose={() => setStateHistoryClient(null)}
       />
+      <InactiveLifecycleHistoryModal
+        clientId={lifecycleHistoryClient?.id || ""}
+        clientName={
+          lifecycleHistoryClient
+            ? [lifecycleHistoryClient.lastName, lifecycleHistoryClient.firstName]
+                .filter(Boolean)
+                .join(" ")
+            : undefined
+        }
+        open={!!lifecycleHistoryClient}
+        onClose={() => setLifecycleHistoryClient(null)}
+      />
 
       <CallbackReminderModal
         client={callbackReminderModalClient}
@@ -1603,7 +1619,7 @@ export function DirectClientTable({
                   <th
                     className="pl-0 pr-1 sm:pr-1 py-0 text-[10px] font-semibold text-left"
                     style={getColumnStyle(layoutColumnWidths.days, true)}
-                    title="Днів з останнього візиту (Altegio). Сортувати."
+                    title="Днів з останнього візиту. Бейдж Н/А = неактивна база; ✓ = повернувся майбутнім записом."
                   >
                     <div className="flex items-center gap-1">
                       <button

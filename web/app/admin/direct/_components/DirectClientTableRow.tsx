@@ -21,7 +21,6 @@ import { BinotelCallTypeIcon } from "./BinotelCallTypeIcon";
 import { PlayRecordingButton } from "./PlayRecordingButton";
 import { AvatarSlot, CornerRedDot, WithCornerRedDot } from "./DirectClientTableAvatar";
 import {
-  formatDate,
   formatDateShortYear,
   formatUAHExact,
   formatUAHThousands,
@@ -43,6 +42,7 @@ import {
   LeadBadgeIcon,
   BinotelLeadBadgeIcon,
 } from "./DirectClientTableRowBadges";
+import { ExitDaysCell } from "./ExitDaysCell";
 import { useDirectClientTableRowContext } from "./direct-client-table-row-context";
 import type { DirectTableColumnKey } from "./direct-client-table-column-layout";
 import { DirectClientTableRowConsultationCell } from "./DirectClientTableRowConsultationCell";
@@ -88,6 +88,7 @@ function DirectClientTableRowInner({
     setBinotelHistoryClient,
     setInlineRecordingUrl,
     setStateHistoryClient,
+    setLifecycleHistoryClient,
     setRecordHistoryClient,
     setRecordHistoryType,
     setMasterHistoryClient,
@@ -703,42 +704,26 @@ return (
       </span>
     </td>
   )}
-  {/* Днів з останнього візиту (після “Продажі”) */}
+  {/* Днів з останнього візиту (+ бейджі Н/А / ✓ при lifecycle) */}
   <td className="pl-0 pr-1 sm:pr-1 py-1 text-xs whitespace-nowrap tabular-nums text-left" style={cellPxRow("days", getColumnStyle(columnWidths.days, true))}>
-    {(() => {
-      const raw = (client as any).daysSinceLastVisit;
-      const hasDays = typeof raw === "number" && Number.isFinite(raw);
-      const days = hasDays ? (raw as number) : null;
-      const lastVisitAt = (client as any).lastVisitAt;
-
-      const cls = (() => {
-        if (!hasDays) return "bg-gray-200 text-gray-900";
-        if (days! <= 60) return "bg-gray-200 text-gray-900";
-        if (days! <= 90) return "bg-amber-200 text-amber-900";
-        return "bg-red-200 text-red-900";
-      })();
-
-      // Формуємо tooltip з датою останнього візиту (тільки з Altegio API)
-      let tooltipText = "";
-      if (hasDays) {
-        tooltipText = `Днів з останнього візиту: ${days}`;
-        if (lastVisitAt) {
-          const formattedDate = formatDate(lastVisitAt);
-          tooltipText += `\nДата останнього візиту: ${formattedDate}`;
-        }
-      } else {
-        tooltipText = "Днів з останнього візиту: -";
+    <ExitDaysCell
+      exitDays={
+        typeof (client as any).liveDaysSinceLastVisit === "number"
+          ? (client as any).liveDaysSinceLastVisit
+          : (client as any).daysSinceLastVisit
       }
-
-      return (
-        <span
-          className={`inline-flex items-center justify-start rounded-full px-2 py-0.5 tabular-nums text-[12px] font-normal leading-none ${cls}`}
-          title={tooltipText}
-        >
-          {hasDays ? days : "-"}
-        </span>
-      );
-    })()}
+      inactiveSinceKyivDay={(client as any).inactiveSinceKyivDay}
+      restoredAtKyivDay={(client as any).restoredAtKyivDay}
+      status={(client as any).inactiveLifecycleStatus}
+      lastVisitAt={(client as any).lastVisitAt}
+      align="left"
+      onOpenHistory={
+        (client as any).inactiveLifecycleStatus === "inactive" ||
+        (client as any).inactiveLifecycleStatus === "restored"
+          ? () => setLifecycleHistoryClient(client)
+          : undefined
+      }
+    />
   </td>
   <td className="pl-0 pr-0.5 py-1 align-middle" style={cellPxRow("communication", getColumnStyle(columnWidths.communication, true))}>
     <CommunicationChannelPicker
@@ -986,6 +971,24 @@ return (
           client.last5States.some((s: any) => (s?.state || '') === 'consultation-rescheduled'));
           
         
+      // Неактивна база — іконка в «Стан» лише без майбутнього запису
+      if (client.state === 'inactive') {
+        return (
+          <div className="flex flex-col items-start gap-0.5">
+            <span className="inline-flex items-center justify-center">
+              <button
+                type="button"
+                className="hover:opacity-70 transition-opacity p-0"
+                title="Неактивний клієнт (101+ днів без майбутнього запису)"
+                onClick={() => setStateHistoryClient(client)}
+              >
+                <StateIcon state="inactive" size={28} />
+              </button>
+            </span>
+          </div>
+        );
+      }
+
       // 2) Нормальний режим: показуємо ТІЛЬКИ 1 значок у колонці “Стан”.
       // Пріоритет: платний запис (якщо актуальний) → інакше консультація (якщо актуальна).
       // Без 🆕/💸 — це створювало “NEW” і візуальний хаос.

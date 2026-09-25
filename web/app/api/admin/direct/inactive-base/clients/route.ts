@@ -16,7 +16,8 @@ import {
   type InactiveBaseView,
 } from '@/lib/inactive-base/consultation-base-client';
 import { enrichClientsDaysLikeDirect, reverifyInactiveCandidatesFromAltegioApi } from '@/lib/inactive-base/enrich-days-like-direct';
-import { isInactiveBaseByDaysSinceLastVisit } from '@/lib/inactive-base/is-inactive-client';
+import { isInactiveBaseByDaysSinceLastVisit, isInactiveBaseListMember } from '@/lib/inactive-base/is-inactive-client';
+import { enrichClientWithLifecycle } from '@/lib/inactive-base/lifecycle';
 import { getTodayKyiv } from '@/lib/direct-stats-config';
 import {
   enrichClientsWithCampaignChatStats,
@@ -68,6 +69,7 @@ const CLIENT_SELECT = {
   isOnlineConsultation: true,
   paidServiceDate: true,
   paidServiceKyivDay: true,
+  paidServiceRecordCreatedAt: true,
   signedUpForPaidService: true,
   lastVisitAt: true,
   lastMessageAt: true,
@@ -153,7 +155,7 @@ async function loadInactiveBaseClients(todayKyiv: string, maxApiFallback = 16) {
   // Як Direct: дні з історії Altegio/KV, не лише застарілі paidServiceDate/lastVisitAt у Prisma.
   let withDays = await enrichClientsDaysLikeDirect(raw, todayKyiv, maxApiFallback);
   let filtered = withDays.filter((c) =>
-    isInactiveBaseByDaysSinceLastVisit(c, c.daysSinceLastVisit, todayKyiv)
+    isInactiveBaseListMember(c, c.daysSinceLastVisit, todayKyiv)
   );
 
   // Додатково: Altegio re-verify саме тих, хто потрапив у неактивну базу
@@ -166,7 +168,7 @@ async function loadInactiveBaseClients(todayKyiv: string, maxApiFallback = 16) {
       maxApiFallback
     );
     filtered = reverified.filter((c) =>
-      isInactiveBaseByDaysSinceLastVisit(c, c.daysSinceLastVisit, todayKyiv)
+      isInactiveBaseListMember(c, c.daysSinceLastVisit, todayKyiv)
     );
     if (filtered.length !== before) {
       console.log(
@@ -302,7 +304,7 @@ export async function GET(req: NextRequest) {
           Math.min(40, inactive.length)
         );
         inactive = reverified.filter((c) =>
-          isInactiveBaseByDaysSinceLastVisit(c, c.daysSinceLastVisit, todayKyiv)
+          isInactiveBaseListMember(c, c.daysSinceLastVisit, todayKyiv)
         );
       }
     }
@@ -421,7 +423,9 @@ export async function GET(req: NextRequest) {
     const totalCount = inactive.length;
     const page = inactive.slice(offset, offset + limit);
 
-    const clients = page.map((c) => ({
+    const clients = page.map((c) => {
+      const life = enrichClientWithLifecycle(c as any, todayKyiv);
+      return {
       id: c.id,
       altegioClientId: c.altegioClientId ?? null,
       instagramUsername: c.instagramUsername,
@@ -431,6 +435,11 @@ export async function GET(req: NextRequest) {
       spent: c.spent ?? null,
       visits: c.visits ?? null,
       daysSinceLastVisit: c.daysSinceLastVisit,
+      inactiveLifecycleStatus: life.inactiveLifecycleStatus,
+      inactiveSinceKyivDay: life.inactiveSinceKyivDay,
+      restoredAtKyivDay: life.restoredAtKyivDay,
+      exitDaysDisplay: life.exitDaysDisplay,
+      liveDaysSinceLastVisit: life.liveDaysSinceLastVisit,
       statusId: c.statusId || "",
       statusSetAt: c.statusSetAt ? new Date(c.statusSetAt).toISOString() : null,
       messagesTotal: (c as { messagesTotal?: number }).messagesTotal ?? 0,
@@ -511,7 +520,8 @@ export async function GET(req: NextRequest) {
         : null,
       consultationAttended: c.consultationAttended ?? null,
       consultationCancelled: c.consultationCancelled ?? false,
-    }));
+    };
+    });
 
     return NextResponse.json({
       ok: true,

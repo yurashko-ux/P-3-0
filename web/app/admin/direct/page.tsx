@@ -51,7 +51,8 @@ import {
 } from "@/lib/direct-leads-stats-filters";
 import type { GlobalMasterFilterPanelCounts } from "@/lib/master-filter-utils";
 import { mergeIncomingClientsPreservingCommunicationMeta } from "@/lib/direct-client-communication-meta-shared";
-import { hasScheduledPaidServiceKeepingActiveBaseOnKyivDay } from "@/lib/inactive-base/days-since-last-visit";
+import { enrichClientWithLifecycle } from "@/lib/inactive-base/lifecycle";
+import { kyivDayFromISO } from "@/lib/altegio/records-grouping";
 
 /** Таймаути fetch: без них завислий API блокує loadData() і екран вічно «Завантаження...» */
 const DIRECT_FETCH_TIMEOUT_MS = {
@@ -257,14 +258,22 @@ function DirectPageContent() {
   const activeBaseDiffFilter = useMemo(() => {
     const day = (searchParams?.get('day') || '').trim();
     const change = (searchParams?.get('activeBaseChange') || '').trim();
-    const kind = change === 'removed' || change === 'activeBaseRemoved' ? 'removed' : 'added';
+    const kind =
+      change === 'returned'
+        ? 'returned'
+        : change === 'new'
+          ? 'new'
+          : change === 'removed' || change === 'activeBaseRemoved'
+            ? 'removed'
+            : 'added';
     const isActive =
-      clientIdsFromUrl.length > 0 && (change === 'added' || change === 'removed');
+      clientIdsFromUrl.length > 0 &&
+      (change === 'added' || change === 'removed' || change === 'returned' || change === 'new');
     return {
       ids: clientIdsFromUrl,
       clientIdsParam: clientIdsFromUrl.join(','),
       day: /^\d{4}-\d{2}-\d{2}$/.test(day) ? day : '',
-      kind,
+      kind: kind as 'added' | 'removed' | 'returned' | 'new',
       isActive,
     };
   }, [searchParams, clientIdsFromUrl]);
@@ -1670,25 +1679,19 @@ function DirectPageContent() {
           }
           return next;
         });
-        // Список «вибули» уже відфільтрований на бекенді графіка (Altegio/KV + запис) —
-        // тут лише страховка для запланованого платного запису, без повторного відсікання за «Днів».
-        let mergedForDisplay = merged;
-        if (
-          activeBaseDiffFilter.isActive &&
-          activeBaseDiffFilter.kind === "removed" &&
-          activeBaseDiffFilter.day
-        ) {
-          const refDay = activeBaseDiffFilter.day;
-          const before = merged.length;
-          mergedForDisplay = merged.filter(
-            (c) => !hasScheduledPaidServiceKeepingActiveBaseOnKyivDay(c, refDay)
-          );
-          if (mergedForDisplay.length !== before) {
-            console.log(
-              `[DirectPage] Вибули з активної бази: прибрано з запланованим записом ${before - mergedForDisplay.length} (ref=${refDay})`
-            );
-          }
-        }
+        // Збагачуємо lifecycle-полями для бейджів у колонці «Днів».
+        const todayKyivForLife = kyivDayFromISO(new Date().toISOString());
+        let mergedForDisplay = merged.map((c) => {
+          const life = enrichClientWithLifecycle(c as any, todayKyivForLife);
+          return {
+            ...c,
+            inactiveLifecycleStatus: life.inactiveLifecycleStatus,
+            inactiveSinceKyivDay: life.inactiveSinceKyivDay,
+            restoredAtKyivDay: life.restoredAtKyivDay,
+            exitDaysDisplay: life.exitDaysDisplay,
+            liveDaysSinceLastVisit: life.liveDaysSinceLastVisit,
+          };
+        });
         console.log('[DirectPage] 🔄 Before setClients:', {
           sortBy,
           sortOrder,
@@ -4202,14 +4205,25 @@ function DirectPageContent() {
         <div className="alert alert-info py-2">
           <div className="text-sm">
             <div className="font-semibold">
-              Активна база: {activeBaseDiffFilter.kind === 'removed' ? 'вибули' : 'додались'}
-              {activeBaseDiffFilter.day ? ` за ${activeBaseDiffFilter.day}` : ''}
+              Активна база:{" "}
+              {activeBaseDiffFilter.kind === "removed"
+                ? "вибули"
+                : activeBaseDiffFilter.kind === "returned"
+                  ? "повернуті"
+                  : activeBaseDiffFilter.kind === "new"
+                    ? "нові"
+                    : "додались"}
+              {activeBaseDiffFilter.day ? ` за ${activeBaseDiffFilter.day}` : ""}
             </div>
             <div className="opacity-80">
               Показано клієнтів із кліка по різниці на графіку
               {activeBaseDiffFilter.kind === "removed"
-                ? " (список з графіка; без запланованого платного запису)"
-                : ""}
+                ? " (когорта вибулих; відновлені майбутнім записом лишаються з «0»)"
+                : activeBaseDiffFilter.kind === "returned"
+                  ? " (повернуті майбутнім платним записом)"
+                  : activeBaseDiffFilter.kind === "new"
+                    ? " (нові записи F4 / «Нових записів»: перший платний)"
+                    : ""}
               : {clients.length}
             </div>
           </div>

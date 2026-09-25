@@ -48,6 +48,8 @@ import {
 } from "./_components/inactive-base-table-rows";
 import { InactiveBaseInstagramFilterDropdown } from "./_components/InactiveBaseInstagramFilterDropdown";
 import { InactiveBaseTelegramFilterDropdown } from "./_components/InactiveBaseTelegramFilterDropdown";
+import { ExitDaysCell } from "../_components/ExitDaysCell";
+import { InactiveLifecycleHistoryModal } from "../_components/InactiveLifecycleHistoryModal";
 import type {
   InstInstagramCounts,
   InstInstagramFilterValue,
@@ -155,6 +157,9 @@ function InactiveBasePageContent() {
     []
   );
   const [telegramCanSendCounts, setTelegramCanSendCounts] = useState<TelegramCanSendCounts | null>(
+    null
+  );
+  const [lifecycleHistoryClient, setLifecycleHistoryClient] = useState<InactiveBaseClientRow | null>(
     null
   );
   const [permissions, setPermissions] = useState<Record<string, string> | null>(null);
@@ -938,7 +943,7 @@ function InactiveBasePageContent() {
                   sortBy={sortBy}
                   sortOrder={sortOrder}
                   onSort={handleSort}
-                  className="text-right w-14"
+                  className="text-right w-16"
                 />
                 <th className="text-[10px] whitespace-nowrap">Статус</th>
                 <th>
@@ -1166,30 +1171,17 @@ function InactiveBasePageContent() {
                         {isCollapsedGroupLeader ? (
                           <span className="text-base-content/40">—</span>
                         ) : (
-                          (() => {
-                            const raw = client.daysSinceLastVisit;
-                            const hasDays = typeof raw === "number" && Number.isFinite(raw);
-                            const days = hasDays ? raw : null;
-                            const cls = !hasDays
-                              ? "bg-gray-200 text-gray-900"
-                              : days! <= 60
-                                ? "bg-gray-200 text-gray-900"
-                                : days! <= 90
-                                  ? "bg-amber-200 text-amber-900"
-                                  : "bg-red-200 text-red-900";
-                            return (
-                              <span
-                                className={`inline-flex items-center justify-center rounded-full px-2 py-0.5 tabular-nums text-[12px] font-normal leading-none ${cls}`}
-                                title={
-                                  hasDays
-                                    ? `Днів з останнього візиту: ${days}`
-                                    : "Днів з останнього візиту: —"
-                                }
-                              >
-                                {hasDays ? days : "—"}
-                              </span>
-                            );
-                          })()
+                          <ExitDaysCell
+                            exitDays={
+                              typeof client.liveDaysSinceLastVisit === "number"
+                                ? client.liveDaysSinceLastVisit
+                                : client.daysSinceLastVisit
+                            }
+                            inactiveSinceKyivDay={client.inactiveSinceKyivDay}
+                            restoredAtKyivDay={client.restoredAtKyivDay}
+                            status={client.inactiveLifecycleStatus}
+                            onOpenHistory={() => setLifecycleHistoryClient(client)}
+                          />
                         )}
                       </td>
                       <td className="text-xs align-middle overflow-visible">
@@ -1407,6 +1399,18 @@ function InactiveBasePageContent() {
         client={linkHistoryClient}
         isOpen={!!linkHistoryClient}
         onClose={() => setLinkHistoryClient(null)}
+      />
+      <InactiveLifecycleHistoryModal
+        clientId={lifecycleHistoryClient?.id || ""}
+        clientName={
+          lifecycleHistoryClient
+            ? [lifecycleHistoryClient.lastName, lifecycleHistoryClient.firstName]
+                .filter(Boolean)
+                .join(" ")
+            : undefined
+        }
+        open={!!lifecycleHistoryClient}
+        onClose={() => setLifecycleHistoryClient(null)}
       />
       <BinotelCallHistoryModal
         client={binotelHistoryClient}

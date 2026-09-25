@@ -1927,7 +1927,7 @@ export async function saveDirectClient(
     const normalizedUsername = data.instagramUsername;
     
     // ПРАВИЛО: Клієнт не може мати стан "client" більше одного разу (для Altegio клієнтів)
-    type DirectClientState = 'client' | 'consultation' | 'consultation-booked' | 'consultation-no-show' | 'consultation-rescheduled' | 'hair-extension' | 'other-services' | 'all-good' | 'too-expensive' | 'message' | 'binotel-lead';
+    type DirectClientState = 'client' | 'consultation' | 'consultation-booked' | 'consultation-no-show' | 'consultation-rescheduled' | 'hair-extension' | 'other-services' | 'all-good' | 'too-expensive' | 'message' | 'binotel-lead' | 'inactive' | 'restored';
     
     // Якщо клієнт намагається встановити 'lead' (старий стан), замінюємо на 'message' (зелена хмарка)
     let finalState: DirectClientState | undefined = client.state;

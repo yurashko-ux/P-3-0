@@ -6,6 +6,9 @@ import { getAllDirectClients, saveDirectClient } from '@/lib/direct-store';
 import { kvRead } from '@/lib/kv';
 import { determineStateFromServices } from '@/lib/direct-state-helper';
 import { groupRecordsByClientDay, normalizeRecordsLogItems, pickNonAdminStaffFromGroup, appendServiceMasterHistory, isAdminStaffName } from '@/lib/altegio/records-grouping';
+import { kyivDayFromISO } from '@/lib/altegio/records-grouping';
+import { syncInactiveLifecycleForClient } from '@/lib/inactive-base/lifecycle-events';
+import { logStateChange } from '@/lib/direct-state-log';
 
 export const dynamic = 'force-dynamic';
 export const runtime = 'nodejs';
@@ -71,10 +74,58 @@ export async function GET(req: NextRequest) {
 
     let updatedCount = 0;
     let skippedCount = 0;
+    let lifecycleUpdated = 0;
     const errors: string[] = [];
+    const todayKyiv = kyivDayFromISO(new Date().toISOString());
 
     // Оновлюємо стани клієнтів
     for (const client of allClients) {
+      // Спочатку lifecycle неактивної бази — лише `inactive` у state.
+      // `restored` не ставимо: при майбутньому записі має лишитись ⏳.
+      let lifeState: 'inactive' | null = null;
+      try {
+        lifeState = await syncInactiveLifecycleForClient(client.id, client as any, {
+          todayKyiv,
+          source: 'cron-update-states',
+        });
+        if (lifeState === 'inactive' && client.state !== 'inactive') {
+          const updatedLife = {
+            ...client,
+            state: 'inactive' as typeof client.state,
+            updatedAt: new Date().toISOString(),
+          };
+          await saveDirectClient(updatedLife, 'cron-update-states-lifecycle', undefined, {
+            touchUpdatedAt: false,
+          });
+          await logStateChange(client.id, 'inactive', client.state, 'cron-update-states-lifecycle');
+          lifecycleUpdated++;
+          updatedCount++;
+          console.log(
+            `[cron/update-direct-states] ✅ Lifecycle ${client.id}: '${client.state}' -> 'inactive'`
+          );
+          continue;
+        }
+        if (lifeState === 'inactive' && client.state === 'inactive') {
+          skippedCount++;
+          continue;
+        }
+        // Зняти застарілий restored/inactive, якщо lifecycle більше не inactive
+        if (
+          !lifeState &&
+          (client.state === 'inactive' || client.state === 'restored')
+        ) {
+          // далі звичайна логіка послуг перезапише state (⏳ тощо)
+          console.log(
+            `[cron/update-direct-states] Знімаємо lifecycle-стан '${client.state}' для ${client.id}`
+          );
+        }
+      } catch (lifeErr) {
+        console.warn(
+          '[cron/update-direct-states] lifecycle sync:',
+          lifeErr instanceof Error ? lifeErr.message : lifeErr
+        );
+      }
+
       if (!client.altegioClientId) {
         skippedCount++;
         continue;
@@ -168,6 +219,7 @@ export async function GET(req: NextRequest) {
       stats: {
         totalClients: allClients.length,
         updated: updatedCount,
+        lifecycleUpdated,
         skipped: skippedCount,
         errors: errors.length,
       },

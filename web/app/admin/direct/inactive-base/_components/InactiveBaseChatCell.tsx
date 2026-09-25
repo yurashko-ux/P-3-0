@@ -25,6 +25,11 @@ export type InactiveBaseClientRow = {
   spent?: number | null;
   visits?: number | null;
   daysSinceLastVisit?: number;
+  inactiveLifecycleStatus?: "active" | "inactive" | "restored";
+  inactiveSinceKyivDay?: string | null;
+  restoredAtKyivDay?: string | null;
+  exitDaysDisplay?: number | null;
+  liveDaysSinceLastVisit?: number;
   statusId?: string | null;
   statusSetAt?: string | null;
   chatStatusId?: string | null;

@@ -129,6 +129,9 @@ model DirectClient {
   // Зв'язок з історією станів
   stateLogs DirectClientStateLog[]
 
+  /// Історія виходу/відновлення неактивної бази
+  inactiveLifecycleEvents DirectInactiveLifecycleEvent[]
+
   // Зв'язок з повідомленнями
   messages DirectMessage[]
 
@@ -367,6 +370,28 @@ model DirectClientStateLog {
   @@index([state])
   @@index([createdAt])
   @@map("direct_client_state_logs")
+}
+
+/// Події виходу в неактивну базу / відновлення майбутнім платним записом.
+model DirectInactiveLifecycleEvent {
+  id        String   @id @default(uuid())
+  clientId  String
+  /// entered | restored
+  type      String
+  /// YYYY-MM-DD Europe/Kyiv
+  kyivDay   String
+  source    String? // snapshot | webhook | sync | cron
+  metadata  String? // JSON
+  createdAt DateTime @default(now())
+
+  client DirectClient @relation(fields: [clientId], references: [id], onDelete: Cascade)
+
+  @@unique([clientId, type, kyivDay])
+  @@index([clientId])
+  @@index([type])
+  @@index([kyivDay])
+  @@index([createdAt])
+  @@map("direct_inactive_lifecycle_events")
 }
 
 // Записи з Altegio (для хронології послуг)

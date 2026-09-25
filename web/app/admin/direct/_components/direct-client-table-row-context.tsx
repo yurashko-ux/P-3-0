@@ -60,6 +60,7 @@ export type DirectClientTableRowContextValue = {
   setBinotelHistoryClient: (c: DirectClient | null) => void;
   setInlineRecordingUrl: (url: string | null) => void;
   setStateHistoryClient: (c: DirectClient | null) => void;
+  setLifecycleHistoryClient: (c: DirectClient | null) => void;
   setRecordHistoryClient: (c: DirectClient | null) => void;
   setRecordHistoryType: (t: "paid" | "consultation") => void;
   setMasterHistoryClient: (c: DirectClient | null) => void;
