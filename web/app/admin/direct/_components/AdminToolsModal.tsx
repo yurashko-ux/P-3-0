@@ -771,7 +771,7 @@ export function AdminToolsModal({
     }
   };
 
-  // Кількість кнопок: 102. При додаванні нової кнопки завжди додавати її в кінець відповідної категорії та оновлювати цю кількість у коментарі.
+  // Кількість кнопок: 104. При додаванні нової кнопки завжди додавати її в кінець відповідної категорії та оновлювати цю кількість у коментарі.
   const tools = [
     {
       category: "Тести",
@@ -2123,6 +2123,71 @@ export function AdminToolsModal({
             return `✅ ${data?.message ?? 'Готово'}\n\nКлієнт: ${data?.instagramUsername ?? data?.clientId ?? ''}\nСкинуто: ${typeLabel}\n\n📌 Щоб підтягнути дані з Altegio, запустіть:\n«Завантажити історію візитів з API» (бере дані напряму з Altegio).\n\n⚠️ Якщо запис видалено в Altegio (404), відновити неможливо — потрібно створити новий запис в Altegio.\n\n${JSON.stringify(data, null, 2)}`;
           },
         },
+        {
+          icon: "🔎",
+          label: "Звірка дня: Altegio API ↔ Direct (платні записи)",
+          endpoint: "/api/admin/direct/reconcile-paid-day-from-api",
+          method: "POST" as const,
+          isPrompt: true,
+          prompt:
+            "День звірки YYYY-MM-DD (Kyiv). Enter/порожньо = вчора.\n\nЛише звіт прогалин (ok / incomplete / missing / unlinked), без змін у БД.",
+          successMessage: (data: any) => {
+            const c = data?.counts || {};
+            const gaps = Array.isArray(data?.gaps) ? data.gaps : [];
+            const gapLines = gaps
+              .slice(0, 25)
+              .map(
+                (g: any) =>
+                  `  [${g.kind}] ${g.altegio?.clientName || "—"} (Altegio ${g.altegio?.altegioClientId ?? "—"}) · API≈${g.altegio?.costUAH ?? 0} грн · ${
+                    Array.isArray(g.notes) ? g.notes.join("; ") : ""
+                  }`,
+              )
+              .join("\n");
+            const extra = Array.isArray(data?.directExtra) ? data.directExtra : [];
+            return (
+              `✅ Звірка платних записів (API)\n\n` +
+              `День: ${data?.kyivDay ?? "—"}\n` +
+              `Altegio платних клієнтів: ${data?.altegioPaidClients ?? 0} (візитів: ${data?.altegioPaidVisits ?? 0})\n` +
+              `Direct з paidServiceDate: ${data?.directWithPaidDate ?? 0}\n` +
+              `ok=${c.ok ?? 0} · incomplete=${c.incomplete ?? 0} · missing=${c.missing_client ?? 0} · unlinked=${c.unlinked_lead ?? 0} · no_id=${c.no_altegio_client_id ?? 0}\n` +
+              (extra.length ? `Direct «зайві» на день (немає в API paid): ${extra.length}\n` : "") +
+              (gapLines ? `\nПрогалини (до 25):\n${gapLines}\n` : "\nПрогалин немає.\n") +
+              `\n${JSON.stringify(data, null, 2)}`
+            );
+          },
+        },
+        {
+          icon: "🛠️",
+          label: "Догон дня з Altegio API (лінк/імпорт + sync запису)",
+          endpoint: "/api/admin/direct/repair-paid-day-from-api",
+          method: "POST" as const,
+          isPrompt: true,
+          prompt:
+            "День догону YYYY-MM-DD (Kyiv). Enter/порожньо = вчора.\n\nЗробить: прив’язку по унікальному телефону, імпорт відсутніх, sync-consultation-for-client для incomplete.\nІм’я без телефону — не автоприв’язує.",
+          successMessage: (data: any) => {
+            const before = data?.before?.counts || {};
+            const after = data?.after?.counts || {};
+            const actions = Array.isArray(data?.actions) ? data.actions : [];
+            const actionLines = actions
+              .slice(0, 30)
+              .map(
+                (a: any) =>
+                  `  ${a.ok === false ? "❌" : a.ok ? "✅" : "•"} ${a.type} · ${a.name || "—"} (Altegio ${a.altegioClientId ?? "—"})${
+                    a.reason ? ` — ${a.reason}` : ""
+                  }${a.error ? ` — ${typeof a.error === "string" ? a.error : JSON.stringify(a.error)}` : ""}`,
+              )
+              .join("\n");
+            return (
+              `✅ Догон платних записів з API\n\n` +
+              `День: ${data?.kyivDay ?? "—"}\n` +
+              `Оброблено: ${data?.processed ?? 0} (limit ${data?.limit ?? "—"})\n` +
+              `Було: ok=${before.ok ?? 0} incomplete=${before.incomplete ?? 0} missing=${before.missing_client ?? 0} unlinked=${before.unlinked_lead ?? 0}\n` +
+              `Стало: ok=${after.ok ?? 0} incomplete=${after.incomplete ?? 0} missing=${after.missing_client ?? 0} unlinked=${after.unlinked_lead ?? 0}\n` +
+              (actionLines ? `\nДії:\n${actionLines}\n` : "") +
+              `\n${data?.message ?? ""}\n\n${JSON.stringify(data, null, 2)}`
+            );
+          },
+        },
       ],
     },
     {
@@ -2705,6 +2770,28 @@ export function AdminToolsModal({
 
                     // Обробка prompt
                     if (item.isPrompt && item.prompt) {
+                      // Звірка/догон дня: порожній ввід = вчора (Kyiv)
+                      if (
+                        item.endpoint.includes('reconcile-paid-day-from-api') ||
+                        item.endpoint.includes('repair-paid-day-from-api')
+                      ) {
+                        const dayInput = prompt(item.prompt, '');
+                        if (dayInput === null) return;
+                        const day = dayInput.trim();
+                        if (day && !/^\d{4}-\d{2}-\d{2}$/.test(day)) {
+                          showCopyableAlert('Формат дня: YYYY-MM-DD (або залиште порожнім = вчора).');
+                          return;
+                        }
+                        const qs = day ? `?day=${encodeURIComponent(day)}` : '';
+                        handleEndpoint(
+                          `${item.endpoint}${qs}`,
+                          item.method,
+                          item.confirm,
+                          item.successMessage
+                        );
+                        return;
+                      }
+
                       const input = prompt(item.prompt);
                       if (!input || !input.trim()) return;
                       
