@@ -2752,7 +2752,7 @@ export function AdminToolsModal({
                       return;
                     }
 
-                    // Щоденний звіт: prompt дати (кнопки #97–#98)
+                    // Щоденний звіт: prompt дати (кнопки #100–#101)
                     if ((item as { isDailyReportDayPrompt?: boolean }).isDailyReportDayPrompt) {
                       const parsed = parseDailyReportDayPromptInput(
                         prompt("День звіту (YYYY-MM-DD, Europe/Kyiv). Enter = сьогодні:"),
