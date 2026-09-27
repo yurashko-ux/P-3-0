@@ -2,8 +2,10 @@
 
 import type { DailyOpsReportData } from "@/lib/reports/daily-ops";
 import {
+  buildDirectClientsHref,
   formatClientLinksForTelegram,
   formatNameListForTelegram,
+  formatTelegramHtmlLink,
 } from "@/lib/reports/daily-ops-extras";
 
 function formatKyivDateLabel(kyivDay: string): string {
@@ -18,11 +20,25 @@ function formatMoneyUah(amount: number): string {
 function formatRemovedFromActiveBase(data: DailyOpsReportData): string {
   const count = data.removedFromActiveBaseCount;
   if (count <= 0) return "<b>0</b>";
-  const links = formatClientLinksForTelegram(data.removedFromActiveBaseClients, {
+
+  const clients = data.removedFromActiveBaseClients || [];
+  const clientIds = clients.map((client) => client.id).filter(Boolean);
+  const nameLinks = formatClientLinksForTelegram(clients, {
     day: data.kyivDay,
     activeBaseChange: "removed",
   });
-  return `<b>${count}</b>${links}`;
+
+  // Лічильник → усі вибулі одразу; імена → кожен клієнт окремо.
+  if (clientIds.length > 0) {
+    const allHref = buildDirectClientsHref(clientIds, {
+      day: data.kyivDay,
+      activeBaseChange: "removed",
+    });
+    const countLink = formatTelegramHtmlLink(allHref, String(count));
+    return `<b>${countLink}</b>${nameLinks}`;
+  }
+
+  return `<b>${count}</b>${nameLinks}`;
 }
 
 export function formatDailyReportTelegram(data: DailyOpsReportData): string {

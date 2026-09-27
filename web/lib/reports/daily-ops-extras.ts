@@ -160,6 +160,15 @@ export function buildDirectClientsHref(clientIds: string[], opts?: {
   return `${DIRECT_APP_ORIGIN}/admin/direct?${params.toString()}`;
 }
 
+/** href для Telegram HTML: & → &amp; (інакше parse_mode ламає посилання). */
+export function toTelegramHtmlHref(href: string): string {
+  return href.replace(/&/g, "&amp;");
+}
+
+export function formatTelegramHtmlLink(href: string, label: string): string {
+  return `<a href="${toTelegramHtmlHref(href)}">${escapeTelegramHtml(label)}</a>`;
+}
+
 /** Список імен як HTML-посилання в Telegram (кожен клієнт → Direct). */
 export function formatClientLinksForTelegram(
   clients: RemovedActiveBaseClient[],
@@ -170,13 +179,15 @@ export function formatClientLinksForTelegram(
   if (unique.length === 0) return "";
 
   const shown = unique.slice(0, maxItems);
-  const links = shown.map((client) => {
-    const href = buildDirectClientsHref([client.id], {
-      day: opts?.day,
-      activeBaseChange: opts?.activeBaseChange,
-    });
-    return `<a href="${href}">${escapeTelegramHtml(client.name)}</a>`;
-  });
+  const links = shown.map((client) =>
+    formatTelegramHtmlLink(
+      buildDirectClientsHref([client.id], {
+        day: opts?.day,
+        activeBaseChange: opts?.activeBaseChange,
+      }),
+      client.name,
+    ),
+  );
   const suffix = unique.length > maxItems ? ` +${unique.length - maxItems}` : "";
   return ` (${links.join(", ")}${suffix})`;
 }
