@@ -23,22 +23,20 @@ function formatRemovedFromActiveBase(data: DailyOpsReportData): string {
 
   const clients = data.removedFromActiveBaseClients || [];
   const clientIds = clients.map((client) => client.id).filter(Boolean);
-  const nameLinks = formatClientLinksForTelegram(clients, {
+  if (clientIds.length === 0) {
+    return `<b>${count}</b>${formatClientLinksForTelegram(clients)}`;
+  }
+
+  // Спільне посилання на всіх вибулих за день — і на числі, і на кожному імені.
+  const allHref = buildDirectClientsHref(clientIds, {
     day: data.kyivDay,
     activeBaseChange: "removed",
   });
-
-  // Лічильник → усі вибулі одразу; імена → кожен клієнт окремо.
-  if (clientIds.length > 0) {
-    const allHref = buildDirectClientsHref(clientIds, {
-      day: data.kyivDay,
-      activeBaseChange: "removed",
-    });
-    const countLink = formatTelegramHtmlLink(allHref, String(count));
-    return `<b>${countLink}</b>${nameLinks}`;
-  }
-
-  return `<b>${count}</b>${nameLinks}`;
+  const countLink = formatTelegramHtmlLink(allHref, String(count));
+  const nameLinks = formatClientLinksForTelegram(clients, {
+    sharedHref: allHref,
+  });
+  return `<b>${countLink}</b>${nameLinks}`;
 }
 
 export function formatDailyReportTelegram(data: DailyOpsReportData): string {

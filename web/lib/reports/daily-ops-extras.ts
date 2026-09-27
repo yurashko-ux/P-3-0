@@ -169,25 +169,33 @@ export function formatTelegramHtmlLink(href: string, label: string): string {
   return `<a href="${toTelegramHtmlHref(href)}">${escapeTelegramHtml(label)}</a>`;
 }
 
-/** Список імен як HTML-посилання в Telegram (кожен клієнт → Direct). */
+/** Список імен як HTML-посилання в Telegram.
+ * Якщо передано sharedHref — усі імена ведуть на один спільний список клієнтів.
+ */
 export function formatClientLinksForTelegram(
   clients: RemovedActiveBaseClient[],
-  opts?: { day?: string; activeBaseChange?: "removed" | "added" | "returned" | "new"; maxItems?: number },
+  opts?: {
+    day?: string;
+    activeBaseChange?: "removed" | "added" | "returned" | "new";
+    /** Спільне посилання для всіх імен (усі вибулі за день). */
+    sharedHref?: string;
+    maxItems?: number;
+  },
 ): string {
   const maxItems = opts?.maxItems ?? 8;
   const unique = clients.filter((client) => client?.id && client?.name);
   if (unique.length === 0) return "";
 
   const shown = unique.slice(0, maxItems);
-  const links = shown.map((client) =>
-    formatTelegramHtmlLink(
-      buildDirectClientsHref([client.id], {
+  const links = shown.map((client) => {
+    const href =
+      opts?.sharedHref
+      || buildDirectClientsHref([client.id], {
         day: opts?.day,
         activeBaseChange: opts?.activeBaseChange,
-      }),
-      client.name,
-    ),
-  );
+      });
+    return formatTelegramHtmlLink(href, client.name);
+  });
   const suffix = unique.length > maxItems ? ` +${unique.length - maxItems}` : "";
   return ` (${links.join(", ")}${suffix})`;
 }
