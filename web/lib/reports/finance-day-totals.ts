@@ -20,9 +20,12 @@ function kopToUah(kop: bigint): number {
   return Number(kop) / 100;
 }
 
-export async function getFinanceDayTotals(kyivDay: string): Promise<FinanceDayTotals> {
-  const { rows, source } = await fetchAltegioIncomeRowsForKyivDay(kyivDay);
-
+/** Чисте розщеплення рядків: top-up → завдатки, решта → оборот. */
+export function splitIncomeRowsToFinanceDayTotals(
+  kyivDay: string,
+  rows: Array<{ amountKop: bigint; paymentPurpose: string | null }>,
+  source: FinanceDayTotals["source"],
+): FinanceDayTotals {
   let turnoverKop = 0n;
   let depositsKop = 0n;
   let turnoverCount = 0;
@@ -39,7 +42,7 @@ export async function getFinanceDayTotals(kyivDay: string): Promise<FinanceDayTo
     turnoverCount += 1;
   }
 
-  const result: FinanceDayTotals = {
+  return {
     kyivDay,
     turnoverUah: Math.round(kopToUah(turnoverKop) * 100) / 100,
     depositsUah: Math.round(kopToUah(depositsKop) * 100) / 100,
@@ -47,7 +50,11 @@ export async function getFinanceDayTotals(kyivDay: string): Promise<FinanceDayTo
     depositCount,
     source,
   };
+}
 
+export async function getFinanceDayTotals(kyivDay: string): Promise<FinanceDayTotals> {
+  const { rows, source } = await fetchAltegioIncomeRowsForKyivDay(kyivDay);
+  const result = splitIncomeRowsToFinanceDayTotals(kyivDay, rows, source);
   console.log("[reports/finance-day-totals] Підсумок дня", result);
   return result;
 }
