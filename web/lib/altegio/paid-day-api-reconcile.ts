@@ -434,3 +434,81 @@ export async function reconcilePaidDayFromAltegioApi(options?: {
 
   return result;
 }
+
+export type PaidRangeClientRef = {
+  altegioClientId: number;
+  clientName: string | null;
+  clientPhone: string | null;
+  /** Унікальні Kyiv-дні з платними візитами в діапазоні. */
+  paidDays: string[];
+  visitCount: number;
+};
+
+/**
+ * Усі унікальні Altegio-клієнти з платними записами в діапазоні дат (GET /records).
+ * Для масового догону з 01.09 тощо — один клієнт один раз, навіть якщо багато днів.
+ */
+export async function listPaidAltegioClientsInRange(options: {
+  fromKyivDay: string;
+  toKyivDay: string;
+  locationId?: number | null;
+}): Promise<{ locationId: number; fromKyivDay: string; toKyivDay: string; clients: PaidRangeClientRef[] }> {
+  const fromKyivDay = getTodayKyiv(options.fromKyivDay);
+  const toKyivDay = getTodayKyiv(options.toKyivDay);
+  if (fromKyivDay > toKyivDay) {
+    throw new Error(`Невірний діапазон: from=${fromKyivDay} > to=${toKyivDay}`);
+  }
+  const locationIdRaw = options.locationId ?? Number(getEnvValue('ALTEGIO_COMPANY_ID') || '');
+  if (!Number.isFinite(locationIdRaw) || locationIdRaw <= 0) {
+    throw new Error('ALTEGIO_COMPANY_ID не налаштовано');
+  }
+  const locationId = locationIdRaw;
+
+  console.log('[paid-day-api-reconcile] Список платних клієнтів за період', {
+    fromKyivDay,
+    toKyivDay,
+    locationId,
+  });
+
+  const rawRecords = await fetchAllRecordsForLocation(locationId, {
+    startDate: fromKyivDay,
+    endDate: toKyivDay,
+    countPerPage: 50,
+    delayMs: 200,
+  });
+
+  const byId = new Map<number, PaidRangeClientRef>();
+  for (const rec of rawRecords) {
+    if (!isPaidNonConsultation(rec)) continue;
+    const day = rec.date ? kyivDayFromISO(rec.date) : '';
+    if (!day || day < fromKyivDay || day > toKyivDay) continue;
+    const clientIdNum = rec.client_id != null ? Number(rec.client_id) : NaN;
+    if (!Number.isFinite(clientIdNum) || clientIdNum <= 0) continue;
+
+    const existing = byId.get(clientIdNum);
+    if (existing) {
+      existing.visitCount += 1;
+      if (!existing.paidDays.includes(day)) existing.paidDays.push(day);
+      if (!existing.clientName && rec.client_name) existing.clientName = rec.client_name;
+      if (!existing.clientPhone && rec.client_phone) existing.clientPhone = rec.client_phone;
+    } else {
+      byId.set(clientIdNum, {
+        altegioClientId: clientIdNum,
+        clientName: rec.client_name ?? null,
+        clientPhone: rec.client_phone ?? null,
+        paidDays: [day],
+        visitCount: 1,
+      });
+    }
+  }
+
+  const clients = [...byId.values()].sort((a, b) => a.altegioClientId - b.altegioClientId);
+  console.log('[paid-day-api-reconcile] Унікальних платних клієнтів за період', {
+    fromKyivDay,
+    toKyivDay,
+    count: clients.length,
+    recordsScanned: rawRecords.length,
+  });
+
+  return { locationId, fromKyivDay, toKyivDay, clients };
+}

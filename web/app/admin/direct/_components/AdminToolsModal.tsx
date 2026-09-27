@@ -179,6 +179,132 @@ export function AdminToolsModal({
     return pwd.trim();
   }
 
+  /** Масовий догон платних клієнтів за період (repair-paid-range-from-api) — усі батчі. */
+  const handlePaidRangeRepairAllBatches = async (
+    baseEndpoint: string,
+    confirmMessage?: string
+  ) => {
+    if (confirmMessage && !confirm(confirmMessage)) {
+      console.log('[AdminToolsModal] ⏹️ Скасовано confirm (paid-range repair)');
+      return;
+    }
+
+    const fromInput = prompt('Початок періоду YYYY-MM-DD (Kyiv):', '2026-09-01');
+    if (fromInput === null) return;
+    const from = (fromInput.trim() || '2026-09-01');
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(from)) {
+      showCopyableAlert('Формат from: YYYY-MM-DD');
+      return;
+    }
+    const toInput = prompt('Кінець періоду YYYY-MM-DD (Kyiv). Порожньо = вчора:', '');
+    if (toInput === null) return;
+    const to = toInput.trim();
+    if (to && !/^\d{4}-\d{2}-\d{2}$/.test(to)) {
+      showCopyableAlert('Формат to: YYYY-MM-DD (або порожньо)');
+      return;
+    }
+
+    setIsSubmitting(true);
+    const aggregated = {
+      batches: 0,
+      total: 0,
+      processed: 0,
+      imported: 0,
+      synced: 0,
+      history: 0,
+      linked: 0,
+      errors: 0,
+      ms: 0,
+    };
+    let skip = 0;
+    let remaining = 1;
+    const maxBatches = 80;
+    let lastError: string | null = null;
+    const sampleFails: string[] = [];
+
+    try {
+      while (remaining > 0 && aggregated.batches < maxBatches) {
+        const params = new URLSearchParams();
+        params.set('from', from);
+        if (to) params.set('to', to);
+        params.set('skip', String(skip));
+        params.set('limit', '10');
+        const url = urlWithToken(`${baseEndpoint}?${params.toString()}`);
+        console.log('[AdminToolsModal] ▶️ paid-range repair batch', {
+          batch: aggregated.batches + 1,
+          skip,
+          from,
+          to: to || '(yesterday)',
+        });
+        const res = await adminToolsFetch(url, { method: 'POST' }, resolveAdminAuthToken());
+        const data = await parseJsonOrText(res);
+        if (!data.ok) {
+          lastError = formatApiError(data, res);
+          break;
+        }
+        const s = (data.stats || {}) as Record<string, number>;
+        aggregated.batches += 1;
+        if (aggregated.total === 0 && typeof s.total === 'number') aggregated.total = s.total;
+        aggregated.processed += Number(s.processed ?? 0);
+        aggregated.ms += Number(s.ms ?? 0);
+        const actions = Array.isArray(data.actions) ? data.actions : [];
+        for (const a of actions) {
+          if (a?.type === 'import_client' && a.ok) aggregated.imported += 1;
+          if (a?.type === 'sync_client' && a.ok) aggregated.synced += 1;
+          if (a?.type === 'sync_history' && a.ok) aggregated.history += 1;
+          if (a?.type === 'link_by_phone' && a.ok) aggregated.linked += 1;
+          if (a?.ok === false) {
+            aggregated.errors += 1;
+            if (sampleFails.length < 15) {
+              sampleFails.push(
+                `${a.type} ${a.name || a.altegioClientId}: ${
+                  typeof a.error === 'string' ? a.error : JSON.stringify(a.error || 'fail')
+                }`,
+              );
+            }
+          }
+        }
+        remaining = Number(s.remainingCount ?? 0);
+        const next = s.nextBatchOffset;
+        if (remaining > 0) {
+          skip =
+            typeof next === 'number' && Number.isFinite(next)
+              ? next
+              : skip + Number(s.processed ?? 0);
+        }
+        if (Number(s.processed ?? 0) === 0 && remaining > 0) {
+          lastError = 'Батч не обробив клієнтів — зупинка';
+          break;
+        }
+      }
+
+      const done = remaining <= 0 && !lastError;
+      showCopyableAlert(
+        (done
+          ? '✅ Догон періоду з Altegio API завершено (усі батчі)!'
+          : lastError
+            ? `⚠️ Зупинено: ${lastError}`
+            : `⚠️ Ліміт батчів (${maxBatches}), залишилось: ${remaining}`) +
+          `\n\nПеріод: ${from} … ${to || 'вчора'}\n` +
+          `Батчів: ${aggregated.batches}\n` +
+          `Клієнтів у періоді: ${aggregated.total}\n` +
+          `Оброблено: ${aggregated.processed}\n` +
+          `Імпорт: ${aggregated.imported}\n` +
+          `Лінк по телефону: ${aggregated.linked}\n` +
+          `Sync запису: ${aggregated.synced}\n` +
+          `Sync історії: ${aggregated.history}\n` +
+          `Помилок у діях: ${aggregated.errors}\n` +
+          `Час: ${Math.round(aggregated.ms / 1000)} с` +
+          (sampleFails.length ? `\n\nПриклади помилок:\n${sampleFails.map((x) => `  • ${x}`).join('\n')}` : ''),
+      );
+      if (aggregated.synced > 0 || aggregated.imported > 0) await loadData();
+    } catch (err) {
+      showCopyableAlert(`Помилка: ${err instanceof Error ? err.message : String(err)}`);
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
+
   /** Кнопка #81: послідовно проходить усі батчі sync-visit-history-from-api до remainingCount=0. */
   const handleVisitHistorySyncAllBatches = async (
     baseEndpoint: string,
@@ -771,7 +897,7 @@ export function AdminToolsModal({
     }
   };
 
-  // Кількість кнопок: 104. При додаванні нової кнопки завжди додавати її в кінець відповідної категорії та оновлювати цю кількість у коментарі.
+  // Кількість кнопок: 105. При додаванні нової кнопки завжди додавати її в кінець відповідної категорії та оновлювати цю кількість у коментарі.
   const tools = [
     {
       category: "Тести",
@@ -2188,6 +2314,15 @@ export function AdminToolsModal({
             );
           },
         },
+        {
+          icon: "📆",
+          label: "Догон періоду з Altegio API (з 01.09 / діапазон)",
+          endpoint: "/api/admin/direct/repair-paid-range-from-api",
+          method: "POST" as const,
+          isPaidRangeRepairBulkAll: true,
+          confirm:
+            "Догонити ВСІХ клієнтів з платними записами Altegio за період (за замовчуванням з 2026-09-01 до вчора)?\n\nДля кожного: імпорт якщо немає → sync запису → sync історії візитів.\nБатчі по 10 клієнтів, автоматично до кінця.\n\nНе перезаписує «поточний» запис на старіший день (модель Direct).",
+        },
       ],
     },
     {
@@ -2959,6 +3094,8 @@ export function AdminToolsModal({
                           { client_id: input.trim() }
                         );
                       }
+                    } else if ((item as { isPaidRangeRepairBulkAll?: boolean }).isPaidRangeRepairBulkAll) {
+                      handlePaidRangeRepairAllBatches(item.endpoint, item.confirm);
                     } else if ((item as { isVisitHistoryBulkAll?: boolean }).isVisitHistoryBulkAll) {
                       handleVisitHistorySyncAllBatches(item.endpoint, item.confirm);
                     } else if ((item as { isBackfillInstagramBulkAll?: boolean }).isBackfillInstagramBulkAll) {
