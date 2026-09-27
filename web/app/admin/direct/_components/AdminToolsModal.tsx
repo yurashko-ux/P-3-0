@@ -2718,7 +2718,7 @@ export function AdminToolsModal({
                       return;
                     }
 
-                    // Щоденний звіт: prompt login (кнопка #100)
+                    // Щоденний звіт: prompt login (кнопка #102)
                     if ((item as { isDailyReportLoginPrompt?: boolean }).isDailyReportLoginPrompt) {
                       const loginInput = prompt("Login користувача (наприклад vika):");
                       if (loginInput === null) return;
