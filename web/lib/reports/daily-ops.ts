@@ -16,6 +16,7 @@ import {
   countF4RecordsCreatedOnDay,
   getActiveBaseDailyMetrics,
   getBinotelIncomingMissedOnKyivDay,
+  type RemovedActiveBaseClient,
 } from "@/lib/reports/daily-ops-extras";
 import { getFinanceDayTotals } from "@/lib/reports/finance-day-totals";
 import type { DirectClient } from "@/lib/direct-types";
@@ -46,6 +47,7 @@ export type DailyOpsReportData = {
   activeBaseCount: number;
   removedFromActiveBaseCount: number;
   removedFromActiveBaseNames: string[];
+  removedFromActiveBaseClients: RemovedActiveBaseClient[];
 };
 
 async function enrichClientsWithKvConsultCreatedAt<
@@ -133,5 +135,6 @@ export async function buildDailyOpsReport(options?: {
     activeBaseCount: activeBase.activeBaseCount,
     removedFromActiveBaseCount: activeBase.removedFromActiveBaseCount,
     removedFromActiveBaseNames: activeBase.removedFromActiveBaseNames,
+    removedFromActiveBaseClients: activeBase.removedFromActiveBaseClients,
   };
 }

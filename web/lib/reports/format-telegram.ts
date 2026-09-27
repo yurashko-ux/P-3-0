@@ -1,7 +1,10 @@
 // Форматування щоденного звіту для Telegram.
 
 import type { DailyOpsReportData } from "@/lib/reports/daily-ops";
-import { formatNameListForTelegram } from "@/lib/reports/daily-ops-extras";
+import {
+  formatClientLinksForTelegram,
+  formatNameListForTelegram,
+} from "@/lib/reports/daily-ops-extras";
 
 function formatKyivDateLabel(kyivDay: string): string {
   const [, m, d] = kyivDay.split("-");
@@ -15,8 +18,11 @@ function formatMoneyUah(amount: number): string {
 function formatRemovedFromActiveBase(data: DailyOpsReportData): string {
   const count = data.removedFromActiveBaseCount;
   if (count <= 0) return "<b>0</b>";
-  const names = formatNameListForTelegram(data.removedFromActiveBaseNames);
-  return `<b>${count}</b>${names}`;
+  const links = formatClientLinksForTelegram(data.removedFromActiveBaseClients, {
+    day: data.kyivDay,
+    activeBaseChange: "removed",
+  });
+  return `<b>${count}</b>${links}`;
 }
 
 export function formatDailyReportTelegram(data: DailyOpsReportData): string {
