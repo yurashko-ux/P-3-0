@@ -17,6 +17,7 @@ import {
   getActiveBaseDailyMetrics,
   getBinotelIncomingMissedOnKyivDay,
 } from "@/lib/reports/daily-ops-extras";
+import { getFinanceDayTotals } from "@/lib/reports/finance-day-totals";
 import type { DirectClient } from "@/lib/direct-types";
 import { countLeadsStatsRecordsOnKyivDay } from "@/lib/direct-leads-stats-filters";
 
@@ -32,7 +33,10 @@ export type DailyOpsReportData = {
   rebookingsCount: number;
   recordsCreatedCount: number;
   recordsRealizedCountToday: number;
+  /** Оборот з фінансів Altegio (без top-up завдатку). */
   turnoverToday: number;
+  /** Завдатки («Поповнення рахунку») за день — окремо від обороту. */
+  depositsToday: number;
   incomingUnmatched: number;
   outgoingUnmatched: number;
   callsIncoming: number;
@@ -89,11 +93,22 @@ export async function buildDailyOpsReport(options?: {
   });
   const { today } = periodStats;
 
-  const [bankUnmatched, calls, activeBase, incomingMissed] = await Promise.all([
+  const [bankUnmatched, calls, activeBase, incomingMissed, financeDay] = await Promise.all([
     countBankUnmatchedForKyivDay(kyivDay),
     computeBinotelCallsFilterCountsFromDb({ kyivDay }),
     getActiveBaseDailyMetrics(kyivDay),
     getBinotelIncomingMissedOnKyivDay(kyivDay),
+    getFinanceDayTotals(kyivDay).catch((err) => {
+      console.warn("[reports/daily-ops] Не вдалося отримати фінанси за день, оборот=0:", err);
+      return {
+        kyivDay,
+        turnoverUah: 0,
+        depositsUah: 0,
+        turnoverCount: 0,
+        depositCount: 0,
+        source: "db" as const,
+      };
+    }),
   ]);
 
   return {
@@ -107,7 +122,8 @@ export async function buildDailyOpsReport(options?: {
     rebookingsCount: today.rebookingsCount ?? 0,
     recordsCreatedCount: countF4RecordsCreatedOnDay(clients as DirectClient[], kyivDay),
     recordsRealizedCountToday: today.recordsRealizedCountToday ?? 0,
-    turnoverToday: today.turnoverToday ?? 0,
+    turnoverToday: financeDay.turnoverUah,
+    depositsToday: financeDay.depositsUah,
     incomingUnmatched: bankUnmatched.incomingUnmatched,
     outgoingUnmatched: bankUnmatched.outgoingUnmatched,
     callsIncoming: calls.incoming,
