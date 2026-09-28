@@ -94,6 +94,15 @@ export function prismaClientToDirectClient(dbClient: any): DirectClient {
       (dbClient as any).leadAgency === 'agency_1' || (dbClient as any).leadAgency === 'agency_2'
         ? (dbClient as any).leadAgency
         : undefined,
+    starredLeadCheckUah:
+      typeof (dbClient as any).starredLeadCheckUah === 'number'
+        ? (dbClient as any).starredLeadCheckUah
+        : undefined,
+    starredLeadCheckKyivDay:
+      typeof (dbClient as any).starredLeadCheckKyivDay === 'string' &&
+      (dbClient as any).starredLeadCheckKyivDay.trim()
+        ? (dbClient as any).starredLeadCheckKyivDay
+        : undefined,
     statusId: dbClient.statusId,
     statusSetAt: (dbClient as any).statusSetAt?.toISOString?.() || undefined,
     masterId: dbClient.masterId || undefined,
@@ -252,6 +261,10 @@ function directClientToPrisma(client: DirectClient) {
     ...(client.leadAgency === 'agency_1' || client.leadAgency === 'agency_2'
       ? { leadAgency: client.leadAgency }
       : {}),
+    ...(typeof client.starredLeadCheckUah === 'number'
+      ? { starredLeadCheckUah: Math.round(client.starredLeadCheckUah) }
+      : {}),
+    ...(client.starredLeadCheckKyivDay ? { starredLeadCheckKyivDay: client.starredLeadCheckKyivDay } : {}),
     ...(client.createdAt && { createdAt: new Date(client.createdAt) }),
     ...(client.updatedAt && { updatedAt: new Date(client.updatedAt) }),
   };
@@ -1869,6 +1882,8 @@ export async function saveDirectClient(
       if (client.callbackReminderHistory === undefined) delete next.callbackReminderHistory;
       if (client.includeInNewLeadsKpi === undefined) delete next.includeInNewLeadsKpi;
       if (client.leadAgency === undefined) delete next.leadAgency;
+      if (client.starredLeadCheckUah === undefined) delete next.starredLeadCheckUah;
+      if (client.starredLeadCheckKyivDay === undefined) delete next.starredLeadCheckKyivDay;
       return next;
     };
 

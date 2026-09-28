@@ -1040,6 +1040,7 @@ export async function POST(req: NextRequest) {
         }
 
       const incomingLeadAgency = resolveIncomingLeadAgency(payload, message.text);
+      const leadAgencyBefore = client?.leadAgency;
 
       if (!client || !client.id) {
         // Створюємо нового клієнта
@@ -1144,6 +1145,16 @@ export async function POST(req: NextRequest) {
           messageId: message.id,
           fullName: message.fullName,
         });
+        if (client.leadAgency === 'agency_1' && leadAgencyBefore !== 'agency_1') {
+          try {
+            const { toKyivDay } = await import('@/lib/direct-stats-config');
+            const { syncAgencySheetDay } = await import('@/lib/agency-sheet-sync');
+            const day = toKyivDay(client.firstContactDate);
+            if (day) await syncAgencySheetDay(day);
+          } catch (sheetErr) {
+            console.warn('[manychat] Не вдалося оновити таблицю агенції:', sheetErr);
+          }
+        }
         if (subscriberId && client.id) {
           try {
             await kvWrite.setRaw(directSubscriberClientKey(subscriberId), client.id);

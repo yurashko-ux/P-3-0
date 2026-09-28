@@ -1503,12 +1503,27 @@ export async function POST(req: NextRequest) {
                 );
                 if (breakdown && breakdown.length > 0) {
                   const totalCost = breakdown.reduce((a, b) => a + b.sumUAH, 0);
+                  let starredLeadCheckUah = directClient.starredLeadCheckUah;
+                  let starredLeadCheckKyivDay = directClient.starredLeadCheckKyivDay;
+                  const shouldSnapshotCheck =
+                    directClient.leadAgency === 'agency_1' &&
+                    starredLeadCheckUah == null &&
+                    totalCost > 0;
+                  if (shouldSnapshotCheck) {
+                    const { toKyivDay, getTodayKyiv } = await import('@/lib/direct-stats-config');
+                    starredLeadCheckUah = Math.round(totalCost);
+                    starredLeadCheckKyivDay =
+                      toKyivDay(directClient.paidServiceRecordCreatedAt) || getTodayKyiv();
+                  }
                   const updated = {
                     ...directClient,
                     paidServiceVisitId: Number(visitId),
                     paidServiceRecordId: recordId != null ? Number(recordId) : undefined,
                     paidServiceVisitBreakdown: breakdown,
                     paidServiceTotalCost: totalCost,
+                    ...(shouldSnapshotCheck
+                      ? { starredLeadCheckUah, starredLeadCheckKyivDay }
+                      : {}),
                     updatedAt: new Date().toISOString(),
                   };
                   await saveDirectClient(updated, 'altegio-webhook-visit-breakdown-from-api', {
@@ -1516,6 +1531,14 @@ export async function POST(req: NextRequest) {
                     breakdownLength: breakdown.length,
                     totalCost,
                   });
+                  if (shouldSnapshotCheck && starredLeadCheckKyivDay) {
+                    try {
+                      const { syncAgencySheetDay } = await import('@/lib/agency-sheet-sync');
+                      await syncAgencySheetDay(starredLeadCheckKyivDay);
+                    } catch (sheetErr) {
+                      console.warn('[altegio/webhook] Не вдалося оновити таблицю агенції:', sheetErr);
+                    }
+                  }
                   console.log(`[altegio/webhook] ✅ Saved visit breakdown from API for client ${directClient.id} (visit ${visitId}, ${breakdown.length} masters, total ${totalCost} грн)`);
                 }
               }

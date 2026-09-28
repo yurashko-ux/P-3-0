@@ -48,6 +48,10 @@ model DirectClient {
   includeInNewLeadsKpi                      Boolean   @default(true)
   /// ManyChat: agency_1 = повідомлення містить *, agency_2 = без *. У UI зірочка на хмаринці = agency_1.
   leadAgency                                String?
+  /// Сума платного запису (грн) у момент, коли вона вперше стала додатною. Лише для agency_1.
+  starredLeadCheckUah                       Int?
+  /// YYYY-MM-DD Europe/Kyiv дня створення цього запису. Для колонки «Загальний чек».
+  starredLeadCheckKyivDay                   String?
   statusId                                  String // ID статусу (foreign key)
   statusSetAt                               DateTime? // Коли встановлено статус (statusId)
   masterId                                  String? // ID майстра (відповідальний)
@@ -169,6 +173,7 @@ model DirectClient {
   @@index([state])
   @@index([source])
   @@index([firstContactDate])
+  @@index([starredLeadCheckKyivDay])
   @@index([createdAt])
   @@index([consultationBookingDate])
   @@index([consultationBookingKyivDay])

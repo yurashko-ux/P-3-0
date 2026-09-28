@@ -246,6 +246,19 @@ export async function POST(req: NextRequest) {
     await writeLastRun(runPayload);
     await appendCronLog(runPayload);
 
+    try {
+      const { syncAgencySheetDay } = await import('@/lib/agency-sheet-sync');
+      const sheetDays = [result.kyivDay, getTodayKyiv()].filter(
+        (day, index, all) => all.indexOf(day) === index,
+      );
+      for (const day of sheetDays) {
+        const sheet = await syncAgencySheetDay(day);
+        console.log('[cron/reports-daily] Таблиця агенції:', sheet);
+      }
+    } catch (sheetErr) {
+      console.warn('[cron/reports-daily] Таблиця агенції не оновлена:', sheetErr);
+    }
+
     console.log("[cron/reports-daily] Done:", {
       reportKyivDay: result.kyivDay,
       runKyivDay: now.kyivDay,

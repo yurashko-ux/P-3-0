@@ -38,6 +38,10 @@ export type DirectClient = {
   includeInNewLeadsKpi?: boolean;
   /** ManyChat: agency_1 = у першому повідомленні є *, agency_2 = немає. Порожнє = стара картка без мітки. */
   leadAgency?: 'agency_1' | 'agency_2';
+  /** Сума платного запису в момент першої додатної суми. Лише ліди зі зірочкою. */
+  starredLeadCheckUah?: number;
+  /** YYYY-MM-DD Kyiv дня цього запису. */
+  starredLeadCheckKyivDay?: string;
   statusId: string; // ID статусу зі списку статусів
   statusSetAt?: string; // ISO - коли встановлено статус
   masterId?: string; // ID майстра (відповідальний)
