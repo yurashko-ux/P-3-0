@@ -296,54 +296,6 @@ export default function TeamPeoplePage() {
         </button>
       </div>
 
-      {showPositionForm && (
-        <div
-          className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-3"
-          onClick={() => !busy && setShowPositionForm(false)}
-        >
-          <div
-            className="bg-white rounded-xl shadow-xl w-full max-w-sm p-4 space-y-3"
-            onClick={(e) => e.stopPropagation()}
-          >
-            <h2 className="font-semibold text-sm">{editingPositionId ? "Редагувати посаду" : "Нова посада"}</h2>
-            <label className="form-control">
-              <span className="label-text text-[11px] text-gray-500">Назва</span>
-              <input
-                className="input input-bordered input-sm"
-                value={positionForm.name}
-                onChange={(e) => setPositionForm((f) => ({ ...f, name: e.target.value }))}
-              />
-            </label>
-            <label className="form-control">
-              <span className="label-text text-[11px] text-gray-500">Порядок</span>
-              <input
-                type="number"
-                className="input input-bordered input-sm"
-                value={positionForm.order}
-                onChange={(e) => setPositionForm((f) => ({ ...f, order: Number(e.target.value) || 0 }))}
-              />
-            </label>
-            <label className="flex items-center gap-2 text-xs">
-              <input
-                type="checkbox"
-                className="checkbox checkbox-sm"
-                checked={positionForm.isActive}
-                onChange={(e) => setPositionForm((f) => ({ ...f, isActive: e.target.checked }))}
-              />
-              Активна
-            </label>
-            <div className="flex justify-end gap-2">
-              <button className="btn btn-sm btn-ghost" disabled={busy} onClick={() => setShowPositionForm(false)}>
-                Скасувати
-              </button>
-              <button className="btn btn-sm btn-primary" disabled={busy} onClick={() => void savePosition()}>
-                Зберегти
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
-
       {showForm && (
         <div
           className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-3"
