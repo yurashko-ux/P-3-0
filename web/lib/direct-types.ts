@@ -36,6 +36,8 @@ export type DirectClient = {
   firstContactDate: string; // ISO date - дата першого контакту
   /** false = не в KPI «нові ліди» (Binotel, імпорт/масові синки) */
   includeInNewLeadsKpi?: boolean;
+  /** ManyChat: agency_1 = у першому повідомленні є *, agency_2 = немає. Порожнє = стара картка без мітки. */
+  leadAgency?: 'agency_1' | 'agency_2';
   statusId: string; // ID статусу зі списку статусів
   statusSetAt?: string; // ISO - коли встановлено статус
   masterId?: string; // ID майстра (відповідальний)

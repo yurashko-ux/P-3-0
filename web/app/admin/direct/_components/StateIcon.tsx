@@ -3,6 +3,8 @@
 
 "use client";
 
+import type { ReactNode } from "react";
+
 const iconStyle = (size: number) => ({ width: `${size}px`, height: `${size}px` });
 
 const STATE_EMOJI: Record<string, string> = {
@@ -13,6 +15,21 @@ const STATE_EMOJI: Record<string, string> = {
   "too-expensive": "💰",
   sold: "🔥",
 };
+
+/** Знак * зверху справа на хмаринці ліда зі зірочкою (Агенція 2, leadAgency = agency_1). */
+export function LeadAgencyStar({ children }: { children: ReactNode }) {
+  return (
+    <span className="relative inline-flex">
+      {children}
+      <span
+        className="pointer-events-none absolute -right-1 -top-1 text-[13px] font-bold leading-none text-amber-600"
+        aria-hidden
+      >
+        *
+      </span>
+    </span>
+  );
+}
 
 export function StateIcon({ state, size = 36 }: { state: string | null; size?: number }) {
   const s = iconStyle(size);

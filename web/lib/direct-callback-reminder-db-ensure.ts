@@ -19,6 +19,7 @@ ALTER TABLE "direct_clients" ADD COLUMN IF NOT EXISTS "callbackReminderHistory" 
 CREATE INDEX IF NOT EXISTS "direct_clients_callbackReminderKyivDay_idx" ON "direct_clients"("callbackReminderKyivDay");
 ALTER TABLE "direct_clients" ADD COLUMN IF NOT EXISTS "includeInNewLeadsKpi" BOOLEAN NOT NULL DEFAULT true;
 UPDATE "direct_clients" SET "includeInNewLeadsKpi" = false WHERE "state" = 'binotel-lead' OR "instagramUsername" ~ '^binotel_';
+ALTER TABLE "direct_clients" ADD COLUMN IF NOT EXISTS "leadAgency" TEXT;
 `;
 
 const DDL_STATEMENTS = [
@@ -29,6 +30,7 @@ const DDL_STATEMENTS = [
   `ALTER TABLE "direct_clients" ADD COLUMN IF NOT EXISTS "includeInNewLeadsKpi" BOOLEAN NOT NULL DEFAULT true`,
   // Як у міграції 20260419150000 — історичні Binotel не в KPI
   `UPDATE "direct_clients" SET "includeInNewLeadsKpi" = false WHERE "state" = 'binotel-lead' OR "instagramUsername" ~ '^binotel_'`,
+  `ALTER TABLE "direct_clients" ADD COLUMN IF NOT EXISTS "leadAgency" TEXT`,
 ] as const;
 
 export type EnsureCallbackReminderColumnsResult =
@@ -89,7 +91,8 @@ export async function ensureDirectCallbackReminderColumnsExist(): Promise<Ensure
       !cols.has('callbackReminderKyivDay') ||
       !cols.has('callbackReminderNote') ||
       !cols.has('callbackReminderHistory') ||
-      !cols.has('includeInNewLeadsKpi');
+      !cols.has('includeInNewLeadsKpi') ||
+      !cols.has('leadAgency');
 
     if (!need) {
       return { ok: true };

@@ -46,6 +46,8 @@ model DirectClient {
   firstContactDate                          DateTime // Дата першого контакту
   /// false = не в KPI «нові ліди» (Binotel, імпорт з Altegio/KeyCRM, масові синки)
   includeInNewLeadsKpi                      Boolean   @default(true)
+  /// ManyChat: agency_1 = повідомлення містить *, agency_2 = без *. У UI зірочка на хмаринці = agency_1.
+  leadAgency                                String?
   statusId                                  String // ID статусу (foreign key)
   statusSetAt                               DateTime? // Коли встановлено статус (statusId)
   masterId                                  String? // ID майстра (відповідальний)

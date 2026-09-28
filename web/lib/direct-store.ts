@@ -90,6 +90,10 @@ export function prismaClientToDirectClient(dbClient: any): DirectClient {
     state: (dbClient.state as 'client' | 'consultation' | 'consultation-booked' | 'consultation-no-show' | 'consultation-rescheduled' | 'hair-extension' | 'other-services' | 'all-good' | 'too-expensive' | 'message') || undefined,
     firstContactDate: dbClient.firstContactDate.toISOString(),
     includeInNewLeadsKpi: (dbClient as any).includeInNewLeadsKpi !== false,
+    leadAgency:
+      (dbClient as any).leadAgency === 'agency_1' || (dbClient as any).leadAgency === 'agency_2'
+        ? (dbClient as any).leadAgency
+        : undefined,
     statusId: dbClient.statusId,
     statusSetAt: (dbClient as any).statusSetAt?.toISOString?.() || undefined,
     masterId: dbClient.masterId || undefined,
@@ -245,6 +249,9 @@ function directClientToPrisma(client: DirectClient) {
     consultationListComment: client.consultationListComment ?? null,
     consultationListOutcomeOverride: client.consultationListOutcomeOverride ?? null,
     ...(client.includeInNewLeadsKpi !== undefined ? { includeInNewLeadsKpi: client.includeInNewLeadsKpi } : {}),
+    ...(client.leadAgency === 'agency_1' || client.leadAgency === 'agency_2'
+      ? { leadAgency: client.leadAgency }
+      : {}),
     ...(client.createdAt && { createdAt: new Date(client.createdAt) }),
     ...(client.updatedAt && { updatedAt: new Date(client.updatedAt) }),
   };
@@ -1861,6 +1868,7 @@ export async function saveDirectClient(
       if (client.callbackReminderNote === undefined) delete next.callbackReminderNote;
       if (client.callbackReminderHistory === undefined) delete next.callbackReminderHistory;
       if (client.includeInNewLeadsKpi === undefined) delete next.includeInNewLeadsKpi;
+      if (client.leadAgency === undefined) delete next.leadAgency;
       return next;
     };
 

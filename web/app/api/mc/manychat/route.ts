@@ -379,6 +379,66 @@ function isLikelyOutgoingManychatMessage(payload: unknown): boolean {
   return flags.some((x) => x === true || x === 'true' || x === 1);
 }
 
+function normalizeLeadAgencyToken(value: unknown): 'agency_1' | 'agency_2' | null {
+  if (typeof value !== 'string') return null;
+  const v = value.trim().toLowerCase().replace(/[\s-]+/g, '_');
+  if (v === 'agency_1' || v === 'agency1') return 'agency_1';
+  if (v === 'agency_2' || v === 'agency2') return 'agency_2';
+  return null;
+}
+
+/** Поле agency з тіла вебхука ManyChat (корінь, subscriber, custom_fields). */
+function extractLeadAgencyFromPayload(payload: unknown, depth = 0): 'agency_1' | 'agency_2' | null {
+  if (depth > 4 || payload == null) return null;
+  if (typeof payload === 'string') {
+    const trimmed = payload.trim();
+    if (trimmed.startsWith('{') || trimmed.startsWith('[')) {
+      try {
+        return extractLeadAgencyFromPayload(JSON.parse(trimmed), depth + 1);
+      } catch {
+        return null;
+      }
+    }
+    return null;
+  }
+  if (Array.isArray(payload)) {
+    for (const item of payload) {
+      const found = extractLeadAgencyFromPayload(item, depth + 1);
+      if (found) return found;
+    }
+    return null;
+  }
+  if (typeof payload !== 'object') return null;
+  const record = payload as Record<string, unknown>;
+  const direct = normalizeLeadAgencyToken(record.agency ?? record.leadAgency ?? record.lead_agency);
+  if (direct) return direct;
+  const named = record.name ?? record.key ?? record.field_name ?? record.title;
+  if (typeof named === 'string' && named.trim().toLowerCase() === 'agency') {
+    const fromPair = normalizeLeadAgencyToken(record.value ?? record.field_value ?? record.content);
+    if (fromPair) return fromPair;
+  }
+  for (const key of ['custom_fields', 'customFields', 'user_fields', 'fields', 'subscriber', 'user', 'data']) {
+    if (key in record) {
+      const found = extractLeadAgencyFromPayload(record[key], depth + 1);
+      if (found) return found;
+    }
+  }
+  return null;
+}
+
+/**
+ * agency_1 = у тексті є * (Агенція 2 в UI). agency_2 = без *.
+ * Вихідні повідомлення салону не мітять картку.
+ */
+function resolveIncomingLeadAgency(payload: unknown, messageText: string | null | undefined): 'agency_1' | 'agency_2' | null {
+  if (isLikelyOutgoingManychatMessage(payload)) return null;
+  const fromField = extractLeadAgencyFromPayload(payload);
+  if (fromField) return fromField;
+  const text = typeof messageText === 'string' ? messageText.trim() : '';
+  if (!text) return null;
+  return text.includes('*') ? 'agency_1' : 'agency_2';
+}
+
 function normalisePayload(payload: unknown, rawText?: string | null): LatestMessage {
   const body = (payload && typeof payload === 'object') ? (payload as Record<string, unknown>) : {};
 
@@ -979,6 +1039,8 @@ export async function POST(req: NextRequest) {
           }
         }
 
+      const incomingLeadAgency = resolveIncomingLeadAgency(payload, message.text);
+
       if (!client || !client.id) {
         // Створюємо нового клієнта
         const now = new Date().toISOString();
@@ -1016,8 +1078,14 @@ export async function POST(req: NextRequest) {
           lastMessageAt: now,
           createdAt: now,
           updatedAt: now,
+          ...(incomingLeadAgency ? { leadAgency: incomingLeadAgency } : {}),
         };
-        console.log('[manychat] Created new Direct client:', { id: client.id, username: client.instagramUsername, masterId });
+        console.log('[manychat] Created new Direct client:', {
+          id: client.id,
+          username: client.instagramUsername,
+          masterId,
+          leadAgency: incomingLeadAgency,
+        });
       } else {
         // Оновлюємо існуючого клієнта
         const safeFullName = safeFullNameForLookup;
@@ -1061,8 +1129,14 @@ export async function POST(req: NextRequest) {
           state: newState,
           lastMessageAt: new Date().toISOString(),
           updatedAt: new Date().toISOString(),
+          ...(!client.leadAgency && incomingLeadAgency ? { leadAgency: incomingLeadAgency } : {}),
         };
-        console.log('[manychat] Updated existing Direct client:', { id: client.id, username: client.instagramUsername, state: client.state });
+        console.log('[manychat] Updated existing Direct client:', {
+          id: client.id,
+          username: client.instagramUsername,
+          state: client.state,
+          leadAgency: client.leadAgency || incomingLeadAgency || null,
+        });
       }
       
       if (client.id && client.instagramUsername) {

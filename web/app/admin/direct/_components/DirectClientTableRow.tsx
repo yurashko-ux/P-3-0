@@ -15,7 +15,7 @@ import {
 import { getChatBadgeStyle } from "./ChatBadgeIcon";
 import { CommunicationChannelPicker } from "./CommunicationChannelPicker";
 import { ConfirmedCheckIcon } from "./CheckIcon";
-import { StateIcon } from "./StateIcon";
+import { LeadAgencyStar, StateIcon } from "./StateIcon";
 import { DirectStatusCell } from "./DirectStatusCell";
 import { BinotelCallTypeIcon } from "./BinotelCallTypeIcon";
 import { PlayRecordingButton } from "./PlayRecordingButton";
@@ -1207,24 +1207,30 @@ return (
           const firstStart = new Date(firstKyivStr + 'T00:00:00.000Z').getTime();
           const daysSinceFirst = Math.floor((todayStart - firstStart) / 86400000);
           if (daysSinceFirst === 0) {
-            const title = stateDateLead !== '-' ? `Новий лід. Дата встановлення: ${stateDateLead}` : "Новий лід (перший контакт сьогодні). Натисніть для історії станів";
+            const starredLead = client.leadAgency === 'agency_1';
+            const titleBase = stateDateLead !== '-' ? `Новий лід. Дата встановлення: ${stateDateLead}` : "Новий лід (перший контакт сьогодні). Натисніть для історії станів";
+            const title = starredLead ? `${titleBase} · Агенція 2` : titleBase;
+            const icon = <StateIcon state="new-lead" size={28} />;
             return (
               <div className="flex flex-col items-start gap-0.5">
                 <span className="inline-flex items-center justify-center">
                   <button type="button" className="hover:opacity-70 transition-opacity p-0" title={title} onClick={() => setStateHistoryClient(client)}>
-                    <StateIcon state="new-lead" size={28} />
+                    {starredLead ? <LeadAgencyStar>{icon}</LeadAgencyStar> : icon}
                   </button>
                 </span>
                 {stateDateLead !== '-' && <span className="text-[10px] leading-none opacity-60">{stateDateLead}</span>}
               </div>
             );
           }
-          const title = stateDateLead !== '-' ? `Повідомлення / Лід. Дата встановлення: ${stateDateLead}` : "Повідомлення / Лід (перший контакт раніше). Натисніть для історії станів";
+          const starredLead = client.leadAgency === 'agency_1';
+          const titleBase = stateDateLead !== '-' ? `Повідомлення / Лід. Дата встановлення: ${stateDateLead}` : "Повідомлення / Лід (перший контакт раніше). Натисніть для історії станів";
+          const title = starredLead ? `${titleBase} · Агенція 2` : titleBase;
+          const icon = <StateIcon state="message" size={28} />;
           return (
             <div className="flex flex-col items-start gap-0.5">
               <span className="inline-flex items-center justify-center">
                 <button type="button" className="hover:opacity-70 transition-opacity p-0" title={title} onClick={() => setStateHistoryClient(client)}>
-                  <StateIcon state="message" size={28} />
+                  {starredLead ? <LeadAgencyStar>{icon}</LeadAgencyStar> : icon}
                 </button>
               </span>
               {stateDateLead !== '-' && <span className="text-[10px] leading-none opacity-60">{stateDateLead}</span>}

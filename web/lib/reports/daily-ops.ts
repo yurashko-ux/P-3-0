@@ -2,7 +2,7 @@
 
 import { getAllDirectClients } from "@/lib/direct-store";
 import { kvRead } from "@/lib/kv";
-import { getTodayKyiv } from "@/lib/direct-stats-config";
+import { clientCountsTowardNewLeadsKpi, getTodayKyiv, toKyivDay } from "@/lib/direct-stats-config";
 import { computePeriodStats } from "@/lib/direct-period-stats";
 import { computeBinotelCallsFilterCountsFromDb } from "@/lib/direct-binotel-filter-counts";
 import {
@@ -23,6 +23,10 @@ import { countLeadsStatsRecordsOnKyivDay } from "@/lib/direct-leads-stats-filter
 export type DailyOpsReportData = {
   kyivDay: string;
   newLeadsCount: number;
+  /** Нові ліди без зірочки (agency_2 або без мітки). */
+  newLeadsAgency1Count: number;
+  /** Нові ліди зі зірочкою (agency_1). */
+  newLeadsAgency2Count: number;
   /** Колонка «Записів» у таблиці «Ліди» (F4 за день). */
   leadsRecordsCount: number;
   consultationCreated: number;
@@ -96,9 +100,22 @@ export async function buildDailyOpsReport(options?: {
     getBinotelIncomingMissedOnKyivDay(kyivDay),
   ]);
 
+  const newLeadsCount = today.newLeadsCount ?? 0;
+  let starredNewLeads = 0;
+  for (const client of clients) {
+    if (client.leadAgency !== "agency_1") continue;
+    if (!clientCountsTowardNewLeadsKpi(client)) continue;
+    if (toKyivDay(client.firstContactDate) !== kyivDay) continue;
+    starredNewLeads += 1;
+  }
+  const newLeadsAgency2Count = Math.min(starredNewLeads, newLeadsCount);
+  const newLeadsAgency1Count = Math.max(0, newLeadsCount - newLeadsAgency2Count);
+
   return {
     kyivDay,
-    newLeadsCount: today.newLeadsCount ?? 0,
+    newLeadsCount,
+    newLeadsAgency1Count,
+    newLeadsAgency2Count,
     leadsRecordsCount: countLeadsStatsRecordsOnKyivDay(clients as DirectClient[], kyivDay),
     consultationCreated: today.consultationCreated ?? 0,
     consultationRealized: today.consultationRealized ?? 0,
