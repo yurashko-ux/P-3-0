@@ -127,6 +127,16 @@ export async function listTeamPositions(opts?: { includeInactive?: boolean }) {
     where: opts?.includeInactive ? undefined : { isActive: true },
     orderBy: [{ order: "asc" }, { name: "asc" }],
     include: {
+      members: {
+        where: { isActive: true },
+        orderBy: [{ order: "asc" }, { name: "asc" }],
+        select: {
+          id: true,
+          name: true,
+          instagramUsername: true,
+          isActive: true,
+        },
+      },
       ruleVersions: {
         orderBy: [{ effectiveFrom: "desc" }, { createdAt: "desc" }],
         take: 1,
