@@ -100,9 +100,6 @@ export default function TeamPeoplePage() {
   const [editingId, setEditingId] = useState<string | null>(null);
   const [form, setForm] = useState(emptyForm);
   const [showForm, setShowForm] = useState(false);
-  const [showPositionForm, setShowPositionForm] = useState(false);
-  const [editingPositionId, setEditingPositionId] = useState<string | null>(null);
-  const [positionForm, setPositionForm] = useState({ name: "", order: 100, isActive: true });
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -278,114 +275,14 @@ export default function TeamPeoplePage() {
     }
   }
 
-  function openCreatePosition() {
-    setEditingPositionId(null);
-    setPositionForm({ name: "", order: 100, isActive: true });
-    setShowPositionForm(true);
-  }
-
-  function openEditPosition(p: PositionRow) {
-    setEditingPositionId(p.id);
-    setPositionForm({ name: p.name, order: p.order, isActive: p.isActive });
-    setShowPositionForm(true);
-  }
-
-  async function savePosition() {
-    setBusy(true);
-    setError(null);
-    try {
-      const url = editingPositionId
-        ? `/api/admin/team/positions/${editingPositionId}`
-        : "/api/admin/team/positions";
-      const res = await fetch(url, {
-        method: editingPositionId ? "PATCH" : "POST",
-        credentials: "include",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(positionForm),
-      });
-      const json = await res.json();
-      if (!res.ok || !json.ok) throw new Error(json.error || "Не збережено посаду");
-      setShowPositionForm(false);
-      await load();
-    } catch (err) {
-      setError(err instanceof Error ? err.message : "Помилка посади");
-    } finally {
-      setBusy(false);
-    }
-  }
-
-  async function removePosition(id: string) {
-    if (!confirm("Видалити посаду?")) return;
-    setBusy(true);
-    setError(null);
-    try {
-      const res = await fetch(`/api/admin/team/positions/${id}`, {
-        method: "DELETE",
-        credentials: "include",
-      });
-      const json = await res.json();
-      if (!res.ok || !json.ok) throw new Error(json.error || "Не видалено");
-      await load();
-    } catch (err) {
-      setError(err instanceof Error ? err.message : "Помилка видалення посади");
-    } finally {
-      setBusy(false);
-    }
-  }
-
   return (
     <main className="p-3 space-y-3 max-w-6xl">
       <p className="text-xs text-gray-600 bg-white border rounded-xl px-3 py-2">
         Люди салону: <strong>посада</strong> і <strong>схеми ЗП</strong> (кілька схем сумуються). Зміна схем у
         формі людини оновлює правило цієї посади для <strong>всіх</strong> з тією ж посадою. «Діє з» — історія, минуле
-        не перераховуємо. Автонарахування — пізніше.
+        не перераховуємо. Довідник посад — вкладка <strong>Посади</strong>. Автонарахування — пізніше.
       </p>
       {error && <div className="alert alert-error text-sm py-2">{error}</div>}
-
-      <section className="bg-white border rounded-xl p-3 space-y-2">
-        <div className="flex flex-wrap items-center justify-between gap-2">
-          <h2 className="text-sm font-semibold">Посади</h2>
-          <button className="btn btn-xs" disabled={busy} onClick={openCreatePosition}>
-            + Посада
-          </button>
-        </div>
-        <div className="overflow-x-auto">
-          <table className="table table-xs">
-            <thead>
-              <tr>
-                <th>Назва</th>
-                <th>Людей</th>
-                <th>Схеми (поточні)</th>
-                <th></th>
-              </tr>
-            </thead>
-            <tbody>
-              {positions.map((p) => {
-                const schemesNow = p.ruleVersions?.[0]?.schemes?.map((l) => l.scheme) ?? [];
-                return (
-                  <tr key={p.id} className={!p.isActive ? "opacity-50" : undefined}>
-                    <td>{p.name}</td>
-                    <td className="tabular-nums">{p._count?.members ?? 0}</td>
-                    <td className="text-xs">{schemeTitles(schemesNow)}</td>
-                    <td className="whitespace-nowrap">
-                      <button className="btn btn-ghost btn-xs" onClick={() => openEditPosition(p)}>
-                        Змінити
-                      </button>
-                      <button
-                        className="btn btn-ghost btn-xs text-error"
-                        disabled={busy}
-                        onClick={() => void removePosition(p.id)}
-                      >
-                        ×
-                      </button>
-                    </td>
-                  </tr>
-                );
-              })}
-            </tbody>
-          </table>
-        </div>
-      </section>
 
       <div className="flex flex-wrap gap-2">
         <button className="btn btn-sm btn-primary" disabled={busy || loading} onClick={() => void importAltegio()}>
