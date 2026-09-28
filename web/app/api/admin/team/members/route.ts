@@ -1,6 +1,11 @@
 import { NextRequest, NextResponse } from "next/server";
 import { requireTeamSection } from "@/lib/team/require-team-auth";
-import { createTeamMember, listLinkOptions, listTeamMembers } from "@/lib/team/store";
+import {
+  createTeamMember,
+  listLinkOptions,
+  listTeamMembers,
+  listTeamPositions,
+} from "@/lib/team/store";
 
 export const dynamic = "force-dynamic";
 
@@ -8,8 +13,12 @@ export async function GET(req: NextRequest) {
   const auth = await requireTeamSection(req, "view");
   if (auth instanceof NextResponse) return auth;
   try {
-    const [members, links] = await Promise.all([listTeamMembers(), listLinkOptions()]);
-    return NextResponse.json({ ok: true, members, ...links });
+    const [members, links, positions] = await Promise.all([
+      listTeamMembers(),
+      listLinkOptions(),
+      listTeamPositions({ includeInactive: true }),
+    ]);
+    return NextResponse.json({ ok: true, members, positions, ...links });
   } catch (err) {
     console.error("[api/admin/team/members] GET error:", err);
     return NextResponse.json(

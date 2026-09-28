@@ -287,7 +287,7 @@ export default function AdminHome() {
           <CardHeader
             emoji="👥"
             title="Команда"
-            subtitle="Люди салону, ролі та схеми нарахування ЗП"
+            subtitle="Люди салону, посади та схеми нарахування ЗП"
           />
           <CardBody>
             <ul style={{ margin: 0, paddingLeft: 18, color: 'rgba(0,0,0,0.75)' }}>

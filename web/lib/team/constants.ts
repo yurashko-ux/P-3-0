@@ -1,5 +1,15 @@
 // Спільні константи довідника Команда (без Prisma — можна імпортувати в клієнт).
 
+/** Стартові коди посад (насіннєві записи TeamPosition). */
+export const TEAM_POSITION_SEED = [
+  { code: "master", name: "Майстер", order: 10 },
+  { code: "assistant", name: "Асистент", order: 20 },
+  { code: "admin", name: "Адміністратор", order: 30 },
+  { code: "direct", name: "Direct", order: 40 },
+  { code: "other", name: "Інше", order: 50 },
+] as const;
+
+/** @deprecated використовуйте довідник TeamPosition; лишається для імпорту Altegio → code */
 export const TEAM_SALON_ROLES = ["master", "assistant", "admin", "direct", "other"] as const;
 export type TeamSalonRole = (typeof TEAM_SALON_ROLES)[number];
 
@@ -36,3 +46,13 @@ export const TYPICAL_SCHEMES: Array<{ title: string; kind: TeamPayKind; params: 
   { title: "20% від продажу волосся", kind: "pct_hair", params: { pctHairSales: 20 } },
   { title: "Оклад + % послуг", kind: "mix", params: { fixedUah: 5000, pctServices: 30 } },
 ];
+
+/** Сьогоднішній день Europe/Kyiv у форматі YYYY-MM-DD. */
+export function getTodayKyivYmd(now = new Date()): string {
+  return new Intl.DateTimeFormat("en-CA", {
+    timeZone: "Europe/Kyiv",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  }).format(now);
+}

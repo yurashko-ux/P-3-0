@@ -240,7 +240,7 @@ export function EditUserModal({ user, functions, onClose, onSaved }: Props) {
             />
           </div>
           <div>
-            <label className="block text-sm font-medium mb-1">Функція</label>
+            <label className="block text-sm font-medium mb-1">Роль</label>
             <select
               value={functionId}
               onChange={(e) => setFunctionId(e.target.value)}

@@ -27,6 +27,12 @@ export type PayAccrualResult = {
   breakdown: string;
 };
 
+export type MultiPayAccrualResult = {
+  amountUah: number;
+  breakdown: string;
+  parts: PayAccrualResult[];
+};
+
 function num(params: Record<string, unknown> | null | undefined, key: string): number {
   const v = params?.[key];
   if (typeof v === "number" && Number.isFinite(v)) return v;
@@ -119,6 +125,27 @@ export function calculatePayAccrual(scheme: PaySchemeLike, bases: PayPeriodBases
       console.warn(`[team/pay-scheme-calc] Невідомий kind=${scheme.kind}`);
       return { amountUah: 0, breakdown: `невідомий тип ${scheme.kind}` };
   }
+}
+
+/**
+ * Нарахування за кількома схемами (І + І): сума окремих розрахунків.
+ * Для майбутнього автонарахування за період — без перерахунку минулого.
+ */
+export function calculatePayAccrualForSchemes(
+  schemes: PaySchemeLike[],
+  bases: PayPeriodBases,
+): MultiPayAccrualResult {
+  if (!schemes.length) {
+    return { amountUah: 0, breakdown: "немає схем", parts: [] };
+  }
+  const parts = schemes.map((scheme) => calculatePayAccrual(scheme, bases));
+  const amountUah = parts.reduce((sum, part) => sum + part.amountUah, 0);
+  const breakdown = parts.map((part) => part.breakdown).join(" + ");
+  return {
+    amountUah: Math.round(amountUah * 100) / 100,
+    breakdown,
+    parts,
+  };
 }
 
 /** Прибраємо застарілий pctHair зі збережених params (не чіпаємо pctHairSales). */

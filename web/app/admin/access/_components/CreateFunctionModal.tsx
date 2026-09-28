@@ -52,7 +52,7 @@ export function CreateFunctionModal({ onClose, onCreated }: Props) {
         className="bg-white rounded-lg shadow-xl max-w-lg w-full mx-4 p-6 max-h-[90vh] overflow-y-auto"
         onClick={(e) => e.stopPropagation()}
       >
-        <h3 className="text-lg font-bold mb-4">Створити функцію (посаду)</h3>
+        <h3 className="text-lg font-bold mb-4">Створити роль</h3>
         {error && (
           <div className="mb-4 p-3 bg-red-50 border border-red-200 rounded text-red-700 text-sm">
             {error}
@@ -60,7 +60,7 @@ export function CreateFunctionModal({ onClose, onCreated }: Props) {
         )}
         <form onSubmit={handleSubmit} className="space-y-4">
           <div>
-            <label className="block text-sm font-medium mb-1">Назва посади</label>
+            <label className="block text-sm font-medium mb-1">Назва ролі</label>
             <input
               type="text"
               value={name}
@@ -113,7 +113,7 @@ export function CreateFunctionModal({ onClose, onCreated }: Props) {
           </div>
           <div className="flex gap-2 pt-4">
             <button type="submit" className="btn btn-primary" disabled={loading}>
-              {loading ? "Створення…" : "Створити функцію"}
+              {loading ? "Створення…" : "Створити роль"}
             </button>
             <button type="button" className="btn btn-ghost" onClick={onClose}>
               Скасувати
