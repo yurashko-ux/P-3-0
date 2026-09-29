@@ -25,7 +25,7 @@ export function formatDailyReportTelegram(data: DailyOpsReportData): string {
   return [
     `<b>📊 Щоденний звіт · ${formatKyivDateLabel(data.kyivDay)}</b>`,
     "────────────────",
-    `👤 Ліди Агенція 1: <b>${data.newLeadsAgency1Count}</b>`,
+    `👤 Ліди Агенція 1♥: <b>${data.newLeadsAgency1Count}</b>`,
     `👤 Ліди Агенція 2*: <b>${data.newLeadsAgency2Count}</b>`,
     `👤 Ліди Organic: <b>${data.newLeadsOrganicCount}</b>`,
     `Записалось на консультацію: <b>${data.leadsRecordsCount}</b>`,
