@@ -31,6 +31,21 @@ export function LeadAgencyStar({ children }: { children: ReactNode }) {
   );
 }
 
+/** Маленьке серце зверху справа на хмаринці (Агенція 1, leadAgency = agency_2). */
+export function LeadAgencyHeart({ children }: { children: ReactNode }) {
+  return (
+    <span className="relative inline-flex">
+      {children}
+      <span
+        className="pointer-events-none absolute -right-1 -top-1 text-[11px] leading-none text-rose-500"
+        aria-hidden
+      >
+        ♥
+      </span>
+    </span>
+  );
+}
+
 export function StateIcon({ state, size = 36 }: { state: string | null; size?: number }) {
   const s = iconStyle(size);
 

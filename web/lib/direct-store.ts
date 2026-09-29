@@ -3,7 +3,7 @@
 
 import { Prisma } from '@prisma/client';
 import { prisma } from './prisma';
-import type { CallbackReminderHistoryEntry, DirectClient, DirectStatus } from './direct-types';
+import { isDirectLeadAgency, type CallbackReminderHistoryEntry, type DirectClient, type DirectStatus } from './direct-types';
 import { kyivYmdFromDateTimeInput } from './direct-kyiv-today';
 import { hasNormalInstagramUsername, isTechnicalDirectInstagramUsername, preferInstagramUsername } from './altegio/client-utils';
 import {
@@ -90,10 +90,9 @@ export function prismaClientToDirectClient(dbClient: any): DirectClient {
     state: (dbClient.state as 'client' | 'consultation' | 'consultation-booked' | 'consultation-no-show' | 'consultation-rescheduled' | 'hair-extension' | 'other-services' | 'all-good' | 'too-expensive' | 'message') || undefined,
     firstContactDate: dbClient.firstContactDate.toISOString(),
     includeInNewLeadsKpi: (dbClient as any).includeInNewLeadsKpi !== false,
-    leadAgency:
-      (dbClient as any).leadAgency === 'agency_1' || (dbClient as any).leadAgency === 'agency_2'
-        ? (dbClient as any).leadAgency
-        : undefined,
+    leadAgency: isDirectLeadAgency((dbClient as any).leadAgency)
+      ? (dbClient as any).leadAgency
+      : undefined,
     starredLeadCheckUah:
       typeof (dbClient as any).starredLeadCheckUah === 'number'
         ? (dbClient as any).starredLeadCheckUah
@@ -258,9 +257,7 @@ function directClientToPrisma(client: DirectClient) {
     consultationListComment: client.consultationListComment ?? null,
     consultationListOutcomeOverride: client.consultationListOutcomeOverride ?? null,
     ...(client.includeInNewLeadsKpi !== undefined ? { includeInNewLeadsKpi: client.includeInNewLeadsKpi } : {}),
-    ...(client.leadAgency === 'agency_1' || client.leadAgency === 'agency_2'
-      ? { leadAgency: client.leadAgency }
-      : {}),
+    ...(isDirectLeadAgency(client.leadAgency) ? { leadAgency: client.leadAgency } : {}),
     ...(typeof client.starredLeadCheckUah === 'number'
       ? { starredLeadCheckUah: Math.round(client.starredLeadCheckUah) }
       : {}),

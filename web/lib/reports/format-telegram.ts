@@ -27,6 +27,7 @@ export function formatDailyReportTelegram(data: DailyOpsReportData): string {
     "────────────────",
     `👤 Ліди Агенція 1: <b>${data.newLeadsAgency1Count}</b>`,
     `👤 Ліди Агенція 2*: <b>${data.newLeadsAgency2Count}</b>`,
+    `👤 Ліди Organic: <b>${data.newLeadsOrganicCount}</b>`,
     `Записалось на консультацію: <b>${data.leadsRecordsCount}</b>`,
     `Прийшло на консультацію: <b>${data.consultationRealized}</b>`,
     `Нові клієнти: <b>${data.newClientsCount}</b>`,

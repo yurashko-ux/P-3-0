@@ -15,7 +15,7 @@ import {
 import { getChatBadgeStyle } from "./ChatBadgeIcon";
 import { CommunicationChannelPicker } from "./CommunicationChannelPicker";
 import { ConfirmedCheckIcon } from "./CheckIcon";
-import { LeadAgencyStar, StateIcon } from "./StateIcon";
+import { LeadAgencyHeart, LeadAgencyStar, StateIcon } from "./StateIcon";
 import { DirectStatusCell } from "./DirectStatusCell";
 import { BinotelCallTypeIcon } from "./BinotelCallTypeIcon";
 import { PlayRecordingButton } from "./PlayRecordingButton";
@@ -51,6 +51,18 @@ import { CallbackReminderCell } from "./CallbackReminderCell";
 
 /** Стабільний fallback, щоб не створювати новий [] на кожен рендер при відсутності lastActivityKeys */
 const EMPTY_ACTIVITY_KEYS: readonly string[] = [];
+
+function leadAgencyCloudTitle(titleBase: string, leadAgency: DirectClient["leadAgency"]): string {
+  if (leadAgency === "agency_1") return `${titleBase} · Агенція 2`;
+  if (leadAgency === "agency_2") return `${titleBase} · Агенція 1`;
+  return titleBase;
+}
+
+function wrapLeadAgencyCloud(icon: ReactNode, leadAgency: DirectClient["leadAgency"]): ReactNode {
+  if (leadAgency === "agency_1") return <LeadAgencyStar>{icon}</LeadAgencyStar>;
+  if (leadAgency === "agency_2") return <LeadAgencyHeart>{icon}</LeadAgencyHeart>;
+  return icon;
+}
 
 export type DirectClientTableRowProps = {
   client: DirectClient;
@@ -1207,30 +1219,28 @@ return (
           const firstStart = new Date(firstKyivStr + 'T00:00:00.000Z').getTime();
           const daysSinceFirst = Math.floor((todayStart - firstStart) / 86400000);
           if (daysSinceFirst === 0) {
-            const starredLead = client.leadAgency === 'agency_1';
             const titleBase = stateDateLead !== '-' ? `Новий лід. Дата встановлення: ${stateDateLead}` : "Новий лід (перший контакт сьогодні). Натисніть для історії станів";
-            const title = starredLead ? `${titleBase} · Агенція 2` : titleBase;
+            const title = leadAgencyCloudTitle(titleBase, client.leadAgency);
             const icon = <StateIcon state="new-lead" size={28} />;
             return (
               <div className="flex flex-col items-start gap-0.5">
                 <span className="inline-flex items-center justify-center">
                   <button type="button" className="hover:opacity-70 transition-opacity p-0" title={title} onClick={() => setStateHistoryClient(client)}>
-                    {starredLead ? <LeadAgencyStar>{icon}</LeadAgencyStar> : icon}
+                    {wrapLeadAgencyCloud(icon, client.leadAgency)}
                   </button>
                 </span>
                 {stateDateLead !== '-' && <span className="text-[10px] leading-none opacity-60">{stateDateLead}</span>}
               </div>
             );
           }
-          const starredLead = client.leadAgency === 'agency_1';
           const titleBase = stateDateLead !== '-' ? `Повідомлення / Лід. Дата встановлення: ${stateDateLead}` : "Повідомлення / Лід (перший контакт раніше). Натисніть для історії станів";
-          const title = starredLead ? `${titleBase} · Агенція 2` : titleBase;
+          const title = leadAgencyCloudTitle(titleBase, client.leadAgency);
           const icon = <StateIcon state="message" size={28} />;
           return (
             <div className="flex flex-col items-start gap-0.5">
               <span className="inline-flex items-center justify-center">
                 <button type="button" className="hover:opacity-70 transition-opacity p-0" title={title} onClick={() => setStateHistoryClient(client)}>
-                  {starredLead ? <LeadAgencyStar>{icon}</LeadAgencyStar> : icon}
+                  {wrapLeadAgencyCloud(icon, client.leadAgency)}
                 </button>
               </span>
               {stateDateLead !== '-' && <span className="text-[10px] leading-none opacity-60">{stateDateLead}</span>}

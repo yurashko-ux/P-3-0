@@ -17,16 +17,18 @@ import {
   getActiveBaseDailyMetrics,
   getBinotelIncomingMissedOnKyivDay,
 } from "@/lib/reports/daily-ops-extras";
-import type { DirectClient } from "@/lib/direct-types";
+import type { DirectClient, DirectLeadAgency } from "@/lib/direct-types";
 import { countLeadsStatsRecordsOnKyivDay } from "@/lib/direct-leads-stats-filters";
 
 export type DailyOpsReportData = {
   kyivDay: string;
   newLeadsCount: number;
-  /** Нові ліди без зірочки (agency_2 або без мітки). */
+  /** Нові ліди з серцем (agency_2, Агенція 1). */
   newLeadsAgency1Count: number;
-  /** Нові ліди зі зірочкою (agency_1). */
+  /** Нові ліди зі зірочкою (agency_1, Агенція 2). */
   newLeadsAgency2Count: number;
+  /** Нові ліди без знака агенції. Решта офіційного newLeadsCount після двох агенцій. */
+  newLeadsOrganicCount: number;
   /** Колонка «Записів» у таблиці «Ліди» (F4 за день). */
   leadsRecordsCount: number;
   consultationCreated: number;
@@ -101,21 +103,29 @@ export async function buildDailyOpsReport(options?: {
   ]);
 
   const newLeadsCount = today.newLeadsCount ?? 0;
-  let starredNewLeads = 0;
-  for (const client of clients) {
-    if (client.leadAgency !== "agency_1") continue;
-    if (!clientCountsTowardNewLeadsKpi(client)) continue;
-    if (toKyivDay(client.firstContactDate) !== kyivDay) continue;
-    starredNewLeads += 1;
-  }
-  const newLeadsAgency2Count = Math.min(starredNewLeads, newLeadsCount);
-  const newLeadsAgency1Count = Math.max(0, newLeadsCount - newLeadsAgency2Count);
+  const countAgency = (agency: DirectLeadAgency) => {
+    let n = 0;
+    for (const client of clients) {
+      if (client.leadAgency !== agency) continue;
+      if (!clientCountsTowardNewLeadsKpi(client)) continue;
+      if (toKyivDay(client.firstContactDate) !== kyivDay) continue;
+      n += 1;
+    }
+    return n;
+  };
+  const newLeadsAgency2Count = Math.min(countAgency("agency_1"), newLeadsCount);
+  const newLeadsAgency1Count = Math.min(
+    countAgency("agency_2"),
+    Math.max(0, newLeadsCount - newLeadsAgency2Count),
+  );
+  const newLeadsOrganicCount = Math.max(0, newLeadsCount - newLeadsAgency2Count - newLeadsAgency1Count);
 
   return {
     kyivDay,
     newLeadsCount,
     newLeadsAgency1Count,
     newLeadsAgency2Count,
+    newLeadsOrganicCount,
     leadsRecordsCount: countLeadsStatsRecordsOnKyivDay(clients as DirectClient[], kyivDay),
     consultationCreated: today.consultationCreated ?? 0,
     consultationRealized: today.consultationRealized ?? 0,

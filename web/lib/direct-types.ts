@@ -13,6 +13,13 @@ export type CallbackReminderHistoryEntry = {
   note: string | null;
 };
 
+/** agency_1 = зірочка (Агенція 2), agency_2 = серце (Агенція 1), organic = без знака. */
+export type DirectLeadAgency = 'agency_1' | 'agency_2' | 'organic';
+
+export function isDirectLeadAgency(value: unknown): value is DirectLeadAgency {
+  return value === 'agency_1' || value === 'agency_2' || value === 'organic';
+}
+
 export type DirectClient = {
   id: string; // UUID або timestamp-based ID
   instagramUsername: string; // Нікнейм в Instagram
@@ -36,8 +43,8 @@ export type DirectClient = {
   firstContactDate: string; // ISO date - дата першого контакту
   /** false = не в KPI «нові ліди» (Binotel, імпорт/масові синки) */
   includeInNewLeadsKpi?: boolean;
-  /** ManyChat: agency_1 = у першому повідомленні є *, agency_2 = немає. Порожнє = стара картка без мітки. */
-  leadAgency?: 'agency_1' | 'agency_2';
+  /** ManyChat: agency_1 = *, agency_2 = 💙, organic = без знака. Порожнє = стара картка без мітки. */
+  leadAgency?: DirectLeadAgency;
   /** Сума платного запису в момент першої додатної суми. Лише ліди зі зірочкою. */
   starredLeadCheckUah?: number;
   /** YYYY-MM-DD Kyiv дня цього запису. */

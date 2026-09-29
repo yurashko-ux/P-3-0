@@ -46,7 +46,7 @@ model DirectClient {
   firstContactDate                          DateTime // Дата першого контакту
   /// false = не в KPI «нові ліди» (Binotel, імпорт з Altegio/KeyCRM, масові синки)
   includeInNewLeadsKpi                      Boolean   @default(true)
-  /// ManyChat: agency_1 = повідомлення містить *, agency_2 = без *. У UI зірочка на хмаринці = agency_1.
+  /// ManyChat: agency_1 = *, agency_2 = 💙, organic = без знака агенції. У UI зірочка = agency_1, серце = agency_2.
   leadAgency                                String?
   /// Сума платного запису (грн) у момент, коли вона вперше стала додатною. Лише для agency_1.
   starredLeadCheckUah                       Int?

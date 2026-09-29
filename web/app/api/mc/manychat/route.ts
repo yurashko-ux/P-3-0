@@ -379,16 +379,17 @@ function isLikelyOutgoingManychatMessage(payload: unknown): boolean {
   return flags.some((x) => x === true || x === 'true' || x === 1);
 }
 
-function normalizeLeadAgencyToken(value: unknown): 'agency_1' | 'agency_2' | null {
+function normalizeLeadAgencyToken(value: unknown): 'agency_1' | 'agency_2' | 'organic' | null {
   if (typeof value !== 'string') return null;
   const v = value.trim().toLowerCase().replace(/[\s-]+/g, '_');
   if (v === 'agency_1' || v === 'agency1') return 'agency_1';
   if (v === 'agency_2' || v === 'agency2') return 'agency_2';
+  if (v === 'organic') return 'organic';
   return null;
 }
 
 /** Поле agency з тіла вебхука ManyChat (корінь, subscriber, custom_fields). */
-function extractLeadAgencyFromPayload(payload: unknown, depth = 0): 'agency_1' | 'agency_2' | null {
+function extractLeadAgencyFromPayload(payload: unknown, depth = 0): 'agency_1' | 'agency_2' | 'organic' | null {
   if (depth > 4 || payload == null) return null;
   if (typeof payload === 'string') {
     const trimmed = payload.trim();
@@ -426,17 +427,26 @@ function extractLeadAgencyFromPayload(payload: unknown, depth = 0): 'agency_1' |
   return null;
 }
 
+/** Синє серце в назві кнопки Агенції 1. Той самий знак, що в умові ManyChat. */
+const AGENCY_HEART = '💙';
+
 /**
- * agency_1 = у тексті є * (Агенція 2 в UI). agency_2 = без *.
+ * agency_1 = у тексті є * (Агенція 2). agency_2 = є 💙 (Агенція 1).
+ * Поле agency з ManyChat головне, зокрема Organic. Без знака — organic, не друга агенція.
  * Вихідні повідомлення салону не мітять картку.
  */
-function resolveIncomingLeadAgency(payload: unknown, messageText: string | null | undefined): 'agency_1' | 'agency_2' | null {
+function resolveIncomingLeadAgency(
+  payload: unknown,
+  messageText: string | null | undefined,
+): 'agency_1' | 'agency_2' | 'organic' | null {
   if (isLikelyOutgoingManychatMessage(payload)) return null;
   const fromField = extractLeadAgencyFromPayload(payload);
   if (fromField) return fromField;
   const text = typeof messageText === 'string' ? messageText.trim() : '';
   if (!text) return null;
-  return text.includes('*') ? 'agency_1' : 'agency_2';
+  if (text.includes('*')) return 'agency_1';
+  if (text.includes(AGENCY_HEART)) return 'agency_2';
+  return 'organic';
 }
 
 function normalisePayload(payload: unknown, rawText?: string | null): LatestMessage {
