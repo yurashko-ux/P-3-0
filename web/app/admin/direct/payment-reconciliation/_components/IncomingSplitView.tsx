@@ -3493,7 +3493,7 @@ export function IncomingSplitView({
       const res = await fetch("/api/admin/bank/payment-reconciliation/incoming", {
         cache: "no-store",
         credentials: "include",
-        signal: AbortSignal.timeout(90_000),
+        signal: AbortSignal.timeout(180_000),
       });
       const payload = (await res.json()) as IncomingPreview;
       if (!res.ok || !payload.ok) {
@@ -3512,7 +3512,7 @@ export function IncomingSplitView({
       } else {
         setError(loadError instanceof Error ? loadError.message : "Помилка завантаження");
       }
-      setData(null);
+      // Не затираємо попередні дані — інакше лічильники стають 0 і здається, що платежі зникли.
     } finally {
       setLoading(false);
     }

@@ -363,7 +363,8 @@ export async function persistMissingIncomingMatchesForBankItems(
     attemptedDays,
   });
 
-  const preview = await buildIncomingReconciliationPreview();
+  // Live лише нещодавні дні + БД — повний live з червня в webhook/cron дає timeout.
+  const preview = await buildIncomingReconciliationPreview({ liveLookbackDays: 45 });
   let matchedBankItems = 0;
   for (const kyivDay of attemptedDays) {
     const result = await reconcileIncomingPaymentsForKyivDay(kyivDay, {

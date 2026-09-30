@@ -1429,17 +1429,33 @@ function mergeIncomeRows(liveRows: NormalizedAltegioIncomeRow[], dbRows: Normali
   return Array.from(byId.values());
 }
 
-export async function buildIncomingReconciliationPreview(): Promise<IncomingReconciliationPreview> {
+export async function buildIncomingReconciliationPreview(options?: {
+  /**
+   * Скільки останніх днів тягнути live з Altegio.
+   * Решта періоду — з БД (швидкий GET «Оновити»).
+   * Без опції / 0 — live на весь період (повільніше, для «Звести»).
+   */
+  liveLookbackDays?: number;
+}): Promise<IncomingReconciliationPreview> {
   const dateFrom = INCOMING_RANGE_START_DATE;
   const dateTo = getKyivTodayYmd();
+  const liveLookbackDays =
+    typeof options?.liveLookbackDays === "number" && options.liveLookbackDays > 0
+      ? Math.floor(options.liveLookbackDays)
+      : null;
+  const liveFrom = liveLookbackDays
+    ? addDaysYmd(dateTo, -(liveLookbackDays - 1))
+    : dateFrom;
+  const effectiveLiveFrom = liveFrom < dateFrom ? dateFrom : liveFrom;
 
   const [liveFetch, dbRows, bankAgg] = await Promise.all([
-    fetchLiveIncomeRowsRange(dateFrom, dateTo),
+    fetchLiveIncomeRowsRange(effectiveLiveFrom, dateTo),
     fetchDbIncomeRowsRange(dateFrom, dateTo),
     fetchBankIncomingByDayRange(dateFrom, dateTo),
   ]);
   const liveRows = liveFetch.rows;
-  const baseRows = liveRows.length > 0 ? liveRows : mergeIncomeRows(liveRows, dbRows);
+  // Завжди мержимо з БД: частковий live більше не «з’їдає» історію і не дає порожній екран.
+  const baseRows = mergeIncomeRows(liveRows, dbRows);
 
   const incomeRows = enrichPlaceholderAccounts(
     excludeTransferIncomeRows(
@@ -1459,6 +1475,8 @@ export async function buildIncomingReconciliationPreview(): Promise<IncomingReco
   console.log("[incoming-altegio-aggregate] Preview", {
     dateFrom,
     dateTo,
+    liveFrom: effectiveLiveFrom,
+    liveLookbackDays,
     liveRows: liveRows.length,
     dbRows: dbRows.length,
     mergedRows: incomeRows.length,

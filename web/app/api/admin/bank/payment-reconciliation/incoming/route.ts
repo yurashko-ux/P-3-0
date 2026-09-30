@@ -20,7 +20,9 @@ export async function GET(req: NextRequest) {
   if (auth instanceof NextResponse) return auth;
 
   try {
-    const preview = await buildIncomingReconciliationPreview();
+    const startedAt = Date.now();
+    // Live лише останні 21 день + повна історія з БД — інакше GET б’є клієнтський timeout 90s.
+    const preview = await buildIncomingReconciliationPreview({ liveLookbackDays: 21 });
 
     const [incomingMatches, depositMatches] = await Promise.all([
       (prisma as any).bankAltegioIncomingMatch.findMany({
@@ -49,6 +51,13 @@ export async function GET(req: NextRequest) {
     ];
     const depositAltegioIds = depositMatches.map((match) => match.altegioTransactionId);
 
+    console.log("[payment-reconciliation/incoming][GET] Готово", {
+      ms: Date.now() - startedAt,
+      altegioPayers: preview.altegio.byPayer.length,
+      bankDays: preview.bank.byDay.length,
+      matches: incomingMatches.length,
+    });
+
     return NextResponse.json({
       ok: true,
       ...preview,
@@ -76,7 +85,8 @@ export async function POST(req: NextRequest) {
 
   try {
     const startedAt = Date.now();
-    const preview = await buildIncomingReconciliationPreview();
+    // Для зведення теж достатньо live за ~45 днів + БД (відкриті дні майже завжди свіжі).
+    const preview = await buildIncomingReconciliationPreview({ liveLookbackDays: 45 });
     console.log("[payment-reconciliation/incoming][POST] Preview готовий", {
       ms: Date.now() - startedAt,
       altegioPayers: preview.altegio.byPayer.length,
