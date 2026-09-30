@@ -16,13 +16,13 @@ const STATE_EMOJI: Record<string, string> = {
   sold: "🔥",
 };
 
-/** Знак * зверху справа на хмаринці ліда зі зірочкою (Агенція 2, leadAgency = agency_1). */
+/** Знак * у правому верхньому куті хмаринки (Агенція 2, leadAgency = agency_1). Без від’ємного top — щоб не розтягувати рядок таблиці. */
 export function LeadAgencyStar({ children }: { children: ReactNode }) {
   return (
-    <span className="relative inline-flex">
+    <span className="relative inline-flex shrink-0 leading-none">
       {children}
       <span
-        className="pointer-events-none absolute -right-1 -top-1 text-[13px] font-bold leading-none text-amber-600"
+        className="pointer-events-none absolute right-0 top-[2px] text-[12px] font-bold leading-none text-amber-600"
         aria-hidden
       >
         *
@@ -31,13 +31,13 @@ export function LeadAgencyStar({ children }: { children: ReactNode }) {
   );
 }
 
-/** Маленьке серце зверху справа на хмаринці (Агенція 1, leadAgency = agency_2). */
+/** Маленьке серце у правому верхньому куті хмаринки (Агенція 1, leadAgency = agency_2). Без від’ємного top — щоб не розтягувати рядок таблиці. */
 export function LeadAgencyHeart({ children }: { children: ReactNode }) {
   return (
-    <span className="relative inline-flex">
+    <span className="relative inline-flex shrink-0 leading-none">
       {children}
       <span
-        className="pointer-events-none absolute -right-1 -top-1 text-[11px] leading-none text-rose-500"
+        className="pointer-events-none absolute right-0 top-[3px] text-[10px] leading-none text-rose-500"
         aria-hidden
       >
         ♥

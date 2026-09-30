@@ -427,13 +427,16 @@ function extractLeadAgencyFromPayload(payload: unknown, depth = 0): 'agency_1' |
   return null;
 }
 
-/** Синє серце в назві кнопки Агенції 1. Той самий знак, що в умові ManyChat. */
+/** Синє серце в назві кнопки / умови ManyChat для Агенції 1 (UI ♥, leadAgency = agency_2). */
 const AGENCY_HEART = '💙';
 
 /**
- * agency_1 = у тексті є * (Агенція 2). agency_2 = є 💙 (Агенція 1).
- * Поле agency з ManyChat головне, зокрема Organic. Без знака — organic, не друга агенція.
- * Вихідні повідомлення салону не мітять картку.
+ * Мітка агенції з ManyChat (лише вхідні повідомлення):
+ * - поле agency / leadAgency / lead_agency має пріоритет (agency_1 | agency_2 | organic);
+ * - інакше за текстом: * → agency_1 (Агенція 2, UI *), 💙 → agency_2 (Агенція 1, UI ♥);
+ * - без знака → organic (без значка на хмаринці).
+ * На оновленні картки leadAgency пишеться лише якщо ще порожній (липка мітка).
+ * До 30.09 будь-який текст без * помилково ставав agency_2 — тому старі ліди можуть мати ♥ без 💙 у ManyChat.
  */
 function resolveIncomingLeadAgency(
   payload: unknown,
@@ -441,11 +444,21 @@ function resolveIncomingLeadAgency(
 ): 'agency_1' | 'agency_2' | 'organic' | null {
   if (isLikelyOutgoingManychatMessage(payload)) return null;
   const fromField = extractLeadAgencyFromPayload(payload);
-  if (fromField) return fromField;
+  if (fromField) {
+    console.log('[manychat] leadAgency з поля agency:', fromField);
+    return fromField;
+  }
   const text = typeof messageText === 'string' ? messageText.trim() : '';
   if (!text) return null;
-  if (text.includes('*')) return 'agency_1';
-  if (text.includes(AGENCY_HEART)) return 'agency_2';
+  if (text.includes('*')) {
+    console.log('[manychat] leadAgency з тексту (* → agency_1 / Агенція 2)');
+    return 'agency_1';
+  }
+  if (text.includes(AGENCY_HEART)) {
+    console.log('[manychat] leadAgency з тексту (💙 → agency_2 / Агенція 1)');
+    return 'agency_2';
+  }
+  console.log('[manychat] leadAgency з тексту (без знака → organic)');
   return 'organic';
 }
 
@@ -1142,6 +1155,13 @@ export async function POST(req: NextRequest) {
           updatedAt: new Date().toISOString(),
           ...(!client.leadAgency && incomingLeadAgency ? { leadAgency: incomingLeadAgency } : {}),
         };
+        if (leadAgencyBefore && incomingLeadAgency && leadAgencyBefore !== incomingLeadAgency) {
+          console.log('[manychat] leadAgency липкий — не перезаписуємо', {
+            id: client.id,
+            stored: leadAgencyBefore,
+            incoming: incomingLeadAgency,
+          });
+        }
         console.log('[manychat] Updated existing Direct client:', {
           id: client.id,
           username: client.instagramUsername,
