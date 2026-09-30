@@ -2283,6 +2283,16 @@ function buildOpenHiddenFromLinkedDays(
   };
 }
 
+function addHiddenAltegioPayer(
+  hidden: Map<string, Set<string>>,
+  dayKey: string,
+  payerKey: string,
+): void {
+  if (!payerKey) return;
+  if (!hidden.has(dayKey)) hidden.set(dayKey, new Set());
+  hidden.get(dayKey)!.add(payerKey);
+}
+
 /** Доповнити приховування з БД, якщо запис зведення є, але linked-рядок не збудувався. */
 function supplementOpenHiddenFromDbMatches(
   hidden: {
@@ -2295,7 +2305,9 @@ function supplementOpenHiddenFromDbMatches(
   bankDays: BankDayFlat[],
 ): void {
   const bankRowById = new Map<string, BankDayItemRow>();
+  const bankDayByKyivDay = new Map<string, BankDayFlat>();
   for (const day of bankDays) {
+    bankDayByKyivDay.set(day.kyivDay, day);
     for (const row of day.rows) bankRowById.set(row.id, row);
   }
 
@@ -2305,6 +2317,56 @@ function supplementOpenHiddenFromDbMatches(
     if (!bankRow) continue;
 
     hidden.bankIds.add(match.bankStatementItemId);
+
+    const isAcquiring = bankRowIsAcquiringIncomingMatch(bankRow, match.matchType);
+    if (isAcquiring) {
+      // Еквайринг-batch: ховаємо всіх клієнтів Altegio з оцінки (не лише 1:1 за ПІБ банку).
+      // Інакше банк зникає з «Не зведених», а Анна/Катерина лишаються з Δ −22 610.
+      const bankDay = bankDayByKyivDay.get(match.kyivDay);
+      const altegioAccount = findAltegioAccountOnDay(
+        altegioDays,
+        match.kyivDay,
+        bankRow.accountTitle,
+        bankRow.altegioAccountTitle,
+      );
+      if (!bankDay || !altegioAccount) continue;
+
+      const evaluation = evaluateIncomingAccountReconcile(altegioAccount, bankDay);
+      const inBatch = evaluation.acquiringBatchMatches.some((batch) =>
+        batch.bankRowIds.includes(bankRow.id),
+      );
+      const individual = evaluation.acquiringClientMatches.find(
+        (item) => item.bankRowId === bankRow.id,
+      );
+
+      if (inBatch) {
+        for (const client of evaluation.acquiringMatchedClients) {
+          addHiddenAltegioPayer(
+            hidden.altegioPayersByDay,
+            match.kyivDay,
+            reconciledAltegioClientKey(client),
+          );
+        }
+        continue;
+      }
+
+      if (individual) {
+        const client = altegioAccount.clients.find(
+          (item) =>
+            normalizePersonName(item.payerName) === normalizePersonName(individual.payerName)
+            && item.totalKop === individual.amountKop,
+        );
+        if (client) {
+          addHiddenAltegioPayer(
+            hidden.altegioPayersByDay,
+            match.kyivDay,
+            reconciledAltegioClientKey(client),
+          );
+        }
+        continue;
+      }
+      continue;
+    }
 
     const found = findAltegioClientForLinkedFromBank(
       altegioDays,
@@ -2321,10 +2383,11 @@ function supplementOpenHiddenFromDbMatches(
       continue;
     }
 
-    const dayKey = found.dayKyivDay;
-    const payerKey = reconciledAltegioClientKey(found.client);
-    if (!hidden.altegioPayersByDay.has(dayKey)) hidden.altegioPayersByDay.set(dayKey, new Set());
-    hidden.altegioPayersByDay.get(dayKey)!.add(payerKey);
+    addHiddenAltegioPayer(
+      hidden.altegioPayersByDay,
+      found.dayKyivDay,
+      reconciledAltegioClientKey(found.client),
+    );
   }
 }
 
