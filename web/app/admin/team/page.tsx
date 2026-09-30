@@ -1,46 +1,59 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { TEAM_SALON_ROLES } from "@/lib/team/constants";
+import { getTodayKyivYmd } from "@/lib/team/constants";
 
-type SchemeBrief = { id: string; title: string; kind: string };
+type SchemeBrief = { id: string; title: string; kind: string; isActive?: boolean };
 type MasterOpt = { id: string; name: string; role: string; altegioStaffId: number | null; linked: boolean };
 type UserOpt = { id: string; name: string; login: string; linked: boolean };
+
+type PositionRow = {
+  id: string;
+  name: string;
+  code: string | null;
+  isActive: boolean;
+  order: number;
+  ruleVersions?: Array<{
+    id: string;
+    effectiveFrom: string;
+    schemes: Array<{ scheme: SchemeBrief }>;
+  }>;
+  _count?: { members: number };
+};
 
 type MemberRow = {
   id: string;
   name: string;
   salonRole: string;
+  positionId: string | null;
+  position: { id: string; name: string; code: string | null } | null;
   altegioStaffId: number | null;
   directMasterId: string | null;
   appUserId: string | null;
-  paySchemeId: string | null;
   phone: string | null;
   instagramUsername: string | null;
   telegramUsername: string | null;
   telegramChatId: string | number | null;
   isActive: boolean;
   order: number;
-  payScheme: SchemeBrief | null;
+  paySchemeIds?: string[];
+  currentPayAssignment?: {
+    id: string;
+    effectiveFrom: string;
+    schemes: SchemeBrief[];
+  } | null;
   directMaster: { id: string; name: string; role: string; altegioStaffId: number | null } | null;
   appUser: { id: string; name: string; login: string } | null;
 };
 
-const ROLE_LABEL: Record<string, string> = {
-  master: "Майстер",
-  assistant: "Асистент",
-  admin: "Адміністратор",
-  direct: "Direct",
-  other: "Інше",
-};
-
 const emptyForm = {
   name: "",
-  salonRole: "other",
+  positionId: "",
   altegioStaffId: "",
   directMasterId: "",
   appUserId: "",
-  paySchemeId: "",
+  paySchemeIds: [] as string[],
+  effectiveFrom: getTodayKyivYmd(),
   phone: "",
   instagramUsername: "",
   telegramUsername: "",
@@ -70,11 +83,17 @@ function TeamIgAvatar({ username }: { username: string }) {
   );
 }
 
+function schemeTitles(schemes: SchemeBrief[] | undefined): string {
+  if (!schemes?.length) return "—";
+  return schemes.map((s) => s.title).join(" + ");
+}
+
 export default function TeamPeoplePage() {
   const [members, setMembers] = useState<MemberRow[]>([]);
   const [masters, setMasters] = useState<MasterOpt[]>([]);
   const [users, setUsers] = useState<UserOpt[]>([]);
   const [schemes, setSchemes] = useState<SchemeBrief[]>([]);
+  const [positions, setPositions] = useState<PositionRow[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState(false);
@@ -97,7 +116,8 @@ export default function TeamPeoplePage() {
       setMembers(memJson.members || []);
       setMasters(memJson.masters || []);
       setUsers(memJson.users || []);
-      setSchemes((schJson.schemes || []).filter((s: SchemeBrief & { isActive?: boolean }) => s.isActive !== false));
+      setPositions(memJson.positions || []);
+      setSchemes((schJson.schemes || []).filter((s: SchemeBrief) => s.isActive !== false));
     } catch (err) {
       setError(err instanceof Error ? err.message : "Помилка");
     } finally {
@@ -117,21 +137,42 @@ export default function TeamPeoplePage() {
     return users.filter((u) => !u.linked || u.id === form.appUserId);
   }, [users, form.appUserId]);
 
+  const activePositions = useMemo(
+    () => positions.filter((p) => p.isActive || p.id === form.positionId),
+    [positions, form.positionId],
+  );
+
+  function schemesForPosition(positionId: string): string[] {
+    const pos = positions.find((p) => p.id === positionId);
+    const version = pos?.ruleVersions?.[0];
+    return version?.schemes?.map((link) => link.scheme.id) ?? [];
+  }
+
   function openCreate() {
     setEditingId(null);
-    setForm(emptyForm);
+    const defaultPositionId = positions.find((p) => p.code === "other")?.id || positions[0]?.id || "";
+    setForm({
+      ...emptyForm,
+      positionId: defaultPositionId,
+      paySchemeIds: defaultPositionId ? schemesForPosition(defaultPositionId) : [],
+      effectiveFrom: getTodayKyivYmd(),
+    });
     setShowForm(true);
   }
 
   function openEdit(m: MemberRow) {
     setEditingId(m.id);
+    const positionId = m.positionId || m.position?.id || "";
     setForm({
       name: m.name,
-      salonRole: m.salonRole,
+      positionId,
       altegioStaffId: m.altegioStaffId != null ? String(m.altegioStaffId) : "",
       directMasterId: m.directMasterId || "",
       appUserId: m.appUserId || "",
-      paySchemeId: m.paySchemeId || "",
+      paySchemeIds: m.paySchemeIds?.length
+        ? [...m.paySchemeIds]
+        : m.currentPayAssignment?.schemes?.map((s) => s.id) || schemesForPosition(positionId),
+      effectiveFrom: getTodayKyivYmd(),
       phone: m.phone || "",
       instagramUsername: m.instagramUsername || "",
       telegramUsername: m.telegramUsername || "",
@@ -142,17 +183,36 @@ export default function TeamPeoplePage() {
     setShowForm(true);
   }
 
+  function toggleScheme(schemeId: string) {
+    setForm((f) => {
+      const has = f.paySchemeIds.includes(schemeId);
+      return {
+        ...f,
+        paySchemeIds: has ? f.paySchemeIds.filter((id) => id !== schemeId) : [...f.paySchemeIds, schemeId],
+      };
+    });
+  }
+
+  function onPositionChange(positionId: string) {
+    setForm((f) => ({
+      ...f,
+      positionId,
+      paySchemeIds: schemesForPosition(positionId),
+    }));
+  }
+
   async function saveForm() {
     setBusy(true);
     setError(null);
     try {
       const payload = {
         name: form.name,
-        salonRole: form.salonRole,
+        positionId: form.positionId || null,
         altegioStaffId: form.altegioStaffId ? Number(form.altegioStaffId) : null,
         directMasterId: form.directMasterId || null,
         appUserId: form.appUserId || null,
-        paySchemeId: form.paySchemeId || null,
+        paySchemeIds: form.paySchemeIds,
+        effectiveFrom: form.effectiveFrom || getTodayKyivYmd(),
         phone: form.phone || null,
         instagramUsername: form.instagramUsername || null,
         telegramUsername: form.telegramUsername || null,
@@ -218,10 +278,12 @@ export default function TeamPeoplePage() {
   return (
     <main className="p-3 space-y-3 max-w-6xl">
       <p className="text-xs text-gray-600 bg-white border rounded-xl px-3 py-2">
-        Довідник людей салону: роль, схема нарахування ЗП, звʼязок з Altegio / Direct / логіном. Автонарахування за
-        період — пізніше.
+        Люди салону: <strong>посада</strong> і <strong>схеми ЗП</strong> (кілька схем сумуються). Зміна схем у
+        формі людини оновлює правило цієї посади для <strong>всіх</strong> з тією ж посадою. «Діє з» — історія, минуле
+        не перераховуємо. Довідник посад — вкладка <strong>Посади</strong>. Автонарахування — пізніше.
       </p>
       {error && <div className="alert alert-error text-sm py-2">{error}</div>}
+
       <div className="flex flex-wrap gap-2">
         <button className="btn btn-sm btn-primary" disabled={busy || loading} onClick={() => void importAltegio()}>
           Підтягнути з Altegio
@@ -268,39 +330,59 @@ export default function TeamPeoplePage() {
                 />
               </label>
 
-              <label className="form-control">
+              <label className="form-control col-span-2">
                 <span className="label py-0 min-h-0">
-                  <span className="label-text text-[11px] text-gray-500">Роль</span>
+                  <span className="label-text text-[11px] text-gray-500">Посада</span>
                 </span>
                 <select
                   className="select select-bordered select-sm h-8 min-h-8"
-                  value={form.salonRole}
-                  onChange={(e) => setForm((f) => ({ ...f, salonRole: e.target.value }))}
+                  value={form.positionId}
+                  onChange={(e) => onPositionChange(e.target.value)}
                 >
-                  {TEAM_SALON_ROLES.map((r) => (
-                    <option key={r} value={r}>
-                      {ROLE_LABEL[r] || r}
+                  <option value="">—</option>
+                  {activePositions.map((p) => (
+                    <option key={p.id} value={p.id}>
+                      {p.name}
                     </option>
                   ))}
                 </select>
               </label>
 
-              <label className="form-control">
+              <div className="form-control col-span-2">
                 <span className="label py-0 min-h-0">
-                  <span className="label-text text-[11px] text-gray-500">Схема ЗП</span>
+                  <span className="label-text text-[11px] text-gray-500">
+                    Схеми ЗП (сумуються; зміна = правило посади для всіх)
+                  </span>
                 </span>
-                <select
-                  className="select select-bordered select-sm h-8 min-h-8"
-                  value={form.paySchemeId}
-                  onChange={(e) => setForm((f) => ({ ...f, paySchemeId: e.target.value }))}
-                >
-                  <option value="">—</option>
-                  {schemes.map((s) => (
-                    <option key={s.id} value={s.id}>
-                      {s.title}
-                    </option>
-                  ))}
-                </select>
+                <div className="border rounded-lg p-2 max-h-36 overflow-y-auto space-y-1">
+                  {schemes.length === 0 ? (
+                    <p className="text-[11px] text-gray-500">Немає активних схем — додайте в «Схеми ЗП».</p>
+                  ) : (
+                    schemes.map((s) => (
+                      <label key={s.id} className="flex items-center gap-2 text-xs cursor-pointer">
+                        <input
+                          type="checkbox"
+                          className="checkbox checkbox-xs"
+                          checked={form.paySchemeIds.includes(s.id)}
+                          onChange={() => toggleScheme(s.id)}
+                        />
+                        <span>{s.title}</span>
+                      </label>
+                    ))
+                  )}
+                </div>
+              </div>
+
+              <label className="form-control col-span-2">
+                <span className="label py-0 min-h-0">
+                  <span className="label-text text-[11px] text-gray-500">Діє з (дата правила)</span>
+                </span>
+                <input
+                  type="date"
+                  className="input input-bordered input-sm h-8"
+                  value={form.effectiveFrom}
+                  onChange={(e) => setForm((f) => ({ ...f, effectiveFrom: e.target.value }))}
+                />
               </label>
 
               <label className="form-control">
@@ -424,9 +506,9 @@ export default function TeamPeoplePage() {
           <thead>
             <tr>
               <th>Імʼя</th>
-              <th>Роль</th>
+              <th>Посада</th>
               <th>Instagram</th>
-              <th>Схема ЗП</th>
+              <th>Схеми ЗП</th>
               <th>Altegio</th>
               <th>Direct</th>
               <th>Логін</th>
@@ -437,7 +519,7 @@ export default function TeamPeoplePage() {
             {members.map((m) => (
               <tr key={m.id} className={!m.isActive ? "opacity-50" : undefined}>
                 <td>{m.name}</td>
-                <td>{ROLE_LABEL[m.salonRole] || m.salonRole}</td>
+                <td>{m.position?.name || "—"}</td>
                 <td>
                   {m.instagramUsername ? (
                     <div className="flex items-center gap-2 min-w-[8rem]">
@@ -450,7 +532,9 @@ export default function TeamPeoplePage() {
                     <span className="text-gray-400">—</span>
                   )}
                 </td>
-                <td>{m.payScheme?.title || "—"}</td>
+                <td className="text-xs max-w-[14rem]">
+                  {schemeTitles(m.currentPayAssignment?.schemes)}
+                </td>
                 <td className="tabular-nums text-gray-500">{m.altegioStaffId ?? "—"}</td>
                 <td>{m.directMaster?.name || "—"}</td>
                 <td>{m.appUser ? `${m.appUser.login}` : "—"}</td>

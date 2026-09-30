@@ -1,5 +1,5 @@
 // web/app/admin/access/page.tsx
-// Розділ Доступи: користувачі та функції (посади)
+// Розділ Доступи: користувачі та ролі (permissions)
 
 "use client";
 
@@ -122,7 +122,7 @@ export default function AccessPage() {
                     <thead className="bg-gray-50">
                       <tr>
                         <th className="px-4 py-2 text-left font-medium">Імʼя</th>
-                        <th className="px-4 py-2 text-left font-medium">Функція</th>
+                        <th className="px-4 py-2 text-left font-medium">Роль</th>
                         <th className="px-4 py-2 text-left font-medium">Логін</th>
                         <th className="px-4 py-2 text-left font-medium">Телефон</th>
                         <th className="px-4 py-2 text-left font-medium">Telegram</th>
@@ -248,18 +248,18 @@ export default function AccessPage() {
 
             <section>
               <div className="flex items-center justify-between mb-3">
-                <h2 className="text-lg font-semibold">Функції (посади)</h2>
+                <h2 className="text-lg font-semibold">Ролі</h2>
                 <button
                   type="button"
                   className="btn btn-sm btn-primary"
                   onClick={() => setFunctionModalOpen(true)}
                 >
-                  + Створити функцію
+                  + Створити роль
                 </button>
               </div>
               <div className="bg-white rounded-lg border border-gray-200 overflow-hidden">
                 {functions.length === 0 ? (
-                  <p className="p-4 text-gray-500 text-sm">Немає функцій</p>
+                  <p className="p-4 text-gray-500 text-sm">Немає ролей</p>
                 ) : (
                   <ul className="divide-y divide-gray-100">
                     {functions.map((f) => (

@@ -1,5 +1,5 @@
 // web/app/admin/access/functions/[id]/page.tsx
-// Редагування функції (посади) та її permissions
+// Редагування ролі (Доступи) та її permissions
 
 "use client";
 
@@ -91,7 +91,7 @@ export default function EditFunctionPage() {
 
         <div className="bg-white rounded-lg border border-gray-200 p-6 space-y-6">
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">Назва посади</label>
+            <label className="block text-sm font-medium text-gray-700 mb-1">Назва ролі</label>
             <input
               type="text"
               value={name}

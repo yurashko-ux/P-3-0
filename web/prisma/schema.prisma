@@ -826,7 +826,7 @@ model AppUser {
   telegramUsername  String? // Telegram username (без @)
   telegramUserId    BigInt? // Telegram user ID (для Login Widget)
   telegramChatId BigInt? // Telegram chat ID (якщо прив'язано)
-  functionId     String? // Посада/функція
+  functionId     String? // Роль (Доступи) — модель Function
   isActive       Boolean  @default(true)
   createdAt      DateTime @default(now())
   updatedAt      DateTime @updatedAt
@@ -845,10 +845,10 @@ model AppUser {
   @@map("app_users")
 }
 
-// Посада/функція (з permissions JSON)
+// Роль доступу (з permissions JSON). Продуктова назва: «Роль» (не плутати з посадою в Команді).
 model Function {
   id          String   @id @default(uuid())
-  name        String // Назва посади (Адміністратор, Дірект-менеджер, тощо)
+  name        String // Назва ролі (Адміністратор, Дірект-менеджер, тощо)
   permissions Json // { finances, salesColumn, instCreateStatuses, ... }
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
@@ -858,7 +858,7 @@ model Function {
   @@map("functions")
 }
 
-/// ===== Команда (етап 2б): люди салону і схеми нарахування ЗП =====
+/// ===== Команда (етап 2б): люди салону, посади і схеми нарахування ЗП =====
 
 /// Довідник схем нарахування ЗП (не виплата).
 model TeamPayScheme {
@@ -873,23 +873,109 @@ model TeamPayScheme {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  members TeamMember[]
+  positionRuleLinks TeamPositionPayRuleScheme[]
+  memberAssignmentLinks TeamMemberPayAssignmentScheme[]
 
   @@index([kind])
   @@index([isActive])
   @@map("team_pay_schemes")
 }
 
+/// Посада салону (довідник у Команді / Люди). Не плутати з Роллю в Доступах.
+model TeamPosition {
+  id        String   @id @default(uuid())
+  name      String
+  /// Опційний код для імпорту (master | assistant | admin | direct | other)
+  code      String?  @unique
+  isActive  Boolean  @default(true)
+  order     Int      @default(0)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  members      TeamMember[]
+  ruleVersions TeamPositionPayRuleVersion[]
+
+  @@index([isActive])
+  @@index([order])
+  @@map("team_positions")
+}
+
+/// Версія правила нарахування ЗП для посади (набір схем з дати effectiveFrom).
+model TeamPositionPayRuleVersion {
+  id            String   @id @default(uuid())
+  positionId    String
+  /// YYYY-MM-DD (Europe/Kyiv) — з якої дати діє цей набір схем
+  effectiveFrom String
+  createdAt     DateTime @default(now())
+  note          String?
+
+  position          TeamPosition                 @relation(fields: [positionId], references: [id], onDelete: Cascade)
+  schemes           TeamPositionPayRuleScheme[]
+  memberAssignments TeamMemberPayAssignment[]
+
+  @@index([positionId])
+  @@index([positionId, effectiveFrom])
+  @@map("team_position_pay_rule_versions")
+}
+
+model TeamPositionPayRuleScheme {
+  id        String @id @default(uuid())
+  versionId String
+  schemeId  String
+  order     Int    @default(0)
+
+  version TeamPositionPayRuleVersion @relation(fields: [versionId], references: [id], onDelete: Cascade)
+  scheme  TeamPayScheme              @relation(fields: [schemeId], references: [id], onDelete: Restrict)
+
+  @@unique([versionId, schemeId])
+  @@index([schemeId])
+  @@map("team_position_pay_rule_schemes")
+}
+
+/// Історія призначень схем людині (копія правила посади на дату).
+model TeamMemberPayAssignment {
+  id            String   @id @default(uuid())
+  memberId      String
+  positionId    String?
+  ruleVersionId String?
+  /// YYYY-MM-DD (Europe/Kyiv)
+  effectiveFrom String
+  createdAt     DateTime @default(now())
+
+  member      TeamMember                   @relation(fields: [memberId], references: [id], onDelete: Cascade)
+  ruleVersion TeamPositionPayRuleVersion?  @relation(fields: [ruleVersionId], references: [id], onDelete: SetNull)
+  schemes     TeamMemberPayAssignmentScheme[]
+
+  @@index([memberId])
+  @@index([memberId, effectiveFrom])
+  @@index([ruleVersionId])
+  @@map("team_member_pay_assignments")
+}
+
+model TeamMemberPayAssignmentScheme {
+  id           String @id @default(uuid())
+  assignmentId String
+  schemeId     String
+  order        Int    @default(0)
+
+  assignment TeamMemberPayAssignment @relation(fields: [assignmentId], references: [id], onDelete: Cascade)
+  scheme     TeamPayScheme           @relation(fields: [schemeId], references: [id], onDelete: Restrict)
+
+  @@unique([assignmentId, schemeId])
+  @@index([schemeId])
+  @@map("team_member_pay_assignment_schemes")
+}
+
 /// Картка людини салону (не замінює DirectMaster / AppUser).
 model TeamMember {
   id               String   @id @default(uuid())
   name             String
-  /// master | assistant | admin | direct | other
+  positionId       String?
+  /// Застаріле поле: master|assistant|… — мігруємо в positionId, лишаємо для сумісності імпорту
   salonRole        String   @default("other")
   altegioStaffId   Int?     @unique
   directMasterId   String?  @unique
   appUserId        String?  @unique
-  paySchemeId      String?
   phone            String?
   /// Нік Instagram без @ (напр. halyna.maksymiv) — для аватарки через ManyChat/KV
   instagramUsername String?
@@ -900,14 +986,15 @@ model TeamMember {
   createdAt        DateTime @default(now())
   updatedAt        DateTime @updatedAt
 
-  directMaster DirectMaster?  @relation(fields: [directMasterId], references: [id], onDelete: SetNull)
-  appUser      AppUser?       @relation(fields: [appUserId], references: [id], onDelete: SetNull)
-  payScheme    TeamPayScheme? @relation(fields: [paySchemeId], references: [id], onDelete: SetNull)
+  position     TeamPosition? @relation(fields: [positionId], references: [id], onDelete: SetNull)
+  directMaster DirectMaster? @relation(fields: [directMasterId], references: [id], onDelete: SetNull)
+  appUser      AppUser?      @relation(fields: [appUserId], references: [id], onDelete: SetNull)
+  payAssignments TeamMemberPayAssignment[]
 
   @@index([salonRole])
+  @@index([positionId])
   @@index([isActive])
   @@index([order])
-  @@index([paySchemeId])
   @@index([instagramUsername])
   @@map("team_members")
 }
