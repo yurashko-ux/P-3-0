@@ -11,6 +11,7 @@ import {
   bankRowIsNamedIncomingMatch,
   evaluateIncomingAccountReconcile,
   evaluateOpenReconcilePairs,
+  findClientSubsetMatchingAmount,
   incomingReconcileAmountsMatch,
   isCashReconcileAccount,
   isIncomingRowAcquiringForReconcile,
@@ -1473,6 +1474,14 @@ function buildIncomingLinkedVisibleDays(
         (item) => item.bankRowId === bankRow.id,
       );
 
+      // Named-клієнтів дня не включаємо в еквайринг-batch (інакше сума ≠ банку й рядок зникає з «Зведені»).
+      const namedClientKeys = new Set(
+        evaluation.namedMatches.map((item) => `${item.payerName}|${item.amountKop}`),
+      );
+      const acquiringClientsOnly = evaluation.acquiringMatchedClients.filter(
+        (client) => !namedClientKeys.has(`${client.payerName}|${client.totalKop}`),
+      );
+
       let matchedClients = individualAcquiringMatch
         ? altegioAccount.clients.filter(
             (item) =>
@@ -1480,15 +1489,18 @@ function buildIncomingLinkedVisibleDays(
               && item.totalKop === individualAcquiringMatch.amountKop,
           )
         : acquiringMatched
-        ? evaluation.acquiringMatchedClients
-          .map((matchedClient) =>
-            altegioAccount!.clients.find(
-              (item) =>
-                normalizePersonName(item.payerName) === normalizePersonName(matchedClient.payerName)
-                && item.totalKop === matchedClient.totalKop,
-            ),
+        ? pickAcquiringClientsForBankAmount(
+            acquiringClientsOnly
+              .map((matchedClient) =>
+                altegioAccount!.clients.find(
+                  (item) =>
+                    normalizePersonName(item.payerName) === normalizePersonName(matchedClient.payerName)
+                    && item.totalKop === matchedClient.totalKop,
+                ),
+              )
+              .filter((client): client is AltegioDayAccountClient => client != null),
+            bankFullAmountKop(bankRow),
           )
-          .filter((client): client is AltegioDayAccountClient => client != null)
         : altegioAccount.clients.filter((client) => {
             return BigInt(client.totalKop) === bankFullAmountKop(bankRow);
           });
@@ -1763,6 +1775,12 @@ function buildEvaluatedLinkedVisibleDays(
       const individualAcquiringMatch = evaluation.acquiringClientMatches.find(
         (item) => item.bankRowId === bankRow.id,
       );
+      const namedClientKeys = new Set(
+        evaluation.namedMatches.map((item) => `${item.payerName}|${item.amountKop}`),
+      );
+      const acquiringClientsOnly = evaluation.acquiringMatchedClients.filter(
+        (client) => !namedClientKeys.has(`${client.payerName}|${client.totalKop}`),
+      );
 
       let matchedClients = individualAcquiringMatch
         ? altegioAccount.clients.filter(
@@ -1771,15 +1789,18 @@ function buildEvaluatedLinkedVisibleDays(
               && item.totalKop === individualAcquiringMatch.amountKop,
           )
         : acquiringMatched
-        ? evaluation.acquiringMatchedClients
-          .map((matchedClient) =>
-            altegioAccount.clients.find(
-              (item) =>
-                normalizePersonName(item.payerName) === normalizePersonName(matchedClient.payerName)
-                && item.totalKop === matchedClient.totalKop,
-            ),
+        ? pickAcquiringClientsForBankAmount(
+            acquiringClientsOnly
+              .map((matchedClient) =>
+                altegioAccount.clients.find(
+                  (item) =>
+                    normalizePersonName(item.payerName) === normalizePersonName(matchedClient.payerName)
+                    && item.totalKop === matchedClient.totalKop,
+                ),
+              )
+              .filter((client): client is AltegioDayAccountClient => client != null),
+            bankFullAmountKop(bankRow),
           )
-          .filter((client): client is AltegioDayAccountClient => client != null)
         : altegioAccount.clients.filter((client) => {
             return BigInt(client.totalKop) === bankFullAmountKop(bankRow);
           });
@@ -2054,6 +2075,22 @@ function buildAcquiringAltegioAccountRow(
     latestOperationTime: clients[0]?.latestOperationTime || altegioAccount.latestOperationTime,
     clients,
   };
+}
+
+/** Клієнти еквайринг-batch під конкретну суму банку (без named, з підмножиною при зайвих). */
+function pickAcquiringClientsForBankAmount(
+  pool: AltegioDayAccountClient[],
+  bankAmountKop: bigint,
+): AltegioDayAccountClient[] {
+  if (pool.length === 0) return [];
+  const poolTotal = pool.reduce((sum, client) => sum + BigInt(client.totalKop), 0n);
+  if (incomingReconcileAmountsMatch(poolTotal, bankAmountKop)) return pool;
+  // Локальний UI-тип клієнта структурно сумісний з matching (payerName/totalKop).
+  const subset = findClientSubsetMatchingAmount(
+    pool as unknown as Parameters<typeof findClientSubsetMatchingAmount>[0],
+    bankAmountKop,
+  );
+  return (subset ?? []) as AltegioDayAccountClient[];
 }
 
 function linkedRowAmountsMatch(altegioAccount: AltegioDayAccountRow, bankRows: BankDayItemRow[]): boolean {
@@ -2342,7 +2379,18 @@ function supplementOpenHiddenFromDbMatches(
       );
 
       if (inBatch) {
-        for (const client of evaluation.acquiringMatchedClients) {
+        // Не ховаємо named-клієнтів цього дня — лише тих, хто реально в еквайринг-batch.
+        const namedClientKeys = new Set(
+          evaluation.namedMatches.map((item) => `${item.payerName}|${item.amountKop}`),
+        );
+        const acquiringOnly = evaluation.acquiringMatchedClients.filter(
+          (client) => !namedClientKeys.has(`${client.payerName}|${client.totalKop}`),
+        );
+        const batchClients = pickAcquiringClientsForBankAmount(
+          acquiringOnly as unknown as AltegioDayAccountClient[],
+          bankFullAmountKop(bankRow),
+        );
+        for (const client of batchClients) {
           addHiddenAltegioPayer(
             hidden.altegioPayersByDay,
             dayKey,

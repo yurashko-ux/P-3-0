@@ -571,13 +571,12 @@ function mergeIncomingAccountEvaluations(
     namedMatches.push(...part.namedMatches);
     acquiringBatchMatches.push(...part.acquiringBatchMatches);
     acquiringClientMatches.push(...part.acquiringClientMatches);
+    // Лише клієнти еквайрингу — НЕ додавати named сюди.
+    // Інакше «Зведені» збирає Проник+Анна+Вєтрова vs банк еквайрингу й пропускає рядок.
     for (const client of part.acquiringMatchedClients) {
       acquiringMatchedClientKeys.add(clientKeyForReconcile(client));
     }
     for (const match of part.acquiringClientMatches) {
-      acquiringMatchedClientKeys.add(`${match.payerName}|${match.amountKop}`);
-    }
-    for (const match of part.namedMatches) {
       acquiringMatchedClientKeys.add(`${match.payerName}|${match.amountKop}`);
     }
   }
@@ -587,6 +586,10 @@ function mergeIncomingAccountEvaluations(
   const namedMatchedKeys = new Set(
     namedMatches.map((match) => `${match.payerName}|${match.amountKop}`),
   );
+  // Named прибираємо з acquiringMatchedClients (на випадок забруднення з part).
+  for (const key of namedMatchedKeys) {
+    acquiringMatchedClientKeys.delete(key);
+  }
   const stillUnmatchedAltegioClients = altegioAccount.clients.filter(
     (client) =>
       !acquiringMatchedClientKeys.has(clientKeyForReconcile(client))
