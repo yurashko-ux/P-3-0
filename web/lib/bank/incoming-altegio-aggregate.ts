@@ -801,9 +801,12 @@ function detectDirectionFromRaw(raw: RawRecord, amountKop: bigint): string {
   }
 
   if (type.includes("transfer") || type.includes("переміщ") || type.includes("перевод")) return "transfer";
-  if (hasExpenseId(raw) || type.includes("expense") || typeId === "2") return "out";
   if (type.includes("income") || typeId === "1") return "in";
+  // document_id = оплата клієнта/продаж; expense_id у Altegio часто лише «стаття», не витрата.
   if (hasDocumentId(raw)) return "in";
+  if (type.includes("expense") || typeId === "2") return "out";
+  // Витрата без документа: expense_id без document_id.
+  if (hasExpenseId(raw) && !hasDocumentId(raw)) return "out";
   if (amountKop < 0n) return "out";
   if (amountKop > 0n) return "in";
   return "unknown";
@@ -880,7 +883,8 @@ function getAccountInfoFromRaw(raw: RawRecord): { accountTitle: string; accountI
 
 function isAltegioPaymentRow(raw: RawRecord, amountKop: bigint): boolean {
   if (amountKop <= 0n) return false;
-  if (hasExpenseId(raw)) return false;
+  // Не відсікати expense_id: у вхідних оплатах клієнтів це стаття прибутку.
+  // Інакше skipDocumentEnrichment дає liveRows=0 (усі транзакції зникають).
   if (isEncashmentRaw(raw)) return false;
 
   const direction = detectDirectionFromRaw(raw, amountKop);
@@ -1192,21 +1196,33 @@ async function fetchTransactionsApiIncomeRows(dateFrom: string, dateTo: string):
       });
       const raw = await altegioFetch<unknown>(`/transactions/${companyId}?${params.toString()}`);
       const pageRows = unwrapArray(raw);
+      let normalized = 0;
       for (const pageRow of pageRows) {
-        upsertIncomeRow(byId, normalizeIncomeRow(pageRow, "live"));
+        const row = normalizeIncomeRow(pageRow, "live");
+        if (row) normalized += 1;
+        upsertIncomeRow(byId, row);
       }
+      console.log("[incoming-altegio-aggregate] GET /transactions page", {
+        dateFrom,
+        dateTo,
+        page,
+        rawRows: pageRows.length,
+        normalized,
+        kept: byId.size,
+      });
       if (pageRows.length < count) break;
     }
 
-    const rows = Array.from(byId.values()).filter(isVerifiedClientPaymentRow);
-    if (rows.length > 0) {
-      console.log("[incoming-altegio-aggregate] GET /transactions", {
-        dateFrom,
-        dateTo,
-        dateFormat: "YYYYMMDD",
-        rows: rows.length,
-      });
-    }
+    const allNormalized = Array.from(byId.values());
+    const rows = allNormalized.filter(isVerifiedClientPaymentRow);
+    console.log("[incoming-altegio-aggregate] GET /transactions", {
+      dateFrom,
+      dateTo,
+      dateFormat: "YYYYMMDD",
+      normalized: allNormalized.length,
+      verified: rows.length,
+      droppedUnverified: allNormalized.length - rows.length,
+    });
     return rows;
   } catch (error) {
     console.warn("[incoming-altegio-aggregate] GET /transactions не вдався", {
@@ -1292,14 +1308,15 @@ async function fetchLiveIncomeRowsRange(
 
 async function fetchDbIncomeRowsRange(dateFrom: string, dateTo: string): Promise<NormalizedAltegioIncomeRow[]> {
   const companyId = resolveCompanyId();
+  // expense_id у Altegio ≠ витрата: оплати клієнтів часто мають статтю + document_id.
   const dbRows = await (prisma as any).altegioFinanceTransaction.findMany({
     where: {
       companyId,
       kyivDay: { gte: dateFrom, lte: dateTo },
       deletedInAltegio: false,
       amountKopiykas: { gt: 0 },
-      expenseId: null,
       direction: { notIn: ["out", "transfer"] },
+      OR: [{ expenseId: null }, { documentId: { not: null } }],
     },
     select: {
       altegioId: true,
