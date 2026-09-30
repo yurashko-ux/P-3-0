@@ -11,6 +11,7 @@ import {
   bankRowIsNamedIncomingMatch,
   evaluateIncomingAccountReconcile,
   evaluateOpenReconcilePairs,
+  incomingReconcileAmountsMatch,
   isCashReconcileAccount,
   isIncomingRowAcquiringForReconcile,
   normalizePersonName,
@@ -2058,7 +2059,7 @@ function buildAcquiringAltegioAccountRow(
 function linkedRowAmountsMatch(altegioAccount: AltegioDayAccountRow, bankRows: BankDayItemRow[]): boolean {
   const altegioTotal = BigInt(altegioAccount.totalKop);
   const bankFull = bankRows.reduce((sum, row) => sum + bankFullAmountKop(row), 0n);
-  return altegioTotal === bankFull;
+  return incomingReconcileAmountsMatch(altegioTotal, bankFull);
 }
 
 function buildDepositLinkedVisibleDays(

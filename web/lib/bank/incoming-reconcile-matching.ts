@@ -115,6 +115,19 @@ export function bankFullAmountKop(item: BankIncomingItem): bigint {
   return BigInt(item.amountKop || 0) + bankCommissionKop(item);
 }
 
+/**
+ * Порівняння сум для зведення вхідних.
+ * UI Δ округлює до гривень (Math.round(коп/100)), тож еквайринг
+ * «Загалом 65870.08» vs Altegio 65870 показує Δ=0, але Exact kop ≠.
+ * Зводимо, якщо рівні копійки АБО однакова округлена гривня (як на екрані).
+ */
+export function incomingReconcileAmountsMatch(aKop: bigint, bKop: bigint): boolean {
+  if (aKop === bKop) return true;
+  const aUah = Math.round(Number(aKop) / 100);
+  const bUah = Math.round(Number(bKop) / 100);
+  return Number.isFinite(aUah) && Number.isFinite(bUah) && aUah === bUah;
+}
+
 function sumBankRowsTotals(rows: BankDayItemRow[]): {
   totalKop: string;
   commissionTotalKop: string;
@@ -586,7 +599,7 @@ function evaluateIncomingForBankRows(
 
   if (universalRows.length > 0 && altegioRemainingKop > 0n) {
     const universalFullKop = bankRowsReconcileFullTotalKop(universalRows);
-    if (universalFullKop === altegioRemainingKop) {
+    if (incomingReconcileAmountsMatch(universalFullKop, altegioRemainingKop)) {
       matchedBankRows.push(...universalRows);
       for (const client of remainingClients) {
         acquiringMatchedClientKeys.add(clientKeyForReconcile(client));
@@ -610,8 +623,8 @@ function evaluateIncomingForBankRows(
     if (matchedIdsAfterBatch.has(bankRow.id)) continue;
 
     const bankAmountKop = bankFullAmountKop(bankRow);
-    const candidates = remainingForAmountMatch.filter(
-      (client) => BigInt(client.totalKop) === bankAmountKop,
+    const candidates = remainingForAmountMatch.filter((client) =>
+      incomingReconcileAmountsMatch(BigInt(client.totalKop), bankAmountKop),
     );
     if (candidates.length !== 1) continue;
 

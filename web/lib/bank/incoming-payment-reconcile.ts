@@ -11,6 +11,7 @@ import {
   evaluateOpenReconcilePairs,
   filterAltegioDaysNonCash,
   groupAltegioPayersByDay,
+  incomingReconcileAmountsMatch,
   isIncomingRowAcquiringForReconcile,
   regroupBankByDayWithAcquiringShift,
 } from "@/lib/bank/incoming-reconcile-matching";
@@ -196,7 +197,7 @@ export async function reconcileIncomingPaymentsForKyivDay(
       + batchAltegioMatchedKop;
     const bankMatchedKop = bankRowsReconcileFullTotalKop(rowsToSave);
 
-    if (altegioMatchedKop !== bankMatchedKop) {
+    if (!incomingReconcileAmountsMatch(altegioMatchedKop, bankMatchedKop)) {
       console.warn("[incoming-payment-reconcile] Суми Altegio і банку не збігаються — пропускаємо", {
         kyivDay,
         account: altegioAccount.accountTitle,
