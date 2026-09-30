@@ -8,8 +8,10 @@ import {
   bankRowsReconcileFullTotalKop,
   buildIncomingDayAlignment,
   evaluateIncomingAccountReconcile,
+  evaluateOpenReconcilePairs,
   filterAltegioDaysNonCash,
   groupAltegioPayersByDay,
+  incomingReconcileAmountsMatch,
   isIncomingRowAcquiringForReconcile,
   regroupBankByDayWithAcquiringShift,
 } from "@/lib/bank/incoming-reconcile-matching";
@@ -56,6 +58,10 @@ export type SyncIncomingPaymentsForPreviewResult = {
   skippedAlreadyMatched: number;
   dayResults: ReconcileIncomingDayResult[];
   errors: string[];
+  /** Скільки точних пар знайдено live-оцінкою перед записом у БД. */
+  exactPairsFound?: number;
+  /** Чи є серед них завдатки (для окремого deposit-sync). */
+  hasDepositPairs?: boolean;
 };
 
 function formatMoneyUah(kop: bigint): string {
@@ -191,7 +197,7 @@ export async function reconcileIncomingPaymentsForKyivDay(
       + batchAltegioMatchedKop;
     const bankMatchedKop = bankRowsReconcileFullTotalKop(rowsToSave);
 
-    if (altegioMatchedKop !== bankMatchedKop) {
+    if (!incomingReconcileAmountsMatch(altegioMatchedKop, bankMatchedKop)) {
       console.warn("[incoming-payment-reconcile] Суми Altegio і банку не збігаються — пропускаємо", {
         kyivDay,
         account: altegioAccount.accountTitle,
@@ -363,7 +369,11 @@ export async function persistMissingIncomingMatchesForBankItems(
     attemptedDays,
   });
 
-  const preview = await buildIncomingReconciliationPreview();
+  // Live лише нещодавні дні + БД, без documents/records (інакше webhook/cron тоне в 404).
+  const preview = await buildIncomingReconciliationPreview({
+    liveLookbackDays: 45,
+    skipDocumentEnrichment: true,
+  });
   let matchedBankItems = 0;
   for (const kyivDay of attemptedDays) {
     const result = await reconcileIncomingPaymentsForKyivDay(kyivDay, {
@@ -377,17 +387,159 @@ export async function persistMissingIncomingMatchesForBankItems(
 }
 
 /**
- * Автозведення вхідних за всі дні періоду preview (як deposit-sync при «Оновити»).
+ * Страховка для cron: підтягнути нещодавні вхідні з monobank і дописати зведення в БД,
+ * якщо webhook не встиг / не викликав persist.
  */
-export async function syncIncomingPaymentsForPreview(
+export async function persistMissingIncomingMatchesForRecentBankItems(options?: {
+  lookbackDays?: number;
+  limit?: number;
+}): Promise<{ attemptedDays: string[]; matchedBankItems: number; scannedItems: number }> {
+  const lookbackDays = Math.max(1, options?.lookbackDays ?? 3);
+  const limit = Math.max(1, Math.min(options?.limit ?? 80, 200));
+  const from = new Date(Date.now() - lookbackDays * 24 * 60 * 60 * 1000);
+
+  const rows = await prisma.bankStatementItem.findMany({
+    where: {
+      amount: { gt: 0n },
+      time: { gte: from },
+      account: { includeInOperationsTable: true },
+    },
+    orderBy: [{ time: "desc" }],
+    take: limit,
+    select: {
+      id: true,
+      time: true,
+      amount: true,
+      description: true,
+      comment: true,
+      counterName: true,
+    },
+  });
+
+  console.log("[incoming-payment-reconcile] Cron-страховка вхідних", {
+    lookbackDays,
+    scannedItems: rows.length,
+  });
+
+  const result = await persistMissingIncomingMatchesForBankItems(rows);
+  return { ...result, scannedItems: rows.length };
+}
+
+/**
+ * Кнопка «Звести»: лише вже знайдені точні пари з live-оцінки
+ * (іменовані + еквайринг-batch / 1:1 + завдатки), без перебору всіх відкритих днів.
+ */
+export async function syncExactOpenPairsFromPreview(
   preview: IncomingReconciliationPreview,
   options: { dryRun?: boolean; matchedBy?: string | null } = {},
 ): Promise<SyncIncomingPaymentsForPreviewResult> {
+  const pairs = evaluateOpenReconcilePairs(preview.altegio.byPayer, preview.bank.byDay);
+  const bankIds = pairs.map((pair) => pair.bankRowId);
+  const alreadyMatched = await loadExistingMatchedBankIds(bankIds);
+  const openPairs = pairs.filter((pair) => !alreadyMatched.has(pair.bankRowId));
+
+  const incomingDays = [
+    ...new Set(
+      openPairs
+        .filter((pair) => pair.kind === "named" || pair.kind === "acquiring")
+        .map((pair) => pair.kyivDay),
+    ),
+  ].sort();
+  const hasDepositPairs = openPairs.some((pair) => pair.kind === "deposit");
+
+  console.log("[incoming-payment-reconcile] Звести: лише точні пари", {
+    exactPairsFound: pairs.length,
+    openPairs: openPairs.length,
+    incomingDays: incomingDays.length,
+    hasDepositPairs,
+    alreadyMatched: alreadyMatched.size,
+    dryRun: options.dryRun === true,
+  });
+
+  if (incomingDays.length === 0) {
+    return {
+      days: 0,
+      matchedBankItems: 0,
+      skippedAlreadyMatched: alreadyMatched.size,
+      dayResults: [],
+      errors: [],
+      exactPairsFound: pairs.length,
+      hasDepositPairs,
+    };
+  }
+
+  const dayResults: ReconcileIncomingDayResult[] = [];
+  const errors: string[] = [];
+  let matchedBankItems = 0;
+  let skippedAlreadyMatched = alreadyMatched.size;
+
+  for (const kyivDay of incomingDays) {
+    try {
+      const result = await reconcileIncomingPaymentsForKyivDay(kyivDay, {
+        ...options,
+        preview,
+      });
+      dayResults.push(result);
+      matchedBankItems += result.matchedBankItems;
+      skippedAlreadyMatched += result.skippedAlreadyMatched;
+      errors.push(...result.errors);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      errors.push(`${kyivDay}: ${message}`);
+      console.error("[incoming-payment-reconcile] Помилка зведення точної пари за день", {
+        kyivDay,
+        error: message,
+      });
+    }
+  }
+
+  const summary: SyncIncomingPaymentsForPreviewResult = {
+    days: incomingDays.length,
+    matchedBankItems,
+    skippedAlreadyMatched,
+    dayResults,
+    errors,
+    exactPairsFound: pairs.length,
+    hasDepositPairs,
+  };
+  console.log("[incoming-payment-reconcile] Звести (точні пари) завершено", summary);
+  return summary;
+}
+
+/**
+ * Автозведення вхідних за дні періоду preview.
+ * За замовчуванням лише дні, де ще є незведені банківські рядки —
+ * інакше «Звести» ганяє всі ~100 днів з червня і б’є timeout.
+ */
+export async function syncIncomingPaymentsForPreview(
+  preview: IncomingReconciliationPreview,
+  options: {
+    dryRun?: boolean;
+    matchedBy?: string | null;
+    /** Якщо false — зводити всі дні (повільно). За замовчуванням true. */
+    onlyUnmatchedBankDays?: boolean;
+  } = {},
+): Promise<SyncIncomingPaymentsForPreviewResult> {
+  const onlyUnmatchedBankDays = options.onlyUnmatchedBankDays !== false;
   const altegioDays = filterAltegioDaysNonCash(groupAltegioPayersByDay(preview.altegio.byPayer));
   const bankDays = regroupBankByDayWithAcquiringShift(preview.bank.byDay);
+
+  const allBankIds = bankDays.flatMap((day) => day.rows.map((row) => row.id));
+  const alreadyMatched = onlyUnmatchedBankDays
+    ? await loadExistingMatchedBankIds(allBankIds)
+    : new Set<string>();
+
   const kyivDays = new Set<string>();
-  for (const day of altegioDays) kyivDays.add(day.kyivDay);
-  for (const day of bankDays) kyivDays.add(day.kyivDay);
+  if (onlyUnmatchedBankDays) {
+    for (const day of bankDays) {
+      const hasOpen = day.rows.some((row) => !alreadyMatched.has(row.id));
+      if (hasOpen) kyivDays.add(day.kyivDay);
+    }
+    // Дні лише з Altegio без відкритого банку зводити нічого — пропускаємо.
+  } else {
+    for (const day of altegioDays) kyivDays.add(day.kyivDay);
+    for (const day of bankDays) kyivDays.add(day.kyivDay);
+  }
 
   const sortedDays = [...kyivDays].sort();
   const dayResults: ReconcileIncomingDayResult[] = [];
@@ -399,6 +551,8 @@ export async function syncIncomingPaymentsForPreview(
     dateFrom: preview.dateFrom,
     dateTo: preview.dateTo,
     days: sortedDays.length,
+    onlyUnmatchedBankDays,
+    alreadyMatchedBank: alreadyMatched.size,
     dryRun: options.dryRun === true,
   });
 

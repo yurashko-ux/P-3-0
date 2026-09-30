@@ -8,6 +8,7 @@ import { reconcileBankAltegioPayments } from "@/lib/bank/altegio-payment-reconci
 import { processOutgoingBankPaymentsHoldFinalized } from "@/lib/bank/payment-reconciliation-telegram";
 import { importAltegioPaymentPurposes } from "@/lib/altegio/payment-purpose-import";
 import { processPendingIncomingAcquiringCommissions, processPendingOutgoingTerminalRkoFees } from "@/lib/bank/automatic-altegio-payments";
+import { persistMissingIncomingMatchesForRecentBankItems } from "@/lib/bank/incoming-payment-reconcile";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
@@ -51,6 +52,11 @@ export async function POST(req: NextRequest) {
       limit: 20,
       sendTelegram: true,
     });
+    // Вхідні Altegio↔банк: webhook тепер зводить одразу; cron — страховка, якщо webhook пропустив.
+    const incomingPersist = await persistMissingIncomingMatchesForRecentBankItems({
+      lookbackDays: 3,
+      limit: 80,
+    });
 
     return NextResponse.json({
       ok: true,
@@ -62,6 +68,7 @@ export async function POST(req: NextRequest) {
       reconcile,
       automaticAcquiring,
       automaticTerminal,
+      incomingPersist,
     });
   } catch (error) {
     console.error("[cron/sync-altegio-finance-transactions] Помилка:", error);

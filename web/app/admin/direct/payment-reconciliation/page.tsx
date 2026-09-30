@@ -424,7 +424,7 @@ export default function PaymentReconciliationPage() {
                   className="btn btn-outline btn-xs h-6 min-h-0 px-2 text-[10px]"
                   disabled={Boolean(incomingControls?.loading) || Boolean(incomingControls?.reconciling)}
                   onClick={() => incomingControls?.reconcile()}
-                  title="Ручний запуск автозведення вхідних (іменні + еквайринг)"
+                  title="Звести лише точні пари з live-оцінки (іменовані + еквайринг з Δ=0 + завдатки)"
                 >
                   {incomingControls?.reconciling ? "Зводжу..." : "Звести"}
                 </button>

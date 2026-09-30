@@ -15,6 +15,8 @@ export type NormalizedAltegioIncomeRow = {
   altegioId: number;
   documentId: number | null;
   recordId: number | null;
+  /** ID клієнта Altegio — для підстановки імені без documents/records. */
+  clientId: number | null;
   accountTitle: string;
   accountId: string | null;
   payerName: string;
@@ -257,6 +259,7 @@ function resolveAccountForAggregatedPayment(
     altegioId: 0,
     documentId,
     recordId: null,
+    clientId: null,
     accountTitle: UNRESOLVED_ACCOUNT_LABEL,
     accountId: null,
     payerName,
@@ -325,6 +328,7 @@ function normalizeDocumentVerifiedPayment(
     altegioId: payment.transactionId,
     documentId: payment.documentId,
     recordId: payment.recordId,
+    clientId: payment.clientId ?? null,
     accountTitle: payment.accountTitle || NO_ACCOUNT_LABEL,
     accountId: payment.accountId,
     payerName: payment.payerName || NO_PAYER_LABEL,
@@ -554,6 +558,217 @@ export function parseBankCommission(text: string): { kopiykas: bigint | null; ra
   return { kopiykas: BigInt(Math.round(amount * 100)), raw: match[0] };
 }
 
+function getClientIdFromRaw(raw: unknown): number | null {
+  const record = asRecord(raw);
+  if (!record) return null;
+  const client = asRecord(record.client) ?? asRecord(record.customer);
+  const visit = asRecord(record.visit);
+  const document = asRecord(record.document);
+  const appointment = asRecord(record.appointment);
+  const nestedRecord = asRecord(record.record);
+  return (
+    toInt(record.client_id)
+    ?? toInt(record.clientId)
+    ?? toInt(client?.id)
+    ?? toInt(client?.client_id)
+    ?? toInt(nestedRecord?.client_id)
+    ?? toInt(asRecord(nestedRecord?.client)?.id)
+    ?? toInt(visit?.client_id)
+    ?? toInt(asRecord(visit?.client)?.id)
+    ?? toInt(document?.client_id)
+    ?? toInt(asRecord(document?.client)?.id)
+    ?? toInt(appointment?.client_id)
+    ?? toInt(asRecord(appointment?.client)?.id)
+  );
+}
+
+function formatDirectClientName(row: { firstName: string | null; lastName: string | null; instagramUsername: string }): string | null {
+  const full = [row.lastName, row.firstName].filter(Boolean).join(" ").trim();
+  if (full) return full;
+  const nick = row.instagramUsername?.trim();
+  return nick || null;
+}
+
+async function fetchAltegioClientNamesByIds(clientIds: number[]): Promise<Map<number, string>> {
+  const result = new Map<number, string>();
+  if (clientIds.length === 0) return result;
+
+  const companyId = resolveCompanyId();
+  const batchSize = 50;
+  // Обмежуємо, щоб «Оновити»/«Звести» знову не тонули в Altegio.
+  const maxIds = 150;
+  const ids = clientIds.slice(0, maxIds);
+
+  for (let i = 0; i < ids.length; i += batchSize) {
+    const batch = ids.slice(i, i + batchSize);
+    try {
+      const response = await altegioFetch<unknown>(`/company/${companyId}/clients/search`, {
+        method: "POST",
+        body: JSON.stringify({
+          filters: [{ field: "id", operation: "in", value: batch }],
+          fields: ["id", "name", "display_name", "fullname", "lastname", "first_name", "last_name"],
+        }),
+      });
+      const pageRows = unwrapArray(response);
+      for (const raw of pageRows) {
+        const id = toInt(raw.id);
+        if (!id) continue;
+        const name =
+          cleanText(raw.name)
+          || cleanText(raw.display_name)
+          || [cleanText(raw.lastname ?? raw.last_name), cleanText(raw.firstname ?? raw.first_name)]
+            .filter(Boolean)
+            .join(" ")
+            .trim()
+          || null;
+        if (name) result.set(id, name);
+      }
+    } catch (error) {
+      console.warn("[incoming-altegio-aggregate] clients/search для імен не вдався", {
+        batchSize: batch.length,
+        error: error instanceof Error ? error.message : String(error),
+      });
+    }
+  }
+
+  return result;
+}
+
+/** Підставляє імена з Direct (+ легкий clients/search) — без documents/records. */
+async function enrichMissingPayersFromDirectClients(
+  rows: NormalizedAltegioIncomeRow[],
+): Promise<NormalizedAltegioIncomeRow[]> {
+  const missingIds = Array.from(
+    new Set(
+      rows
+        .filter((row) => row.payerName === NO_PAYER_LABEL && row.clientId != null)
+        .map((row) => row.clientId as number),
+    ),
+  );
+  if (missingIds.length === 0) return rows;
+
+  const clients = await (prisma as any).directClient.findMany({
+    where: { altegioClientId: { in: missingIds } },
+    select: { altegioClientId: true, firstName: true, lastName: true, instagramUsername: true },
+  });
+  const nameByAltegioId = new Map<number, string>();
+  for (const client of clients) {
+    if (client.altegioClientId == null) continue;
+    const name = formatDirectClientName(client);
+    if (name) nameByAltegioId.set(client.altegioClientId, name);
+  }
+
+  const stillMissing = missingIds.filter((id) => !nameByAltegioId.has(id));
+  if (stillMissing.length > 0) {
+    const fromAltegio = await fetchAltegioClientNamesByIds(stillMissing);
+    for (const [id, name] of fromAltegio) nameByAltegioId.set(id, name);
+  }
+
+  if (nameByAltegioId.size === 0) {
+    console.log("[incoming-altegio-aggregate] Немає імен для clientId без платника", {
+      missingIds: missingIds.length,
+    });
+    return rows;
+  }
+
+  let enriched = 0;
+  const next = rows.map((row) => {
+    if (row.payerName !== NO_PAYER_LABEL || row.clientId == null) return row;
+    const name = nameByAltegioId.get(row.clientId);
+    if (!name) return row;
+    enriched += 1;
+    return { ...row, payerName: name };
+  });
+
+  console.log("[incoming-altegio-aggregate] Підставлено імена платників", {
+    missingIds: missingIds.length,
+    foundInDirect: missingIds.length - stillMissing.length,
+    foundInAltegioSearch: nameByAltegioId.size - (missingIds.length - stillMissing.length),
+    enrichedRows: enriched,
+  });
+  return next;
+}
+
+/**
+ * Легке дотягування імені з record (один path, без storage documents).
+ * Лише для рядків «без платника» з recordId — інакше знову 404-шторм.
+ */
+async function enrichMissingPayersFromRecords(
+  rows: NormalizedAltegioIncomeRow[],
+): Promise<NormalizedAltegioIncomeRow[]> {
+  const missingRecordIds = Array.from(
+    new Set(
+      rows
+        .filter((row) => row.payerName === NO_PAYER_LABEL && row.recordId != null)
+        .map((row) => row.recordId as number),
+    ),
+  ).slice(0, 40);
+  if (missingRecordIds.length === 0) return rows;
+
+  const companyId = resolveCompanyId();
+  const nameByRecordId = new Map<number, string>();
+  const clientIdByRecordId = new Map<number, number>();
+  const batchSize = 5;
+
+  for (let i = 0; i < missingRecordIds.length; i += batchSize) {
+    const batch = missingRecordIds.slice(i, i + batchSize);
+    await Promise.all(
+      batch.map(async (recordId) => {
+        try {
+          const raw = await altegioFetch<unknown>(`/company/${companyId}/records/${recordId}`);
+          const payload = asRecord(raw);
+          const data = asRecord(payload?.data) ?? payload;
+          if (!data) return;
+          const client = asRecord(data.client) ?? asRecord(asRecord(data.data)?.client);
+          const name =
+            cleanText(client?.name)
+            || cleanText(client?.display_name)
+            || cleanText(client?.full_name)
+            || cleanText(data.client_name)
+            || [cleanText(client?.surname ?? client?.last_name), cleanText(client?.firstname ?? client?.first_name)]
+              .filter(Boolean)
+              .join(" ")
+              .trim()
+            || null;
+          const clientId = toInt(data.client_id) ?? toInt(client?.id) ?? toInt(client?.client_id);
+          if (name) nameByRecordId.set(recordId, name);
+          if (clientId) clientIdByRecordId.set(recordId, clientId);
+        } catch {
+          // records часто 404 — не шумимо кожним
+        }
+      }),
+    );
+  }
+
+  if (nameByRecordId.size === 0 && clientIdByRecordId.size === 0) {
+    console.log("[incoming-altegio-aggregate] Records: імен не знайдено", {
+      tried: missingRecordIds.length,
+    });
+    return rows;
+  }
+
+  let enriched = 0;
+  const next = rows.map((row) => {
+    if (row.payerName !== NO_PAYER_LABEL || row.recordId == null) return row;
+    const name = nameByRecordId.get(row.recordId);
+    const clientId = clientIdByRecordId.get(row.recordId) ?? row.clientId;
+    if (!name && clientId === row.clientId) return row;
+    enriched += 1;
+    return {
+      ...row,
+      payerName: name || row.payerName,
+      clientId,
+    };
+  });
+
+  console.log("[incoming-altegio-aggregate] Records: підставлено імена", {
+    tried: missingRecordIds.length,
+    named: nameByRecordId.size,
+    enrichedRows: enriched,
+  });
+  return next;
+}
+
 function getPayerNameFromRaw(raw: unknown, counterpartyName: string | null): string {
   if (counterpartyName) return counterpartyName;
   const record = asRecord(raw);
@@ -580,6 +795,11 @@ function getPayerNameFromRaw(raw: unknown, counterpartyName: string | null): str
     client?.title,
     client?.display_name,
     client?.full_name,
+    // Прізвище+ім'я з вкладеного client (часто є без name).
+    [cleanText(client?.surname ?? client?.last_name), cleanText(client?.firstname ?? client?.first_name)]
+      .filter(Boolean)
+      .join(" ")
+      .trim() || null,
     client?.surname,
     payer?.name,
     payer?.title,
@@ -661,9 +881,12 @@ function detectDirectionFromRaw(raw: RawRecord, amountKop: bigint): string {
   }
 
   if (type.includes("transfer") || type.includes("переміщ") || type.includes("перевод")) return "transfer";
-  if (hasExpenseId(raw) || type.includes("expense") || typeId === "2") return "out";
   if (type.includes("income") || typeId === "1") return "in";
+  // document_id = оплата клієнта/продаж; expense_id у Altegio часто лише «стаття», не витрата.
   if (hasDocumentId(raw)) return "in";
+  if (type.includes("expense") || typeId === "2") return "out";
+  // Витрата без документа: expense_id без document_id.
+  if (hasExpenseId(raw) && !hasDocumentId(raw)) return "out";
   if (amountKop < 0n) return "out";
   if (amountKop > 0n) return "in";
   return "unknown";
@@ -740,7 +963,8 @@ function getAccountInfoFromRaw(raw: RawRecord): { accountTitle: string; accountI
 
 function isAltegioPaymentRow(raw: RawRecord, amountKop: bigint): boolean {
   if (amountKop <= 0n) return false;
-  if (hasExpenseId(raw)) return false;
+  // Не відсікати expense_id: у вхідних оплатах клієнтів це стаття прибутку.
+  // Інакше skipDocumentEnrichment дає liveRows=0 (усі транзакції зникають).
   if (isEncashmentRaw(raw)) return false;
 
   const direction = detectDirectionFromRaw(raw, amountKop);
@@ -783,6 +1007,7 @@ function normalizeIncomeRow(raw: RawRecord, source: "db" | "live"): NormalizedAl
         ?? raw.appointment_id
         ?? asRecord(raw.appointment)?.id,
     ),
+    clientId: getClientIdFromRaw(raw),
     accountTitle,
     accountId,
     payerName: getPayerNameFromRaw(raw, counterpartyName),
@@ -821,6 +1046,7 @@ function normalizeDbRow(row: {
     return {
       ...fromRaw,
       altegioId: row.altegioId,
+      clientId: fromRaw.clientId ?? getClientIdFromRaw(row.rawData),
       accountTitle: row.accountTitle?.trim() || fromRaw.accountTitle,
       accountId: row.accountId ?? fromRaw.accountId,
       payerName:
@@ -850,6 +1076,7 @@ function normalizeDbRow(row: {
         ?? asRecord(rawRecord.record)?.id
         ?? rawRecord.appointment_id,
     ),
+    clientId: getClientIdFromRaw(row.rawData),
     accountTitle,
     accountId: row.accountId,
     payerName: getPayerNameFromRaw(row.rawData, row.counterpartyName),
@@ -899,21 +1126,45 @@ function upsertIncomeRow(
     byId.set(key, candidate);
     return;
   }
-  const preferCandidate =
-    (existing.payerName === NO_PAYER_LABEL && candidate.payerName !== NO_PAYER_LABEL)
-    || (existing.paymentMethodUnknown && !candidate.paymentMethodUnknown)
-    || (existing.source === "db" && candidate.source === "live");
+  // Live без імені не повинен затирати БД з платником (після skipDocumentEnrichment).
+  const liveImprovesPayer =
+    existing.payerName === NO_PAYER_LABEL && candidate.payerName !== NO_PAYER_LABEL;
+  const liveImprovesMethod =
+    existing.paymentMethodUnknown
+    && !candidate.paymentMethodUnknown
+    && !(existing.payerName !== NO_PAYER_LABEL && candidate.payerName === NO_PAYER_LABEL);
+  const liveNewerSameOrBetter =
+    existing.source === "db"
+    && candidate.source === "live"
+    && (candidate.payerName !== NO_PAYER_LABEL || existing.payerName === NO_PAYER_LABEL);
+  const preferCandidate = liveImprovesPayer || liveImprovesMethod || liveNewerSameOrBetter;
   if (preferCandidate) {
     const keepExistingAccount =
       isPlaceholderAccountTitle(candidate.accountTitle) && !isPlaceholderAccountTitle(existing.accountTitle);
     byId.set(key, {
       ...existing,
       ...candidate,
+      clientId: candidate.clientId ?? existing.clientId,
       payerName: candidate.payerName !== NO_PAYER_LABEL ? candidate.payerName : existing.payerName,
       accountTitle: keepExistingAccount ? existing.accountTitle : candidate.accountTitle,
       accountId: keepExistingAccount ? existing.accountId : (candidate.accountId ?? existing.accountId),
       paymentPurpose: candidate.paymentPurpose ?? existing.paymentPurpose,
       source: existing.source === "db" && candidate.source === "live" ? "live" : existing.source,
+    });
+    return;
+  }
+
+  // Live «без платника» поверх БД з іменем — лише доповнюємо clientId/рахунок, ім'я лишаємо.
+  if (existing.source === "db" && candidate.source === "live") {
+    byId.set(key, {
+      ...existing,
+      clientId: existing.clientId ?? candidate.clientId,
+      accountTitle:
+        isPlaceholderAccountTitle(existing.accountTitle) && !isPlaceholderAccountTitle(candidate.accountTitle)
+          ? candidate.accountTitle
+          : existing.accountTitle,
+      accountId: existing.accountId ?? candidate.accountId,
+      paymentPurpose: existing.paymentPurpose ?? candidate.paymentPurpose,
     });
     return;
   }
@@ -998,7 +1249,13 @@ function dropMirroredInternalTransfers(rows: NormalizedAltegioIncomeRow[]): {
 }
 
 function isVerifiedClientPaymentRow(row: NormalizedAltegioIncomeRow): boolean {
-  return row.documentId != null || row.payerName !== NO_PAYER_LABEL;
+  // Без documents/records ім'я часто порожнє, але client_id/record_id є — такі рядки раніше зникали з UI.
+  return (
+    row.documentId != null
+    || row.recordId != null
+    || row.clientId != null
+    || row.payerName !== NO_PAYER_LABEL
+  );
 }
 
 async function fetchTransactionsApiIncomeRows(dateFrom: string, dateTo: string): Promise<NormalizedAltegioIncomeRow[]> {
@@ -1019,21 +1276,33 @@ async function fetchTransactionsApiIncomeRows(dateFrom: string, dateTo: string):
       });
       const raw = await altegioFetch<unknown>(`/transactions/${companyId}?${params.toString()}`);
       const pageRows = unwrapArray(raw);
+      let normalized = 0;
       for (const pageRow of pageRows) {
-        upsertIncomeRow(byId, normalizeIncomeRow(pageRow, "live"));
+        const row = normalizeIncomeRow(pageRow, "live");
+        if (row) normalized += 1;
+        upsertIncomeRow(byId, row);
       }
+      console.log("[incoming-altegio-aggregate] GET /transactions page", {
+        dateFrom,
+        dateTo,
+        page,
+        rawRows: pageRows.length,
+        normalized,
+        kept: byId.size,
+      });
       if (pageRows.length < count) break;
     }
 
-    const rows = Array.from(byId.values()).filter(isVerifiedClientPaymentRow);
-    if (rows.length > 0) {
-      console.log("[incoming-altegio-aggregate] GET /transactions", {
-        dateFrom,
-        dateTo,
-        dateFormat: "YYYYMMDD",
-        rows: rows.length,
-      });
-    }
+    const allNormalized = Array.from(byId.values());
+    const rows = allNormalized.filter(isVerifiedClientPaymentRow);
+    console.log("[incoming-altegio-aggregate] GET /transactions", {
+      dateFrom,
+      dateTo,
+      dateFormat: "YYYYMMDD",
+      normalized: allNormalized.length,
+      verified: rows.length,
+      droppedUnverified: allNormalized.length - rows.length,
+    });
     return rows;
   } catch (error) {
     console.warn("[incoming-altegio-aggregate] GET /transactions не вдався", {
@@ -1045,34 +1314,56 @@ async function fetchTransactionsApiIncomeRows(dateFrom: string, dateTo: string):
   }
 }
 
-async function fetchLiveIncomeRowsRange(dateFrom: string, dateTo: string): Promise<{
+async function fetchLiveIncomeRowsRange(
+  dateFrom: string,
+  dateTo: string,
+  options?: { skipDocumentEnrichment?: boolean },
+): Promise<{
   rows: NormalizedAltegioIncomeRow[];
   droppedMirrors: number;
 }> {
   const byId = new Map<string, NormalizedAltegioIncomeRow>();
   const chunks = buildDateChunks(dateFrom, dateTo, 7);
+  // Паралельно по кілька тижнів — інакше «Звести»/GET б’ють 120s на всьому періоді з червня.
+  const concurrency = 3;
+  // documents/records дають сотні 404 і з’їдають весь timeout кнопки «Звести».
+  // Для UI/зведення достатньо GET /transactions (+ БД); document-enrich — лише повний режим.
+  const skipDocumentEnrichment = options?.skipDocumentEnrichment === true;
 
-  for (const chunk of chunks) {
-    try {
-      const transactionRows = await fetchTransactionsApiIncomeRows(chunk.from, chunk.to);
-      for (const row of transactionRows) upsertIncomeRow(byId, row);
-    } catch (error) {
-      console.warn("[incoming-altegio-aggregate] GET /transactions chunk не вдався", {
-        dateFrom: chunk.from,
-        dateTo: chunk.to,
-        error: error instanceof Error ? error.message : String(error),
-      });
-    }
+  for (let i = 0; i < chunks.length; i += concurrency) {
+    const batch = chunks.slice(i, i + concurrency);
+    const batchRows = await Promise.all(
+      batch.map(async (chunk) => {
+        const collected: NormalizedAltegioIncomeRow[] = [];
+        try {
+          const transactionRows = await fetchTransactionsApiIncomeRows(chunk.from, chunk.to);
+          collected.push(...transactionRows);
+        } catch (error) {
+          console.warn("[incoming-altegio-aggregate] GET /transactions chunk не вдався", {
+            dateFrom: chunk.from,
+            dateTo: chunk.to,
+            error: error instanceof Error ? error.message : String(error),
+          });
+        }
 
-    try {
-      const documentRows = await fetchDocumentVerifiedIncomeRows(chunk.from, chunk.to);
-      for (const row of documentRows) upsertIncomeRow(byId, row);
-    } catch (error) {
-      console.warn("[incoming-altegio-aggregate] transactions+records chunk не вдався", {
-        dateFrom: chunk.from,
-        dateTo: chunk.to,
-        error: error instanceof Error ? error.message : String(error),
-      });
+        if (!skipDocumentEnrichment) {
+          try {
+            const documentRows = await fetchDocumentVerifiedIncomeRows(chunk.from, chunk.to);
+            collected.push(...documentRows);
+          } catch (error) {
+            console.warn("[incoming-altegio-aggregate] transactions+records chunk не вдався", {
+              dateFrom: chunk.from,
+              dateTo: chunk.to,
+              error: error instanceof Error ? error.message : String(error),
+            });
+          }
+        }
+        return collected;
+      }),
+    );
+
+    for (const rows of batchRows) {
+      for (const row of rows) upsertIncomeRow(byId, row);
     }
   }
 
@@ -1084,6 +1375,8 @@ async function fetchLiveIncomeRowsRange(dateFrom: string, dateTo: string): Promi
     dateFrom,
     dateTo,
     chunks: chunks.length,
+    concurrency,
+    skipDocumentEnrichment,
     rows: rows.length,
     droppedInvalidDates: byId.size - validRows.length,
     droppedTransfers,
@@ -1095,14 +1388,15 @@ async function fetchLiveIncomeRowsRange(dateFrom: string, dateTo: string): Promi
 
 async function fetchDbIncomeRowsRange(dateFrom: string, dateTo: string): Promise<NormalizedAltegioIncomeRow[]> {
   const companyId = resolveCompanyId();
+  // expense_id у Altegio ≠ витрата: оплати клієнтів часто мають статтю + document_id.
   const dbRows = await (prisma as any).altegioFinanceTransaction.findMany({
     where: {
       companyId,
       kyivDay: { gte: dateFrom, lte: dateTo },
       deletedInAltegio: false,
       amountKopiykas: { gt: 0 },
-      expenseId: null,
       direction: { notIn: ["out", "transfer"] },
+      OR: [{ expenseId: null }, { documentId: { not: null } }],
     },
     select: {
       altegioId: true,
@@ -1415,21 +1709,47 @@ function mergeIncomeRows(liveRows: NormalizedAltegioIncomeRow[], dbRows: Normali
   return Array.from(byId.values());
 }
 
-export async function buildIncomingReconciliationPreview(): Promise<IncomingReconciliationPreview> {
+export async function buildIncomingReconciliationPreview(options?: {
+  /**
+   * Скільки останніх днів тягнути live з Altegio.
+   * Решта періоду — з БД (швидкий GET «Оновити»).
+   * Без опції / 0 — live на весь період (повільніше).
+   */
+  liveLookbackDays?: number;
+  /**
+   * Не тягнути documents/records по кожній транзакції (сотні 404 у Vercel).
+   * Для GET/«Звести» — true: лише /transactions + БД.
+   */
+  skipDocumentEnrichment?: boolean;
+}): Promise<IncomingReconciliationPreview> {
   const dateFrom = INCOMING_RANGE_START_DATE;
   const dateTo = getKyivTodayYmd();
+  const liveLookbackDays =
+    typeof options?.liveLookbackDays === "number" && options.liveLookbackDays > 0
+      ? Math.floor(options.liveLookbackDays)
+      : null;
+  const liveFrom = liveLookbackDays
+    ? addDaysYmd(dateTo, -(liveLookbackDays - 1))
+    : dateFrom;
+  const effectiveLiveFrom = liveFrom < dateFrom ? dateFrom : liveFrom;
+  const skipDocumentEnrichment = options?.skipDocumentEnrichment !== false;
 
   const [liveFetch, dbRows, bankAgg] = await Promise.all([
-    fetchLiveIncomeRowsRange(dateFrom, dateTo),
+    fetchLiveIncomeRowsRange(effectiveLiveFrom, dateTo, { skipDocumentEnrichment }),
     fetchDbIncomeRowsRange(dateFrom, dateTo),
     fetchBankIncomingByDayRange(dateFrom, dateTo),
   ]);
   const liveRows = liveFetch.rows;
-  const baseRows = liveRows.length > 0 ? liveRows : mergeIncomeRows(liveRows, dbRows);
+  // Завжди мержимо з БД: частковий live більше не «з’їдає» історію і не дає порожній екран.
+  const mergedRows = mergeIncomeRows(liveRows, dbRows);
+  const withDirectPayers = await enrichMissingPayersFromDirectClients(mergedRows);
+  const withPayers = await enrichMissingPayersFromRecords(withDirectPayers);
+  // Після records могли з’явитись нові clientId — ще раз Direct/clients/search.
+  const withPayersFinal = await enrichMissingPayersFromDirectClients(withPayers);
 
   const incomeRows = enrichPlaceholderAccounts(
     excludeTransferIncomeRows(
-      baseRows.filter((row) =>
+      withPayersFinal.filter((row) =>
         isValidIncomeKyivDay(row.kyivDay, dateFrom, dateTo),
       ),
     ).rows,
@@ -1445,6 +1765,9 @@ export async function buildIncomingReconciliationPreview(): Promise<IncomingReco
   console.log("[incoming-altegio-aggregate] Preview", {
     dateFrom,
     dateTo,
+    liveFrom: effectiveLiveFrom,
+    liveLookbackDays,
+    skipDocumentEnrichment,
     liveRows: liveRows.length,
     dbRows: dbRows.length,
     mergedRows: incomeRows.length,

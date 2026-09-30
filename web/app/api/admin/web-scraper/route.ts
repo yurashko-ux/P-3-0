@@ -1,4 +1,35 @@
-import { NextResponse } from 'next/server';
+import { NextRequest, NextResponse } from 'next/server';
+
+export const dynamic = 'force-dynamic';
+export const runtime = 'nodejs';
+
+const ADMIN_PASS = process.env.ADMIN_PASS || '';
+const CRON_SECRET = process.env.CRON_SECRET || '';
+
+/** Авторизація: admin_token cookie (= ADMIN_PASS) або Bearer/CRON_SECRET */
+function isAuthorized(req: NextRequest): boolean {
+  const adminToken = req.cookies.get('admin_token')?.value || '';
+  if (ADMIN_PASS && adminToken === ADMIN_PASS) return true;
+  if (CRON_SECRET) {
+    const authHeader = req.headers.get('authorization');
+    if (authHeader === `Bearer ${CRON_SECRET}`) return true;
+    const secret = req.nextUrl.searchParams.get('secret');
+    if (secret === CRON_SECRET) return true;
+  }
+  // Без секретів у env — блокуємо (не відкритий SSRF)
+  return false;
+}
+
+function unauthorizedResponse() {
+  return NextResponse.json(
+    {
+      success: false,
+      error: 'Unauthorized',
+      hint: 'Потрібен admin_token cookie (ADMIN_PASS) або Authorization: Bearer CRON_SECRET',
+    },
+    { status: 401 },
+  );
+}
 
 // Типи для валідації
 interface RequestBody {
@@ -10,11 +41,35 @@ interface RequestBody {
   };
 }
 
+/** Блокуємо явні внутрішні/метадані хости (базовий захист від SSRF) */
+function isBlockedTargetHost(hostname: string): boolean {
+  const host = hostname.toLowerCase().replace(/\.$/, '');
+  if (
+    host === 'localhost' ||
+    host === '127.0.0.1' ||
+    host === '0.0.0.0' ||
+    host === '::1' ||
+    host === 'metadata.google.internal' ||
+    host.endsWith('.local') ||
+    host.endsWith('.internal')
+  ) {
+    return true;
+  }
+  // Приватні IPv4
+  if (/^10\.\d{1,3}\.\d{1,3}\.\d{1,3}$/.test(host)) return true;
+  if (/^192\.168\.\d{1,3}\.\d{1,3}$/.test(host)) return true;
+  if (/^172\.(1[6-9]|2\d|3[0-1])\.\d{1,3}\.\d{1,3}$/.test(host)) return true;
+  if (/^169\.254\.\d{1,3}\.\d{1,3}$/.test(host)) return true;
+  return false;
+}
+
 // Валідація URL
 function isValidUrl(urlString: string): boolean {
   try {
     const url = new URL(urlString);
-    return url.protocol === 'http:' || url.protocol === 'https:';
+    if (url.protocol !== 'http:' && url.protocol !== 'https:') return false;
+    if (isBlockedTargetHost(url.hostname)) return false;
+    return true;
   } catch {
     return false;
   }
@@ -71,7 +126,12 @@ function validateRequest(body: any): { valid: true; data: RequestBody } | { vali
  *   }
  * }
  */
-export async function POST(request: Request) {
+export async function POST(request: NextRequest) {
+  if (!isAuthorized(request)) {
+    console.warn('[web-scraper] Відхилено: немає авторизації');
+    return unauthorizedResponse();
+  }
+
   try {
     const body = await request.json();
     const validation = validateRequest(body);
@@ -269,12 +329,18 @@ function extractBySelector(html: string, selector: string): string[] {
 /**
  * GET /api/admin/web-scraper
  * 
- * Повертає інформацію про endpoint
+ * Повертає інформацію про endpoint (лише для авторизованих)
  */
-export async function GET() {
+export async function GET(request: NextRequest) {
+  if (!isAuthorized(request)) {
+    console.warn('[web-scraper] GET відхилено: немає авторизації');
+    return unauthorizedResponse();
+  }
+
   return NextResponse.json({
     endpoint: '/api/admin/web-scraper',
     description: 'Endpoint для читання інформації з веб-сайтів',
+    auth: 'admin_token cookie або Authorization: Bearer CRON_SECRET',
     methods: ['GET', 'POST'],
     examples: [
       {

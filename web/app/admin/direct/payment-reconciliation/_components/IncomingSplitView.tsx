@@ -11,6 +11,7 @@ import {
   bankRowIsNamedIncomingMatch,
   evaluateIncomingAccountReconcile,
   evaluateOpenReconcilePairs,
+  incomingReconcileAmountsMatch,
   isCashReconcileAccount,
   isIncomingRowAcquiringForReconcile,
   normalizePersonName,
@@ -675,7 +676,7 @@ function isAltegioCashAccount(accountTitle: string): boolean {
   return isCashReconcileAccount(accountTitle);
 }
 
-function reconciledAltegioClientKey(client: AltegioDayAccountClient): string {
+function reconciledAltegioClientKey(client: { payerName: string; totalKop: string }): string {
   const name = normalizePersonName(client.payerName);
   return name ? `${name}|${client.totalKop}` : client.totalKop;
 }
@@ -2058,7 +2059,7 @@ function buildAcquiringAltegioAccountRow(
 function linkedRowAmountsMatch(altegioAccount: AltegioDayAccountRow, bankRows: BankDayItemRow[]): boolean {
   const altegioTotal = BigInt(altegioAccount.totalKop);
   const bankFull = bankRows.reduce((sum, row) => sum + bankFullAmountKop(row), 0n);
-  return altegioTotal === bankFull;
+  return incomingReconcileAmountsMatch(altegioTotal, bankFull);
 }
 
 function buildDepositLinkedVisibleDays(
@@ -2283,6 +2284,16 @@ function buildOpenHiddenFromLinkedDays(
   };
 }
 
+function addHiddenAltegioPayer(
+  hidden: Map<string, Set<string>>,
+  dayKey: string,
+  payerKey: string,
+): void {
+  if (!payerKey) return;
+  if (!hidden.has(dayKey)) hidden.set(dayKey, new Set());
+  hidden.get(dayKey)!.add(payerKey);
+}
+
 /** Доповнити приховування з БД, якщо запис зведення є, але linked-рядок не збудувався. */
 function supplementOpenHiddenFromDbMatches(
   hidden: {
@@ -2295,7 +2306,9 @@ function supplementOpenHiddenFromDbMatches(
   bankDays: BankDayFlat[],
 ): void {
   const bankRowById = new Map<string, BankDayItemRow>();
+  const bankDayByKyivDay = new Map<string, BankDayFlat>();
   for (const day of bankDays) {
+    bankDayByKyivDay.set(day.kyivDay, day);
     for (const row of day.rows) bankRowById.set(row.id, row);
   }
 
@@ -2305,6 +2318,57 @@ function supplementOpenHiddenFromDbMatches(
     if (!bankRow) continue;
 
     hidden.bankIds.add(match.bankStatementItemId);
+
+    const isAcquiring = bankRowIsAcquiringIncomingMatch(bankRow, match.matchType);
+    if (isAcquiring) {
+      // Еквайринг: день у матчі = день Altegio; рядок банку в UI — після −1 day shift.
+      const groupingDay = bankGroupingKyivDay(bankRow);
+      const dayKey = bankDayByKyivDay.has(match.kyivDay) ? match.kyivDay : groupingDay;
+      const bankDay = bankDayByKyivDay.get(dayKey);
+      const altegioAccount = findAltegioAccountOnDay(
+        altegioDays,
+        dayKey,
+        bankRow.accountTitle,
+        bankRow.altegioAccountTitle,
+      );
+      if (!bankDay || !altegioAccount) continue;
+
+      const evaluation = evaluateIncomingAccountReconcile(altegioAccount, bankDay);
+      const inBatch = evaluation.acquiringBatchMatches.some((batch) =>
+        batch.bankRowIds.includes(bankRow.id),
+      );
+      const individual = evaluation.acquiringClientMatches.find(
+        (item) => item.bankRowId === bankRow.id,
+      );
+
+      if (inBatch) {
+        for (const client of evaluation.acquiringMatchedClients) {
+          addHiddenAltegioPayer(
+            hidden.altegioPayersByDay,
+            dayKey,
+            reconciledAltegioClientKey(client),
+          );
+        }
+        continue;
+      }
+
+      if (individual) {
+        const client = altegioAccount.clients.find(
+          (item) =>
+            normalizePersonName(item.payerName) === normalizePersonName(individual.payerName)
+            && item.totalKop === individual.amountKop,
+        );
+        if (client) {
+          addHiddenAltegioPayer(
+            hidden.altegioPayersByDay,
+            dayKey,
+            reconciledAltegioClientKey(client),
+          );
+        }
+        continue;
+      }
+      continue;
+    }
 
     const found = findAltegioClientForLinkedFromBank(
       altegioDays,
@@ -2321,10 +2385,11 @@ function supplementOpenHiddenFromDbMatches(
       continue;
     }
 
-    const dayKey = found.dayKyivDay;
-    const payerKey = reconciledAltegioClientKey(found.client);
-    if (!hidden.altegioPayersByDay.has(dayKey)) hidden.altegioPayersByDay.set(dayKey, new Set());
-    hidden.altegioPayersByDay.get(dayKey)!.add(payerKey);
+    addHiddenAltegioPayer(
+      hidden.altegioPayersByDay,
+      found.dayKyivDay,
+      reconciledAltegioClientKey(found.client),
+    );
   }
 }
 
@@ -3430,7 +3495,7 @@ export function IncomingSplitView({
       const res = await fetch("/api/admin/bank/payment-reconciliation/incoming", {
         cache: "no-store",
         credentials: "include",
-        signal: AbortSignal.timeout(90_000),
+        signal: AbortSignal.timeout(180_000),
       });
       const payload = (await res.json()) as IncomingPreview;
       if (!res.ok || !payload.ok) {
@@ -3449,7 +3514,7 @@ export function IncomingSplitView({
       } else {
         setError(loadError instanceof Error ? loadError.message : "Помилка завантаження");
       }
-      setData(null);
+      // Не затираємо попередні дані — інакше лічильники стають 0 і здається, що платежі зникли.
     } finally {
       setLoading(false);
     }
@@ -3476,7 +3541,9 @@ export function IncomingSplitView({
       await loadData();
     } catch (runError) {
       if (runError instanceof Error && runError.name === "TimeoutError") {
-        setError("Ручне зведення перевищило час очікування. Спробуйте ще раз.");
+        setError(
+          "Ручне зведення перевищило час очікування. Спробуйте «Оновити», потім знову «Звести» (лише точні пари).",
+        );
       } else {
         setError(runError instanceof Error ? runError.message : "Помилка ручного зведення");
       }
