@@ -56,6 +56,7 @@ export function formatDailyReportTelegram(data: DailyOpsReportData): string {
     `Записи створено: <b>${data.recordsCreatedCount}</b>`,
     `Записів відбулось: <b>${data.recordsRealizedCountToday}</b>`,
     `💰 Оборот: <b>${formatMoneyUah(data.turnoverToday)}</b>`,
+    `💳 Завдатки: <b>${formatMoneyUah(data.depositsToday)}</b>`,
     `🏦 Незведені платежі: вх. <b>${data.incomingUnmatched}</b> · вих. <b>${data.outgoingUnmatched}</b>`,
     `📞 Дзвінки: вх. <b>${data.callsIncoming}</b> / вих. <b>${data.callsOutgoing}</b> · пропущ. <b>${data.callsMissed}</b>${missedNames}`,
     `Активна база: <b>${data.activeBaseCount}</b>`,
