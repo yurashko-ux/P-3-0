@@ -15,6 +15,8 @@ export type NormalizedAltegioIncomeRow = {
   altegioId: number;
   documentId: number | null;
   recordId: number | null;
+  /** ID клієнта Altegio — для підстановки імені без documents/records. */
+  clientId: number | null;
   accountTitle: string;
   accountId: string | null;
   payerName: string;
@@ -257,6 +259,7 @@ function resolveAccountForAggregatedPayment(
     altegioId: 0,
     documentId,
     recordId: null,
+    clientId: null,
     accountTitle: UNRESOLVED_ACCOUNT_LABEL,
     accountId: null,
     payerName,
@@ -325,6 +328,7 @@ function normalizeDocumentVerifiedPayment(
     altegioId: payment.transactionId,
     documentId: payment.documentId,
     recordId: payment.recordId,
+    clientId: payment.clientId ?? null,
     accountTitle: payment.accountTitle || NO_ACCOUNT_LABEL,
     accountId: payment.accountId,
     payerName: payment.payerName || NO_PAYER_LABEL,
@@ -554,6 +558,137 @@ export function parseBankCommission(text: string): { kopiykas: bigint | null; ra
   return { kopiykas: BigInt(Math.round(amount * 100)), raw: match[0] };
 }
 
+function getClientIdFromRaw(raw: unknown): number | null {
+  const record = asRecord(raw);
+  if (!record) return null;
+  const client = asRecord(record.client) ?? asRecord(record.customer);
+  const visit = asRecord(record.visit);
+  const document = asRecord(record.document);
+  const appointment = asRecord(record.appointment);
+  const nestedRecord = asRecord(record.record);
+  return (
+    toInt(record.client_id)
+    ?? toInt(record.clientId)
+    ?? toInt(client?.id)
+    ?? toInt(client?.client_id)
+    ?? toInt(nestedRecord?.client_id)
+    ?? toInt(asRecord(nestedRecord?.client)?.id)
+    ?? toInt(visit?.client_id)
+    ?? toInt(asRecord(visit?.client)?.id)
+    ?? toInt(document?.client_id)
+    ?? toInt(asRecord(document?.client)?.id)
+    ?? toInt(appointment?.client_id)
+    ?? toInt(asRecord(appointment?.client)?.id)
+  );
+}
+
+function formatDirectClientName(row: { firstName: string | null; lastName: string | null; instagramUsername: string }): string | null {
+  const full = [row.lastName, row.firstName].filter(Boolean).join(" ").trim();
+  if (full) return full;
+  const nick = row.instagramUsername?.trim();
+  return nick || null;
+}
+
+async function fetchAltegioClientNamesByIds(clientIds: number[]): Promise<Map<number, string>> {
+  const result = new Map<number, string>();
+  if (clientIds.length === 0) return result;
+
+  const companyId = resolveCompanyId();
+  const batchSize = 50;
+  // Обмежуємо, щоб «Оновити»/«Звести» знову не тонули в Altegio.
+  const maxIds = 150;
+  const ids = clientIds.slice(0, maxIds);
+
+  for (let i = 0; i < ids.length; i += batchSize) {
+    const batch = ids.slice(i, i + batchSize);
+    try {
+      const response = await altegioFetch<unknown>(`/company/${companyId}/clients/search`, {
+        method: "POST",
+        body: JSON.stringify({
+          filters: [{ field: "id", operation: "in", value: batch }],
+          fields: ["id", "name", "display_name", "fullname", "lastname", "first_name", "last_name"],
+        }),
+      });
+      const pageRows = unwrapArray(response);
+      for (const raw of pageRows) {
+        const id = toInt(raw.id);
+        if (!id) continue;
+        const name =
+          cleanText(raw.name)
+          || cleanText(raw.display_name)
+          || [cleanText(raw.lastname ?? raw.last_name), cleanText(raw.firstname ?? raw.first_name)]
+            .filter(Boolean)
+            .join(" ")
+            .trim()
+          || null;
+        if (name) result.set(id, name);
+      }
+    } catch (error) {
+      console.warn("[incoming-altegio-aggregate] clients/search для імен не вдався", {
+        batchSize: batch.length,
+        error: error instanceof Error ? error.message : String(error),
+      });
+    }
+  }
+
+  return result;
+}
+
+/** Підставляє імена з Direct (+ легкий clients/search) — без documents/records. */
+async function enrichMissingPayersFromDirectClients(
+  rows: NormalizedAltegioIncomeRow[],
+): Promise<NormalizedAltegioIncomeRow[]> {
+  const missingIds = Array.from(
+    new Set(
+      rows
+        .filter((row) => row.payerName === NO_PAYER_LABEL && row.clientId != null)
+        .map((row) => row.clientId as number),
+    ),
+  );
+  if (missingIds.length === 0) return rows;
+
+  const clients = await (prisma as any).directClient.findMany({
+    where: { altegioClientId: { in: missingIds } },
+    select: { altegioClientId: true, firstName: true, lastName: true, instagramUsername: true },
+  });
+  const nameByAltegioId = new Map<number, string>();
+  for (const client of clients) {
+    if (client.altegioClientId == null) continue;
+    const name = formatDirectClientName(client);
+    if (name) nameByAltegioId.set(client.altegioClientId, name);
+  }
+
+  const stillMissing = missingIds.filter((id) => !nameByAltegioId.has(id));
+  if (stillMissing.length > 0) {
+    const fromAltegio = await fetchAltegioClientNamesByIds(stillMissing);
+    for (const [id, name] of fromAltegio) nameByAltegioId.set(id, name);
+  }
+
+  if (nameByAltegioId.size === 0) {
+    console.log("[incoming-altegio-aggregate] Немає імен для clientId без платника", {
+      missingIds: missingIds.length,
+    });
+    return rows;
+  }
+
+  let enriched = 0;
+  const next = rows.map((row) => {
+    if (row.payerName !== NO_PAYER_LABEL || row.clientId == null) return row;
+    const name = nameByAltegioId.get(row.clientId);
+    if (!name) return row;
+    enriched += 1;
+    return { ...row, payerName: name };
+  });
+
+  console.log("[incoming-altegio-aggregate] Підставлено імена платників", {
+    missingIds: missingIds.length,
+    foundInDirect: missingIds.length - stillMissing.length,
+    foundInAltegioSearch: nameByAltegioId.size - (missingIds.length - stillMissing.length),
+    enrichedRows: enriched,
+  });
+  return next;
+}
+
 function getPayerNameFromRaw(raw: unknown, counterpartyName: string | null): string {
   if (counterpartyName) return counterpartyName;
   const record = asRecord(raw);
@@ -580,6 +715,11 @@ function getPayerNameFromRaw(raw: unknown, counterpartyName: string | null): str
     client?.title,
     client?.display_name,
     client?.full_name,
+    // Прізвище+ім'я з вкладеного client (часто є без name).
+    [cleanText(client?.surname ?? client?.last_name), cleanText(client?.firstname ?? client?.first_name)]
+      .filter(Boolean)
+      .join(" ")
+      .trim() || null,
     client?.surname,
     payer?.name,
     payer?.title,
@@ -783,6 +923,7 @@ function normalizeIncomeRow(raw: RawRecord, source: "db" | "live"): NormalizedAl
         ?? raw.appointment_id
         ?? asRecord(raw.appointment)?.id,
     ),
+    clientId: getClientIdFromRaw(raw),
     accountTitle,
     accountId,
     payerName: getPayerNameFromRaw(raw, counterpartyName),
@@ -821,6 +962,7 @@ function normalizeDbRow(row: {
     return {
       ...fromRaw,
       altegioId: row.altegioId,
+      clientId: fromRaw.clientId ?? getClientIdFromRaw(row.rawData),
       accountTitle: row.accountTitle?.trim() || fromRaw.accountTitle,
       accountId: row.accountId ?? fromRaw.accountId,
       payerName:
@@ -850,6 +992,7 @@ function normalizeDbRow(row: {
         ?? asRecord(rawRecord.record)?.id
         ?? rawRecord.appointment_id,
     ),
+    clientId: getClientIdFromRaw(row.rawData),
     accountTitle,
     accountId: row.accountId,
     payerName: getPayerNameFromRaw(row.rawData, row.counterpartyName),
@@ -899,21 +1042,45 @@ function upsertIncomeRow(
     byId.set(key, candidate);
     return;
   }
-  const preferCandidate =
-    (existing.payerName === NO_PAYER_LABEL && candidate.payerName !== NO_PAYER_LABEL)
-    || (existing.paymentMethodUnknown && !candidate.paymentMethodUnknown)
-    || (existing.source === "db" && candidate.source === "live");
+  // Live без імені не повинен затирати БД з платником (після skipDocumentEnrichment).
+  const liveImprovesPayer =
+    existing.payerName === NO_PAYER_LABEL && candidate.payerName !== NO_PAYER_LABEL;
+  const liveImprovesMethod =
+    existing.paymentMethodUnknown
+    && !candidate.paymentMethodUnknown
+    && !(existing.payerName !== NO_PAYER_LABEL && candidate.payerName === NO_PAYER_LABEL);
+  const liveNewerSameOrBetter =
+    existing.source === "db"
+    && candidate.source === "live"
+    && (candidate.payerName !== NO_PAYER_LABEL || existing.payerName === NO_PAYER_LABEL);
+  const preferCandidate = liveImprovesPayer || liveImprovesMethod || liveNewerSameOrBetter;
   if (preferCandidate) {
     const keepExistingAccount =
       isPlaceholderAccountTitle(candidate.accountTitle) && !isPlaceholderAccountTitle(existing.accountTitle);
     byId.set(key, {
       ...existing,
       ...candidate,
+      clientId: candidate.clientId ?? existing.clientId,
       payerName: candidate.payerName !== NO_PAYER_LABEL ? candidate.payerName : existing.payerName,
       accountTitle: keepExistingAccount ? existing.accountTitle : candidate.accountTitle,
       accountId: keepExistingAccount ? existing.accountId : (candidate.accountId ?? existing.accountId),
       paymentPurpose: candidate.paymentPurpose ?? existing.paymentPurpose,
       source: existing.source === "db" && candidate.source === "live" ? "live" : existing.source,
+    });
+    return;
+  }
+
+  // Live «без платника» поверх БД з іменем — лише доповнюємо clientId/рахунок, ім'я лишаємо.
+  if (existing.source === "db" && candidate.source === "live") {
+    byId.set(key, {
+      ...existing,
+      clientId: existing.clientId ?? candidate.clientId,
+      accountTitle:
+        isPlaceholderAccountTitle(existing.accountTitle) && !isPlaceholderAccountTitle(candidate.accountTitle)
+          ? candidate.accountTitle
+          : existing.accountTitle,
+      accountId: existing.accountId ?? candidate.accountId,
+      paymentPurpose: existing.paymentPurpose ?? candidate.paymentPurpose,
     });
     return;
   }
@@ -998,7 +1165,13 @@ function dropMirroredInternalTransfers(rows: NormalizedAltegioIncomeRow[]): {
 }
 
 function isVerifiedClientPaymentRow(row: NormalizedAltegioIncomeRow): boolean {
-  return row.documentId != null || row.payerName !== NO_PAYER_LABEL;
+  // Без documents/records ім'я часто порожнє, але client_id/record_id є — такі рядки раніше зникали з UI.
+  return (
+    row.documentId != null
+    || row.recordId != null
+    || row.clientId != null
+    || row.payerName !== NO_PAYER_LABEL
+  );
 }
 
 async function fetchTransactionsApiIncomeRows(dateFrom: string, dateTo: string): Promise<NormalizedAltegioIncomeRow[]> {
@@ -1471,11 +1644,12 @@ export async function buildIncomingReconciliationPreview(options?: {
   ]);
   const liveRows = liveFetch.rows;
   // Завжди мержимо з БД: частковий live більше не «з’їдає» історію і не дає порожній екран.
-  const baseRows = mergeIncomeRows(liveRows, dbRows);
+  const mergedRows = mergeIncomeRows(liveRows, dbRows);
+  const withPayers = await enrichMissingPayersFromDirectClients(mergedRows);
 
   const incomeRows = enrichPlaceholderAccounts(
     excludeTransferIncomeRows(
-      baseRows.filter((row) =>
+      withPayers.filter((row) =>
         isValidIncomeKyivDay(row.kyivDay, dateFrom, dateTo),
       ),
     ).rows,
