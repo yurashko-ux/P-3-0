@@ -80,7 +80,7 @@ export async function POST(request: Request) {
       return NextResponse.json(
         {
           success: false,
-          error: validation.error,
+          error: 'error' in validation ? validation.error : 'Помилка валідації',
         },
         { status: 400 }
       );
@@ -220,7 +220,7 @@ function extractTags(html: string, tag: string): string[] {
 function extractMeta(html: string): Record<string, string> {
   const meta: Record<string, string> = {};
   const metaRegex = /<meta\s+([^>]+)>/gi;
-  const matches = html.matchAll(metaRegex);
+  const matches = Array.from(html.matchAll(metaRegex));
   
   for (const match of matches) {
     const attrs = match[1];
