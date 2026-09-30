@@ -1415,6 +1415,46 @@ function mergeIncomeRows(liveRows: NormalizedAltegioIncomeRow[], dbRows: Normali
   return Array.from(byId.values());
 }
 
+/**
+ * Доходи Altegio за один kyiv-день у тому ж вигляді, що й payment-reconciliation:
+ * live GET /transactions (+ documents) з пріоритетом, інакше DB; без переміщень/інкасацій.
+ */
+export async function fetchAltegioIncomeRowsForKyivDay(kyivDay: string): Promise<{
+  rows: NormalizedAltegioIncomeRow[];
+  source: "db" | "live" | "mixed";
+  droppedMirrors: number;
+}> {
+  const dateFrom = kyivDay;
+  const dateTo = kyivDay;
+
+  const [liveFetch, dbRows] = await Promise.all([
+    fetchLiveIncomeRowsRange(dateFrom, dateTo),
+    fetchDbIncomeRowsRange(dateFrom, dateTo),
+  ]);
+  const liveRows = liveFetch.rows;
+  const baseRows = liveRows.length > 0 ? liveRows : mergeIncomeRows(liveRows, dbRows);
+  const incomeRows = enrichPlaceholderAccounts(
+    excludeTransferIncomeRows(
+      baseRows.filter((row) => isValidIncomeKyivDay(row.kyivDay, dateFrom, dateTo)),
+    ).rows,
+  );
+
+  console.log("[incoming-altegio-aggregate] Доходи за день", {
+    kyivDay,
+    liveRows: liveRows.length,
+    dbRows: dbRows.length,
+    incomeRows: incomeRows.length,
+    source: detectIncomeSource(incomeRows.length > 0 ? incomeRows : dbRows),
+    droppedMirrors: liveFetch.droppedMirrors,
+  });
+
+  return {
+    rows: incomeRows,
+    source: detectIncomeSource(incomeRows.length > 0 ? incomeRows : dbRows),
+    droppedMirrors: liveFetch.droppedMirrors,
+  };
+}
+
 export async function buildIncomingReconciliationPreview(): Promise<IncomingReconciliationPreview> {
   const dateFrom = INCOMING_RANGE_START_DATE;
   const dateTo = getKyivTodayYmd();

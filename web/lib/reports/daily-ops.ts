@@ -16,7 +16,9 @@ import {
   countF4RecordsCreatedOnDay,
   getActiveBaseDailyMetrics,
   getBinotelIncomingMissedOnKyivDay,
+  type RemovedActiveBaseClient,
 } from "@/lib/reports/daily-ops-extras";
+import { getFinanceDayTotals } from "@/lib/reports/finance-day-totals";
 import type { DirectClient, DirectLeadAgency } from "@/lib/direct-types";
 import { countLeadsStatsRecordsOnKyivDay } from "@/lib/direct-leads-stats-filters";
 
@@ -38,7 +40,10 @@ export type DailyOpsReportData = {
   rebookingsCount: number;
   recordsCreatedCount: number;
   recordsRealizedCountToday: number;
+  /** Оборот з фінансів Altegio (без top-up завдатку). */
   turnoverToday: number;
+  /** Завдатки («Поповнення рахунку») за день — окремо від обороту. */
+  depositsToday: number;
   incomingUnmatched: number;
   outgoingUnmatched: number;
   callsIncoming: number;
@@ -47,7 +52,9 @@ export type DailyOpsReportData = {
   callsMissedNames: string[];
   activeBaseCount: number;
   removedFromActiveBaseCount: number;
+  /** @deprecated використовуйте removedFromActiveBaseClients */
   removedFromActiveBaseNames: string[];
+  removedFromActiveBaseClients: RemovedActiveBaseClient[];
 };
 
 async function enrichClientsWithKvConsultCreatedAt<
@@ -95,11 +102,22 @@ export async function buildDailyOpsReport(options?: {
   });
   const { today } = periodStats;
 
-  const [bankUnmatched, calls, activeBase, incomingMissed] = await Promise.all([
+  const [bankUnmatched, calls, activeBase, incomingMissed, financeDay] = await Promise.all([
     countBankUnmatchedForKyivDay(kyivDay),
     computeBinotelCallsFilterCountsFromDb({ kyivDay }),
     getActiveBaseDailyMetrics(kyivDay),
     getBinotelIncomingMissedOnKyivDay(kyivDay),
+    getFinanceDayTotals(kyivDay).catch((err) => {
+      console.warn("[reports/daily-ops] Не вдалося отримати фінанси за день, оборот/завдатки=0:", err);
+      return {
+        kyivDay,
+        turnoverUah: 0,
+        depositsUah: 0,
+        turnoverCount: 0,
+        depositCount: 0,
+        source: "db" as const,
+      };
+    }),
   ]);
 
   const newLeadsCount = today.newLeadsCount ?? 0;
@@ -120,6 +138,14 @@ export async function buildDailyOpsReport(options?: {
   );
   const newLeadsOrganicCount = Math.max(0, newLeadsCount - newLeadsAgency2Count - newLeadsAgency1Count);
 
+  console.log("[reports/daily-ops] Оборот/завдатки зі зведення Altegio", {
+    kyivDay,
+    turnoverUah: financeDay.turnoverUah,
+    depositsUah: financeDay.depositsUah,
+    source: financeDay.source,
+    directTurnoverFallbackWas: today.turnoverToday ?? 0,
+  });
+
   return {
     kyivDay,
     newLeadsCount,
@@ -134,7 +160,8 @@ export async function buildDailyOpsReport(options?: {
     rebookingsCount: today.rebookingsCount ?? 0,
     recordsCreatedCount: countF4RecordsCreatedOnDay(clients as DirectClient[], kyivDay),
     recordsRealizedCountToday: today.recordsRealizedCountToday ?? 0,
-    turnoverToday: today.turnoverToday ?? 0,
+    turnoverToday: financeDay.turnoverUah,
+    depositsToday: financeDay.depositsUah,
     incomingUnmatched: bankUnmatched.incomingUnmatched,
     outgoingUnmatched: bankUnmatched.outgoingUnmatched,
     callsIncoming: calls.incoming,
@@ -144,5 +171,6 @@ export async function buildDailyOpsReport(options?: {
     activeBaseCount: activeBase.activeBaseCount,
     removedFromActiveBaseCount: activeBase.removedFromActiveBaseCount,
     removedFromActiveBaseNames: activeBase.removedFromActiveBaseNames,
+    removedFromActiveBaseClients: activeBase.removedFromActiveBaseClients,
   };
 }
