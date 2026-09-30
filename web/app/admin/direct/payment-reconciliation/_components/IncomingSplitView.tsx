@@ -3467,7 +3467,7 @@ export function IncomingSplitView({
         method: "POST",
         cache: "no-store",
         credentials: "include",
-        signal: AbortSignal.timeout(120_000),
+        signal: AbortSignal.timeout(240_000),
       });
       const payload = await res.json() as { ok?: boolean; error?: string };
       if (!res.ok || !payload.ok) {
@@ -3476,7 +3476,9 @@ export function IncomingSplitView({
       await loadData();
     } catch (runError) {
       if (runError instanceof Error && runError.name === "TimeoutError") {
-        setError("Ручне зведення перевищило час очікування. Спробуйте ще раз.");
+        setError(
+          "Ручне зведення перевищило час очікування (сервер тягне Altegio за весь період). Спробуйте ще раз — тепер зводимо лише незведені дні.",
+        );
       } else {
         setError(runError instanceof Error ? runError.message : "Помилка ручного зведення");
       }

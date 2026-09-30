@@ -416,17 +416,39 @@ export async function persistMissingIncomingMatchesForRecentBankItems(options?: 
 }
 
 /**
- * Автозведення вхідних за всі дні періоду preview (як deposit-sync при «Оновити»).
+ * Автозведення вхідних за дні періоду preview.
+ * За замовчуванням лише дні, де ще є незведені банківські рядки —
+ * інакше «Звести» ганяє всі ~100 днів з червня і б’є timeout.
  */
 export async function syncIncomingPaymentsForPreview(
   preview: IncomingReconciliationPreview,
-  options: { dryRun?: boolean; matchedBy?: string | null } = {},
+  options: {
+    dryRun?: boolean;
+    matchedBy?: string | null;
+    /** Якщо false — зводити всі дні (повільно). За замовчуванням true. */
+    onlyUnmatchedBankDays?: boolean;
+  } = {},
 ): Promise<SyncIncomingPaymentsForPreviewResult> {
+  const onlyUnmatchedBankDays = options.onlyUnmatchedBankDays !== false;
   const altegioDays = filterAltegioDaysNonCash(groupAltegioPayersByDay(preview.altegio.byPayer));
   const bankDays = regroupBankByDayWithAcquiringShift(preview.bank.byDay);
+
+  const allBankIds = bankDays.flatMap((day) => day.rows.map((row) => row.id));
+  const alreadyMatched = onlyUnmatchedBankDays
+    ? await loadExistingMatchedBankIds(allBankIds)
+    : new Set<string>();
+
   const kyivDays = new Set<string>();
-  for (const day of altegioDays) kyivDays.add(day.kyivDay);
-  for (const day of bankDays) kyivDays.add(day.kyivDay);
+  if (onlyUnmatchedBankDays) {
+    for (const day of bankDays) {
+      const hasOpen = day.rows.some((row) => !alreadyMatched.has(row.id));
+      if (hasOpen) kyivDays.add(day.kyivDay);
+    }
+    // Дні лише з Altegio без відкритого банку зводити нічого — пропускаємо.
+  } else {
+    for (const day of altegioDays) kyivDays.add(day.kyivDay);
+    for (const day of bankDays) kyivDays.add(day.kyivDay);
+  }
 
   const sortedDays = [...kyivDays].sort();
   const dayResults: ReconcileIncomingDayResult[] = [];
@@ -438,6 +460,8 @@ export async function syncIncomingPaymentsForPreview(
     dateFrom: preview.dateFrom,
     dateTo: preview.dateTo,
     days: sortedDays.length,
+    onlyUnmatchedBankDays,
+    alreadyMatchedBank: alreadyMatched.size,
     dryRun: options.dryRun === true,
   });
 

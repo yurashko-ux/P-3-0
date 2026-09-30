@@ -1051,28 +1051,41 @@ async function fetchLiveIncomeRowsRange(dateFrom: string, dateTo: string): Promi
 }> {
   const byId = new Map<string, NormalizedAltegioIncomeRow>();
   const chunks = buildDateChunks(dateFrom, dateTo, 7);
+  // Паралельно по кілька тижнів — інакше «Звести»/GET б’ють 120s на всьому періоді з червня.
+  const concurrency = 3;
 
-  for (const chunk of chunks) {
-    try {
-      const transactionRows = await fetchTransactionsApiIncomeRows(chunk.from, chunk.to);
-      for (const row of transactionRows) upsertIncomeRow(byId, row);
-    } catch (error) {
-      console.warn("[incoming-altegio-aggregate] GET /transactions chunk не вдався", {
-        dateFrom: chunk.from,
-        dateTo: chunk.to,
-        error: error instanceof Error ? error.message : String(error),
-      });
-    }
+  for (let i = 0; i < chunks.length; i += concurrency) {
+    const batch = chunks.slice(i, i + concurrency);
+    const batchRows = await Promise.all(
+      batch.map(async (chunk) => {
+        const collected: NormalizedAltegioIncomeRow[] = [];
+        try {
+          const transactionRows = await fetchTransactionsApiIncomeRows(chunk.from, chunk.to);
+          collected.push(...transactionRows);
+        } catch (error) {
+          console.warn("[incoming-altegio-aggregate] GET /transactions chunk не вдався", {
+            dateFrom: chunk.from,
+            dateTo: chunk.to,
+            error: error instanceof Error ? error.message : String(error),
+          });
+        }
 
-    try {
-      const documentRows = await fetchDocumentVerifiedIncomeRows(chunk.from, chunk.to);
-      for (const row of documentRows) upsertIncomeRow(byId, row);
-    } catch (error) {
-      console.warn("[incoming-altegio-aggregate] transactions+records chunk не вдався", {
-        dateFrom: chunk.from,
-        dateTo: chunk.to,
-        error: error instanceof Error ? error.message : String(error),
-      });
+        try {
+          const documentRows = await fetchDocumentVerifiedIncomeRows(chunk.from, chunk.to);
+          collected.push(...documentRows);
+        } catch (error) {
+          console.warn("[incoming-altegio-aggregate] transactions+records chunk не вдався", {
+            dateFrom: chunk.from,
+            dateTo: chunk.to,
+            error: error instanceof Error ? error.message : String(error),
+          });
+        }
+        return collected;
+      }),
+    );
+
+    for (const rows of batchRows) {
+      for (const row of rows) upsertIncomeRow(byId, row);
     }
   }
 
@@ -1084,6 +1097,7 @@ async function fetchLiveIncomeRowsRange(dateFrom: string, dateTo: string): Promi
     dateFrom,
     dateTo,
     chunks: chunks.length,
+    concurrency,
     rows: rows.length,
     droppedInvalidDates: byId.size - validRows.length,
     droppedTransfers,
