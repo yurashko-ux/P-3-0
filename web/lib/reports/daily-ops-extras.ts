@@ -11,10 +11,17 @@ import {
 
 const SUCCESS_DISPOSITIONS = new Set(["ANSWER", "VM-SUCCESS", "SUCCESS"]);
 
+export type RemovedActiveBaseClient = {
+  id: string;
+  name: string;
+};
+
 export type ActiveBaseDailyMetrics = {
   activeBaseCount: number;
   removedFromActiveBaseCount: number;
+  /** @deprecated використовуйте removedFromActiveBaseClients */
   removedFromActiveBaseNames: string[];
+  removedFromActiveBaseClients: RemovedActiveBaseClient[];
 };
 
 export function formatClientDisplayName(client: {
@@ -57,22 +64,24 @@ export async function getActiveBaseDailyMetrics(kyivDay: string): Promise<Active
     todaySnapshot.activeClientIds,
   );
 
-  let removedFromActiveBaseNames: string[] = [];
+  let removedFromActiveBaseClients: RemovedActiveBaseClient[] = [];
   if (removedClientIds.length > 0) {
     const clients = await prisma.directClient.findMany({
       where: { id: { in: removedClientIds } },
       select: { id: true, firstName: true, lastName: true, instagramUsername: true },
     });
     const byId = new Map(clients.map((client) => [client.id, client]));
-    removedFromActiveBaseNames = removedClientIds.map((id) =>
-      formatClientDisplayName(byId.get(id) ?? {}),
-    );
+    removedFromActiveBaseClients = removedClientIds.map((id) => ({
+      id,
+      name: formatClientDisplayName(byId.get(id) ?? {}),
+    }));
   }
 
   return {
     activeBaseCount: todaySnapshot.activeBaseCount,
     removedFromActiveBaseCount: removedClientIds.length,
-    removedFromActiveBaseNames,
+    removedFromActiveBaseNames: removedFromActiveBaseClients.map((client) => client.name),
+    removedFromActiveBaseClients,
   };
 }
 
@@ -127,4 +136,70 @@ export async function getBinotelIncomingMissedOnKyivDay(kyivDay: string): Promis
 export function formatNameListForTelegram(names: string[]): string {
   const text = truncateNameList(names);
   return text ? ` (${text})` : "";
+}
+
+const DIRECT_APP_ORIGIN = "https://p-3-0.vercel.app";
+
+function escapeTelegramHtml(value: string): string {
+  return value
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;");
+}
+
+/** Посилання на картку(и) клієнта в Direct: /admin/direct?clientIds=… */
+export function buildDirectClientsHref(
+  clientIds: string[],
+  opts?: {
+    day?: string;
+    activeBaseChange?: "removed" | "added" | "returned" | "new";
+  },
+): string {
+  const params = new URLSearchParams();
+  params.set("clientIds", [...new Set(clientIds.filter(Boolean))].join(","));
+  if (opts?.activeBaseChange) params.set("activeBaseChange", opts.activeBaseChange);
+  if (opts?.day && /^\d{4}-\d{2}-\d{2}$/.test(opts.day)) params.set("day", opts.day);
+  return `${DIRECT_APP_ORIGIN}/admin/direct?${params.toString()}`;
+}
+
+/** href для Telegram HTML: & → &amp; (інакше parse_mode ламає посилання). */
+export function toTelegramHtmlHref(href: string): string {
+  return href.replace(/&/g, "&amp;");
+}
+
+export function formatTelegramHtmlLink(href: string, label: string): string {
+  return `<a href="${toTelegramHtmlHref(href)}">${escapeTelegramHtml(label)}</a>`;
+}
+
+/**
+ * Список імен як HTML-посилання в Telegram.
+ * Якщо передано sharedHref — усі імена ведуть на один спільний список клієнтів.
+ */
+export function formatClientLinksForTelegram(
+  clients: RemovedActiveBaseClient[],
+  opts?: {
+    day?: string;
+    activeBaseChange?: "removed" | "added" | "returned" | "new";
+    /** Спільне посилання для всіх імен (усі вибулі за день). */
+    sharedHref?: string;
+    maxItems?: number;
+  },
+): string {
+  const maxItems = opts?.maxItems ?? 8;
+  const unique = clients.filter((client) => client?.id && client?.name);
+  if (unique.length === 0) return "";
+
+  const shown = unique.slice(0, maxItems);
+  const links = shown.map((client) => {
+    const href =
+      opts?.sharedHref ||
+      buildDirectClientsHref([client.id], {
+        day: opts?.day,
+        activeBaseChange: opts?.activeBaseChange,
+      });
+    return formatTelegramHtmlLink(href, client.name);
+  });
+  const suffix = unique.length > maxItems ? ` +${unique.length - maxItems}` : "";
+  return ` (${links.join(", ")}${suffix})`;
 }
