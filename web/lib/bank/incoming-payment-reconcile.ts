@@ -8,6 +8,7 @@ import {
   bankRowsReconcileFullTotalKop,
   buildIncomingDayAlignment,
   evaluateIncomingAccountReconcile,
+  evaluateOpenReconcilePairs,
   filterAltegioDaysNonCash,
   groupAltegioPayersByDay,
   isIncomingRowAcquiringForReconcile,
@@ -56,6 +57,10 @@ export type SyncIncomingPaymentsForPreviewResult = {
   skippedAlreadyMatched: number;
   dayResults: ReconcileIncomingDayResult[];
   errors: string[];
+  /** Скільки точних пар знайдено live-оцінкою перед записом у БД. */
+  exactPairsFound?: number;
+  /** Чи є серед них завдатки (для окремого deposit-sync). */
+  hasDepositPairs?: boolean;
 };
 
 function formatMoneyUah(kop: bigint): string {
@@ -414,6 +419,87 @@ export async function persistMissingIncomingMatchesForRecentBankItems(options?: 
 
   const result = await persistMissingIncomingMatchesForBankItems(rows);
   return { ...result, scannedItems: rows.length };
+}
+
+/**
+ * Кнопка «Звести»: лише вже знайдені точні пари з live-оцінки
+ * (іменовані + еквайринг-batch / 1:1 + завдатки), без перебору всіх відкритих днів.
+ */
+export async function syncExactOpenPairsFromPreview(
+  preview: IncomingReconciliationPreview,
+  options: { dryRun?: boolean; matchedBy?: string | null } = {},
+): Promise<SyncIncomingPaymentsForPreviewResult> {
+  const pairs = evaluateOpenReconcilePairs(preview.altegio.byPayer, preview.bank.byDay);
+  const bankIds = pairs.map((pair) => pair.bankRowId);
+  const alreadyMatched = await loadExistingMatchedBankIds(bankIds);
+  const openPairs = pairs.filter((pair) => !alreadyMatched.has(pair.bankRowId));
+
+  const incomingDays = [
+    ...new Set(
+      openPairs
+        .filter((pair) => pair.kind === "named" || pair.kind === "acquiring")
+        .map((pair) => pair.kyivDay),
+    ),
+  ].sort();
+  const hasDepositPairs = openPairs.some((pair) => pair.kind === "deposit");
+
+  console.log("[incoming-payment-reconcile] Звести: лише точні пари", {
+    exactPairsFound: pairs.length,
+    openPairs: openPairs.length,
+    incomingDays: incomingDays.length,
+    hasDepositPairs,
+    alreadyMatched: alreadyMatched.size,
+    dryRun: options.dryRun === true,
+  });
+
+  if (incomingDays.length === 0) {
+    return {
+      days: 0,
+      matchedBankItems: 0,
+      skippedAlreadyMatched: alreadyMatched.size,
+      dayResults: [],
+      errors: [],
+      exactPairsFound: pairs.length,
+      hasDepositPairs,
+    };
+  }
+
+  const dayResults: ReconcileIncomingDayResult[] = [];
+  const errors: string[] = [];
+  let matchedBankItems = 0;
+  let skippedAlreadyMatched = alreadyMatched.size;
+
+  for (const kyivDay of incomingDays) {
+    try {
+      const result = await reconcileIncomingPaymentsForKyivDay(kyivDay, {
+        ...options,
+        preview,
+      });
+      dayResults.push(result);
+      matchedBankItems += result.matchedBankItems;
+      skippedAlreadyMatched += result.skippedAlreadyMatched;
+      errors.push(...result.errors);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      errors.push(`${kyivDay}: ${message}`);
+      console.error("[incoming-payment-reconcile] Помилка зведення точної пари за день", {
+        kyivDay,
+        error: message,
+      });
+    }
+  }
+
+  const summary: SyncIncomingPaymentsForPreviewResult = {
+    days: incomingDays.length,
+    matchedBankItems,
+    skippedAlreadyMatched,
+    dayResults,
+    errors,
+    exactPairsFound: pairs.length,
+    hasDepositPairs,
+  };
+  console.log("[incoming-payment-reconcile] Звести (точні пари) завершено", summary);
+  return summary;
 }
 
 /**
