@@ -3477,6 +3477,8 @@ export function IncomingSplitView({
   const [loading, setLoading] = useState(false);
   const [depositTabLoading, setDepositTabLoading] = useState(false);
   const [reconciling, setReconciling] = useState(false);
+  /** kyivDay, для якого зараз тягнемо Altegio (кнопка біля дати). */
+  const [refreshingDay, setRefreshingDay] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [expandedAccounts, setExpandedAccounts] = useState<Set<string>>(() => new Set());
   const [altegioCashFilter, setAltegioCashFilter] = useState<AltegioCashFilter>("non_cash");
@@ -3599,6 +3601,47 @@ export function IncomingSplitView({
       setReconciling(false);
     }
   }, [loadData]);
+
+  /** Підтягнути вхідні Altegio лише за один день (documents/records + upsert у БД). */
+  const refreshAltegioDay = useCallback(async (kyivDay: string) => {
+    if (refreshingDay || loading || reconciling) return;
+    setRefreshingDay(kyivDay);
+    setError(null);
+    try {
+      const res = await fetch(
+        "/api/admin/bank/payment-reconciliation/incoming/refresh-day",
+        {
+          method: "POST",
+          cache: "no-store",
+          credentials: "include",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ kyivDay }),
+          signal: AbortSignal.timeout(120_000),
+        },
+      );
+      const payload = (await res.json()) as {
+        ok?: boolean;
+        error?: string;
+        refresh?: { withPayerName?: number; upsertedToDb?: number };
+      };
+      if (!res.ok || !payload.ok) {
+        throw new Error(payload.error || `Не вдалося підтягнути Altegio за ${kyivDay}`);
+      }
+      console.log("[IncomingSplitView] Підтягнуто Altegio за день", {
+        kyivDay,
+        refresh: payload.refresh,
+      });
+      await loadData();
+    } catch (dayError) {
+      if (dayError instanceof Error && dayError.name === "TimeoutError") {
+        setError(`Підтягування ${kyivDay} перевищило час. Спробуйте ще раз.`);
+      } else {
+        setError(dayError instanceof Error ? dayError.message : "Помилка підтягування дня");
+      }
+    } finally {
+      setRefreshingDay(null);
+    }
+  }, [refreshingDay, loading, reconciling, loadData]);
 
   useEffect(() => {
     void loadData();
@@ -4193,7 +4236,20 @@ export function IncomingSplitView({
                       <tbody>
                         <tr>
                           <td colSpan={altegioHeaderColSpan} className="px-1 py-1">
-                            <h3 className="font-bold uppercase tracking-wide text-gray-900">{day.dayLabel}</h3>
+                            <div className="flex flex-wrap items-center gap-2">
+                              <h3 className="font-bold uppercase tracking-wide text-gray-900">{day.dayLabel}</h3>
+                              {reconciliationStatus === "open" || reconciliationStatus === "all" ? (
+                                <button
+                                  type="button"
+                                  disabled={Boolean(refreshingDay) || loading || reconciling}
+                                  onClick={() => void refreshAltegioDay(day.kyivDay)}
+                                  title="Підтягнути вхідні платежі Altegio лише за цей день"
+                                  className="rounded border border-sky-700 bg-sky-50 px-1.5 py-0.5 text-[9px] font-semibold uppercase tracking-wide text-sky-900 hover:bg-sky-100 disabled:cursor-not-allowed disabled:opacity-50"
+                                >
+                                  {refreshingDay === day.kyivDay ? "Тягну…" : "Altegio день"}
+                                </button>
+                              ) : null}
+                            </div>
                           </td>
                           <td className="whitespace-nowrap px-1 py-1 text-right font-semibold tabular-nums text-emerald-900">
                             {day.altegio ? `${formatMoney(day.altegio.totalKop)} ₴` : "—"}
