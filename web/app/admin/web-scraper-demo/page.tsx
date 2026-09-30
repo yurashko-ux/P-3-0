@@ -62,9 +62,10 @@ export default function WebScraperDemoPage() {
         body.options = options;
       }
 
-      // Виконуємо запит
+      // credentials: cookie admin_token з адмін-логіну
       const response = await fetch("/api/admin/web-scraper", {
         method: "POST",
+        credentials: "include",
         headers: {
           "Content-Type": "application/json",
         },
@@ -72,6 +73,11 @@ export default function WebScraperDemoPage() {
       });
 
       const data = await response.json();
+      if (response.status === 401) {
+        setError(data?.hint || data?.error || "Потрібен вхід в адмінку");
+        setResult(data);
+        return;
+      }
       setResult(data);
     } catch (err: any) {
       setError(err.message || "Невідома помилка");
