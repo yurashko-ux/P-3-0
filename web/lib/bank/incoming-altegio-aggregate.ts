@@ -710,31 +710,40 @@ async function enrichMissingPayersFromRecords(
   const clientIdByRecordId = new Map<number, number>();
   const batchSize = 5;
 
+  const recordPaths = (recordId: number) => [
+    `/records/${companyId}/${recordId}`,
+    `/company/${companyId}/records/${recordId}`,
+    `/records/${recordId}`,
+  ];
+
   for (let i = 0; i < missingRecordIds.length; i += batchSize) {
     const batch = missingRecordIds.slice(i, i + batchSize);
     await Promise.all(
       batch.map(async (recordId) => {
-        try {
-          const raw = await altegioFetch<unknown>(`/company/${companyId}/records/${recordId}`);
-          const payload = asRecord(raw);
-          const data = asRecord(payload?.data) ?? payload;
-          if (!data) return;
-          const client = asRecord(data.client) ?? asRecord(asRecord(data.data)?.client);
-          const name =
-            cleanText(client?.name)
-            || cleanText(client?.display_name)
-            || cleanText(client?.full_name)
-            || cleanText(data.client_name)
-            || [cleanText(client?.surname ?? client?.last_name), cleanText(client?.firstname ?? client?.first_name)]
-              .filter(Boolean)
-              .join(" ")
-              .trim()
-            || null;
-          const clientId = toInt(data.client_id) ?? toInt(client?.id) ?? toInt(client?.client_id);
-          if (name) nameByRecordId.set(recordId, name);
-          if (clientId) clientIdByRecordId.set(recordId, clientId);
-        } catch {
-          // records часто 404 — не шумимо кожним
+        for (const path of recordPaths(recordId)) {
+          try {
+            const raw = await altegioFetch<unknown>(path, {}, 1, 200, 12_000);
+            const payload = asRecord(raw);
+            const data = asRecord(payload?.data) ?? payload;
+            if (!data) continue;
+            const client = asRecord(data.client) ?? asRecord(asRecord(data.data)?.client);
+            const name =
+              cleanText(client?.name)
+              || cleanText(client?.display_name)
+              || cleanText(client?.full_name)
+              || cleanText(data.client_name)
+              || [cleanText(client?.surname ?? client?.last_name), cleanText(client?.firstname ?? client?.first_name)]
+                .filter(Boolean)
+                .join(" ")
+                .trim()
+              || null;
+            const clientId = toInt(data.client_id) ?? toInt(client?.id) ?? toInt(client?.client_id);
+            if (name) nameByRecordId.set(recordId, name);
+            if (clientId) clientIdByRecordId.set(recordId, clientId);
+            if (name || clientId) break;
+          } catch {
+            // records часто 404 — пробуємо наступний path
+          }
         }
       }),
     );
@@ -817,14 +826,28 @@ async function enrichMissingPayersFromFinanceTransactions(
             ?? toInt(asRecord(data.record)?.id)
             ?? toInt(data.appointment_id)
             ?? null;
+          const purpose =
+            getSalePurposeText(data)
+            || resolveAltegioPaymentPurposeFromRaw(data)
+            || null;
+
+          // Якщо клієнта немає (типові «Продаж товарів») — показуємо призначення замість «без платника».
+          const fallbackLabel =
+            purpose && purpose.trim() && purpose.trim().toLowerCase() !== "надання послуг"
+              ? purpose.trim()
+              : null;
 
           if (
             (name && name !== NO_PAYER_LABEL)
             || clientId != null
             || recordId != null
+            || fallbackLabel
           ) {
             patchById.set(row.altegioId, {
-              payerName: name && name !== NO_PAYER_LABEL ? name : undefined,
+              payerName:
+                (name && name !== NO_PAYER_LABEL ? name : undefined)
+                || fallbackLabel
+                || undefined,
               clientId: clientId ?? undefined,
               recordId: recordId ?? undefined,
             });
@@ -1858,10 +1881,19 @@ export async function buildIncomingReconciliationPreview(options?: {
   const withFinanceDetails = await enrichMissingPayersFromFinanceTransactions(withRecords);
   // Після records/finance_transactions могли з’явитись нові clientId — ще раз Direct/search.
   const withPayersFinal = await enrichMissingPayersFromDirectClients(withFinanceDetails);
+  // Якщо клієнта так і немає — показуємо призначення («Продаж товарів»), а не «без платника».
+  const withPurposeFallback = withPayersFinal.map((row) => {
+    if (row.payerName !== NO_PAYER_LABEL) return row;
+    const purpose = row.paymentPurpose?.trim() || "";
+    if (!purpose) return row;
+    if (purpose.toLowerCase() === "надання послуг") return row;
+    if (/^\d+\s+оплат/i.test(purpose)) return row;
+    return { ...row, payerName: purpose };
+  });
 
   const incomeRows = enrichPlaceholderAccounts(
     excludeTransferIncomeRows(
-      withPayersFinal.filter((row) =>
+      withPurposeFallback.filter((row) =>
         isValidIncomeKyivDay(row.kyivDay, dateFrom, dateTo),
       ),
     ).rows,
