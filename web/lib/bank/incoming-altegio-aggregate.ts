@@ -710,10 +710,10 @@ async function enrichMissingPayersFromRecords(
   const clientIdByRecordId = new Map<number, number>();
   const batchSize = 5;
 
+  // Робочий path у проєкті: /records/{company}/{id}; fallback — company/.../records.
   const recordPaths = (recordId: number) => [
     `/records/${companyId}/${recordId}`,
     `/company/${companyId}/records/${recordId}`,
-    `/records/${recordId}`,
   ];
 
   for (let i = 0; i < missingRecordIds.length; i += batchSize) {
@@ -722,7 +722,7 @@ async function enrichMissingPayersFromRecords(
       batch.map(async (recordId) => {
         for (const path of recordPaths(recordId)) {
           try {
-            const raw = await altegioFetch<unknown>(path, {}, 1, 200, 12_000);
+            const raw = await altegioFetch<unknown>(path, {}, 1, 150, 5_000);
             const payload = asRecord(raw);
             const data = asRecord(payload?.data) ?? payload;
             if (!data) continue;
@@ -786,15 +786,15 @@ async function enrichMissingPayersFromRecords(
 async function enrichMissingPayersFromFinanceTransactions(
   rows: NormalizedAltegioIncomeRow[],
 ): Promise<NormalizedAltegioIncomeRow[]> {
+  // Лише безготівка без імені — готівку з monobank не зводимо, не ганяємо зайві Altegio-запити.
   const candidates = rows
-    .filter((row) => row.payerName === NO_PAYER_LABEL)
-    .sort((a, b) => {
-      const aCash = isCashAltegioAccountTitle(a.accountTitle) ? 1 : 0;
-      const bCash = isCashAltegioAccountTitle(b.accountTitle) ? 1 : 0;
-      if (aCash !== bCash) return aCash - bCash;
-      return b.kyivDay.localeCompare(a.kyivDay);
-    })
-    .slice(0, 40);
+    .filter(
+      (row) =>
+        row.payerName === NO_PAYER_LABEL
+        && !isCashAltegioAccountTitle(row.accountTitle),
+    )
+    .sort((a, b) => b.kyivDay.localeCompare(a.kyivDay))
+    .slice(0, 20);
 
   if (candidates.length === 0) return rows;
 
@@ -811,8 +811,8 @@ async function enrichMissingPayersFromFinanceTransactions(
             `/finance_transactions/${companyId}/${row.altegioId}`,
             {},
             1,
-            200,
-            12_000,
+            150,
+            5_000,
           );
           const payload = asRecord(raw);
           const data = asRecord(payload?.data) ?? payload;
