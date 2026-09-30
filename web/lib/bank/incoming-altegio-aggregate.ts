@@ -1195,8 +1195,16 @@ function normalizeDbRow(row: {
   }
 
   const amountKop = row.amountKopiykas < 0n ? -row.amountKopiykas : row.amountKopiykas;
-  if (amountKop <= 0n || row.expenseId) return null;
-  if (row.direction === "out" || row.direction === "transfer") return null;
+  if (amountKop <= 0n) return null;
+  if (row.direction === "transfer") return null;
+  // direction=out без документа/клієнта — справжня витрата; з document/іменем — часто хибний sync.
+  if (
+    row.direction === "out"
+    && row.documentId == null
+    && !cleanText(row.counterpartyName)
+  ) {
+    return null;
+  }
   if (isTransferPurpose(row.paymentPurpose)) return null;
 
   const accountTitle = row.accountTitle?.trim() || "— без рахунку —";
@@ -1522,15 +1530,20 @@ async function fetchLiveIncomeRowsRange(
 
 async function fetchDbIncomeRowsRange(dateFrom: string, dateTo: string): Promise<NormalizedAltegioIncomeRow[]> {
   const companyId = resolveCompanyId();
-  // expense_id у Altegio ≠ витрата: оплати клієнтів часто мають статтю + document_id.
+  // expense_id у Altegio ≠ витрата (це стаття). Старий sync помилково ставив direction=out —
+  // тому беремо всі додатні суми, крім явного transfer; out відсікаємо лише без клієнта/документа.
   const dbRows = await (prisma as any).altegioFinanceTransaction.findMany({
     where: {
       companyId,
       kyivDay: { gte: dateFrom, lte: dateTo },
       deletedInAltegio: false,
       amountKopiykas: { gt: 0 },
-      direction: { notIn: ["out", "transfer"] },
-      OR: [{ expenseId: null }, { documentId: { not: null } }],
+      direction: { not: "transfer" },
+      OR: [
+        { direction: { not: "out" } },
+        { documentId: { not: null } },
+        { counterpartyName: { not: null } },
+      ],
     },
     select: {
       altegioId: true,
@@ -2077,6 +2090,8 @@ export async function refreshIncomingAltegioForKyivDay(
         operationDate,
         kyivDay: row.kyivDay,
         amountKopiykas: row.amountKop,
+        // Примусово in: finance-sync раніше мітив клієнтські оплати як out через expense_id.
+        direction: "in",
         paymentPurpose: row.paymentPurpose ?? undefined,
         ...(counterpartyName ? { counterpartyName } : {}),
         sourceEndpoint: "incoming-refresh-day",

@@ -196,12 +196,12 @@ function getDocumentId(raw: RawAltegioFinanceTransaction): number | null {
 function detectDirection(raw: RawAltegioFinanceTransaction, amountKopiykas: bigint): string {
   const type = String(raw.type || "").toLowerCase();
   const typeId = String(raw.type_id || "").toLowerCase();
-  const expenseId = toInt(raw.expense_id ?? raw.expense?.id);
   const documentId = toInt(raw.document_id ?? raw.documentId ?? raw.document?.id ?? raw.document?.document_id);
   if (type.includes("transfer") || type.includes("переміщ") || type.includes("перевод")) return "transfer";
-  if (expenseId || type.includes("expense") || typeId === "2") return "out";
+  // Спочатку дохід: expense_id у Altegio часто = стаття прибутку (не витрата).
   if (type.includes("income") || typeId === "1") return "in";
   if (documentId) return "in";
+  if (type.includes("expense") || typeId === "2") return "out";
   if (amountKopiykas < 0n) return "out";
   if (amountKopiykas > 0n) return "in";
   return "unknown";
