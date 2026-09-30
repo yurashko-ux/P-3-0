@@ -377,6 +377,45 @@ export async function persistMissingIncomingMatchesForBankItems(
 }
 
 /**
+ * Страховка для cron: підтягнути нещодавні вхідні з monobank і дописати зведення в БД,
+ * якщо webhook не встиг / не викликав persist.
+ */
+export async function persistMissingIncomingMatchesForRecentBankItems(options?: {
+  lookbackDays?: number;
+  limit?: number;
+}): Promise<{ attemptedDays: string[]; matchedBankItems: number; scannedItems: number }> {
+  const lookbackDays = Math.max(1, options?.lookbackDays ?? 3);
+  const limit = Math.max(1, Math.min(options?.limit ?? 80, 200));
+  const from = new Date(Date.now() - lookbackDays * 24 * 60 * 60 * 1000);
+
+  const rows = await prisma.bankStatementItem.findMany({
+    where: {
+      amount: { gt: 0n },
+      time: { gte: from },
+      account: { includeInOperationsTable: true },
+    },
+    orderBy: [{ time: "desc" }],
+    take: limit,
+    select: {
+      id: true,
+      time: true,
+      amount: true,
+      description: true,
+      comment: true,
+      counterName: true,
+    },
+  });
+
+  console.log("[incoming-payment-reconcile] Cron-страховка вхідних", {
+    lookbackDays,
+    scannedItems: rows.length,
+  });
+
+  const result = await persistMissingIncomingMatchesForBankItems(rows);
+  return { ...result, scannedItems: rows.length };
+}
+
+/**
  * Автозведення вхідних за всі дні періоду preview (як deposit-sync при «Оновити»).
  */
 export async function syncIncomingPaymentsForPreview(
