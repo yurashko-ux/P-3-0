@@ -85,6 +85,8 @@ export type IncomingReconciliationPreview = {
       dbRows: number;
       mergedRows: number;
       droppedMirrors?: number;
+      /** Порожні транзакції Altegio без клієнта/record/document — не показуємо у Вхідних. */
+      droppedOrphanNoClient?: number;
     };
   };
   bank: {
@@ -558,10 +560,22 @@ export function parseBankCommission(text: string): { kopiykas: bigint | null; ra
   return { kopiykas: BigInt(Math.round(amount * 100)), raw: match[0] };
 }
 
+/** Altegio інколи віддає client як [] або [{...}] замість об'єкта. */
+function coerceClientRecord(value: unknown): RawRecord | null {
+  if (Array.isArray(value)) {
+    for (const item of value) {
+      const asObj = asRecord(item);
+      if (asObj) return asObj;
+    }
+    return null;
+  }
+  return asRecord(value);
+}
+
 function getClientIdFromRaw(raw: unknown): number | null {
   const record = asRecord(raw);
   if (!record) return null;
-  const client = asRecord(record.client) ?? asRecord(record.customer);
+  const client = coerceClientRecord(record.client) ?? coerceClientRecord(record.customer);
   const visit = asRecord(record.visit);
   const document = asRecord(record.document);
   const appointment = asRecord(record.appointment);
@@ -888,17 +902,33 @@ async function enrichMissingPayersFromFinanceTransactions(
   return next;
 }
 
+/**
+ * «Порожня» транзакція без клієнта в Altegio: client=[], немає record/document/призначення.
+ * ПІБ звідси не витягнути — такі рядки лише засмічують «Не зведені».
+ */
+function isOrphanNoClientIncome(row: NormalizedAltegioIncomeRow): boolean {
+  if (row.payerName !== NO_PAYER_LABEL) return false;
+  if (row.clientId != null) return false;
+  if (row.recordId != null) return false;
+  if (row.documentId != null) return false;
+  const purpose = row.paymentPurpose?.trim() || "";
+  if (purpose && purpose.toLowerCase() !== "надання послуг" && !/^\d+\s+оплат/i.test(purpose)) {
+    return false;
+  }
+  return true;
+}
+
 function getPayerNameFromRaw(raw: unknown, counterpartyName: string | null): string {
   if (counterpartyName) return counterpartyName;
   const record = asRecord(raw);
   if (!record) return NO_PAYER_LABEL;
 
-  const client = asRecord(record.client) ?? asRecord(record.customer);
+  const client = coerceClientRecord(record.client) ?? coerceClientRecord(record.customer);
   const payer = asRecord(record.payer) ?? asRecord(record.recipient);
   const visit = asRecord(record.visit);
-  const visitClient = asRecord(visit?.client);
+  const visitClient = coerceClientRecord(visit?.client);
   const document = asRecord(record.document);
-  const documentClient = asRecord(document?.client);
+  const documentClient = coerceClientRecord(document?.client);
   const candidates = [
     record.client_name,
     record.clientName,
@@ -1891,12 +1921,25 @@ export async function buildIncomingReconciliationPreview(options?: {
     return { ...row, payerName: purpose };
   });
 
+  const datedRows = withPurposeFallback.filter((row) =>
+    isValidIncomeKyivDay(row.kyivDay, dateFrom, dateTo),
+  );
+  const orphanNoClient = datedRows.filter(isOrphanNoClientIncome);
+  const withoutOrphans = datedRows.filter((row) => !isOrphanNoClientIncome(row));
+  if (orphanNoClient.length > 0) {
+    console.log("[incoming-altegio-aggregate] Прибрано порожні транзакції без клієнта в Altegio", {
+      dropped: orphanNoClient.length,
+      sample: orphanNoClient.slice(0, 8).map((row) => ({
+        altegioId: row.altegioId,
+        kyivDay: row.kyivDay,
+        accountTitle: row.accountTitle,
+        amountKop: row.amountKop.toString(),
+      })),
+    });
+  }
+
   const incomeRows = enrichPlaceholderAccounts(
-    excludeTransferIncomeRows(
-      withPurposeFallback.filter((row) =>
-        isValidIncomeKyivDay(row.kyivDay, dateFrom, dateTo),
-      ),
-    ).rows,
+    excludeTransferIncomeRows(withoutOrphans).rows,
   );
   const financeIndex = buildFinanceAccountIndex(incomeRows);
   const altegioByPayer = groupAltegioIncomeByPayer(incomeRows, financeIndex);
@@ -1915,6 +1958,7 @@ export async function buildIncomingReconciliationPreview(options?: {
     liveRows: liveRows.length,
     dbRows: dbRows.length,
     mergedRows: incomeRows.length,
+    droppedOrphanNoClient: orphanNoClient.length,
     altegioPayers: altegioByPayer.length,
     bankDays: bankAgg.byDay.length,
     source: altegioSource,
@@ -1933,6 +1977,7 @@ export async function buildIncomingReconciliationPreview(options?: {
         dbRows: dbRows.length,
         mergedRows: incomeRows.length,
         droppedMirrors: liveFetch.droppedMirrors,
+        droppedOrphanNoClient: orphanNoClient.length,
       },
     },
     bank: {
