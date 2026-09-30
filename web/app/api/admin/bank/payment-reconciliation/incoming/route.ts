@@ -13,7 +13,7 @@ export const runtime = "nodejs";
 /** Preview + запис лише точних пар; не повинен вимагати 300s. */
 export const maxDuration = 120;
 
-/** Швидке читання preview + збережені матчі (без автозведення та Altegio deposits). */
+/** Preview + автозведення точних пар (як «Звести»), щоб незведені з Δ=0 не висіли. */
 export async function GET(req: NextRequest) {
   const auth = await requireBankSection(req);
   if (auth instanceof NextResponse) return auth;
@@ -25,6 +25,24 @@ export async function GET(req: NextRequest) {
       liveLookbackDays: 21,
       skipDocumentEnrichment: true,
     });
+
+    // Автозведення точних пар при відкритті вкладки (cron дивиться лише ~дні).
+    let autoReconcile: Awaited<ReturnType<typeof syncExactOpenPairsFromPreview>> | null = null;
+    try {
+      autoReconcile = await syncExactOpenPairsFromPreview(preview, {
+        matchedBy: "auto_incoming_get",
+      });
+      console.log("[payment-reconciliation/incoming][GET] Автозведення точних пар", {
+        exactPairsFound: autoReconcile.exactPairsFound,
+        matchedBankItems: autoReconcile.matchedBankItems,
+        days: autoReconcile.days,
+        ms: Date.now() - startedAt,
+      });
+    } catch (autoError) {
+      console.warn("[payment-reconciliation/incoming][GET] Автозведення не вдалось", {
+        error: autoError instanceof Error ? autoError.message : String(autoError),
+      });
+    }
 
     const [incomingMatches, depositMatches] = await Promise.all([
       (prisma as any).bankAltegioIncomingMatch.findMany({
@@ -58,11 +76,20 @@ export async function GET(req: NextRequest) {
       altegioPayers: preview.altegio.byPayer.length,
       bankDays: preview.bank.byDay.length,
       matches: incomingMatches.length,
+      autoMatched: autoReconcile?.matchedBankItems ?? 0,
     });
 
     return NextResponse.json({
       ok: true,
       ...preview,
+      autoReconcile: autoReconcile
+        ? {
+            exactPairsFound: autoReconcile.exactPairsFound,
+            matchedBankItems: autoReconcile.matchedBankItems,
+            days: autoReconcile.days,
+            errors: autoReconcile.errors,
+          }
+        : null,
       reconciled: {
         bankItemIds: reconciledBankItemIds,
         matches: incomingMatches,

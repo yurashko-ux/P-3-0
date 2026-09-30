@@ -769,6 +769,102 @@ async function enrichMissingPayersFromRecords(
   return next;
 }
 
+/**
+ * Дотягування імені/clientId з GET /finance_transactions/{company}/{id}.
+ * Лише для «без платника» без clientId (або все ще без імені) — ліміт, щоб не тонути.
+ * Безготівкові рахунки мають пріоритет (вони впливають на зведення з monobank).
+ */
+async function enrichMissingPayersFromFinanceTransactions(
+  rows: NormalizedAltegioIncomeRow[],
+): Promise<NormalizedAltegioIncomeRow[]> {
+  const candidates = rows
+    .filter((row) => row.payerName === NO_PAYER_LABEL)
+    .sort((a, b) => {
+      const aCash = isCashAltegioAccountTitle(a.accountTitle) ? 1 : 0;
+      const bCash = isCashAltegioAccountTitle(b.accountTitle) ? 1 : 0;
+      if (aCash !== bCash) return aCash - bCash;
+      return b.kyivDay.localeCompare(a.kyivDay);
+    })
+    .slice(0, 40);
+
+  if (candidates.length === 0) return rows;
+
+  const companyId = resolveCompanyId();
+  const patchById = new Map<number, { payerName?: string; clientId?: number; recordId?: number }>();
+  const batchSize = 5;
+
+  for (let i = 0; i < candidates.length; i += batchSize) {
+    const batch = candidates.slice(i, i + batchSize);
+    await Promise.all(
+      batch.map(async (row) => {
+        try {
+          const raw = await altegioFetch<unknown>(
+            `/finance_transactions/${companyId}/${row.altegioId}`,
+            {},
+            1,
+            200,
+            12_000,
+          );
+          const payload = asRecord(raw);
+          const data = asRecord(payload?.data) ?? payload;
+          if (!data) return;
+
+          const name = getPayerNameFromRaw(data, null);
+          const clientId = getClientIdFromRaw(data);
+          const recordId =
+            toInt(data.record_id)
+            ?? toInt(data.recordId)
+            ?? toInt(asRecord(data.record)?.id)
+            ?? toInt(data.appointment_id)
+            ?? null;
+
+          if (
+            (name && name !== NO_PAYER_LABEL)
+            || clientId != null
+            || recordId != null
+          ) {
+            patchById.set(row.altegioId, {
+              payerName: name && name !== NO_PAYER_LABEL ? name : undefined,
+              clientId: clientId ?? undefined,
+              recordId: recordId ?? undefined,
+            });
+          }
+        } catch {
+          // 404/timeout — тихо; лишаємо «без платника»
+        }
+      }),
+    );
+  }
+
+  if (patchById.size === 0) {
+    console.log("[incoming-altegio-aggregate] finance_transactions: імен не знайдено", {
+      tried: candidates.length,
+    });
+    return rows;
+  }
+
+  let enriched = 0;
+  const next = rows.map((row) => {
+    if (row.payerName !== NO_PAYER_LABEL) return row;
+    const patch = patchById.get(row.altegioId);
+    if (!patch) return row;
+    enriched += 1;
+    return {
+      ...row,
+      payerName: patch.payerName || row.payerName,
+      clientId: patch.clientId ?? row.clientId,
+      recordId: patch.recordId ?? row.recordId,
+    };
+  });
+
+  console.log("[incoming-altegio-aggregate] finance_transactions: підставлено", {
+    tried: candidates.length,
+    patched: patchById.size,
+    enrichedRows: enriched,
+  });
+  return next;
+}
+
 function getPayerNameFromRaw(raw: unknown, counterpartyName: string | null): string {
   if (counterpartyName) return counterpartyName;
   const record = asRecord(raw);
@@ -1488,9 +1584,23 @@ function groupIncomeRowsByDayAndAccount<TItem, TRow extends {
   });
 }
 
+function isCashAltegioAccountTitle(accountTitle: string): boolean {
+  const normalized = accountTitle.trim().toLowerCase();
+  if (normalized === "каса" || normalized.startsWith("каса ")) return true;
+  if (normalized.includes("долар") || normalized.includes("dollar")) return true;
+  if (normalized.includes("євро") || normalized.includes("евро") || normalized.includes("euro")) return true;
+  return false;
+}
+
 function payerDayAccountBucketKey(row: NormalizedAltegioIncomeRow): string {
   const dayKey = row.kyivDay || kyivDayFromDate(new Date(row.operationTime));
-  return `${dayKey}|${accountGroupKey(row.accountId, row.accountTitle)}`;
+  const base = `${dayKey}|${accountGroupKey(row.accountId, row.accountTitle)}`;
+  // «Без платника» не зливаємо в один рядок — інакше губимо окремі суми для
+  // еквайринг-підмножин і індивідуальні recordId/clientId для дотягування імені.
+  if (row.payerName === NO_PAYER_LABEL) {
+    return `${base}|nopayer:${row.altegioId}`;
+  }
+  return base;
 }
 
 /** Один рядок на клієнта + день + рахунок (різні рахунки — окремі рядки). */
@@ -1743,9 +1853,11 @@ export async function buildIncomingReconciliationPreview(options?: {
   // Завжди мержимо з БД: частковий live більше не «з’їдає» історію і не дає порожній екран.
   const mergedRows = mergeIncomeRows(liveRows, dbRows);
   const withDirectPayers = await enrichMissingPayersFromDirectClients(mergedRows);
-  const withPayers = await enrichMissingPayersFromRecords(withDirectPayers);
-  // Після records могли з’явитись нові clientId — ще раз Direct/clients/search.
-  const withPayersFinal = await enrichMissingPayersFromDirectClients(withPayers);
+  const withRecords = await enrichMissingPayersFromRecords(withDirectPayers);
+  // Окремі транзакції без clientId/імені — легкий GET по id (пріоритет безготівки).
+  const withFinanceDetails = await enrichMissingPayersFromFinanceTransactions(withRecords);
+  // Після records/finance_transactions могли з’явитись нові clientId — ще раз Direct/search.
+  const withPayersFinal = await enrichMissingPayersFromDirectClients(withFinanceDetails);
 
   const incomeRows = enrichPlaceholderAccounts(
     excludeTransferIncomeRows(
