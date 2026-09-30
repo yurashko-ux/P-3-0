@@ -1045,7 +1045,11 @@ async function fetchTransactionsApiIncomeRows(dateFrom: string, dateTo: string):
   }
 }
 
-async function fetchLiveIncomeRowsRange(dateFrom: string, dateTo: string): Promise<{
+async function fetchLiveIncomeRowsRange(
+  dateFrom: string,
+  dateTo: string,
+  options?: { skipDocumentEnrichment?: boolean },
+): Promise<{
   rows: NormalizedAltegioIncomeRow[];
   droppedMirrors: number;
 }> {
@@ -1053,6 +1057,9 @@ async function fetchLiveIncomeRowsRange(dateFrom: string, dateTo: string): Promi
   const chunks = buildDateChunks(dateFrom, dateTo, 7);
   // Паралельно по кілька тижнів — інакше «Звести»/GET б’ють 120s на всьому періоді з червня.
   const concurrency = 3;
+  // documents/records дають сотні 404 і з’їдають весь timeout кнопки «Звести».
+  // Для UI/зведення достатньо GET /transactions (+ БД); document-enrich — лише повний режим.
+  const skipDocumentEnrichment = options?.skipDocumentEnrichment === true;
 
   for (let i = 0; i < chunks.length; i += concurrency) {
     const batch = chunks.slice(i, i + concurrency);
@@ -1070,15 +1077,17 @@ async function fetchLiveIncomeRowsRange(dateFrom: string, dateTo: string): Promi
           });
         }
 
-        try {
-          const documentRows = await fetchDocumentVerifiedIncomeRows(chunk.from, chunk.to);
-          collected.push(...documentRows);
-        } catch (error) {
-          console.warn("[incoming-altegio-aggregate] transactions+records chunk не вдався", {
-            dateFrom: chunk.from,
-            dateTo: chunk.to,
-            error: error instanceof Error ? error.message : String(error),
-          });
+        if (!skipDocumentEnrichment) {
+          try {
+            const documentRows = await fetchDocumentVerifiedIncomeRows(chunk.from, chunk.to);
+            collected.push(...documentRows);
+          } catch (error) {
+            console.warn("[incoming-altegio-aggregate] transactions+records chunk не вдався", {
+              dateFrom: chunk.from,
+              dateTo: chunk.to,
+              error: error instanceof Error ? error.message : String(error),
+            });
+          }
         }
         return collected;
       }),
@@ -1098,6 +1107,7 @@ async function fetchLiveIncomeRowsRange(dateFrom: string, dateTo: string): Promi
     dateTo,
     chunks: chunks.length,
     concurrency,
+    skipDocumentEnrichment,
     rows: rows.length,
     droppedInvalidDates: byId.size - validRows.length,
     droppedTransfers,
@@ -1433,9 +1443,14 @@ export async function buildIncomingReconciliationPreview(options?: {
   /**
    * Скільки останніх днів тягнути live з Altegio.
    * Решта періоду — з БД (швидкий GET «Оновити»).
-   * Без опції / 0 — live на весь період (повільніше, для «Звести»).
+   * Без опції / 0 — live на весь період (повільніше).
    */
   liveLookbackDays?: number;
+  /**
+   * Не тягнути documents/records по кожній транзакції (сотні 404 у Vercel).
+   * Для GET/«Звести» — true: лише /transactions + БД.
+   */
+  skipDocumentEnrichment?: boolean;
 }): Promise<IncomingReconciliationPreview> {
   const dateFrom = INCOMING_RANGE_START_DATE;
   const dateTo = getKyivTodayYmd();
@@ -1447,9 +1462,10 @@ export async function buildIncomingReconciliationPreview(options?: {
     ? addDaysYmd(dateTo, -(liveLookbackDays - 1))
     : dateFrom;
   const effectiveLiveFrom = liveFrom < dateFrom ? dateFrom : liveFrom;
+  const skipDocumentEnrichment = options?.skipDocumentEnrichment !== false;
 
   const [liveFetch, dbRows, bankAgg] = await Promise.all([
-    fetchLiveIncomeRowsRange(effectiveLiveFrom, dateTo),
+    fetchLiveIncomeRowsRange(effectiveLiveFrom, dateTo, { skipDocumentEnrichment }),
     fetchDbIncomeRowsRange(dateFrom, dateTo),
     fetchBankIncomingByDayRange(dateFrom, dateTo),
   ]);
@@ -1477,6 +1493,7 @@ export async function buildIncomingReconciliationPreview(options?: {
     dateTo,
     liveFrom: effectiveLiveFrom,
     liveLookbackDays,
+    skipDocumentEnrichment,
     liveRows: liveRows.length,
     dbRows: dbRows.length,
     mergedRows: incomeRows.length,

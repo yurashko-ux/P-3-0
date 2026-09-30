@@ -20,8 +20,11 @@ export async function GET(req: NextRequest) {
 
   try {
     const startedAt = Date.now();
-    // Live лише останні 21 день + повна історія з БД — інакше GET б’є клієнтський timeout 90s.
-    const preview = await buildIncomingReconciliationPreview({ liveLookbackDays: 21 });
+    // Live 21 день лише /transactions (без documents/records) + історія з БД.
+    const preview = await buildIncomingReconciliationPreview({
+      liveLookbackDays: 21,
+      skipDocumentEnrichment: true,
+    });
 
     const [incomingMatches, depositMatches] = await Promise.all([
       (prisma as any).bankAltegioIncomingMatch.findMany({
@@ -84,16 +87,29 @@ export async function POST(req: NextRequest) {
 
   try {
     const startedAt = Date.now();
-    // Той самий швидкий preview, що й GET: live 21 день + історія з БД.
-    const preview = await buildIncomingReconciliationPreview({ liveLookbackDays: 21 });
+    // Той самий швидкий preview, що й GET: /transactions 21 день + БД, без documents 404-шторму.
+    const preview = await buildIncomingReconciliationPreview({
+      liveLookbackDays: 21,
+      skipDocumentEnrichment: true,
+    });
     console.log("[payment-reconciliation/incoming][POST] Preview готовий", {
       ms: Date.now() - startedAt,
       altegioPayers: preview.altegio.byPayer.length,
       bankDays: preview.bank.byDay.length,
+      liveRows: preview.altegio.stats?.liveRows ?? null,
+      dbRows: preview.altegio.stats?.dbRows ?? null,
     });
 
     const incomingSummary = await syncExactOpenPairsFromPreview(preview, {
       matchedBy: "manual_incoming_reconcile",
+    });
+    console.log("[payment-reconciliation/incoming][POST] Точні пари", {
+      ms: Date.now() - startedAt,
+      exactPairsFound: incomingSummary.exactPairsFound,
+      openDays: incomingSummary.days,
+      matchedBankItems: incomingSummary.matchedBankItems,
+      hasDepositPairs: incomingSummary.hasDepositPairs,
+      errors: incomingSummary.errors,
     });
 
     // Завдатки — лише якщо live-оцінка вже знайшла точні deposit-пари.

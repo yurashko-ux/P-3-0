@@ -369,8 +369,11 @@ export async function persistMissingIncomingMatchesForBankItems(
     attemptedDays,
   });
 
-  // Live лише нещодавні дні + БД — повний live з червня в webhook/cron дає timeout.
-  const preview = await buildIncomingReconciliationPreview({ liveLookbackDays: 45 });
+  // Live лише нещодавні дні + БД, без documents/records (інакше webhook/cron тоне в 404).
+  const preview = await buildIncomingReconciliationPreview({
+    liveLookbackDays: 45,
+    skipDocumentEnrichment: true,
+  });
   let matchedBankItems = 0;
   for (const kyivDay of attemptedDays) {
     const result = await reconcileIncomingPaymentsForKyivDay(kyivDay, {
