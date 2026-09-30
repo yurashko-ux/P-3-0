@@ -2321,12 +2321,13 @@ function supplementOpenHiddenFromDbMatches(
 
     const isAcquiring = bankRowIsAcquiringIncomingMatch(bankRow, match.matchType);
     if (isAcquiring) {
-      // Еквайринг-batch: ховаємо всіх клієнтів Altegio з оцінки (не лише 1:1 за ПІБ банку).
-      // Інакше банк зникає з «Не зведених», а Анна/Катерина лишаються з Δ −22 610.
-      const bankDay = bankDayByKyivDay.get(match.kyivDay);
+      // Еквайринг: день у матчі = день Altegio; рядок банку в UI — після −1 day shift.
+      const groupingDay = bankGroupingKyivDay(bankRow);
+      const dayKey = bankDayByKyivDay.has(match.kyivDay) ? match.kyivDay : groupingDay;
+      const bankDay = bankDayByKyivDay.get(dayKey);
       const altegioAccount = findAltegioAccountOnDay(
         altegioDays,
-        match.kyivDay,
+        dayKey,
         bankRow.accountTitle,
         bankRow.altegioAccountTitle,
       );
@@ -2344,7 +2345,7 @@ function supplementOpenHiddenFromDbMatches(
         for (const client of evaluation.acquiringMatchedClients) {
           addHiddenAltegioPayer(
             hidden.altegioPayersByDay,
-            match.kyivDay,
+            dayKey,
             reconciledAltegioClientKey(client),
           );
         }
@@ -2360,7 +2361,7 @@ function supplementOpenHiddenFromDbMatches(
         if (client) {
           addHiddenAltegioPayer(
             hidden.altegioPayersByDay,
-            match.kyivDay,
+            dayKey,
             reconciledAltegioClientKey(client),
           );
         }

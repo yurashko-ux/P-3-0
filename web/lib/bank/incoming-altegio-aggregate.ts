@@ -689,6 +689,86 @@ async function enrichMissingPayersFromDirectClients(
   return next;
 }
 
+/**
+ * Легке дотягування імені з record (один path, без storage documents).
+ * Лише для рядків «без платника» з recordId — інакше знову 404-шторм.
+ */
+async function enrichMissingPayersFromRecords(
+  rows: NormalizedAltegioIncomeRow[],
+): Promise<NormalizedAltegioIncomeRow[]> {
+  const missingRecordIds = Array.from(
+    new Set(
+      rows
+        .filter((row) => row.payerName === NO_PAYER_LABEL && row.recordId != null)
+        .map((row) => row.recordId as number),
+    ),
+  ).slice(0, 40);
+  if (missingRecordIds.length === 0) return rows;
+
+  const companyId = resolveCompanyId();
+  const nameByRecordId = new Map<number, string>();
+  const clientIdByRecordId = new Map<number, number>();
+  const batchSize = 5;
+
+  for (let i = 0; i < missingRecordIds.length; i += batchSize) {
+    const batch = missingRecordIds.slice(i, i + batchSize);
+    await Promise.all(
+      batch.map(async (recordId) => {
+        try {
+          const raw = await altegioFetch<unknown>(`/company/${companyId}/records/${recordId}`);
+          const payload = asRecord(raw);
+          const data = asRecord(payload?.data) ?? payload;
+          if (!data) return;
+          const client = asRecord(data.client) ?? asRecord(asRecord(data.data)?.client);
+          const name =
+            cleanText(client?.name)
+            || cleanText(client?.display_name)
+            || cleanText(client?.full_name)
+            || cleanText(data.client_name)
+            || [cleanText(client?.surname ?? client?.last_name), cleanText(client?.firstname ?? client?.first_name)]
+              .filter(Boolean)
+              .join(" ")
+              .trim()
+            || null;
+          const clientId = toInt(data.client_id) ?? toInt(client?.id) ?? toInt(client?.client_id);
+          if (name) nameByRecordId.set(recordId, name);
+          if (clientId) clientIdByRecordId.set(recordId, clientId);
+        } catch {
+          // records часто 404 — не шумимо кожним
+        }
+      }),
+    );
+  }
+
+  if (nameByRecordId.size === 0 && clientIdByRecordId.size === 0) {
+    console.log("[incoming-altegio-aggregate] Records: імен не знайдено", {
+      tried: missingRecordIds.length,
+    });
+    return rows;
+  }
+
+  let enriched = 0;
+  const next = rows.map((row) => {
+    if (row.payerName !== NO_PAYER_LABEL || row.recordId == null) return row;
+    const name = nameByRecordId.get(row.recordId);
+    const clientId = clientIdByRecordId.get(row.recordId) ?? row.clientId;
+    if (!name && clientId === row.clientId) return row;
+    enriched += 1;
+    return {
+      ...row,
+      payerName: name || row.payerName,
+      clientId,
+    };
+  });
+
+  console.log("[incoming-altegio-aggregate] Records: підставлено імена", {
+    tried: missingRecordIds.length,
+    named: nameByRecordId.size,
+    enrichedRows: enriched,
+  });
+  return next;
+}
+
 function getPayerNameFromRaw(raw: unknown, counterpartyName: string | null): string {
   if (counterpartyName) return counterpartyName;
   const record = asRecord(raw);
@@ -1662,11 +1742,14 @@ export async function buildIncomingReconciliationPreview(options?: {
   const liveRows = liveFetch.rows;
   // Завжди мержимо з БД: частковий live більше не «з’їдає» історію і не дає порожній екран.
   const mergedRows = mergeIncomeRows(liveRows, dbRows);
-  const withPayers = await enrichMissingPayersFromDirectClients(mergedRows);
+  const withDirectPayers = await enrichMissingPayersFromDirectClients(mergedRows);
+  const withPayers = await enrichMissingPayersFromRecords(withDirectPayers);
+  // Після records могли з’явитись нові clientId — ще раз Direct/clients/search.
+  const withPayersFinal = await enrichMissingPayersFromDirectClients(withPayers);
 
   const incomeRows = enrichPlaceholderAccounts(
     excludeTransferIncomeRows(
-      withPayers.filter((row) =>
+      withPayersFinal.filter((row) =>
         isValidIncomeKyivDay(row.kyivDay, dateFrom, dateTo),
       ),
     ).rows,
