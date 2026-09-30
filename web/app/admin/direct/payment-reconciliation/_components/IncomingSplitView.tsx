@@ -675,7 +675,7 @@ function isAltegioCashAccount(accountTitle: string): boolean {
   return isCashReconcileAccount(accountTitle);
 }
 
-function reconciledAltegioClientKey(client: AltegioDayAccountClient): string {
+function reconciledAltegioClientKey(client: { payerName: string; totalKop: string }): string {
   const name = normalizePersonName(client.payerName);
   return name ? `${name}|${client.totalKop}` : client.totalKop;
 }
