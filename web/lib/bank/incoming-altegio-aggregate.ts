@@ -1,7 +1,10 @@
 import { prisma } from "@/lib/prisma";
 import { altegioFetch } from "@/lib/altegio/client";
 import { ALTEGIO_ENV } from "@/lib/altegio/env";
-import { ALTEGIO_FINANCE_SYNC_START_DATE } from "@/lib/altegio/finance-transactions-sync";
+import {
+  ALTEGIO_FINANCE_SYNC_START_DATE,
+  syncAltegioFinanceTransactions,
+} from "@/lib/altegio/finance-transactions-sync";
 import { resolveAltegioPaymentPurposeFromRaw } from "@/lib/altegio/payment-purpose-import";
 import { isEncashmentPaymentPurpose } from "@/lib/altegio/incoming-payments";
 import {
@@ -1956,4 +1959,150 @@ export async function buildIncomingReconciliationPreview(options?: {
       commissionPercent: Number.isFinite(commissionPercent) ? commissionPercent : null,
     },
   };
+}
+
+export type RefreshIncomingAltegioDayResult = {
+  kyivDay: string;
+  syncedFromSearch: number;
+  liveRows: number;
+  dbRowsBeforeEnrich: number;
+  upsertedToDb: number;
+  withPayerName: number;
+  withoutPayerName: number;
+};
+
+/**
+ * Підтягнути вхідні Altegio лише за один календарний день (Europe/Kyiv):
+ * finance search → БД, live /transactions + documents/records, enrich імен, upsert у БД.
+ * Для кнопки «Підтягнути» біля дати в «Не зведені» — без повного періоду й timeout.
+ */
+export async function refreshIncomingAltegioForKyivDay(
+  kyivDay: string,
+): Promise<RefreshIncomingAltegioDayResult> {
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(kyivDay)) {
+    throw new Error("Невірний формат дати (очікується YYYY-MM-DD)");
+  }
+  const today = getKyivTodayYmd();
+  if (kyivDay < INCOMING_RANGE_START_DATE || kyivDay > today) {
+    throw new Error(`Дата поза періодом вхідних (${INCOMING_RANGE_START_DATE}…${today})`);
+  }
+
+  const companyId = resolveCompanyId();
+  const startedAt = Date.now();
+
+  const syncResult = await syncAltegioFinanceTransactions({
+    dateFrom: kyivDay,
+    dateTo: kyivDay,
+    maxPages: 10,
+    syncPurposes: false,
+  });
+
+  // Один день — можна з documents/records (на повному періоді це 404-шторм).
+  const liveFetch = await fetchLiveIncomeRowsRange(kyivDay, kyivDay, {
+    skipDocumentEnrichment: false,
+  });
+  const dbRows = await fetchDbIncomeRowsRange(kyivDay, kyivDay);
+  const merged = mergeIncomeRows(liveFetch.rows, dbRows);
+
+  let rows = await enrichMissingPayersFromDirectClients(merged);
+  rows = await enrichMissingPayersFromRecords(rows);
+  rows = await enrichMissingPayersFromFinanceTransactions(rows);
+  rows = await enrichMissingPayersFromDirectClients(rows);
+  rows = rows.map((row) => {
+    if (row.payerName !== NO_PAYER_LABEL) return row;
+    const purpose = row.paymentPurpose?.trim() || "";
+    if (!purpose) return row;
+    if (purpose.toLowerCase() === "надання послуг") return row;
+    if (/^\d+\s+оплат/i.test(purpose)) return row;
+    return { ...row, payerName: purpose };
+  });
+
+  let upsertedToDb = 0;
+  for (const row of rows) {
+    if (row.kyivDay !== kyivDay) continue;
+    const operationDate = parseAltegioDateTime(row.operationTime);
+    const counterpartyName = row.payerName === NO_PAYER_LABEL ? null : row.payerName;
+    const accountTitle =
+      !row.accountTitle || row.accountTitle === "— без рахунку —" ? null : row.accountTitle;
+
+    const existing = await (prisma as any).altegioFinanceTransaction.findUnique({
+      where: { companyId_altegioId: { companyId, altegioId: row.altegioId } },
+      select: { rawData: true },
+    });
+    const prevRaw = asRecord(existing?.rawData) ?? {};
+    const nextRaw = {
+      ...prevRaw,
+      id: row.altegioId,
+      client_id: row.clientId ?? prevRaw.client_id ?? null,
+      record_id: row.recordId ?? prevRaw.record_id ?? null,
+      document_id: row.documentId ?? prevRaw.document_id ?? null,
+      payment_purpose: row.paymentPurpose ?? prevRaw.payment_purpose ?? null,
+      ...(counterpartyName
+        ? {
+            client: {
+              ...(asRecord(prevRaw.client) ?? {}),
+              id: row.clientId ?? asRecord(prevRaw.client)?.id ?? null,
+              name: counterpartyName,
+            },
+            client_name: counterpartyName,
+          }
+        : {}),
+      refreshedByIncomingDay: new Date().toISOString(),
+    };
+
+    await (prisma as any).altegioFinanceTransaction.upsert({
+      where: { companyId_altegioId: { companyId, altegioId: row.altegioId } },
+      create: {
+        altegioId: row.altegioId,
+        companyId,
+        accountId: row.accountId,
+        accountTitle,
+        documentId: row.documentId,
+        expenseId: null,
+        operationDate,
+        kyivDay: row.kyivDay,
+        amountKopiykas: row.amountKop,
+        direction: "in",
+        paymentPurpose: row.paymentPurpose,
+        counterpartyName,
+        sourceEndpoint: "incoming-refresh-day",
+        rawData: nextRaw,
+        deletedInAltegio: false,
+        syncedAt: new Date(),
+      },
+      update: {
+        accountId: row.accountId ?? undefined,
+        accountTitle: accountTitle ?? undefined,
+        documentId: row.documentId ?? undefined,
+        operationDate,
+        kyivDay: row.kyivDay,
+        amountKopiykas: row.amountKop,
+        paymentPurpose: row.paymentPurpose ?? undefined,
+        ...(counterpartyName ? { counterpartyName } : {}),
+        sourceEndpoint: "incoming-refresh-day",
+        rawData: nextRaw,
+        deletedInAltegio: false,
+        syncedAt: new Date(),
+      },
+    });
+    upsertedToDb += 1;
+  }
+
+  const withPayerName = rows.filter((row) => row.payerName !== NO_PAYER_LABEL).length;
+  const result: RefreshIncomingAltegioDayResult = {
+    kyivDay,
+    syncedFromSearch: syncResult.upserted,
+    liveRows: liveFetch.rows.length,
+    dbRowsBeforeEnrich: dbRows.length,
+    upsertedToDb,
+    withPayerName,
+    withoutPayerName: rows.length - withPayerName,
+  };
+
+  console.log("[incoming-altegio-aggregate] Підтягнуто Altegio за день", {
+    ...result,
+    ms: Date.now() - startedAt,
+  });
+
+  return result;
 }
