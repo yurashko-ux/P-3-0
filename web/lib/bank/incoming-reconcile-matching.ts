@@ -546,6 +546,52 @@ function mergeIncomingAccountEvaluations(
   };
 }
 
+/**
+ * Єдиний найбільший набір клієнтів, чиї суми дають рівно targetKop.
+ * Якщо таких наборів кілька — не вибираємо, щоб не звести чужі оплати.
+ */
+export function findUniqueMaxClientSubset<T extends { totalKop: string }>(
+  clients: T[],
+  targetKop: bigint,
+): T[] | null {
+  const count = clients.length;
+  if (count === 0 || count > 18 || targetKop <= 0n) return null;
+
+  const amounts = clients.map((client) => BigInt(client.totalKop));
+  type SubsetState = { bits: number; ways: number; mask: bigint };
+  let states = new Map<string, SubsetState>();
+  states.set("0", { bits: 0, ways: 1, mask: 0n });
+
+  for (let index = 0; index < count; index += 1) {
+    const add = amounts[index];
+    if (add <= 0n) continue;
+    const next = new Map(states);
+    for (const [sumText, state] of states) {
+      const sum = BigInt(sumText) + add;
+      if (sum > targetKop) continue;
+      const key = sum.toString();
+      const bits = state.bits + 1;
+      const mask = state.mask | (1n << BigInt(index));
+      const previous = next.get(key);
+      if (!previous || bits > previous.bits) {
+        next.set(key, { bits, ways: state.ways, mask });
+      } else if (bits === previous.bits) {
+        next.set(key, { bits, ways: previous.ways + state.ways, mask: previous.mask });
+      }
+    }
+    states = next;
+  }
+
+  const found = states.get(targetKop.toString());
+  if (!found || found.bits === 0 || found.ways !== 1) return null;
+
+  const picked: T[] = [];
+  for (let index = 0; index < count; index += 1) {
+    if ((found.mask & (1n << BigInt(index))) !== 0n) picked.push(clients[index]);
+  }
+  return picked;
+}
+
 /** Збіги в межах однієї картки monobank (група accountTitle). */
 function evaluateIncomingForBankRows(
   altegioAccount: AltegioDayAccountRow,
@@ -586,18 +632,30 @@ function evaluateIncomingForBankRows(
 
   if (universalRows.length > 0 && altegioRemainingKop > 0n) {
     const universalFullKop = bankRowsReconcileFullTotalKop(universalRows);
+    let batchClients: AltegioDayAccountClient[] | null = null;
     if (universalFullKop === altegioRemainingKop) {
-      matchedBankRows.push(...universalRows);
-      for (const client of remainingClients) {
-        acquiringMatchedClientKeys.add(clientKeyForReconcile(client));
-        usedClientKeys.add(clientKeyForReconcile(client));
+      batchClients = remainingClients;
+    } else if (universalRows.length === 1 && universalFullKop < altegioRemainingKop) {
+      // Іменований платіж дня не зійшовся (наприклад 2 750 проти 2 760) і лишається в залишку.
+      // Еквайринг все одно зводимо, якщо рівно одна найбільша група клієнтів дає його повну суму.
+      batchClients = findUniqueMaxClientSubset(remainingClients, universalFullKop);
+    }
+
+    if (batchClients && batchClients.length > 0) {
+      const batchKop = batchClients.reduce((sum, client) => sum + BigInt(client.totalKop), 0n);
+      if (batchKop === universalFullKop) {
+        matchedBankRows.push(...universalRows);
+        for (const client of batchClients) {
+          acquiringMatchedClientKeys.add(clientKeyForReconcile(client));
+          usedClientKeys.add(clientKeyForReconcile(client));
+        }
+        acquiringBatchMatches.push({
+          bankRowIds: universalRows.map((row) => row.id),
+          bankFullKop: universalFullKop.toString(),
+          altegioRemainingKop: batchKop.toString(),
+          commissionKop: universalRows.reduce((sum, row) => sum + bankCommissionKop(row), 0n).toString(),
+        });
       }
-      acquiringBatchMatches.push({
-        bankRowIds: universalRows.map((row) => row.id),
-        bankFullKop: universalFullKop.toString(),
-        altegioRemainingKop: altegioRemainingKop.toString(),
-        commissionKop: universalRows.reduce((sum, row) => sum + bankCommissionKop(row), 0n).toString(),
-      });
     }
   }
 
