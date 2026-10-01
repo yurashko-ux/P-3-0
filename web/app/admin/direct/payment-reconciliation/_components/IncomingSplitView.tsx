@@ -2388,7 +2388,26 @@ function supplementOpenHiddenFromDbMatches(
         bankRow.altegioAccountTitle,
       );
       if (!bankDay || !altegioAccount) {
-        skippedMatches++;
+        // Якщо не знайдено через еквайринг-логіку, пробуємо через іменовану
+        const foundNamed = findAltegioClientForLinkedFromBank(
+          altegioDays,
+          match.kyivDay,
+          bankRow,
+          [],
+        );
+        if (foundNamed && accountsMatchForReconcile(
+          foundNamed.account.accountTitle,
+          bankRow.accountTitle,
+          bankRow.altegioAccountTitle,
+        )) {
+          addHiddenAltegioPayer(
+            hidden.altegioPayersByDay,
+            foundNamed.dayKyivDay,
+            reconciledAltegioClientKey(foundNamed.client),
+          );
+        } else {
+          skippedMatches++;
+        }
         continue;
       }
 
@@ -2437,7 +2456,27 @@ function supplementOpenHiddenFromDbMatches(
         }
         continue;
       }
-      skippedMatches++;
+      
+      // Якщо не знайдено ні в batch, ні individual, пробуємо через іменовану логіку
+      const foundFallback = findAltegioClientForLinkedFromBank(
+        altegioDays,
+        match.kyivDay,
+        bankRow,
+        [],
+      );
+      if (foundFallback && accountsMatchForReconcile(
+        foundFallback.account.accountTitle,
+        bankRow.accountTitle,
+        bankRow.altegioAccountTitle,
+      )) {
+        addHiddenAltegioPayer(
+          hidden.altegioPayersByDay,
+          foundFallback.dayKyivDay,
+          reconciledAltegioClientKey(foundFallback.client),
+        );
+      } else {
+        skippedMatches++;
+      }
       continue;
     }
 
