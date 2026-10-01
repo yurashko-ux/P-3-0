@@ -3891,6 +3891,17 @@ export function IncomingSplitView({
     const regularDays = alignedDays
       .map((day) => {
         const accountRows = buildDayAccountAlignedRows(day.altegio, day.bank);
+        
+        // Детальне логування для 22.09.2026
+        if (day.kyivDay === "2026-09-22" && reconciliationStatus === "open") {
+          console.log("[visibleAlignedDays] День 22.09.2026 у вкладці 'Не зведені'", {
+            altegioTotal: day.altegio?.totalKop,
+            bankTotal: day.bank?.totalKop,
+            accountRowsCount: accountRows.length,
+            completeReconciledBankIdsSize: completeReconciledBankIds.size,
+            reconciledAltegioPayersByDaySize: reconciledAltegioPayersByDay.size,
+          });
+        }
 
         if (reconciliationStatus === "all") {
           if (accountRows.length === 0) return null;
