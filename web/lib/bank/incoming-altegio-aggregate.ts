@@ -314,6 +314,7 @@ function normalizeDocumentVerifiedPayment(
 ): NormalizedAltegioIncomeRow | null {
   if (
     payment.amount <= 0
+    || payment.documentId == null
     || isEncashmentPaymentPurpose(payment.paymentPurpose)
     || isTransferPurpose(payment.paymentPurpose)
   ) {
@@ -661,9 +662,10 @@ function detectDirectionFromRaw(raw: RawRecord, amountKop: bigint): string {
   }
 
   if (type.includes("transfer") || type.includes("переміщ") || type.includes("перевод")) return "transfer";
+  // Стаття (expense_id) у фінансовій операції — це призначення доходу, не витрата.
+  if (hasDocumentId(raw) && amountKop > 0n) return "in";
   if (hasExpenseId(raw) || type.includes("expense") || typeId === "2") return "out";
   if (type.includes("income") || typeId === "1") return "in";
-  if (hasDocumentId(raw)) return "in";
   if (amountKop < 0n) return "out";
   if (amountKop > 0n) return "in";
   return "unknown";
@@ -738,9 +740,14 @@ function getAccountInfoFromRaw(raw: RawRecord): { accountTitle: string; accountI
   };
 }
 
+/** Платіж із «Фінансових операцій»: є документ (№ док-та). Рух без документа сюди не входить. */
+function isFinancialOperationIncomeRow(row: NormalizedAltegioIncomeRow): boolean {
+  return row.documentId != null;
+}
+
 function isAltegioPaymentRow(raw: RawRecord, amountKop: bigint): boolean {
   if (amountKop <= 0n) return false;
-  if (hasExpenseId(raw)) return false;
+  if (!hasDocumentId(raw)) return false;
   if (isEncashmentRaw(raw)) return false;
 
   const direction = detectDirectionFromRaw(raw, amountKop);
@@ -753,9 +760,9 @@ function normalizeIncomeRow(raw: RawRecord, source: "db" | "live"): NormalizedAl
   const altegioId = toInt(raw.id ?? raw.transaction_id ?? raw.finance_transaction_id);
   if (!altegioId) return null;
 
-  const amountKop = BigInt(
-    Math.round(Math.abs(toMoneyNumber(raw.amount ?? raw.sum ?? raw.paid_sum ?? raw.cost)) * 100),
-  );
+  const signedAmount = toMoneyNumber(raw.amount ?? raw.sum ?? raw.paid_sum ?? raw.cost);
+  if (signedAmount <= 0) return null;
+  const amountKop = BigInt(Math.round(signedAmount * 100));
   if (!isAltegioPaymentRow(raw, amountKop)) return null;
 
   const { accountTitle, accountId } = getAccountInfoFromRaw(raw);
@@ -834,8 +841,8 @@ function normalizeDbRow(row: {
     };
   }
 
-  const amountKop = row.amountKopiykas < 0n ? -row.amountKopiykas : row.amountKopiykas;
-  if (amountKop <= 0n || row.expenseId) return null;
+  if (!row.documentId || row.amountKopiykas <= 0n) return null;
+  const amountKop = row.amountKopiykas;
   if (row.direction === "out" || row.direction === "transfer") return null;
   if (isTransferPurpose(row.paymentPurpose)) return null;
 
@@ -998,7 +1005,7 @@ function dropMirroredInternalTransfers(rows: NormalizedAltegioIncomeRow[]): {
 }
 
 function isVerifiedClientPaymentRow(row: NormalizedAltegioIncomeRow): boolean {
-  return row.documentId != null || row.payerName !== NO_PAYER_LABEL;
+  return isFinancialOperationIncomeRow(row);
 }
 
 async function fetchTransactionsApiIncomeRows(dateFrom: string, dateTo: string): Promise<NormalizedAltegioIncomeRow[]> {
@@ -1076,7 +1083,13 @@ async function fetchLiveIncomeRowsRange(dateFrom: string, dateTo: string): Promi
     }
   }
 
-  const validRows = Array.from(byId.values()).filter((row) => isValidIncomeKyivDay(row.kyivDay, dateFrom, dateTo));
+  const datedRows = Array.from(byId.values()).filter((row) => isValidIncomeKyivDay(row.kyivDay, dateFrom, dateTo));
+  const validRows = datedRows.filter(isFinancialOperationIncomeRow);
+  if (datedRows.length !== validRows.length) {
+    console.log("[incoming-altegio-aggregate] Відсіяно рухи без документа фінансової операції", {
+      dropped: datedRows.length - validRows.length,
+    });
+  }
   const { rows: withoutTransfers, dropped: droppedTransfers } = excludeTransferIncomeRows(validRows);
   const { rows, dropped: droppedMirrors } = dropMirroredInternalTransfers(withoutTransfers);
 
@@ -1085,7 +1098,8 @@ async function fetchLiveIncomeRowsRange(dateFrom: string, dateTo: string): Promi
     dateTo,
     chunks: chunks.length,
     rows: rows.length,
-    droppedInvalidDates: byId.size - validRows.length,
+    droppedInvalidDates: byId.size - datedRows.length,
+    droppedWithoutDocument: datedRows.length - validRows.length,
     droppedTransfers,
     droppedMirrors,
   });
@@ -1101,7 +1115,7 @@ async function fetchDbIncomeRowsRange(dateFrom: string, dateTo: string): Promise
       kyivDay: { gte: dateFrom, lte: dateTo },
       deletedInAltegio: false,
       amountKopiykas: { gt: 0 },
-      expenseId: null,
+      documentId: { not: null },
       direction: { notIn: ["out", "transfer"] },
     },
     select: {
@@ -1124,7 +1138,13 @@ async function fetchDbIncomeRowsRange(dateFrom: string, dateTo: string): Promise
   const normalized: NormalizedAltegioIncomeRow[] = [];
   for (const row of dbRows) {
     const item = normalizeDbRow(row);
-    if (item && isValidIncomeKyivDay(item.kyivDay, dateFrom, dateTo)) normalized.push(item);
+    if (
+      item
+      && isFinancialOperationIncomeRow(item)
+      && isValidIncomeKyivDay(item.kyivDay, dateFrom, dateTo)
+    ) {
+      normalized.push(item);
+    }
   }
   return normalized;
 }
@@ -1424,13 +1444,15 @@ export async function buildIncomingReconciliationPreview(): Promise<IncomingReco
     fetchDbIncomeRowsRange(dateFrom, dateTo),
     fetchBankIncomingByDayRange(dateFrom, dateTo),
   ]);
-  const liveRows = liveFetch.rows;
-  const baseRows = liveRows.length > 0 ? liveRows : mergeIncomeRows(liveRows, dbRows);
+  const liveRows = liveFetch.rows.filter(isFinancialOperationIncomeRow);
+  const financialDbRows = dbRows.filter(isFinancialOperationIncomeRow);
+  const baseRows = liveRows.length > 0 ? liveRows : mergeIncomeRows(liveRows, financialDbRows);
 
   const incomeRows = enrichPlaceholderAccounts(
     excludeTransferIncomeRows(
       baseRows.filter((row) =>
-        isValidIncomeKyivDay(row.kyivDay, dateFrom, dateTo),
+        isFinancialOperationIncomeRow(row)
+        && isValidIncomeKyivDay(row.kyivDay, dateFrom, dateTo),
       ),
     ).rows,
   );
