@@ -2545,6 +2545,20 @@ function stripReconciledClientsFromOpenRow(
   const remainingClients = accountRow.altegioAccount.clients.filter(
     (client) => !reconciledPayers.has(reconciledAltegioClientKey(client)),
   );
+  
+  // Логування для дебагу
+  const allClientsKeys = accountRow.altegioAccount.clients.map(c => reconciledAltegioClientKey(c));
+  const removedCount = accountRow.altegioAccount.clients.length - remainingClients.length;
+  if (removedCount > 0) {
+    console.log("[stripReconciledClientsFromOpenRow] Приховано зведені клієнти", {
+      accountTitle: accountRow.altegioAccount.accountTitle,
+      totalClients: accountRow.altegioAccount.clients.length,
+      remainingClients: remainingClients.length,
+      removedCount,
+      allClientsKeys,
+      reconciledPayersSize: reconciledPayers.size,
+    });
+  }
 
   if (remainingClients.length === 0) {
     return accountRow.bankGroup?.rows.length ? { ...accountRow, altegioAccount: null } : null;
@@ -3971,6 +3985,21 @@ export function IncomingSplitView({
               if (!row.altegioAccount) return sum;
               return sum + BigInt(row.altegioAccount.totalKop);
             }, 0n);
+            
+            // Детальне логування для 22.09.2026
+            if (day.kyivDay === "2026-09-22") {
+              console.log("[openDays] День 22.09.2026 після фільтрації", {
+                accountRowsCount: accountRows.length,
+                altegioTotalKop: altegioTotalKop.toString(),
+                accountRowsDetails: accountRows.map(row => ({
+                  hasAltegio: !!row.altegioAccount,
+                  hasBank: !!row.bankGroup,
+                  altegioTotal: row.altegioAccount?.totalKop,
+                  altegioClientsCount: row.altegioAccount?.clients.length,
+                  bankRowsCount: row.bankGroup?.rows.length,
+                })),
+              });
+            }
 
             return {
               ...day,
