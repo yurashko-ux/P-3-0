@@ -2361,11 +2361,14 @@ function supplementOpenHiddenFromDbMatches(
     const bankRow = bankRowById.get(match.bankStatementItemId);
     if (!bankRow) {
       skippedNoBankRow++;
+      const allBankIds = Array.from(bankRowById.keys());
       console.warn("[supplementOpenHiddenFromDbMatches] Пропущено матч: рядок банку не знайдено", {
         matchId: match.id,
         bankStatementItemId: match.bankStatementItemId,
         kyivDay: match.kyivDay,
         matchType: match.matchType,
+        totalBankRowsInMap: allBankIds.length,
+        sampleBankIds: allBankIds.slice(0, 5),
       });
       continue;
     }
