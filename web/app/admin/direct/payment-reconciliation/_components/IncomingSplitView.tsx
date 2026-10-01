@@ -2302,6 +2302,12 @@ function reconciledAltegioPayerKeysFromLinkedDays(
         if (!payerKey) continue;
         if (!map.has(dayKey)) map.set(dayKey, new Set());
         map.get(dayKey)!.add(payerKey);
+        
+        // Додатково додаємо ключ тільки за сумою (fallback для клієнтів без імені)
+        const amountOnlyKey = client.totalKop;
+        if (amountOnlyKey !== payerKey) {
+          map.get(dayKey)!.add(amountOnlyKey);
+        }
       }
     }
   }
@@ -2325,10 +2331,19 @@ function addHiddenAltegioPayer(
   hidden: Map<string, Set<string>>,
   dayKey: string,
   payerKey: string,
+  client?: { payerName: string; totalKop: string },
 ): void {
   if (!payerKey) return;
   if (!hidden.has(dayKey)) hidden.set(dayKey, new Set());
   hidden.get(dayKey)!.add(payerKey);
+  
+  // Додатково додаємо ключ тільки за сумою (fallback для клієнтів без імені)
+  if (client) {
+    const amountOnlyKey = client.totalKop;
+    if (amountOnlyKey !== payerKey) {
+      hidden.get(dayKey)!.add(amountOnlyKey);
+    }
+  }
 }
 
 /** Доповнити приховування з БД, якщо запис зведення є, але linked-рядок не збудувався. */
@@ -2404,6 +2419,7 @@ function supplementOpenHiddenFromDbMatches(
             hidden.altegioPayersByDay,
             foundNamed.dayKyivDay,
             reconciledAltegioClientKey(foundNamed.client),
+            foundNamed.client,
           );
         } else {
           skippedMatches++;
@@ -2436,6 +2452,7 @@ function supplementOpenHiddenFromDbMatches(
             hidden.altegioPayersByDay,
             dayKey,
             reconciledAltegioClientKey(client),
+            client as { payerName: string; totalKop: string },
           );
         }
         continue;
@@ -2452,6 +2469,7 @@ function supplementOpenHiddenFromDbMatches(
             hidden.altegioPayersByDay,
             dayKey,
             reconciledAltegioClientKey(client),
+            client,
           );
         }
         continue;
@@ -2473,6 +2491,7 @@ function supplementOpenHiddenFromDbMatches(
           hidden.altegioPayersByDay,
           foundFallback.dayKyivDay,
           reconciledAltegioClientKey(foundFallback.client),
+          foundFallback.client,
         );
       } else {
         skippedMatches++;
@@ -2503,6 +2522,7 @@ function supplementOpenHiddenFromDbMatches(
       hidden.altegioPayersByDay,
       found.dayKyivDay,
       reconciledAltegioClientKey(found.client),
+      found.client,
     );
   }
 
@@ -2543,7 +2563,27 @@ function stripReconciledClientsFromOpenRow(
   }
 
   const remainingClients = accountRow.altegioAccount.clients.filter(
-    (client) => !reconciledPayers.has(reconciledAltegioClientKey(client)),
+    (client) => {
+      const fullKey = reconciledAltegioClientKey(client);
+      if (reconciledPayers.has(fullKey)) return false;
+      
+      // Fallback: якщо імені немає, перевіряємо тільки за сумою
+      const amountOnlyKey = client.totalKop;
+      if (reconciledPayers.has(amountOnlyKey)) return false;
+      
+      // Fallback: якщо є ім'я, але в reconciledPayers може бути тільки сума
+      const name = normalizePersonName(client.payerName);
+      if (name) {
+        // Перевіряємо, чи є в reconciledPayers будь-який ключ з такою сумою
+        for (const key of reconciledPayers) {
+          if (key === amountOnlyKey || key.endsWith(`|${amountOnlyKey}`)) {
+            return false;
+          }
+        }
+      }
+      
+      return true;
+    },
   );
   
   // Логування для дебагу
