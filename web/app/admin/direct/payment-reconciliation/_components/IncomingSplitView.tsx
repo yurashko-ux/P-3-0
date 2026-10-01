@@ -1467,7 +1467,6 @@ function buildIncomingLinkedVisibleDays(
       const batchMatch = evaluation.acquiringBatchMatches.find((batch) =>
         batch.bankRowIds.includes(bankRow.id),
       );
-      const acquiringMatched = batchMatch != null;
       const individualAcquiringMatch = evaluation.acquiringClientMatches.find(
         (item) => item.bankRowId === bankRow.id,
       );
@@ -1478,16 +1477,8 @@ function buildIncomingLinkedVisibleDays(
               normalizePersonName(item.payerName) === normalizePersonName(individualAcquiringMatch.payerName)
               && item.totalKop === individualAcquiringMatch.amountKop,
           )
-        : acquiringMatched
-        ? evaluation.acquiringMatchedClients
-          .map((matchedClient) =>
-            altegioAccount!.clients.find(
-              (item) =>
-                normalizePersonName(item.payerName) === normalizePersonName(matchedClient.payerName)
-                && item.totalKop === matchedClient.totalKop,
-            ),
-          )
-          .filter((client): client is AltegioDayAccountClient => client != null)
+        : batchMatch
+        ? clientsForAcquiringBatch(altegioAccount, batchMatch.matchedClientKeys)
         : altegioAccount.clients.filter((client) => {
             return BigInt(client.totalKop) === bankFullAmountKop(bankRow);
           });
@@ -1514,7 +1505,8 @@ function buildIncomingLinkedVisibleDays(
       if (matchedClients.length === 0) continue;
 
       accountTitle = altegioAccount.accountTitle;
-      const acquiringBucketKey = `${displayKyivDay}|${accountTitle}|acquiring|${bankRow.id}`;
+      const batchBankRows = bankRowsForAcquiringBatch(batchMatch, bankRow, bankRowById);
+      const acquiringBucketKey = `${displayKyivDay}|${accountTitle}|acquiring|${batchBankRows.map((row) => row.id).slice().sort().join("+")}`;
       const existingAcquiringBucket = buckets.get(acquiringBucketKey);
       if (existingAcquiringBucket) {
         if (match.reviewNote?.trim()) existingAcquiringBucket.reviewNotes.push(match.reviewNote.trim());
@@ -1523,7 +1515,7 @@ function buildIncomingLinkedVisibleDays(
       }
 
       const batchAltegioAccount = buildAcquiringAltegioAccountRow(altegioAccount, matchedClients);
-      if (!linkedRowAmountsMatch(batchAltegioAccount, [bankRow])) continue;
+      if (!linkedRowAmountsMatch(batchAltegioAccount, batchBankRows)) continue;
 
       const singleClientPayerKey = matchedClients.length === 1
         ? reconciledAltegioClientKey(matchedClients[0])
@@ -1535,7 +1527,7 @@ function buildIncomingLinkedVisibleDays(
         payerKey: singleClientPayerKey,
         altegioAccount: batchAltegioAccount,
         altegioClient: matchedClients.length === 1 ? matchedClients[0] : null,
-        bankRows: [bankRow],
+        bankRows: batchBankRows,
         reviewNotes: match.reviewNote?.trim() ? [match.reviewNote.trim()] : [],
         matchIds: [match.id],
       });
@@ -1758,7 +1750,6 @@ function buildEvaluatedLinkedVisibleDays(
       const batchMatch = evaluation.acquiringBatchMatches.find((batch) =>
         batch.bankRowIds.includes(bankRow.id),
       );
-      const acquiringMatched = batchMatch != null;
       const individualAcquiringMatch = evaluation.acquiringClientMatches.find(
         (item) => item.bankRowId === bankRow.id,
       );
@@ -1769,16 +1760,8 @@ function buildEvaluatedLinkedVisibleDays(
               normalizePersonName(item.payerName) === normalizePersonName(individualAcquiringMatch.payerName)
               && item.totalKop === individualAcquiringMatch.amountKop,
           )
-        : acquiringMatched
-        ? evaluation.acquiringMatchedClients
-          .map((matchedClient) =>
-            altegioAccount.clients.find(
-              (item) =>
-                normalizePersonName(item.payerName) === normalizePersonName(matchedClient.payerName)
-                && item.totalKop === matchedClient.totalKop,
-            ),
-          )
-          .filter((client): client is AltegioDayAccountClient => client != null)
+        : batchMatch
+        ? clientsForAcquiringBatch(altegioAccount, batchMatch.matchedClientKeys)
         : altegioAccount.clients.filter((client) => {
             return BigInt(client.totalKop) === bankFullAmountKop(bankRow);
           });
@@ -1804,17 +1787,21 @@ function buildEvaluatedLinkedVisibleDays(
       }
       if (matchedClients.length === 0) continue;
 
-      const batchAltegioAccount = buildAcquiringAltegioAccountRow(altegioAccount, matchedClients);
-      if (!linkedRowAmountsMatch(batchAltegioAccount, [bankRow])) continue;
+      const batchBankRows = bankRowsForAcquiringBatch(batchMatch, bankRow, bankRowById);
+      for (const batchRow of batchBankRows) processedAcquiringBankIds.add(batchRow.id);
 
+      const batchAltegioAccount = buildAcquiringAltegioAccountRow(altegioAccount, matchedClients);
+      if (!linkedRowAmountsMatch(batchAltegioAccount, batchBankRows)) continue;
+
+      const batchBankTotalKop = batchBankRows.reduce((sum, row) => sum + BigInt(row.amountKop), 0n);
       const accountRow: DayAccountAlignedRow = {
-        matchKey: `evaluated-acquiring|${pair.bankRowId}`,
+        matchKey: `evaluated-acquiring|${batchBankRows.map((row) => row.id).slice().sort().join("+")}`,
         altegioAccount: batchAltegioAccount,
         bankGroup: {
           accountTitle: bankRow.accountTitle,
           altegioAccountTitle: bankRow.altegioAccountTitle,
-          rows: [bankRow],
-          totalKop: bankRow.amountKop,
+          rows: batchBankRows,
+          totalKop: batchBankTotalKop.toString(),
         },
         displayKyivDay: pair.kyivDay,
         zapisDateLabel: formatKyivDayLabel(pair.kyivDay),
@@ -2035,6 +2022,25 @@ function resolveAccountAltegioTransactionId(account: AltegioDayAccountRow | null
     if (altegioId) return altegioId;
   }
   return null;
+}
+
+function clientsForAcquiringBatch(
+  account: AltegioDayAccountRow,
+  matchedClientKeys: string[],
+): AltegioDayAccountClient[] {
+  const keys = new Set(matchedClientKeys);
+  return account.clients.filter((client) => keys.has(`${client.payerName}|${client.totalKop}`));
+}
+
+function bankRowsForAcquiringBatch(
+  batch: { bankRowIds: string[] } | null | undefined,
+  fallback: BankDayItemRow,
+  bankRowById: Map<string, BankDayItemRow>,
+): BankDayItemRow[] {
+  const rows = (batch?.bankRowIds ?? [])
+    .map((id) => bankRowById.get(id))
+    .filter((row): row is BankDayItemRow => row != null);
+  return rows.length > 0 ? rows : [fallback];
 }
 
 function buildAcquiringAltegioAccountRow(
@@ -2283,50 +2289,6 @@ function buildOpenHiddenFromLinkedDays(
   };
 }
 
-/** Доповнити приховування з БД, якщо запис зведення є, але linked-рядок не збудувався. */
-function supplementOpenHiddenFromDbMatches(
-  hidden: {
-    bankIds: Set<string>;
-    altegioPayersByDay: Map<string, Set<string>>;
-  },
-  incomingMatches: IncomingReconciledMatch[],
-  depositBankIds: Set<string>,
-  altegioDays: AltegioDayGroup[],
-  bankDays: BankDayFlat[],
-): void {
-  const bankRowById = new Map<string, BankDayItemRow>();
-  for (const day of bankDays) {
-    for (const row of day.rows) bankRowById.set(row.id, row);
-  }
-
-  for (const match of incomingMatches) {
-    if (depositBankIds.has(match.bankStatementItemId)) continue;
-    const bankRow = bankRowById.get(match.bankStatementItemId);
-    if (!bankRow) continue;
-
-    hidden.bankIds.add(match.bankStatementItemId);
-
-    const found = findAltegioClientForLinkedFromBank(
-      altegioDays,
-      match.kyivDay,
-      bankRow,
-      [],
-    );
-    if (!found) continue;
-    if (!accountsMatchForReconcile(
-      found.account.accountTitle,
-      bankRow.accountTitle,
-      bankRow.altegioAccountTitle,
-    )) {
-      continue;
-    }
-
-    const dayKey = found.dayKyivDay;
-    const payerKey = reconciledAltegioClientKey(found.client);
-    if (!hidden.altegioPayersByDay.has(dayKey)) hidden.altegioPayersByDay.set(dayKey, new Set());
-    hidden.altegioPayersByDay.get(dayKey)!.add(payerKey);
-  }
-}
 
 /** Altegio-завдатки з реальною парою банку (або готівка) — прибираємо з «Не зведених». */
 function activeDepositAltegioIdsFromMatches(
@@ -3604,19 +3566,10 @@ export function IncomingSplitView({
   const commissionTotalKop = BigInt(bankPeriodTotals.commissionTotalKop);
   const periodDiffAfterCommissionKop = periodDiffKop - commissionTotalKop;
   const alignedDays = mergeAlignedDays(filteredAltegioDays, bankDays);
-  const openHiddenFromLinked = useMemo(() => {
-    const hidden = buildOpenHiddenFromLinkedDays(fullyLinkedDays);
-    if (data) {
-      supplementOpenHiddenFromDbMatches(
-        hidden,
-        data.reconciled?.matches ?? [],
-        depositBankIdsClaimed,
-        rawAltegioDays,
-        bankDays,
-      );
-    }
-    return hidden;
-  }, [fullyLinkedDays, data, depositBankIdsClaimed, rawAltegioDays, bankDays]);
+  const openHiddenFromLinked = useMemo(
+    () => buildOpenHiddenFromLinkedDays(fullyLinkedDays),
+    [fullyLinkedDays],
+  );
   const completeReconciledBankIds = useMemo(() => {
     if (reconciliationStatus === "open") {
       return openHiddenFromLinked.bankIds;

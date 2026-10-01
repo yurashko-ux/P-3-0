@@ -431,6 +431,8 @@ export type IncomingAcquiringBatchMatch = {
   bankFullKop: string;
   altegioRemainingKop: string;
   commissionKop: string;
+  /** Клієнти саме цього batch. Іменовані збіги того ж дня сюди не входять. */
+  matchedClientKeys: string[];
 };
 
 /** Результат пошуку збігів — лише те, що справді сходиться. Часткове зведення дозволено. */
@@ -509,9 +511,6 @@ function mergeIncomingAccountEvaluations(
       acquiringMatchedClientKeys.add(clientKeyForReconcile(client));
     }
     for (const match of part.acquiringClientMatches) {
-      acquiringMatchedClientKeys.add(`${match.payerName}|${match.amountKop}`);
-    }
-    for (const match of part.namedMatches) {
       acquiringMatchedClientKeys.add(`${match.payerName}|${match.amountKop}`);
     }
   }
@@ -654,6 +653,7 @@ function evaluateIncomingForBankRows(
           bankFullKop: universalFullKop.toString(),
           altegioRemainingKop: batchKop.toString(),
           commissionKop: universalRows.reduce((sum, row) => sum + bankCommissionKop(row), 0n).toString(),
+          matchedClientKeys: batchClients.map((client) => clientKeyForReconcile(client)),
         });
       }
     }
