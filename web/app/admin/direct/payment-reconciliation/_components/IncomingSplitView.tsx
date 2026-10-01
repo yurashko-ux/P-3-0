@@ -3861,7 +3861,25 @@ export function IncomingSplitView({
               if (reconciliationStatus === "linked") {
                 return isReconciled && !depositBankIds.has(row.id);
               }
-              return !isReconciled;
+              const shouldShow = !isReconciled;
+              if (reconciliationStatus === "open") {
+                if (isReconciled) {
+                  console.log("[filteredRows] Приховано зведений рядок банку у вкладці 'Не зведені'", {
+                    rowId: row.id,
+                    amount: row.amountKop,
+                    description: row.description,
+                    kyivDay: day.kyivDay,
+                  });
+                } else {
+                  console.log("[filteredRows] Показано незведений рядок банку у вкладці 'Не зведені'", {
+                    rowId: row.id,
+                    amount: row.amountKop,
+                    description: row.description,
+                    kyivDay: day.kyivDay,
+                  });
+                }
+              }
+              return shouldShow;
             });
 
             if (filteredRows.length === 0) {
