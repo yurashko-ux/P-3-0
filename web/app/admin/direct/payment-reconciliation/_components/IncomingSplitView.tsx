@@ -3809,12 +3809,21 @@ export function IncomingSplitView({
   }, [fullyLinkedDays, data, depositBankIdsClaimed, rawAltegioDays, bankDays]);
   const completeReconciledBankIds = useMemo(() => {
     if (reconciliationStatus === "open") {
+      console.log("[completeReconciledBankIds] Для вкладки 'Не зведені'", {
+        hiddenBankIdsCount: openHiddenFromLinked.bankIds.size,
+        totalMatches: data?.reconciled?.matches?.length ?? 0,
+        depositMatches: depositMatches.length,
+      });
       return openHiddenFromLinked.bankIds;
     }
     const ids = completeReconciledBankIdsFromLinkedDays(fullyLinkedDays);
     for (const bankId of depositBankIdsClaimed) ids.add(bankId);
+    console.log("[completeReconciledBankIds] Для вкладки 'Зведені'", {
+      reconciledBankIdsCount: ids.size,
+      fullyLinkedDaysCount: fullyLinkedDays.length,
+    });
     return ids;
-  }, [reconciliationStatus, openHiddenFromLinked.bankIds, fullyLinkedDays, depositBankIdsClaimed]);
+  }, [reconciliationStatus, openHiddenFromLinked.bankIds, fullyLinkedDays, depositBankIdsClaimed, data?.reconciled?.matches, depositMatches]);
   const bankReviewNotesByItemId = useMemo(() => {
     const map = new Map<string, string>();
     for (const match of data?.reconciled?.matches ?? []) {
@@ -3861,25 +3870,7 @@ export function IncomingSplitView({
               if (reconciliationStatus === "linked") {
                 return isReconciled && !depositBankIds.has(row.id);
               }
-              const shouldShow = !isReconciled;
-              if (reconciliationStatus === "open") {
-                if (isReconciled) {
-                  console.log("[filteredRows] Приховано зведений рядок банку у вкладці 'Не зведені'", {
-                    rowId: row.id,
-                    amount: row.amountKop,
-                    description: row.description,
-                    kyivDay: day.kyivDay,
-                  });
-                } else {
-                  console.log("[filteredRows] Показано незведений рядок банку у вкладці 'Не зведені'", {
-                    rowId: row.id,
-                    amount: row.amountKop,
-                    description: row.description,
-                    kyivDay: day.kyivDay,
-                  });
-                }
-              }
-              return shouldShow;
+              return !isReconciled;
             });
 
             if (filteredRows.length === 0) {
