@@ -2349,10 +2349,26 @@ function supplementOpenHiddenFromDbMatches(
     for (const row of day.rows) bankRowById.set(row.id, row);
   }
 
+  let skippedMatches = 0;
+  let skippedDeposits = 0;
+  let skippedNoBankRow = 0;
+
   for (const match of incomingMatches) {
-    if (depositBankIds.has(match.bankStatementItemId)) continue;
+    if (depositBankIds.has(match.bankStatementItemId)) {
+      skippedDeposits++;
+      continue;
+    }
     const bankRow = bankRowById.get(match.bankStatementItemId);
-    if (!bankRow) continue;
+    if (!bankRow) {
+      skippedNoBankRow++;
+      console.warn("[supplementOpenHiddenFromDbMatches] Пропущено матч: рядок банку не знайдено", {
+        matchId: match.id,
+        bankStatementItemId: match.bankStatementItemId,
+        kyivDay: match.kyivDay,
+        matchType: match.matchType,
+      });
+      continue;
+    }
 
     hidden.bankIds.add(match.bankStatementItemId);
 
@@ -2368,7 +2384,10 @@ function supplementOpenHiddenFromDbMatches(
         bankRow.accountTitle,
         bankRow.altegioAccountTitle,
       );
-      if (!bankDay || !altegioAccount) continue;
+      if (!bankDay || !altegioAccount) {
+        skippedMatches++;
+        continue;
+      }
 
       const evaluation = evaluateIncomingAccountReconcile(altegioAccount, bankDay);
       const inBatch = evaluation.acquiringBatchMatches.some((batch) =>
@@ -2415,6 +2434,7 @@ function supplementOpenHiddenFromDbMatches(
         }
         continue;
       }
+      skippedMatches++;
       continue;
     }
 
@@ -2424,21 +2444,33 @@ function supplementOpenHiddenFromDbMatches(
       bankRow,
       [],
     );
-    if (!found) continue;
+    if (!found) {
+      skippedMatches++;
+      continue;
+    }
     if (!accountsMatchForReconcile(
       found.account.accountTitle,
       bankRow.accountTitle,
       bankRow.altegioAccountTitle,
     )) {
+      skippedMatches++;
       continue;
     }
-
+    
     addHiddenAltegioPayer(
       hidden.altegioPayersByDay,
       found.dayKyivDay,
       reconciledAltegioClientKey(found.client),
     );
   }
+
+  console.log("[supplementOpenHiddenFromDbMatches] Статистика обробки матчів", {
+    total: incomingMatches.length,
+    skippedDeposits,
+    skippedNoBankRow,
+    processed: incomingMatches.length - skippedDeposits - skippedNoBankRow,
+    hiddenBankIds: hidden.bankIds.size,
+  });
 }
 
 /** Altegio-завдатки з реальною парою банку (або готівка) — прибираємо з «Не зведених». */
