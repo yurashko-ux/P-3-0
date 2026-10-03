@@ -1,10 +1,12 @@
-// Завдатки фінзвіту: «Поповнення рахунку», отримані у звітному місяці.
-// Віднімаються з інкасації один раз — у місяці оплати, не в місяці візиту.
+// Завдатки фінзвіту: «Поповнення рахунку», отримані у звітному місяці,
+// мінус ті з них, що в цьому ж місяці вже списані в запис.
+// В інкасацію йде лише залишок.
 
 import { ALTEGIO_ENV } from "./env";
 import { fetchIncomingPaymentsWithDocumentNumbers } from "./incoming-payments";
 import { isDepositTopUpPaymentPurpose } from "./payment-purpose-labels";
-import type { ClientRecord } from "./records";
+import { kyivDayFromISO } from "./records-grouping";
+import { getClientRecords, type ClientRecord } from "./records";
 
 export type DepositAttributedItem = {
   transactionId: number;
@@ -76,9 +78,21 @@ export function findNearestRecordAfterPayment(
   return nearest;
 }
 
+function kyivDay(date: Date): string {
+  return kyivDayFromISO(date.toISOString());
+}
+
+/** Запис у звітному місяці і не пізніше сьогодні: завдаток уже списаний у візит. */
+function isWrittenOffInReportMonth(appointment: Date, from: string, to: string, todayKyiv: string): boolean {
+  const day = kyivDay(appointment);
+  if (!day) return false;
+  const usedUntil = todayKyiv < to ? todayKyiv : to;
+  return day >= from && day <= usedUntil;
+}
+
 /**
- * Сума завдатків, отриманих у звітному місяці (дата оплати).
- * Один раз віднімається з інкасації цього місяця.
+ * Залишок завдатків звітного місяця: отримані в місяці мінус списані в запис у тому ж місяці.
+ * Цей залишок один раз віднімається з інкасації.
  */
 export async function getDepositsAttributedToMonth(params: {
   year: number;
@@ -86,6 +100,7 @@ export async function getDepositsAttributedToMonth(params: {
 }): Promise<{ total: number; items: DepositAttributedItem[] }> {
   const { year, month } = params;
   const { from, to } = reportMonthRange(year, month);
+  const todayKyiv = kyivDayFromISO(new Date().toISOString());
   const companyId = resolveCompanyId();
 
   const payments = await fetchIncomingPaymentsWithDocumentNumbers({
@@ -95,7 +110,7 @@ export async function getDepositsAttributedToMonth(params: {
     includeCashboxAccounts: true,
   });
 
-  const items: DepositAttributedItem[] = [];
+  const received: DepositAttributedItem[] = [];
   let skippedNotDeposit = 0;
   let skippedOtherMonth = 0;
 
@@ -111,7 +126,7 @@ export async function getDepositsAttributedToMonth(params: {
       continue;
     }
 
-    items.push({
+    received.push({
       transactionId: payment.transactionId,
       amount: payment.amount,
       paymentDate: payment.date,
@@ -123,12 +138,61 @@ export async function getDepositsAttributedToMonth(params: {
     });
   }
 
+  const recordsCache = new Map<number, ClientRecord[]>();
+  const clientIds = [...new Set(received.map((item) => item.clientId).filter((id) => id > 0))];
+  const batchSize = 5;
+  const delayMs = 200;
+  for (let index = 0; index < clientIds.length; index += batchSize) {
+    const batch = clientIds.slice(index, index + batchSize);
+    await Promise.all(
+      batch.map(async (clientId) => {
+        try {
+          recordsCache.set(clientId, await getClientRecords(companyId, clientId));
+        } catch (error) {
+          console.warn(
+            `[deposit-attribution] Не вдалося отримати записи clientId=${clientId}:`,
+            error instanceof Error ? error.message : String(error),
+          );
+          recordsCache.set(clientId, []);
+        }
+      }),
+    );
+    if (index + batchSize < clientIds.length) {
+      await new Promise((resolve) => setTimeout(resolve, delayMs));
+    }
+  }
+
+  const items: DepositAttributedItem[] = [];
+  let writtenOffCount = 0;
+  let writtenOffTotal = 0;
+
+  for (const item of received) {
+    const paymentDate = parseDate(item.paymentDate);
+    const records = item.clientId > 0 ? recordsCache.get(item.clientId) ?? [] : [];
+    const appointment = paymentDate ? findNearestRecordAfterPayment(records, paymentDate) : null;
+    if (appointment && isWrittenOffInReportMonth(appointment, from, to, todayKyiv)) {
+      writtenOffCount += 1;
+      writtenOffTotal += item.amount;
+      continue;
+    }
+
+    items.push({
+      ...item,
+      appointmentDate: appointment ? appointment.toISOString() : "",
+    });
+  }
+
+  const receivedTotal = received.reduce((sum, item) => sum + item.amount, 0);
   const total = Math.round(items.reduce((sum, item) => sum + item.amount, 0) * 100) / 100;
 
-  console.log(`[deposit-attribution] Завдатки, отримані за ${year}-${String(month).padStart(2, "0")}:`, {
+  console.log(`[deposit-attribution] Завдатки за ${year}-${String(month).padStart(2, "0")}:`, {
     paymentWindow: { from, to },
-    paymentsFetched: payments.length,
-    depositCount: items.length,
+    todayKyiv,
+    receivedCount: received.length,
+    receivedTotal: Math.round(receivedTotal * 100) / 100,
+    writtenOffCount,
+    writtenOffTotal: Math.round(writtenOffTotal * 100) / 100,
+    remainingCount: items.length,
     total,
     skippedNotDeposit,
     skippedOtherMonth,
