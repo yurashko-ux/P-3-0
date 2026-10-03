@@ -77,7 +77,12 @@ export async function deliverDailyReport(options?: {
   for (const chatId of chatIds) {
     const name = nameByChatId.get(chatId) ?? null;
     try {
-      await sendMessage(chatId, text, { parse_mode: "HTML" }, botToken);
+      await sendMessage(
+        chatId,
+        text,
+        { parse_mode: "HTML", link_preview_options: { is_disabled: true } },
+        botToken,
+      );
       result.sent += 1;
       result.deliveries.push({ chatId, name, ok: true });
       await logOutgoing({

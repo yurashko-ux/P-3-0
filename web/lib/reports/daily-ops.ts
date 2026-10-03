@@ -48,6 +48,10 @@ export type DailyOpsReportData = {
   activeBaseCount: number;
   removedFromActiveBaseCount: number;
   removedFromActiveBaseNames: string[];
+  removedFromActiveBaseClientIds: string[];
+  returnedToActiveBaseCount: number;
+  returnedToActiveBaseNames: string[];
+  returnedToActiveBaseClientIds: string[];
 };
 
 async function enrichClientsWithKvConsultCreatedAt<
@@ -144,5 +148,9 @@ export async function buildDailyOpsReport(options?: {
     activeBaseCount: activeBase.activeBaseCount,
     removedFromActiveBaseCount: activeBase.removedFromActiveBaseCount,
     removedFromActiveBaseNames: activeBase.removedFromActiveBaseNames,
+    removedFromActiveBaseClientIds: activeBase.removedFromActiveBaseClientIds,
+    returnedToActiveBaseCount: activeBase.returnedToActiveBaseCount,
+    returnedToActiveBaseNames: activeBase.returnedToActiveBaseNames,
+    returnedToActiveBaseClientIds: activeBase.returnedToActiveBaseClientIds,
   };
 }
