@@ -115,19 +115,6 @@ export function bankFullAmountKop(item: BankIncomingItem): bigint {
   return BigInt(item.amountKop || 0) + bankCommissionKop(item);
 }
 
-/**
- * Порівняння сум для зведення вхідних.
- * UI Δ округлює до гривень (Math.round(коп/100)), тож еквайринг
- * «Загалом 65870.08» vs Altegio 65870 показує Δ=0, але Exact kop ≠.
- * Зводимо, якщо рівні копійки АБО однакова округлена гривня (як на екрані).
- */
-export function incomingReconcileAmountsMatch(aKop: bigint, bKop: bigint): boolean {
-  if (aKop === bKop) return true;
-  const aUah = Math.round(Number(aKop) / 100);
-  const bUah = Math.round(Number(bKop) / 100);
-  return Number.isFinite(aUah) && Number.isFinite(bUah) && aUah === bUah;
-}
-
 function sumBankRowsTotals(rows: BankDayItemRow[]): {
   totalKop: string;
   commissionTotalKop: string;
@@ -482,59 +469,6 @@ export function isIncomingAccountFullyReconciled(
  *
  * Типи: іменований, batch-еквайринг (включно з завдатками), 1:1 за унікальною сумою.
  */
-/**
- * Підмножина клієнтів Altegio, сума яких = номінал еквайрингу банку.
- * Потрібно, коли «зайвий» клієнт (напр. «без платника») ламає матч «усі remaining = банк».
- */
-export function findClientSubsetMatchingAmount(
-  clients: AltegioDayAccountClient[],
-  targetKop: bigint,
-): AltegioDayAccountClient[] | null {
-  if (clients.length === 0 || targetKop <= 0n) return null;
-
-  const ordered = [...clients].sort((a, b) => {
-    const aNo = a.payerName.includes("без платника") ? 1 : 0;
-    const bNo = b.payerName.includes("без платника") ? 1 : 0;
-    if (aNo !== bNo) return aNo - bNo;
-    return Number(BigInt(b.totalKop) - BigInt(a.totalKop));
-  });
-
-  // 2^16 = 65536 — достатньо для типового дня/рахунку.
-  const items = ordered.slice(0, 16);
-  let bestMask = 0;
-  let bestCount = Number.POSITIVE_INFINITY;
-  let bestNamed = -1;
-
-  for (let mask = 1; mask < 1 << items.length; mask += 1) {
-    let sum = 0n;
-    let count = 0;
-    let named = 0;
-    for (let i = 0; i < items.length; i += 1) {
-      if ((mask & (1 << i)) === 0) continue;
-      sum += BigInt(items[i].totalKop);
-      count += 1;
-      if (!items[i].payerName.includes("без платника")) named += 1;
-    }
-    if (!incomingReconcileAmountsMatch(sum, targetKop)) continue;
-    if (
-      count < bestCount
-      || (count === bestCount && named > bestNamed)
-    ) {
-      bestCount = count;
-      bestNamed = named;
-      bestMask = mask;
-      if (count === 1 && named === 1) break;
-    }
-  }
-
-  if (!bestMask) return null;
-  const subset: AltegioDayAccountClient[] = [];
-  for (let i = 0; i < items.length; i += 1) {
-    if (bestMask & (1 << i)) subset.push(items[i]);
-  }
-  return subset;
-}
-
 function clientKeyForReconcile(client: AltegioDayAccountClient): string {
   return `${client.payerName}|${client.totalKop}`;
 }
@@ -571,12 +505,13 @@ function mergeIncomingAccountEvaluations(
     namedMatches.push(...part.namedMatches);
     acquiringBatchMatches.push(...part.acquiringBatchMatches);
     acquiringClientMatches.push(...part.acquiringClientMatches);
-    // Лише клієнти еквайрингу — НЕ додавати named сюди.
-    // Інакше «Зведені» збирає Проник+Анна+Вєтрова vs банк еквайрингу й пропускає рядок.
     for (const client of part.acquiringMatchedClients) {
       acquiringMatchedClientKeys.add(clientKeyForReconcile(client));
     }
     for (const match of part.acquiringClientMatches) {
+      acquiringMatchedClientKeys.add(`${match.payerName}|${match.amountKop}`);
+    }
+    for (const match of part.namedMatches) {
       acquiringMatchedClientKeys.add(`${match.payerName}|${match.amountKop}`);
     }
   }
@@ -586,10 +521,6 @@ function mergeIncomingAccountEvaluations(
   const namedMatchedKeys = new Set(
     namedMatches.map((match) => `${match.payerName}|${match.amountKop}`),
   );
-  // Named прибираємо з acquiringMatchedClients (на випадок забруднення з part).
-  for (const key of namedMatchedKeys) {
-    acquiringMatchedClientKeys.delete(key);
-  }
   const stillUnmatchedAltegioClients = altegioAccount.clients.filter(
     (client) =>
       !acquiringMatchedClientKeys.has(clientKeyForReconcile(client))
@@ -655,21 +586,16 @@ function evaluateIncomingForBankRows(
 
   if (universalRows.length > 0 && altegioRemainingKop > 0n) {
     const universalFullKop = bankRowsReconcileFullTotalKop(universalRows);
-    // Спочатку всі remaining; якщо зайвий «без платника» зіпсував суму — підмножина.
-    const batchClients = incomingReconcileAmountsMatch(universalFullKop, altegioRemainingKop)
-      ? remainingClients
-      : findClientSubsetMatchingAmount(remainingClients, universalFullKop);
-    if (batchClients && batchClients.length > 0) {
-      const batchKop = batchClients.reduce((sum, client) => sum + BigInt(client.totalKop), 0n);
+    if (universalFullKop === altegioRemainingKop) {
       matchedBankRows.push(...universalRows);
-      for (const client of batchClients) {
+      for (const client of remainingClients) {
         acquiringMatchedClientKeys.add(clientKeyForReconcile(client));
         usedClientKeys.add(clientKeyForReconcile(client));
       }
       acquiringBatchMatches.push({
         bankRowIds: universalRows.map((row) => row.id),
         bankFullKop: universalFullKop.toString(),
-        altegioRemainingKop: batchKop.toString(),
+        altegioRemainingKop: altegioRemainingKop.toString(),
         commissionKop: universalRows.reduce((sum, row) => sum + bankCommissionKop(row), 0n).toString(),
       });
     }
@@ -684,8 +610,8 @@ function evaluateIncomingForBankRows(
     if (matchedIdsAfterBatch.has(bankRow.id)) continue;
 
     const bankAmountKop = bankFullAmountKop(bankRow);
-    const candidates = remainingForAmountMatch.filter((client) =>
-      incomingReconcileAmountsMatch(BigInt(client.totalKop), bankAmountKop),
+    const candidates = remainingForAmountMatch.filter(
+      (client) => BigInt(client.totalKop) === bankAmountKop,
     );
     if (candidates.length !== 1) continue;
 

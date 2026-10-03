@@ -225,36 +225,6 @@ export async function POST(req: NextRequest) {
           error: autoExpenseError instanceof Error ? autoExpenseError.message : String(autoExpenseError),
         });
       }
-
-      // Автозведення ВХІДНІ (Altegio ↔ monobank): раніше лише комісія еквайрингу,
-      // тож пари з Δ=0 лишались у «Не зведені», доки не натиснути «Звести».
-      try {
-        const { persistMissingIncomingMatchesForBankItems } = await import(
-          "@/lib/bank/incoming-payment-reconcile"
-        );
-        const persistResult = await persistMissingIncomingMatchesForBankItems([
-          {
-            id: statement.id,
-            time: statement.time,
-            amount: statement.amount,
-            description: statement.description ?? "",
-            comment: statement.comment ?? null,
-            counterName: statement.counterName ?? null,
-          },
-        ]);
-        console.log("[bank/monobank/webhook] Автозведення вхідних після StatementItem:", {
-          statementId: statement.id,
-          ...persistResult,
-        });
-      } catch (incomingReconcileError) {
-        console.warn("[bank/monobank/webhook] Помилка автозведення вхідних:", {
-          statementId: statement.id,
-          error:
-            incomingReconcileError instanceof Error
-              ? incomingReconcileError.message
-              : String(incomingReconcileError),
-        });
-      }
     }
 
     return new NextResponse(null, { status: 200 });

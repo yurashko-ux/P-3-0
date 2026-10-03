@@ -5,44 +5,21 @@ import {
   loadDepositIncomingMatches,
   syncDepositIncomingMatches,
 } from "@/lib/bank/deposit-incoming-reconcile";
-import { syncExactOpenPairsFromPreview } from "@/lib/bank/incoming-payment-reconcile";
+import { syncIncomingPaymentsForPreview } from "@/lib/bank/incoming-payment-reconcile";
+import { repairIncomingAcquiringMatchTypes, purgeIncompleteIncomingMatches } from "@/lib/bank/incoming-match-cleanup";
 import { prisma } from "@/lib/prisma";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
-/** Preview + запис лише точних пар; не повинен вимагати 300s. */
 export const maxDuration = 120;
 
-/** Preview + автозведення точних пар (як «Звести»), щоб незведені з Δ=0 не висіли. */
+/** Швидке читання preview + збережені матчі (без автозведення та Altegio deposits). */
 export async function GET(req: NextRequest) {
   const auth = await requireBankSection(req);
   if (auth instanceof NextResponse) return auth;
 
   try {
-    const startedAt = Date.now();
-    // Live 21 день лише /transactions (без documents/records) + історія з БД.
-    const preview = await buildIncomingReconciliationPreview({
-      liveLookbackDays: 21,
-      skipDocumentEnrichment: true,
-    });
-
-    // Автозведення точних пар при відкритті вкладки (cron дивиться лише ~дні).
-    let autoReconcile: Awaited<ReturnType<typeof syncExactOpenPairsFromPreview>> | null = null;
-    try {
-      autoReconcile = await syncExactOpenPairsFromPreview(preview, {
-        matchedBy: "auto_incoming_get",
-      });
-      console.log("[payment-reconciliation/incoming][GET] Автозведення точних пар", {
-        exactPairsFound: autoReconcile.exactPairsFound,
-        matchedBankItems: autoReconcile.matchedBankItems,
-        days: autoReconcile.days,
-        ms: Date.now() - startedAt,
-      });
-    } catch (autoError) {
-      console.warn("[payment-reconciliation/incoming][GET] Автозведення не вдалось", {
-        error: autoError instanceof Error ? autoError.message : String(autoError),
-      });
-    }
+    const preview = await buildIncomingReconciliationPreview();
 
     const [incomingMatches, depositMatches] = await Promise.all([
       (prisma as any).bankAltegioIncomingMatch.findMany({
@@ -71,25 +48,9 @@ export async function GET(req: NextRequest) {
     ];
     const depositAltegioIds = depositMatches.map((match) => match.altegioTransactionId);
 
-    console.log("[payment-reconciliation/incoming][GET] Готово", {
-      ms: Date.now() - startedAt,
-      altegioPayers: preview.altegio.byPayer.length,
-      bankDays: preview.bank.byDay.length,
-      matches: incomingMatches.length,
-      autoMatched: autoReconcile?.matchedBankItems ?? 0,
-    });
-
     return NextResponse.json({
       ok: true,
       ...preview,
-      autoReconcile: autoReconcile
-        ? {
-            exactPairsFound: autoReconcile.exactPairsFound,
-            matchedBankItems: autoReconcile.matchedBankItems,
-            days: autoReconcile.days,
-            errors: autoReconcile.errors,
-          }
-        : null,
       reconciled: {
         bankItemIds: reconciledBankItemIds,
         matches: incomingMatches,
@@ -107,69 +68,21 @@ export async function GET(req: NextRequest) {
   }
 }
 
-/** Ручне зведення (кнопка «Звести»): лише точні пари з live-оцінки (Δ=0 / іменовані / еквайринг). */
+/** Ручне зведення (кнопка «Звести»): cleanup + sync. */
 export async function POST(req: NextRequest) {
   const auth = await requireBankSection(req);
   if (auth instanceof NextResponse) return auth;
 
   try {
-    const startedAt = Date.now();
-    // Той самий швидкий preview, що й GET: /transactions 21 день + БД, без documents 404-шторму.
-    const preview = await buildIncomingReconciliationPreview({
-      liveLookbackDays: 21,
-      skipDocumentEnrichment: true,
-    });
-    console.log("[payment-reconciliation/incoming][POST] Preview готовий", {
-      ms: Date.now() - startedAt,
-      altegioPayers: preview.altegio.byPayer.length,
-      bankDays: preview.bank.byDay.length,
-      liveRows: preview.altegio.stats?.liveRows ?? null,
-      dbRows: preview.altegio.stats?.dbRows ?? null,
-    });
-
-    const incomingSummary = await syncExactOpenPairsFromPreview(preview, {
-      matchedBy: "manual_incoming_reconcile",
-    });
-    console.log("[payment-reconciliation/incoming][POST] Точні пари", {
-      ms: Date.now() - startedAt,
-      exactPairsFound: incomingSummary.exactPairsFound,
-      openDays: incomingSummary.days,
-      matchedBankItems: incomingSummary.matchedBankItems,
-      hasDepositPairs: incomingSummary.hasDepositPairs,
-      errors: incomingSummary.errors,
-    });
-
-    // Завдатки — лише якщо live-оцінка вже знайшла точні deposit-пари.
-    const depositSummary = incomingSummary.hasDepositPairs
-      ? await syncDepositIncomingMatches({
-          preview,
-          matchedBy: "manual_deposit_reconcile",
-        })
-      : {
-          scanned: 0,
-          upserted: 0,
-          withBank: 0,
-          withoutBank: 0,
-          withAppointment: 0,
-          paymentDayFallback: 0,
-          skippedAlreadyMatchedBank: 0,
-          skippedCashAccounts: 0,
-          purgedCashAutoMatches: 0,
-          errors: [] as string[],
-        };
-
-    console.log("[payment-reconciliation/incoming][POST] Готово (точні пари)", {
-      ms: Date.now() - startedAt,
-      exactPairsFound: incomingSummary.exactPairsFound,
-      matchedBankItems: incomingSummary.matchedBankItems,
-      days: incomingSummary.days,
-      hasDepositPairs: incomingSummary.hasDepositPairs,
-      depositUpserted: depositSummary.upserted,
-    });
+    const preview = await buildIncomingReconciliationPreview();
+    await purgeIncompleteIncomingMatches(preview);
+    await repairIncomingAcquiringMatchTypes(preview);
+    const incomingSummary = await syncIncomingPaymentsForPreview(preview, { matchedBy: "manual_incoming_reconcile" });
+    const depositSummary = await syncDepositIncomingMatches({ preview, matchedBy: "manual_deposit_reconcile" });
 
     return NextResponse.json({
       ok: true,
-      message: "Зведено лише точні пари з live-оцінки",
+      message: "Зведення вхідних виконано",
       depositSummary,
       incomingSummary,
     });

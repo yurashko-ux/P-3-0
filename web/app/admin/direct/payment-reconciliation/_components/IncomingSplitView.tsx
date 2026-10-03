@@ -11,8 +11,6 @@ import {
   bankRowIsNamedIncomingMatch,
   evaluateIncomingAccountReconcile,
   evaluateOpenReconcilePairs,
-  findClientSubsetMatchingAmount,
-  incomingReconcileAmountsMatch,
   isCashReconcileAccount,
   isIncomingRowAcquiringForReconcile,
   normalizePersonName,
@@ -677,7 +675,7 @@ function isAltegioCashAccount(accountTitle: string): boolean {
   return isCashReconcileAccount(accountTitle);
 }
 
-function reconciledAltegioClientKey(client: { payerName: string; totalKop: string }): string {
+function reconciledAltegioClientKey(client: AltegioDayAccountClient): string {
   const name = normalizePersonName(client.payerName);
   return name ? `${name}|${client.totalKop}` : client.totalKop;
 }
@@ -1474,14 +1472,6 @@ function buildIncomingLinkedVisibleDays(
         (item) => item.bankRowId === bankRow.id,
       );
 
-      // Named-клієнтів дня не включаємо в еквайринг-batch (інакше сума ≠ банку й рядок зникає з «Зведені»).
-      const namedClientKeys = new Set(
-        evaluation.namedMatches.map((item) => `${item.payerName}|${item.amountKop}`),
-      );
-      const acquiringClientsOnly = evaluation.acquiringMatchedClients.filter(
-        (client) => !namedClientKeys.has(`${client.payerName}|${client.totalKop}`),
-      );
-
       let matchedClients = individualAcquiringMatch
         ? altegioAccount.clients.filter(
             (item) =>
@@ -1489,18 +1479,15 @@ function buildIncomingLinkedVisibleDays(
               && item.totalKop === individualAcquiringMatch.amountKop,
           )
         : acquiringMatched
-        ? pickAcquiringClientsForBankAmount(
-            acquiringClientsOnly
-              .map((matchedClient) =>
-                altegioAccount!.clients.find(
-                  (item) =>
-                    normalizePersonName(item.payerName) === normalizePersonName(matchedClient.payerName)
-                    && item.totalKop === matchedClient.totalKop,
-                ),
-              )
-              .filter((client): client is AltegioDayAccountClient => client != null),
-            bankFullAmountKop(bankRow),
+        ? evaluation.acquiringMatchedClients
+          .map((matchedClient) =>
+            altegioAccount!.clients.find(
+              (item) =>
+                normalizePersonName(item.payerName) === normalizePersonName(matchedClient.payerName)
+                && item.totalKop === matchedClient.totalKop,
+            ),
           )
+          .filter((client): client is AltegioDayAccountClient => client != null)
         : altegioAccount.clients.filter((client) => {
             return BigInt(client.totalKop) === bankFullAmountKop(bankRow);
           });
@@ -1775,12 +1762,6 @@ function buildEvaluatedLinkedVisibleDays(
       const individualAcquiringMatch = evaluation.acquiringClientMatches.find(
         (item) => item.bankRowId === bankRow.id,
       );
-      const namedClientKeys = new Set(
-        evaluation.namedMatches.map((item) => `${item.payerName}|${item.amountKop}`),
-      );
-      const acquiringClientsOnly = evaluation.acquiringMatchedClients.filter(
-        (client) => !namedClientKeys.has(`${client.payerName}|${client.totalKop}`),
-      );
 
       let matchedClients = individualAcquiringMatch
         ? altegioAccount.clients.filter(
@@ -1789,18 +1770,15 @@ function buildEvaluatedLinkedVisibleDays(
               && item.totalKop === individualAcquiringMatch.amountKop,
           )
         : acquiringMatched
-        ? pickAcquiringClientsForBankAmount(
-            acquiringClientsOnly
-              .map((matchedClient) =>
-                altegioAccount.clients.find(
-                  (item) =>
-                    normalizePersonName(item.payerName) === normalizePersonName(matchedClient.payerName)
-                    && item.totalKop === matchedClient.totalKop,
-                ),
-              )
-              .filter((client): client is AltegioDayAccountClient => client != null),
-            bankFullAmountKop(bankRow),
+        ? evaluation.acquiringMatchedClients
+          .map((matchedClient) =>
+            altegioAccount.clients.find(
+              (item) =>
+                normalizePersonName(item.payerName) === normalizePersonName(matchedClient.payerName)
+                && item.totalKop === matchedClient.totalKop,
+            ),
           )
+          .filter((client): client is AltegioDayAccountClient => client != null)
         : altegioAccount.clients.filter((client) => {
             return BigInt(client.totalKop) === bankFullAmountKop(bankRow);
           });
@@ -2077,26 +2055,10 @@ function buildAcquiringAltegioAccountRow(
   };
 }
 
-/** Клієнти еквайринг-batch під конкретну суму банку (без named, з підмножиною при зайвих). */
-function pickAcquiringClientsForBankAmount(
-  pool: AltegioDayAccountClient[],
-  bankAmountKop: bigint,
-): AltegioDayAccountClient[] {
-  if (pool.length === 0) return [];
-  const poolTotal = pool.reduce((sum, client) => sum + BigInt(client.totalKop), 0n);
-  if (incomingReconcileAmountsMatch(poolTotal, bankAmountKop)) return pool;
-  // Локальний UI-тип клієнта структурно сумісний з matching (payerName/totalKop).
-  const subset = findClientSubsetMatchingAmount(
-    pool as unknown as Parameters<typeof findClientSubsetMatchingAmount>[0],
-    bankAmountKop,
-  );
-  return (subset ?? []) as AltegioDayAccountClient[];
-}
-
 function linkedRowAmountsMatch(altegioAccount: AltegioDayAccountRow, bankRows: BankDayItemRow[]): boolean {
   const altegioTotal = BigInt(altegioAccount.totalKop);
   const bankFull = bankRows.reduce((sum, row) => sum + bankFullAmountKop(row), 0n);
-  return incomingReconcileAmountsMatch(altegioTotal, bankFull);
+  return altegioTotal === bankFull;
 }
 
 function buildDepositLinkedVisibleDays(
@@ -2321,16 +2283,6 @@ function buildOpenHiddenFromLinkedDays(
   };
 }
 
-function addHiddenAltegioPayer(
-  hidden: Map<string, Set<string>>,
-  dayKey: string,
-  payerKey: string,
-): void {
-  if (!payerKey) return;
-  if (!hidden.has(dayKey)) hidden.set(dayKey, new Set());
-  hidden.get(dayKey)!.add(payerKey);
-}
-
 /** Доповнити приховування з БД, якщо запис зведення є, але linked-рядок не збудувався. */
 function supplementOpenHiddenFromDbMatches(
   hidden: {
@@ -2343,9 +2295,7 @@ function supplementOpenHiddenFromDbMatches(
   bankDays: BankDayFlat[],
 ): void {
   const bankRowById = new Map<string, BankDayItemRow>();
-  const bankDayByKyivDay = new Map<string, BankDayFlat>();
   for (const day of bankDays) {
-    bankDayByKyivDay.set(day.kyivDay, day);
     for (const row of day.rows) bankRowById.set(row.id, row);
   }
 
@@ -2355,68 +2305,6 @@ function supplementOpenHiddenFromDbMatches(
     if (!bankRow) continue;
 
     hidden.bankIds.add(match.bankStatementItemId);
-
-    const isAcquiring = bankRowIsAcquiringIncomingMatch(bankRow, match.matchType);
-    if (isAcquiring) {
-      // Еквайринг: день у матчі = день Altegio; рядок банку в UI — після −1 day shift.
-      const groupingDay = bankGroupingKyivDay(bankRow);
-      const dayKey = bankDayByKyivDay.has(match.kyivDay) ? match.kyivDay : groupingDay;
-      const bankDay = bankDayByKyivDay.get(dayKey);
-      const altegioAccount = findAltegioAccountOnDay(
-        altegioDays,
-        dayKey,
-        bankRow.accountTitle,
-        bankRow.altegioAccountTitle,
-      );
-      if (!bankDay || !altegioAccount) continue;
-
-      const evaluation = evaluateIncomingAccountReconcile(altegioAccount, bankDay);
-      const inBatch = evaluation.acquiringBatchMatches.some((batch) =>
-        batch.bankRowIds.includes(bankRow.id),
-      );
-      const individual = evaluation.acquiringClientMatches.find(
-        (item) => item.bankRowId === bankRow.id,
-      );
-
-      if (inBatch) {
-        // Не ховаємо named-клієнтів цього дня — лише тих, хто реально в еквайринг-batch.
-        const namedClientKeys = new Set(
-          evaluation.namedMatches.map((item) => `${item.payerName}|${item.amountKop}`),
-        );
-        const acquiringOnly = evaluation.acquiringMatchedClients.filter(
-          (client) => !namedClientKeys.has(`${client.payerName}|${client.totalKop}`),
-        );
-        const batchClients = pickAcquiringClientsForBankAmount(
-          acquiringOnly as unknown as AltegioDayAccountClient[],
-          bankFullAmountKop(bankRow),
-        );
-        for (const client of batchClients) {
-          addHiddenAltegioPayer(
-            hidden.altegioPayersByDay,
-            dayKey,
-            reconciledAltegioClientKey(client),
-          );
-        }
-        continue;
-      }
-
-      if (individual) {
-        const client = altegioAccount.clients.find(
-          (item) =>
-            normalizePersonName(item.payerName) === normalizePersonName(individual.payerName)
-            && item.totalKop === individual.amountKop,
-        );
-        if (client) {
-          addHiddenAltegioPayer(
-            hidden.altegioPayersByDay,
-            dayKey,
-            reconciledAltegioClientKey(client),
-          );
-        }
-        continue;
-      }
-      continue;
-    }
 
     const found = findAltegioClientForLinkedFromBank(
       altegioDays,
@@ -2433,11 +2321,10 @@ function supplementOpenHiddenFromDbMatches(
       continue;
     }
 
-    addHiddenAltegioPayer(
-      hidden.altegioPayersByDay,
-      found.dayKyivDay,
-      reconciledAltegioClientKey(found.client),
-    );
+    const dayKey = found.dayKyivDay;
+    const payerKey = reconciledAltegioClientKey(found.client);
+    if (!hidden.altegioPayersByDay.has(dayKey)) hidden.altegioPayersByDay.set(dayKey, new Set());
+    hidden.altegioPayersByDay.get(dayKey)!.add(payerKey);
   }
 }
 
@@ -3477,8 +3364,6 @@ export function IncomingSplitView({
   const [loading, setLoading] = useState(false);
   const [depositTabLoading, setDepositTabLoading] = useState(false);
   const [reconciling, setReconciling] = useState(false);
-  /** kyivDay, для якого зараз тягнемо Altegio (кнопка біля дати). */
-  const [refreshingDay, setRefreshingDay] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [expandedAccounts, setExpandedAccounts] = useState<Set<string>>(() => new Set());
   const [altegioCashFilter, setAltegioCashFilter] = useState<AltegioCashFilter>("non_cash");
@@ -3545,7 +3430,7 @@ export function IncomingSplitView({
       const res = await fetch("/api/admin/bank/payment-reconciliation/incoming", {
         cache: "no-store",
         credentials: "include",
-        signal: AbortSignal.timeout(180_000),
+        signal: AbortSignal.timeout(90_000),
       });
       const payload = (await res.json()) as IncomingPreview;
       if (!res.ok || !payload.ok) {
@@ -3564,7 +3449,7 @@ export function IncomingSplitView({
       } else {
         setError(loadError instanceof Error ? loadError.message : "Помилка завантаження");
       }
-      // Не затираємо попередні дані — інакше лічильники стають 0 і здається, що платежі зникли.
+      setData(null);
     } finally {
       setLoading(false);
     }
@@ -3591,9 +3476,7 @@ export function IncomingSplitView({
       await loadData();
     } catch (runError) {
       if (runError instanceof Error && runError.name === "TimeoutError") {
-        setError(
-          "Ручне зведення перевищило час очікування. Спробуйте «Оновити», потім знову «Звести» (лише точні пари).",
-        );
+        setError("Ручне зведення перевищило час очікування. Спробуйте ще раз.");
       } else {
         setError(runError instanceof Error ? runError.message : "Помилка ручного зведення");
       }
@@ -3601,47 +3484,6 @@ export function IncomingSplitView({
       setReconciling(false);
     }
   }, [loadData]);
-
-  /** Підтягнути вхідні Altegio лише за один день (documents/records + upsert у БД). */
-  const refreshAltegioDay = useCallback(async (kyivDay: string) => {
-    if (refreshingDay || loading || reconciling) return;
-    setRefreshingDay(kyivDay);
-    setError(null);
-    try {
-      const res = await fetch(
-        "/api/admin/bank/payment-reconciliation/incoming/refresh-day",
-        {
-          method: "POST",
-          cache: "no-store",
-          credentials: "include",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ kyivDay }),
-          signal: AbortSignal.timeout(120_000),
-        },
-      );
-      const payload = (await res.json()) as {
-        ok?: boolean;
-        error?: string;
-        refresh?: { withPayerName?: number; upsertedToDb?: number };
-      };
-      if (!res.ok || !payload.ok) {
-        throw new Error(payload.error || `Не вдалося підтягнути Altegio за ${kyivDay}`);
-      }
-      console.log("[IncomingSplitView] Підтягнуто Altegio за день", {
-        kyivDay,
-        refresh: payload.refresh,
-      });
-      await loadData();
-    } catch (dayError) {
-      if (dayError instanceof Error && dayError.name === "TimeoutError") {
-        setError(`Підтягування ${kyivDay} перевищило час. Спробуйте ще раз.`);
-      } else {
-        setError(dayError instanceof Error ? dayError.message : "Помилка підтягування дня");
-      }
-    } finally {
-      setRefreshingDay(null);
-    }
-  }, [refreshingDay, loading, reconciling, loadData]);
 
   useEffect(() => {
     void loadData();
@@ -4236,20 +4078,7 @@ export function IncomingSplitView({
                       <tbody>
                         <tr>
                           <td colSpan={altegioHeaderColSpan} className="px-1 py-1">
-                            <div className="flex flex-wrap items-center gap-2">
-                              <h3 className="font-bold uppercase tracking-wide text-gray-900">{day.dayLabel}</h3>
-                              {reconciliationStatus === "open" || reconciliationStatus === "all" ? (
-                                <button
-                                  type="button"
-                                  disabled={Boolean(refreshingDay) || loading || reconciling}
-                                  onClick={() => void refreshAltegioDay(day.kyivDay)}
-                                  title="Підтягнути вхідні платежі Altegio лише за цей день"
-                                  className="rounded border border-sky-700 bg-sky-50 px-1.5 py-0.5 text-[9px] font-semibold uppercase tracking-wide text-sky-900 hover:bg-sky-100 disabled:cursor-not-allowed disabled:opacity-50"
-                                >
-                                  {refreshingDay === day.kyivDay ? "Тягну…" : "Altegio день"}
-                                </button>
-                              ) : null}
-                            </div>
+                            <h3 className="font-bold uppercase tracking-wide text-gray-900">{day.dayLabel}</h3>
                           </td>
                           <td className="whitespace-nowrap px-1 py-1 text-right font-semibold tabular-nums text-emerald-900">
                             {day.altegio ? `${formatMoney(day.altegio.totalKop)} ₴` : "—"}
