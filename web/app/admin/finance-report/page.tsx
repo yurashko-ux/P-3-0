@@ -386,7 +386,7 @@ async function getSummaryForMonth(
   encashmentFactBreakdown: EncashmentFactBreakdown;
   fopOrekhovskaPayments: number; // Сума платежів з ФОП Ореховська
   ownerProfit: number; // Чистий прибуток власника (profit - management)
-  deposits: number; // Завдатки (Поповнення рахунку), атрибутовані до місяця запису
+  deposits: number; // Завдатки (Поповнення рахунку), отримані у звітному місяці
   depositDetails: DepositAttributedItem[];
   encashmentComponents: {
     cost: number; // Собівартість
@@ -1345,7 +1345,7 @@ export default async function FinanceReportPage({
                         {/* Завдатки */}
                         {deposits > 0 && (
                           <div className="flex justify-between items-center bg-gray-50 px-1 py-0.5 rounded">
-                            <span className="text-xs font-medium">Завдатки</span>
+                            <span className="text-xs font-medium">Завдатки (отримані в місяці)</span>
                             <span className="text-xs font-bold">
                               {formatMoney(deposits)} грн.
                             </span>
@@ -1419,7 +1419,7 @@ export default async function FinanceReportPage({
                           <p>- Інвестиції {formatMoney(investmentsLocal)} грн.</p>
                           <p>+ Платежі з ФОП Ореховська {formatMoney(fopOrekhovskaPaymentsLocal)} грн.</p>
                           <p>- Повернення {formatMoney(returnsLocal)} грн.</p>
-                          <p>- Завдатки {formatMoney(deposits)} грн.</p>
+                          <p>- Завдатки, отримані в місяці {formatMoney(deposits)} грн.</p>
                         </div>
                       </CollapsibleSection>
                     </div>

@@ -1,10 +1,10 @@
-// Атрибуція завдатків (Поповнення рахунку) до місяця майбутнього запису клієнта.
+// Завдатки фінзвіту: «Поповнення рахунку», отримані у звітному місяці.
+// Віднімаються з інкасації один раз — у місяці оплати, не в місяці візиту.
 
 import { ALTEGIO_ENV } from "./env";
-import { ALTEGIO_FINANCE_SYNC_START_DATE } from "./finance-transactions-sync";
 import { fetchIncomingPaymentsWithDocumentNumbers } from "./incoming-payments";
 import { isDepositTopUpPaymentPurpose } from "./payment-purpose-labels";
-import { getClientRecords, type ClientRecord } from "./records";
+import type { ClientRecord } from "./records";
 
 export type DepositAttributedItem = {
   transactionId: number;
@@ -33,27 +33,21 @@ function parseDate(value: string | null | undefined): Date | null {
   return Number.isNaN(parsed.getTime()) ? null : parsed;
 }
 
-function formatDateISO(date: Date): string {
-  const year = date.getFullYear();
-  const month = String(date.getMonth() + 1).padStart(2, "0");
-  const day = String(date.getDate()).padStart(2, "0");
-  return `${year}-${month}-${day}`;
-}
-
-function subtractMonths(year: number, month: number, monthsBack: number): { year: number; month: number } {
-  const date = new Date(year, month - 1, 1);
-  date.setMonth(date.getMonth() - monthsBack);
-  return { year: date.getFullYear(), month: date.getMonth() + 1 };
-}
-
-function paymentSearchWindow(reportYear: number, reportMonth: number): { from: string; to: string } {
-  const { year: fromYear, month: fromMonth } = subtractMonths(reportYear, reportMonth, 24);
-  const fromCandidate = formatDateISO(new Date(fromYear, fromMonth - 1, 1));
-  const from = fromCandidate < ALTEGIO_FINANCE_SYNC_START_DATE
-    ? ALTEGIO_FINANCE_SYNC_START_DATE
-    : fromCandidate;
-  const to = formatDateISO(new Date(reportYear, reportMonth, 0));
+/** Календарний місяць звіту, YYYY-MM-DD включно. */
+function reportMonthRange(year: number, month: number): { from: string; to: string } {
+  const from = new Date(Date.UTC(year, month - 1, 1)).toISOString().slice(0, 10);
+  const to = new Date(Date.UTC(year, month, 0)).toISOString().slice(0, 10);
   return { from, to };
+}
+
+/** Місяць оплати. Altegio віддає салонну дату без пояса — беремо календарний префікс. */
+function paymentYearMonth(date: string): { year: number; month: number } | null {
+  const match = /^(\d{4})-(\d{2})-(\d{2})/.exec(date.trim());
+  if (!match) return null;
+  const year = Number(match[1]);
+  const month = Number(match[2]);
+  if (!year || month < 1 || month > 12) return null;
+  return { year, month };
 }
 
 /** Чи запис активний і після дати платежу (не видалений, не no-show). */
@@ -83,14 +77,15 @@ export function findNearestRecordAfterPayment(
 }
 
 /**
- * Сума завдатків, що відносяться до звітного місяця за датою найближчого запису після платежу.
+ * Сума завдатків, отриманих у звітному місяці (дата оплати).
+ * Один раз віднімається з інкасації цього місяця.
  */
 export async function getDepositsAttributedToMonth(params: {
   year: number;
   month: number;
 }): Promise<{ total: number; items: DepositAttributedItem[] }> {
   const { year, month } = params;
-  const { from, to } = paymentSearchWindow(year, month);
+  const { from, to } = reportMonthRange(year, month);
   const companyId = resolveCompanyId();
 
   const payments = await fetchIncomingPaymentsWithDocumentNumbers({
@@ -100,67 +95,19 @@ export async function getDepositsAttributedToMonth(params: {
     includeCashboxAccounts: true,
   });
 
-  const depositPayments = payments.filter((payment) =>
-    isDepositTopUpPaymentPurpose(payment.paymentPurpose),
-  );
-
-  const recordsCache = new Map<number, ClientRecord[]>();
-  const uniqueClientIds = [
-    ...new Set(
-      depositPayments
-        .map((payment) => payment.clientId)
-        .filter((clientId): clientId is number => clientId != null),
-    ),
-  ];
-
-  const batchSize = 5;
-  const delayMs = 200;
-  for (let index = 0; index < uniqueClientIds.length; index += batchSize) {
-    const batch = uniqueClientIds.slice(index, index + batchSize);
-    await Promise.all(
-      batch.map(async (clientId) => {
-        try {
-          const records = await getClientRecords(companyId, clientId);
-          recordsCache.set(clientId, records);
-        } catch (error) {
-          console.warn(
-            `[deposit-attribution] Не вдалося отримати записи clientId=${clientId}:`,
-            error instanceof Error ? error.message : String(error),
-          );
-          recordsCache.set(clientId, []);
-        }
-      }),
-    );
-    if (index + batchSize < uniqueClientIds.length) {
-      await new Promise((resolve) => setTimeout(resolve, delayMs));
-    }
-  }
-
   const items: DepositAttributedItem[] = [];
-  let skippedNoClient = 0;
-  let skippedNoAppointment = 0;
-  let skippedWrongMonth = 0;
+  let skippedNotDeposit = 0;
+  let skippedOtherMonth = 0;
 
-  for (const payment of depositPayments) {
-    if (!payment.clientId) {
-      skippedNoClient++;
+  for (const payment of payments) {
+    if (!isDepositTopUpPaymentPurpose(payment.paymentPurpose)) {
+      skippedNotDeposit++;
       continue;
     }
 
-    const paymentDate = parseDate(payment.date);
-    if (!paymentDate) continue;
-
-    const records = recordsCache.get(payment.clientId) ?? [];
-    const appointmentDate = findNearestRecordAfterPayment(records, paymentDate);
-    if (!appointmentDate) {
-      skippedNoAppointment++;
-      continue;
-    }
-
-    const attributedYear = appointmentDate.getFullYear();
-    const attributedMonth = appointmentDate.getMonth() + 1;
-    if (attributedYear !== year || attributedMonth !== month) {
-      skippedWrongMonth++;
+    const paid = paymentYearMonth(payment.date);
+    if (!paid || paid.year !== year || paid.month !== month) {
+      skippedOtherMonth++;
       continue;
     }
 
@@ -168,25 +115,23 @@ export async function getDepositsAttributedToMonth(params: {
       transactionId: payment.transactionId,
       amount: payment.amount,
       paymentDate: payment.date,
-      clientId: payment.clientId,
+      clientId: payment.clientId ?? 0,
       payerName: payment.payerName,
-      appointmentDate: appointmentDate.toISOString(),
-      attributedYear,
-      attributedMonth,
+      appointmentDate: "",
+      attributedYear: year,
+      attributedMonth: month,
     });
   }
 
   const total = Math.round(items.reduce((sum, item) => sum + item.amount, 0) * 100) / 100;
 
-  console.log(`[deposit-attribution] Завдатки за ${year}-${String(month).padStart(2, "0")}:`, {
+  console.log(`[deposit-attribution] Завдатки, отримані за ${year}-${String(month).padStart(2, "0")}:`, {
     paymentWindow: { from, to },
-    depositPaymentsFound: depositPayments.length,
-    uniqueClients: uniqueClientIds.length,
-    attributedCount: items.length,
+    paymentsFetched: payments.length,
+    depositCount: items.length,
     total,
-    skippedNoClient,
-    skippedNoAppointment,
-    skippedWrongMonth,
+    skippedNotDeposit,
+    skippedOtherMonth,
   });
 
   return { total, items };
