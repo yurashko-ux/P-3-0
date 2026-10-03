@@ -686,7 +686,7 @@ export async function computeActiveBaseDayDeltaClientIds(
   currDay: string,
   prevActiveIds: string[],
   currActiveIds: string[]
-): Promise<{ addedClientIds: string[]; removedClientIds: string[] }> {
+): Promise<{ addedClientIds: string[]; removedClientIds: string[]; returnedClientIds: string[] }> {
   const clients = await loadActiveBaseClients();
   const clientsById = new Map(clients.map((c) => [c.id, c]));
   const groupsByAltegioId = await loadRecordGroupsForActiveBaseClients(clients);
@@ -701,7 +701,17 @@ export async function computeActiveBaseDayDeltaClientIds(
     groupsByAltegioId,
     24
   );
-  return { addedClientIds, removedClientIds: refinedRemoved };
+  const returnedComputed = collectReturnedByBookingClientIds(
+    prevActiveIds,
+    currActiveIds,
+    currDay,
+    clientsById,
+    groupsByAltegioId
+  );
+  const returnedMerged = await mergeReturnedClientIds(returnedComputed, prevDay, currDay);
+  const addedSet = new Set(addedClientIds);
+  const returnedClientIds = returnedMerged.filter((id) => addedSet.has(id));
+  return { addedClientIds, removedClientIds: refinedRemoved, returnedClientIds };
 }
 
 export async function getDirectActiveBaseChartPayload(

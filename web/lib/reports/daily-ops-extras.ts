@@ -1,7 +1,7 @@
 // Додаткові метрики щоденного звіту: активна база, пропущені дзвінки (ПІБ), F4-записи.
 
 import { prisma } from "@/lib/prisma";
-import { getKyivDayUtcBounds, getPreviousKyivDay } from "@/lib/direct-stats-config";
+import { getKyivDayUtcBounds, getPreviousKyivDay, toKyivDay } from "@/lib/direct-stats-config";
 import { clientMatchesF4NewPaidInUtcInterval } from "@/lib/direct-f4-client-match";
 import type { DirectClient } from "@/lib/direct-types";
 import {
@@ -15,6 +15,10 @@ export type ActiveBaseDailyMetrics = {
   activeBaseCount: number;
   removedFromActiveBaseCount: number;
   removedFromActiveBaseNames: string[];
+  removedFromActiveBaseClientIds: string[];
+  returnedToActiveBaseCount: number;
+  returnedToActiveBaseNames: string[];
+  returnedToActiveBaseClientIds: string[];
 };
 
 export function formatClientDisplayName(client: {
@@ -43,6 +47,19 @@ export function countF4RecordsCreatedOnDay(clients: DirectClient[], kyivDay: str
   ).length;
 }
 
+/**
+ * «Нові клієнти» звіту: перший платний запис, дата візиту = день звіту.
+ * Той самий критерій, що computePeriodStats (paidRecordsInHistoryCount = 0 і paidServiceDate).
+ */
+function isDailyReportNewClient(
+  client: { paidRecordsInHistoryCount: number | null; paidServiceDate: Date | null },
+  kyivDay: string,
+): boolean {
+  if (client.paidRecordsInHistoryCount !== 0) return false;
+  const paidDay = toKyivDay(client.paidServiceDate ? client.paidServiceDate.toISOString() : null);
+  return paidDay === kyivDay;
+}
+
 export async function getActiveBaseDailyMetrics(kyivDay: string): Promise<ActiveBaseDailyMetrics> {
   const [todaySnapshot, prevDay] = await Promise.all([
     calculateDirectActiveBaseSnapshot(kyivDay),
@@ -50,29 +67,62 @@ export async function getActiveBaseDailyMetrics(kyivDay: string): Promise<Active
   ]);
   const prevSnapshot = await calculateDirectActiveBaseSnapshot(prevDay);
 
-  const { removedClientIds } = await computeActiveBaseDayDeltaClientIds(
+  const { addedClientIds, removedClientIds } = await computeActiveBaseDayDeltaClientIds(
     prevSnapshot.kyivDay,
     todaySnapshot.kyivDay,
     prevSnapshot.activeClientIds,
     todaySnapshot.activeClientIds,
   );
 
-  let removedFromActiveBaseNames: string[] = [];
-  if (removedClientIds.length > 0) {
+  const nameIds = [...new Set([...removedClientIds, ...addedClientIds])];
+  const byId = new Map<
+    string,
+    {
+      id: string;
+      firstName: string | null;
+      lastName: string | null;
+      instagramUsername: string | null;
+      paidRecordsInHistoryCount: number | null;
+      paidServiceDate: Date | null;
+    }
+  >();
+  if (nameIds.length > 0) {
     const clients = await prisma.directClient.findMany({
-      where: { id: { in: removedClientIds } },
-      select: { id: true, firstName: true, lastName: true, instagramUsername: true },
+      where: { id: { in: nameIds } },
+      select: {
+        id: true,
+        firstName: true,
+        lastName: true,
+        instagramUsername: true,
+        paidRecordsInHistoryCount: true,
+        paidServiceDate: true,
+      },
     });
-    const byId = new Map(clients.map((client) => [client.id, client]));
-    removedFromActiveBaseNames = removedClientIds.map((id) =>
-      formatClientDisplayName(byId.get(id) ?? {}),
-    );
+    for (const client of clients) byId.set(client.id, client);
   }
+
+  // Хто увійшов у базу і не є «новим клієнтом» цього дня: повернення візитом
+  // або перший запис на майбутню дату (у «Нові клієнти» він стане в день візиту).
+  const returnedClientIds = addedClientIds.filter((id) => {
+    const client = byId.get(id);
+    if (!client) return true;
+    return !isDailyReportNewClient(client, kyivDay);
+  });
+
+  console.log(
+    `[reports/daily-ops-extras] Активна база ${kyivDay}: count=${todaySnapshot.activeBaseCount}, додались=${addedClientIds.length}, повернуті=${returnedClientIds.length}, вибули=${removedClientIds.length}`,
+  );
+
+  const namesFor = (ids: string[]) => ids.map((id) => formatClientDisplayName(byId.get(id) ?? {}));
 
   return {
     activeBaseCount: todaySnapshot.activeBaseCount,
     removedFromActiveBaseCount: removedClientIds.length,
-    removedFromActiveBaseNames,
+    removedFromActiveBaseNames: namesFor(removedClientIds),
+    removedFromActiveBaseClientIds: removedClientIds,
+    returnedToActiveBaseCount: returnedClientIds.length,
+    returnedToActiveBaseNames: namesFor(returnedClientIds),
+    returnedToActiveBaseClientIds: returnedClientIds,
   };
 }
 
