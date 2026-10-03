@@ -2302,6 +2302,12 @@ function reconciledAltegioPayerKeysFromLinkedDays(
         if (!payerKey) continue;
         if (!map.has(dayKey)) map.set(dayKey, new Set());
         map.get(dayKey)!.add(payerKey);
+        
+        // Додатково додаємо ключ тільки за сумою (fallback для клієнтів без імені)
+        const amountOnlyKey = client.totalKop;
+        if (amountOnlyKey !== payerKey) {
+          map.get(dayKey)!.add(amountOnlyKey);
+        }
       }
     }
   }
@@ -2325,10 +2331,19 @@ function addHiddenAltegioPayer(
   hidden: Map<string, Set<string>>,
   dayKey: string,
   payerKey: string,
+  client?: { payerName: string; totalKop: string },
 ): void {
   if (!payerKey) return;
   if (!hidden.has(dayKey)) hidden.set(dayKey, new Set());
   hidden.get(dayKey)!.add(payerKey);
+  
+  // Додатково додаємо ключ тільки за сумою (fallback для клієнтів без імені)
+  if (client) {
+    const amountOnlyKey = client.totalKop;
+    if (amountOnlyKey !== payerKey) {
+      hidden.get(dayKey)!.add(amountOnlyKey);
+    }
+  }
 }
 
 /** Доповнити приховування з БД, якщо запис зведення є, але linked-рядок не збудувався. */
@@ -2349,10 +2364,29 @@ function supplementOpenHiddenFromDbMatches(
     for (const row of day.rows) bankRowById.set(row.id, row);
   }
 
+  let skippedMatches = 0;
+  let skippedDeposits = 0;
+  let skippedNoBankRow = 0;
+
   for (const match of incomingMatches) {
-    if (depositBankIds.has(match.bankStatementItemId)) continue;
+    if (depositBankIds.has(match.bankStatementItemId)) {
+      skippedDeposits++;
+      continue;
+    }
     const bankRow = bankRowById.get(match.bankStatementItemId);
-    if (!bankRow) continue;
+    if (!bankRow) {
+      skippedNoBankRow++;
+      const allBankIds = Array.from(bankRowById.keys());
+      console.warn("[supplementOpenHiddenFromDbMatches] Пропущено матч: рядок банку не знайдено", {
+        matchId: match.id,
+        bankStatementItemId: match.bankStatementItemId,
+        kyivDay: match.kyivDay,
+        matchType: match.matchType,
+        totalBankRowsInMap: allBankIds.length,
+        sampleBankIds: allBankIds.slice(0, 5),
+      });
+      continue;
+    }
 
     hidden.bankIds.add(match.bankStatementItemId);
 
@@ -2368,7 +2402,30 @@ function supplementOpenHiddenFromDbMatches(
         bankRow.accountTitle,
         bankRow.altegioAccountTitle,
       );
-      if (!bankDay || !altegioAccount) continue;
+      if (!bankDay || !altegioAccount) {
+        // Якщо не знайдено через еквайринг-логіку, пробуємо через іменовану
+        const foundNamed = findAltegioClientForLinkedFromBank(
+          altegioDays,
+          match.kyivDay,
+          bankRow,
+          [],
+        );
+        if (foundNamed && accountsMatchForReconcile(
+          foundNamed.account.accountTitle,
+          bankRow.accountTitle,
+          bankRow.altegioAccountTitle,
+        )) {
+          addHiddenAltegioPayer(
+            hidden.altegioPayersByDay,
+            foundNamed.dayKyivDay,
+            reconciledAltegioClientKey(foundNamed.client),
+            foundNamed.client,
+          );
+        } else {
+          skippedMatches++;
+        }
+        continue;
+      }
 
       const evaluation = evaluateIncomingAccountReconcile(altegioAccount, bankDay);
       const inBatch = evaluation.acquiringBatchMatches.some((batch) =>
@@ -2395,6 +2452,7 @@ function supplementOpenHiddenFromDbMatches(
             hidden.altegioPayersByDay,
             dayKey,
             reconciledAltegioClientKey(client),
+            client as { payerName: string; totalKop: string },
           );
         }
         continue;
@@ -2411,9 +2469,32 @@ function supplementOpenHiddenFromDbMatches(
             hidden.altegioPayersByDay,
             dayKey,
             reconciledAltegioClientKey(client),
+            client,
           );
         }
         continue;
+      }
+      
+      // Якщо не знайдено ні в batch, ні individual, пробуємо через іменовану логіку
+      const foundFallback = findAltegioClientForLinkedFromBank(
+        altegioDays,
+        match.kyivDay,
+        bankRow,
+        [],
+      );
+      if (foundFallback && accountsMatchForReconcile(
+        foundFallback.account.accountTitle,
+        bankRow.accountTitle,
+        bankRow.altegioAccountTitle,
+      )) {
+        addHiddenAltegioPayer(
+          hidden.altegioPayersByDay,
+          foundFallback.dayKyivDay,
+          reconciledAltegioClientKey(foundFallback.client),
+          foundFallback.client,
+        );
+      } else {
+        skippedMatches++;
       }
       continue;
     }
@@ -2424,21 +2505,34 @@ function supplementOpenHiddenFromDbMatches(
       bankRow,
       [],
     );
-    if (!found) continue;
+    if (!found) {
+      skippedMatches++;
+      continue;
+    }
     if (!accountsMatchForReconcile(
       found.account.accountTitle,
       bankRow.accountTitle,
       bankRow.altegioAccountTitle,
     )) {
+      skippedMatches++;
       continue;
     }
-
+    
     addHiddenAltegioPayer(
       hidden.altegioPayersByDay,
       found.dayKyivDay,
       reconciledAltegioClientKey(found.client),
+      found.client,
     );
   }
+
+  console.log("[supplementOpenHiddenFromDbMatches] Статистика обробки матчів", {
+    total: incomingMatches.length,
+    skippedDeposits,
+    skippedNoBankRow,
+    processed: incomingMatches.length - skippedDeposits - skippedNoBankRow,
+    hiddenBankIds: hidden.bankIds.size,
+  });
 }
 
 /** Altegio-завдатки з реальною парою банку (або готівка) — прибираємо з «Не зведених». */
@@ -2469,8 +2563,42 @@ function stripReconciledClientsFromOpenRow(
   }
 
   const remainingClients = accountRow.altegioAccount.clients.filter(
-    (client) => !reconciledPayers.has(reconciledAltegioClientKey(client)),
+    (client) => {
+      const fullKey = reconciledAltegioClientKey(client);
+      if (reconciledPayers.has(fullKey)) return false;
+      
+      // Fallback: якщо імені немає, перевіряємо тільки за сумою
+      const amountOnlyKey = client.totalKop;
+      if (reconciledPayers.has(amountOnlyKey)) return false;
+      
+      // Fallback: якщо є ім'я, але в reconciledPayers може бути тільки сума
+      const name = normalizePersonName(client.payerName);
+      if (name) {
+        // Перевіряємо, чи є в reconciledPayers будь-який ключ з такою сумою
+        for (const key of reconciledPayers) {
+          if (key === amountOnlyKey || key.endsWith(`|${amountOnlyKey}`)) {
+            return false;
+          }
+        }
+      }
+      
+      return true;
+    },
   );
+  
+  // Логування для дебагу
+  const allClientsKeys = accountRow.altegioAccount.clients.map(c => reconciledAltegioClientKey(c));
+  const removedCount = accountRow.altegioAccount.clients.length - remainingClients.length;
+  if (removedCount > 0) {
+    console.log("[stripReconciledClientsFromOpenRow] Приховано зведені клієнти", {
+      accountTitle: accountRow.altegioAccount.accountTitle,
+      totalClients: accountRow.altegioAccount.clients.length,
+      remainingClients: remainingClients.length,
+      removedCount,
+      allClientsKeys,
+      reconciledPayersSize: reconciledPayers.size,
+    });
+  }
 
   if (remainingClients.length === 0) {
     return accountRow.bankGroup?.rows.length ? { ...accountRow, altegioAccount: null } : null;
@@ -3777,12 +3905,21 @@ export function IncomingSplitView({
   }, [fullyLinkedDays, data, depositBankIdsClaimed, rawAltegioDays, bankDays]);
   const completeReconciledBankIds = useMemo(() => {
     if (reconciliationStatus === "open") {
+      console.log("[completeReconciledBankIds] Для вкладки 'Не зведені'", {
+        hiddenBankIdsCount: openHiddenFromLinked.bankIds.size,
+        totalMatches: data?.reconciled?.matches?.length ?? 0,
+        depositMatches: depositMatches.length,
+      });
       return openHiddenFromLinked.bankIds;
     }
     const ids = completeReconciledBankIdsFromLinkedDays(fullyLinkedDays);
     for (const bankId of depositBankIdsClaimed) ids.add(bankId);
+    console.log("[completeReconciledBankIds] Для вкладки 'Зведені'", {
+      reconciledBankIdsCount: ids.size,
+      fullyLinkedDaysCount: fullyLinkedDays.length,
+    });
     return ids;
-  }, [reconciliationStatus, openHiddenFromLinked.bankIds, fullyLinkedDays, depositBankIdsClaimed]);
+  }, [reconciliationStatus, openHiddenFromLinked.bankIds, fullyLinkedDays, depositBankIdsClaimed, data?.reconciled?.matches, depositMatches]);
   const bankReviewNotesByItemId = useMemo(() => {
     const map = new Map<string, string>();
     for (const match of data?.reconciled?.matches ?? []) {
@@ -3808,6 +3945,17 @@ export function IncomingSplitView({
     const regularDays = alignedDays
       .map((day) => {
         const accountRows = buildDayAccountAlignedRows(day.altegio, day.bank);
+        
+        // Детальне логування для 22.09.2026
+        if (day.kyivDay === "2026-09-22" && reconciliationStatus === "open") {
+          console.log("[visibleAlignedDays] День 22.09.2026 у вкладці 'Не зведені'", {
+            altegioTotal: day.altegio?.totalKop,
+            bankTotal: day.bank?.totalKop,
+            accountRowsCount: accountRows.length,
+            completeReconciledBankIdsSize: completeReconciledBankIds.size,
+            reconciledAltegioPayersByDaySize: reconciledAltegioPayersByDay.size,
+          });
+        }
 
         if (reconciliationStatus === "all") {
           if (accountRows.length === 0) return null;
@@ -3877,6 +4025,21 @@ export function IncomingSplitView({
               if (!row.altegioAccount) return sum;
               return sum + BigInt(row.altegioAccount.totalKop);
             }, 0n);
+            
+            // Детальне логування для 22.09.2026
+            if (day.kyivDay === "2026-09-22") {
+              console.log("[openDays] День 22.09.2026 після фільтрації", {
+                accountRowsCount: accountRows.length,
+                altegioTotalKop: altegioTotalKop.toString(),
+                accountRowsDetails: accountRows.map(row => ({
+                  hasAltegio: !!row.altegioAccount,
+                  hasBank: !!row.bankGroup,
+                  altegioTotal: row.altegioAccount?.totalKop,
+                  altegioClientsCount: row.altegioAccount?.clients.length,
+                  bankRowsCount: row.bankGroup?.rows.length,
+                })),
+              });
+            }
 
             return {
               ...day,
