@@ -19,10 +19,7 @@ export async function GET(req: NextRequest) {
   if (auth instanceof NextResponse) return auth;
 
   try {
-    const preview = await buildIncomingReconciliationPreview({
-      liveLookbackDays: 21,
-      includeDocuments: false,
-    });
+    const preview = await buildIncomingReconciliationPreview();
 
     const [incomingMatches, depositMatches] = await Promise.all([
       (prisma as any).bankAltegioIncomingMatch.findMany({
