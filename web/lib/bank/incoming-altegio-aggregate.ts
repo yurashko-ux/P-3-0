@@ -1045,12 +1045,17 @@ async function fetchTransactionsApiIncomeRows(dateFrom: string, dateTo: string):
   }
 }
 
-async function fetchLiveIncomeRowsRange(dateFrom: string, dateTo: string): Promise<{
+async function fetchLiveIncomeRowsRange(
+  dateFrom: string,
+  dateTo: string,
+  options?: { includeDocuments?: boolean },
+): Promise<{
   rows: NormalizedAltegioIncomeRow[];
   droppedMirrors: number;
 }> {
   const byId = new Map<string, NormalizedAltegioIncomeRow>();
   const chunks = buildDateChunks(dateFrom, dateTo, 7);
+  const includeDocuments = options?.includeDocuments !== false;
 
   for (const chunk of chunks) {
     try {
@@ -1063,6 +1068,8 @@ async function fetchLiveIncomeRowsRange(dateFrom: string, dateTo: string): Promi
         error: error instanceof Error ? error.message : String(error),
       });
     }
+
+    if (!includeDocuments) continue;
 
     try {
       const documentRows = await fetchDocumentVerifiedIncomeRows(chunk.from, chunk.to);
@@ -1415,17 +1422,29 @@ function mergeIncomeRows(liveRows: NormalizedAltegioIncomeRow[], dbRows: Normali
   return Array.from(byId.values());
 }
 
-export async function buildIncomingReconciliationPreview(): Promise<IncomingReconciliationPreview> {
+export async function buildIncomingReconciliationPreview(options?: {
+  /** Останні N днів live з Altegio. Решта періоду лишається з БД, щоб GET встигав. */
+  liveLookbackDays?: number;
+  /** Не тягнути documents/records: на повному періоді це сотні запитів і timeout. */
+  includeDocuments?: boolean;
+}): Promise<IncomingReconciliationPreview> {
   const dateFrom = INCOMING_RANGE_START_DATE;
   const dateTo = getKyivTodayYmd();
+  const liveLookbackDays =
+    typeof options?.liveLookbackDays === "number" && options.liveLookbackDays > 0
+      ? Math.floor(options.liveLookbackDays)
+      : null;
+  const liveFromRaw = liveLookbackDays ? addDaysYmd(dateTo, -(liveLookbackDays - 1)) : dateFrom;
+  const liveFrom = liveFromRaw < dateFrom ? dateFrom : liveFromRaw;
 
   const [liveFetch, dbRows, bankAgg] = await Promise.all([
-    fetchLiveIncomeRowsRange(dateFrom, dateTo),
+    fetchLiveIncomeRowsRange(liveFrom, dateTo, { includeDocuments: options?.includeDocuments }),
     fetchDbIncomeRowsRange(dateFrom, dateTo),
     fetchBankIncomingByDayRange(dateFrom, dateTo),
   ]);
   const liveRows = liveFetch.rows;
-  const baseRows = liveRows.length > 0 ? liveRows : mergeIncomeRows(liveRows, dbRows);
+  // Частковий live не замінює історію з БД, інакше екран порожній.
+  const baseRows = mergeIncomeRows(liveRows, dbRows);
 
   const incomeRows = enrichPlaceholderAccounts(
     excludeTransferIncomeRows(
@@ -1445,6 +1464,8 @@ export async function buildIncomingReconciliationPreview(): Promise<IncomingReco
   console.log("[incoming-altegio-aggregate] Preview", {
     dateFrom,
     dateTo,
+    liveFrom,
+    liveLookbackDays,
     liveRows: liveRows.length,
     dbRows: dbRows.length,
     mergedRows: incomeRows.length,
