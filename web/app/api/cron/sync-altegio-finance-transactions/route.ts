@@ -8,11 +8,6 @@ import { reconcileBankAltegioPayments } from "@/lib/bank/altegio-payment-reconci
 import { processOutgoingBankPaymentsHoldFinalized } from "@/lib/bank/payment-reconciliation-telegram";
 import { importAltegioPaymentPurposes } from "@/lib/altegio/payment-purpose-import";
 import { processPendingIncomingAcquiringCommissions, processPendingOutgoingTerminalRkoFees } from "@/lib/bank/automatic-altegio-payments";
-import {
-  persistMissingIncomingMatchesForRecentBankItems,
-  syncExactOpenPairsFromPreview,
-} from "@/lib/bank/incoming-payment-reconcile";
-import { buildIncomingReconciliationPreview } from "@/lib/bank/incoming-altegio-aggregate";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
@@ -56,37 +51,6 @@ export async function POST(req: NextRequest) {
       limit: 20,
       sendTelegram: true,
     });
-    // Вхідні Altegio↔банк: webhook зводить одразу; cron — ширша страховка + точні пари.
-    const incomingPersist = await persistMissingIncomingMatchesForRecentBankItems({
-      lookbackDays: 45,
-      limit: 200,
-    });
-    let incomingExact: {
-      exactPairsFound?: number;
-      matchedBankItems: number;
-      days: number;
-      errors: string[];
-    } | null = null;
-    try {
-      const incomingPreview = await buildIncomingReconciliationPreview({
-        liveLookbackDays: 45,
-        skipDocumentEnrichment: true,
-      });
-      const exact = await syncExactOpenPairsFromPreview(incomingPreview, {
-        matchedBy: "cron_incoming_exact",
-      });
-      incomingExact = {
-        exactPairsFound: exact.exactPairsFound,
-        matchedBankItems: exact.matchedBankItems,
-        days: exact.days,
-        errors: exact.errors,
-      };
-      console.log("[cron/sync-altegio-finance-transactions] Точні вхідні пари", incomingExact);
-    } catch (exactError) {
-      console.warn("[cron/sync-altegio-finance-transactions] Точні вхідні пари не вдались", {
-        error: exactError instanceof Error ? exactError.message : String(exactError),
-      });
-    }
 
     return NextResponse.json({
       ok: true,
@@ -98,8 +62,6 @@ export async function POST(req: NextRequest) {
       reconcile,
       automaticAcquiring,
       automaticTerminal,
-      incomingPersist,
-      incomingExact,
     });
   } catch (error) {
     console.error("[cron/sync-altegio-finance-transactions] Помилка:", error);
