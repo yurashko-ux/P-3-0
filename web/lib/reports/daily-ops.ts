@@ -19,6 +19,7 @@ import {
 } from "@/lib/reports/daily-ops-extras";
 import type { DirectClient, DirectLeadAgency } from "@/lib/direct-types";
 import { countLeadsStatsRecordsOnKyivDay } from "@/lib/direct-leads-stats-filters";
+import { fetchFinanceSummary } from "@/lib/altegio/analytics";
 
 export type DailyOpsReportData = {
   kyivDay: string;
@@ -86,6 +87,31 @@ async function enrichClientsWithKvConsultCreatedAt<
   }
 }
 
+/**
+ * Оборот дня — виручка Altegio (послуги + товари), як «Оборот (Виручка)» у фінзвіті.
+ * Сума з карток Direct неповна: там лише клієнти бази і лише їхній поточний платний запис.
+ */
+async function fetchAltegioTurnoverForKyivDay(kyivDay: string): Promise<number | null> {
+  try {
+    const summary = await fetchFinanceSummary({ date_from: kyivDay, date_to: kyivDay });
+    const total = summary.totals.total;
+    if (!Number.isFinite(total)) return null;
+    console.log("[reports/daily-ops] Оборот з Altegio за день", {
+      kyivDay,
+      total,
+      services: summary.totals.services,
+      goods: summary.totals.goods,
+    });
+    return total;
+  } catch (err) {
+    console.warn("[reports/daily-ops] Не вдалося взяти оборот з Altegio", {
+      kyivDay,
+      error: err instanceof Error ? err.message : String(err),
+    });
+    return null;
+  }
+}
+
 export async function buildDailyOpsReport(options?: {
   kyivDay?: string | null;
 }): Promise<DailyOpsReportData> {
@@ -99,11 +125,12 @@ export async function buildDailyOpsReport(options?: {
   });
   const { today } = periodStats;
 
-  const [bankUnmatched, calls, activeBase, incomingMissed] = await Promise.all([
+  const [bankUnmatched, calls, activeBase, incomingMissed, altegioTurnover] = await Promise.all([
     countBankUnmatchedForKyivDay(kyivDay),
     computeBinotelCallsFilterCountsFromDb({ kyivDay }),
     getActiveBaseDailyMetrics(kyivDay),
     getBinotelIncomingMissedOnKyivDay(kyivDay),
+    fetchAltegioTurnoverForKyivDay(kyivDay),
   ]);
 
   const newLeadsCount = today.newLeadsCount ?? 0;
@@ -138,7 +165,7 @@ export async function buildDailyOpsReport(options?: {
     rebookingsCount: today.rebookingsCount ?? 0,
     recordsCreatedCount: countF4RecordsCreatedOnDay(clients as DirectClient[], kyivDay),
     recordsRealizedCountToday: today.recordsRealizedCountToday ?? 0,
-    turnoverToday: today.turnoverToday ?? 0,
+    turnoverToday: altegioTurnover ?? today.turnoverToday ?? 0,
     incomingUnmatched: bankUnmatched.incomingUnmatched,
     outgoingUnmatched: bankUnmatched.outgoingUnmatched,
     callsIncoming: calls.incoming,
