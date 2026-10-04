@@ -11,6 +11,7 @@ import {
   filterAltegioDaysNonCash,
   groupAltegioPayersByDay,
   isIncomingRowAcquiringForReconcile,
+  reconcileAmountsWithinHryvnia,
   regroupBankByDayWithAcquiringShift,
 } from "@/lib/bank/incoming-reconcile-matching";
 import {
@@ -191,12 +192,20 @@ export async function reconcileIncomingPaymentsForKyivDay(
       + batchAltegioMatchedKop;
     const bankMatchedKop = bankRowsReconcileFullTotalKop(rowsToSave);
 
-    if (altegioMatchedKop !== bankMatchedKop) {
+    const accountDayBundle = evaluation.acquiringBatchMatches.some(
+      (batch) => batch.matchByAccountDay && batch.bankRowIds.some((bankRowId) => savedBankIds.has(bankRowId)),
+    );
+    const amountsMatch = accountDayBundle
+      ? reconcileAmountsWithinHryvnia(altegioMatchedKop, bankMatchedKop)
+      : altegioMatchedKop === bankMatchedKop;
+
+    if (!amountsMatch) {
       console.warn("[incoming-payment-reconcile] Суми Altegio і банку не збігаються — пропускаємо", {
         kyivDay,
         account: altegioAccount.accountTitle,
         altegioMatchedKop: altegioMatchedKop.toString(),
         bankMatchedKop: bankMatchedKop.toString(),
+        accountDayBundle,
       });
       continue;
     }
@@ -234,8 +243,10 @@ export async function reconcileIncomingPaymentsForKyivDay(
         const batchMatch = evaluation.acquiringBatchMatches.find((batch) =>
           batch.bankRowIds.includes(bankRow.id),
         );
-        const matchType = isAcquiring ? "acquiring_batch" : "named_client";
-        const reviewNote = namedMatch
+        const matchType = (batchMatch?.matchByAccountDay || isAcquiring) ? "acquiring_batch" : "named_client";
+        const reviewNote = batchMatch?.matchByAccountDay
+          ? `Рахунок за день: |Δ| < 1 грн, Altegio ${formatMoneyUah(BigInt(batchMatch.altegioRemainingKop))} ₴, банк ${formatMoneyUah(BigInt(batchMatch.bankFullKop))} ₴`
+          : namedMatch
           ? `Іменований: ${namedMatch.payerName}, ${formatMoneyUah(BigInt(namedMatch.amountKop))} ₴`
           : acquiringClientMatch
             ? `За сумою: ${acquiringClientMatch.payerName}, ${formatMoneyUah(BigInt(acquiringClientMatch.amountKop))} ₴`

@@ -20,7 +20,8 @@ export type PurgeIncompleteIncomingMatchesResult = {
 };
 
 /**
- * Прибирає BankAltegioIncomingMatch без реальної пари Altegio (день + рахунок + прізвище + сума).
+ * Прибирає BankAltegioIncomingMatch без реальної пари Altegio.
+ * Пара за день і рахунок лишається, якщо |Δ| < 1 грн, навіть без збігу прізвища.
  */
 export async function purgeIncompleteIncomingMatches(
   preview: IncomingReconciliationPreview,
@@ -51,27 +52,34 @@ export async function purgeIncompleteIncomingMatches(
     if (!bankRow) continue;
 
     const isAcquiring = isIncomingRowAcquiringForReconcile(bankRow);
-
-    if (isAcquiring) {
-      const bankDay = bankDays.find((day) => day.kyivDay === match.kyivDay);
-      const altegioAccount = findAltegioAccountOnDay(
+    const bankDay = bankDays.find((day) => day.kyivDay === match.kyivDay);
+    const altegioAccount = bankDay
+      ? findAltegioAccountOnDay(
         altegioDays,
         match.kyivDay,
         bankRow.accountTitle,
         bankRow.altegioAccountTitle,
-      );
-      if (!altegioAccount || !bankDay) {
+      )
+      : null;
+    const evaluation = altegioAccount && bankDay
+      ? evaluateIncomingAccountReconcile(altegioAccount, bankDay)
+      : null;
+    const inBatch = evaluation?.acquiringBatchMatches.some((batch) =>
+      batch.bankRowIds.includes(match.bankStatementItemId),
+    ) ?? false;
+
+    // Зведення всього рахунку за день (|Δ| < 1 грн) тримає і іменований платіж без прізвища.
+    if (inBatch) continue;
+
+    if (isAcquiring) {
+      if (!altegioAccount || !bankDay || !evaluation) {
         deleteIds.push(match.id);
         continue;
       }
-      const evaluation = evaluateIncomingAccountReconcile(altegioAccount, bankDay);
-      const inBatch = evaluation.acquiringBatchMatches.some((batch) =>
-        batch.bankRowIds.includes(match.bankStatementItemId),
-      );
       const inIndividual = evaluation.acquiringClientMatches.some(
         (item) => item.bankRowId === match.bankStatementItemId,
       );
-      if (!inBatch && !inIndividual) {
+      if (!inIndividual) {
         deleteIds.push(match.id);
       }
       continue;

@@ -433,6 +433,11 @@ export type IncomingAcquiringBatchMatch = {
   commissionKop: string;
   /** Клієнти саме цього batch. Іменовані збіги того ж дня сюди не входять. */
   matchedClientKeys: string[];
+  /**
+   * Увесь відкритий рахунок за день: |Δ| < 1 грн, прізвища не перевіряються.
+   * У batch входять і еквайринг, і іменовані платежі, і завдатки цього рахунку.
+   */
+  matchByAccountDay?: boolean;
 };
 
 /** Результат пошуку збігів — лише те, що справді сходиться. Часткове зведення дозволено. */
@@ -463,14 +468,21 @@ export function isIncomingAccountFullyReconciled(
 /**
  * Зведення в межах одного рахунку Altegio за один день.
  *
- * ## Правила (без винятків)
- * - Один календарний день (Europe/Kyiv)
- * - Один рахунок (Altegio ↔ monobank)
- * - Однакове прізвище
- * - Однакова сума (для еквайрингу — повна сума з комісією)
- *
- * Типи: іменований, batch-еквайринг (включно з завдатками), 1:1 за унікальною сумою.
+ * ## Правила
+ * - Один календарний день (Europe/Kyiv); еквайринг групується на день документа (−1 доба)
+ * - Один безготівковий рахунок (Altegio ↔ monobank)
+ * - Готівка (Каса, Долар, Євро) не зводиться: банківських платежів по цих касах немає
+ * - Якщо відкриті рядки рахунку відрізняються менше ніж на 1 грн — зводимо їх усі разом,
+ *   без прізвищ. Завдатки цього рахунку входять у пару.
+ * - Інакше: однакове прізвище + однакова сума (для еквайрингу — повна сума з комісією),
+ *   batch-еквайринг або 1:1 за унікальною сумою
  */
+
+/** Нуль для зведення рахунку за день: різниця менша за 1 грн. */
+export function reconcileAmountsWithinHryvnia(left: bigint, right: bigint): boolean {
+  const diff = left > right ? left - right : right - left;
+  return diff < 100n;
+}
 function clientKeyForReconcile(client: AltegioDayAccountClient): string {
   return `${client.payerName}|${client.totalKop}`;
 }
@@ -714,6 +726,50 @@ function evaluateIncomingForBankRows(
   };
 }
 
+/**
+ * Відкриті рядки одного рахунку за день: якщо |банк − Altegio| < 1 грн,
+ * зводимо їх усі разом. Прізвища не дивимось. Готівка сюди не потрапляє.
+ */
+function matchOpenAccountWithinHryvnia(
+  altegioAccount: AltegioDayAccountRow,
+  openBankRows: BankDayItemRow[],
+): IncomingAccountReconcileEvaluation | null {
+  const altegioKop = BigInt(altegioAccount.totalKop);
+  const bankKop = bankRowsReconcileFullTotalKop(openBankRows);
+  if (openBankRows.length === 0 || altegioAccount.clients.length === 0) return null;
+  if (altegioKop <= 0n || bankKop <= 0n) return null;
+  if (!reconcileAmountsWithinHryvnia(altegioKop, bankKop)) return null;
+
+  const batch: IncomingAcquiringBatchMatch = {
+    bankRowIds: openBankRows.map((row) => row.id),
+    bankFullKop: bankKop.toString(),
+    altegioRemainingKop: altegioKop.toString(),
+    commissionKop: openBankRows.reduce((sum, row) => sum + bankCommissionKop(row), 0n).toString(),
+    matchedClientKeys: altegioAccount.clients.map((client) => clientKeyForReconcile(client)),
+    matchByAccountDay: true,
+  };
+
+  console.log("[incoming-reconcile] Рахунок за день зведено: |Δ| < 1 грн", {
+    account: altegioAccount.accountTitle,
+    altegioKop: altegioKop.toString(),
+    bankKop: bankKop.toString(),
+    bankRows: openBankRows.length,
+    clients: altegioAccount.clients.length,
+  });
+
+  return {
+    matchedBankRows: openBankRows,
+    namedMatches: [],
+    acquiringMatch: batch,
+    acquiringBatchMatches: [batch],
+    acquiringClientMatches: [],
+    acquiringMatchedClients: altegioAccount.clients,
+    unmatchedBankRows: [],
+    unmatchedAltegioClients: [],
+    unmatchedAltegioKop: 0n,
+  };
+}
+
 export function evaluateIncomingAccountReconcile(
   altegioAccount: AltegioDayAccountRow,
   bankDay: BankDayFlat,
@@ -739,6 +795,9 @@ export function evaluateIncomingAccountReconcile(
   const allRows = bankRowsForIncomingReconcile(
     collectBankRowsForAltegioReconcile(altegioAccount, bankDay),
   ).filter((row) => !options.excludeBankRowIds?.has(row.id));
+
+  const accountDayMatch = matchOpenAccountWithinHryvnia(altegioAccount, allRows);
+  if (accountDayMatch) return accountDayMatch;
 
   const parts: IncomingAccountReconcileEvaluation[] = [];
   for (const group of bankGroups) {
@@ -821,7 +880,7 @@ export function bankDayMatchesPaymentDay(bankTime: string, paymentKyivDay: strin
 
 /**
  * Знаходить пари Altegio↔Банк для приховування з «Не зведених» без запису в БД.
- * Дублює логіку автозведення: іменовані + завдатки.
+ * Дублює логіку автозведення: рахунок за день при |Δ| < 1 грн, інакше іменовані, еквайринг і завдатки.
  */
 export function evaluateOpenReconcilePairs(
   byPayer: AltegioPayerAggregate[],
