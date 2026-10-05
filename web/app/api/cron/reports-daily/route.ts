@@ -6,6 +6,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getPreviousKyivDay, getTodayKyiv } from "@/lib/direct-stats-config";
 import { deliverDailyReport } from "@/lib/reports/delivery";
+import { deliverDueMarketingReports } from "@/lib/reports/marketing-delivery";
 import { kvRead, kvWrite } from "@/lib/kv";
 
 export const runtime = "nodejs";
@@ -143,6 +144,15 @@ export async function POST(req: NextRequest) {
   try {
     const force = req.nextUrl.searchParams.get("force") === "1";
     const now = getKyivNow();
+    const marketing = await deliverDueMarketingReports({
+      runKyivDay: now.kyivDay,
+      nowMinutes: now.hours * 60 + now.minutes,
+      force: req.nextUrl.searchParams.get("marketing") === "1",
+    }).catch((err: unknown) => {
+      const message = err instanceof Error ? err.message : String(err);
+      console.error("[cron/reports-daily] Маркетинговий звіт:", message);
+      return { ok: false, skipped: "error", chatId: null, items: [], error: message };
+    });
     const scheduleRaw = await kvRead.getRaw(DAILY_REPORT_SCHEDULE_KEY);
     const schedule =
       parseDailyReportTime(scheduleRaw) ?? parseDailyReportTime(DEFAULT_DAILY_REPORT_TIME);
@@ -192,6 +202,7 @@ export async function POST(req: NextRequest) {
         nowKyiv: now.label,
         kyivDay: now.kyivDay,
         lastRun,
+        marketing,
       });
     }
 
@@ -221,6 +232,7 @@ export async function POST(req: NextRequest) {
         schedule: schedule.label,
         kyivDay: now.kyivDay,
         lastRun,
+        marketing,
       });
     }
 
@@ -279,6 +291,7 @@ export async function POST(req: NextRequest) {
       errors: result.errors,
       schedule: schedule.label,
       nowKyiv: now.label,
+      marketing,
     });
   } catch (error) {
     console.error("[cron/reports-daily] Error:", error);

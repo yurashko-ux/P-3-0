@@ -56,6 +56,27 @@ export async function POST(req: NextRequest) {
       messageText: update.message?.text ?? null,
     });
 
+    const incomingChat = update.message?.chat ?? update.callback_query?.message?.chat;
+    if (incomingChat && (incomingChat.type === "group" || incomingChat.type === "supergroup")) {
+      console.log("[reports-webhook] Група: команди повного звіту ігноруємо, chat id не привʼязуємо", {
+        chatId: incomingChat.id,
+        title: incomingChat.title || null,
+        type: incomingChat.type,
+      });
+      await logReportsBotUpdate({
+        event: "group_ignored",
+        chatId: incomingChat.id,
+        title: incomingChat.title ?? null,
+        type: incomingChat.type,
+        messageText: update.message?.text ?? null,
+      });
+      return NextResponse.json({
+        ok: true,
+        handled: "group_ignored",
+        chatId: incomingChat.id,
+      });
+    }
+
     if (update.callback_query) {
       const handled = await handleEncashmentOwnerTelegramCallback(update.callback_query);
       return NextResponse.json({ ok: true, handled: handled ? "encashment_confirm" : false });

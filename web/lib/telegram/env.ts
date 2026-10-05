@@ -40,6 +40,13 @@ export const TELEGRAM_ENV = {
         .map((id) => Number(id))
         .filter((id) => !Number.isNaN(id))
     : [],
+  /** Група маркетингового звіту (від’ємний id). Не плутати з особистими chat id звітів. */
+  MARKETING_GROUP_CHAT_ID: (() => {
+    const raw = process.env.TELEGRAM_MARKETING_GROUP_CHAT_ID?.trim();
+    if (!raw) return null;
+    const n = Number(raw);
+    return Number.isFinite(n) && n !== 0 ? n : null;
+  })(),
 };
 
 export function assertTelegramEnv() {
