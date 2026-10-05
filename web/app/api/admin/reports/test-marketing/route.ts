@@ -1,4 +1,4 @@
-// Тест маркетингового звіту зірочки за вчора в групу Таргет (кнопка #6 AdminToolsModal).
+// Тест маркетингового звіту зірочки за вчора в групу Таргет (кнопка #103 AdminToolsModal).
 
 import { NextRequest, NextResponse } from "next/server";
 import { getAuthContext } from "@/lib/auth-rbac";

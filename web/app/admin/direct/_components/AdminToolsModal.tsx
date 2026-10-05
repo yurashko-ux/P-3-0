@@ -934,24 +934,6 @@ export function AdminToolsModal({
             );
           },
         },
-        {
-          icon: "📣",
-          label: "Тест: маркетинговий звіт зірочки за вчора (група Таргет)",
-          endpoint: "/api/admin/reports/test-marketing",
-          method: "POST" as const,
-          confirm:
-            "Надіслати маркетинговий звіт за вчора в групу HomeBeauty / Таргет?\n\nНулі теж відправляються.",
-          successMessage: (data: any) =>
-            `✅ Маркетинговий звіт за вчора надіслано в групу\n\n` +
-            `День: ${data?.kyivDay ?? "—"}\n` +
-            `Чат: ${data?.chatId ?? "—"}\n` +
-            `Ліди: ${data?.leads ?? 0}\n` +
-            `Консультації створені: ${data?.consultationsCreated ?? 0}\n` +
-            `Прийшли: ${data?.consultationsAttended ?? 0}\n` +
-            `Не прийшли: ${data?.consultationsNoShow ?? 0}\n` +
-            `Платні записи створені: ${data?.paidRecordsCreated ?? 0}\n\n` +
-            `${data?.text ?? ""}`,
-        },
       ],
     },
     {
@@ -2430,6 +2412,24 @@ export function AdminToolsModal({
               `${JSON.stringify(data, null, 2)}`
             );
           },
+        },
+        {
+          icon: "📣",
+          label: "Тест: маркетинговий звіт зірочки за вчора (група Таргет)",
+          endpoint: "/api/admin/reports/test-marketing",
+          method: "POST" as const,
+          confirm:
+            "Надіслати маркетинговий звіт за вчора в групу HomeBeauty / Таргет?\n\nНулі теж відправляються.",
+          successMessage: (data: any) =>
+            `✅ Маркетинговий звіт за вчора надіслано в групу\n\n` +
+            `День: ${data?.kyivDay ?? "—"}\n` +
+            `Чат: ${data?.chatId ?? "—"}\n` +
+            `Ліди: ${data?.leads ?? 0}\n` +
+            `Консультації створені: ${data?.consultationsCreated ?? 0}\n` +
+            `Прийшли: ${data?.consultationsAttended ?? 0}\n` +
+            `Не прийшли: ${data?.consultationsNoShow ?? 0}\n` +
+            `Платні записи створені: ${data?.paidRecordsCreated ?? 0}\n\n` +
+            `${data?.text ?? ""}`,
         },
       ],
     },
