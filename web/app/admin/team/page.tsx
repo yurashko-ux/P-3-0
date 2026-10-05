@@ -248,7 +248,7 @@ export default function TeamPeoplePage() {
   }
 
   return (
-    <main className="p-3 space-y-3 max-w-6xl">
+    <main className="p-3 space-y-3">
       <p className="text-xs text-gray-600 bg-white border rounded-xl px-3 py-2">
         Довідник людей салону. Схем ЗП може бути кілька — вони додаються. Звільнених ховаємо в «Архів», не видаляємо.
       </p>
@@ -468,13 +468,13 @@ export default function TeamPeoplePage() {
       )}
 
       <div className="overflow-x-auto bg-white border rounded-xl">
-        <table className="table table-xs">
+        <table className="table table-xs w-full">
           <thead>
             <tr>
               <th>Імʼя</th>
               <th>Роль</th>
               <th>Instagram</th>
-              <th>Схема ЗП</th>
+              <th className="min-w-[18rem]">Схема ЗП</th>
               <th>Altegio</th>
               <th>Direct</th>
               <th>Логін</th>
@@ -505,11 +505,11 @@ export default function TeamPeoplePage() {
                     if (assigned.length === 0) return <span className="text-gray-400">—</span>;
                     const warn = collisionWarningText(findSchemeCollisions(assigned));
                     return (
-                      <div className="flex flex-col gap-1 min-w-[9rem] max-w-[16rem] py-1">
+                      <div className="flex flex-col items-start gap-1 py-1">
                         {assigned.map((s) => (
                           <div
                             key={s.id}
-                            className="text-xs leading-snug px-2 py-1 rounded-md border border-gray-200 bg-white"
+                            className="text-xs leading-none whitespace-nowrap px-2 py-1.5 rounded-md border border-gray-200 bg-white"
                           >
                             {s.title}
                           </div>

@@ -111,7 +111,7 @@ export default function TeamPayrollPage() {
 
       {data && data.people.length > 0 && (
         <div className="overflow-x-auto bg-white border rounded-xl">
-          <table className="table table-xs">
+          <table className="table table-xs table-fixed w-full">
             <thead>
               <tr>
                 <th className="sticky left-0 bg-white z-10">Дата</th>
