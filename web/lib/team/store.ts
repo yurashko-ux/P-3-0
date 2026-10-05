@@ -33,16 +33,52 @@ function salonRoleFromAltegio(positionKind: string): TeamSalonRole {
 
 const memberInclude = {
   payScheme: true,
+  schemeLinks: {
+    orderBy: { sortOrder: "asc" as const },
+    include: { scheme: true },
+  },
   directMaster: { select: { id: true, name: true, role: true, altegioStaffId: true } },
   appUser: { select: { id: true, name: true, login: true } },
 } as const;
 
-/** BigInt telegramChatId → string для JSON. */
-function serializeMember<T extends { telegramChatId?: bigint | null }>(m: T) {
+type MemberWithSchemes = {
+  telegramChatId?: bigint | null;
+  payScheme?: { id: string; title: string; kind: string; params: unknown } | null;
+  schemeLinks?: Array<{ scheme: { id: string; title: string; kind: string; params: unknown } }>;
+};
+
+/** BigInt telegramChatId → string. paySchemes — усі схеми людини (зв’язки, інакше стара одна). */
+function serializeMember<T extends MemberWithSchemes>(m: T) {
+  const fromLinks = (m.schemeLinks || []).map((link) => link.scheme).filter(Boolean);
+  const paySchemes = fromLinks.length > 0 ? fromLinks : m.payScheme ? [m.payScheme] : [];
   return {
     ...m,
     telegramChatId: m.telegramChatId != null ? m.telegramChatId.toString() : null,
+    paySchemes,
   };
+}
+
+function schemeIdsFromInput(input: TeamMemberInput, fallbackPaySchemeId: string | null): string[] {
+  if (Array.isArray(input.paySchemeIds)) {
+    return [...new Set(input.paySchemeIds.map((id) => String(id).trim()).filter(Boolean))];
+  }
+  return fallbackPaySchemeId ? [fallbackPaySchemeId] : [];
+}
+
+async function replaceMemberSchemes(
+  tx: Prisma.TransactionClient,
+  memberId: string,
+  schemeIds: string[],
+) {
+  await tx.teamMemberScheme.deleteMany({ where: { memberId } });
+  if (schemeIds.length === 0) return;
+  await tx.teamMemberScheme.createMany({
+    data: schemeIds.map((schemeId, index) => ({
+      memberId,
+      schemeId,
+      sortOrder: index,
+    })),
+  });
 }
 
 export async function listTeamMembers() {
@@ -90,6 +126,8 @@ export type TeamMemberInput = {
   directMasterId?: string | null;
   appUserId?: string | null;
   paySchemeId?: string | null;
+  /** Усі схеми людини. Якщо передано — замінює список, навіть порожній. */
+  paySchemeIds?: string[] | null;
   phone?: string | null;
   instagramUsername?: string | null;
   telegramUsername?: string | null;
@@ -133,15 +171,29 @@ function normalizeMemberData(input: TeamMemberInput) {
 
 export async function createTeamMember(input: TeamMemberInput) {
   const data = normalizeMemberData(input);
-  const created = await prisma.teamMember.create({ data, include: memberInclude });
-  console.log(`[team] Створено людину ${created.id} «${created.name}» role=${created.salonRole}`);
+  const schemeIds = schemeIdsFromInput(input, data.paySchemeId);
+  data.paySchemeId = schemeIds[0] || null;
+  const created = await prisma.$transaction(async (tx) => {
+    const row = await tx.teamMember.create({ data });
+    await replaceMemberSchemes(tx, row.id, schemeIds);
+    return tx.teamMember.findUniqueOrThrow({ where: { id: row.id }, include: memberInclude });
+  });
+  console.log(
+    `[team] Створено людину ${created.id} «${created.name}» role=${created.salonRole} schemes=${schemeIds.length}`,
+  );
   return serializeMember(created);
 }
 
 export async function updateTeamMember(id: string, input: TeamMemberInput) {
   const data = normalizeMemberData(input);
-  const updated = await prisma.teamMember.update({ where: { id }, data, include: memberInclude });
-  console.log(`[team] Оновлено людину ${id}`);
+  const schemeIds = schemeIdsFromInput(input, data.paySchemeId);
+  data.paySchemeId = schemeIds[0] || null;
+  const updated = await prisma.$transaction(async (tx) => {
+    await tx.teamMember.update({ where: { id }, data });
+    await replaceMemberSchemes(tx, id, schemeIds);
+    return tx.teamMember.findUniqueOrThrow({ where: { id }, include: memberInclude });
+  });
+  console.log(`[team] Оновлено людину ${id} schemes=${schemeIds.length}`);
   return serializeMember(updated);
 }
 
@@ -193,7 +245,7 @@ export async function updateTeamScheme(id: string, input: TeamSchemeInput) {
 }
 
 export async function deleteTeamScheme(id: string) {
-  const inUse = await prisma.teamMember.count({ where: { paySchemeId: id } });
+  const inUse = await prisma.teamMemberScheme.count({ where: { schemeId: id } });
   if (inUse > 0) {
     throw new Error(`Схему призначено ${inUse} людям — спочатку зніміть привʼязку`);
   }

@@ -874,10 +874,28 @@ model TeamPayScheme {
   updatedAt DateTime @updatedAt
 
   members TeamMember[]
+  schemeLinks TeamMemberScheme[]
 
   @@index([kind])
   @@index([isActive])
   @@map("team_pay_schemes")
+}
+
+/// Кілька схем ЗП на одну людину. Суми додаються.
+model TeamMemberScheme {
+  id        String   @id @default(uuid())
+  memberId  String
+  schemeId  String
+  sortOrder Int      @default(0)
+  createdAt DateTime @default(now())
+
+  member TeamMember    @relation(fields: [memberId], references: [id], onDelete: Cascade)
+  scheme TeamPayScheme @relation(fields: [schemeId], references: [id], onDelete: Restrict)
+
+  @@unique([memberId, schemeId])
+  @@index([schemeId])
+  @@index([memberId])
+  @@map("team_member_schemes")
 }
 
 /// Картка людини салону (не замінює DirectMaster / AppUser).
@@ -903,6 +921,7 @@ model TeamMember {
   directMaster DirectMaster?  @relation(fields: [directMasterId], references: [id], onDelete: SetNull)
   appUser      AppUser?       @relation(fields: [appUserId], references: [id], onDelete: SetNull)
   payScheme    TeamPayScheme? @relation(fields: [paySchemeId], references: [id], onDelete: SetNull)
+  schemeLinks  TeamMemberScheme[]
 
   @@index([salonRole])
   @@index([isActive])

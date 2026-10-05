@@ -2,8 +2,10 @@
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { TEAM_SALON_ROLES } from "@/lib/team/constants";
+import { collisionWarningText, findSchemeCollisions, type SchemeRef } from "@/lib/team/scheme-stack";
+import { PaySchemePreview } from "./_components/PaySchemePreview";
 
-type SchemeBrief = { id: string; title: string; kind: string };
+type SchemeBrief = SchemeRef & { isActive?: boolean };
 type MasterOpt = { id: string; name: string; role: string; altegioStaffId: number | null; linked: boolean };
 type UserOpt = { id: string; name: string; login: string; linked: boolean };
 
@@ -22,6 +24,7 @@ type MemberRow = {
   isActive: boolean;
   order: number;
   payScheme: SchemeBrief | null;
+  paySchemes?: SchemeBrief[];
   directMaster: { id: string; name: string; role: string; altegioStaffId: number | null } | null;
   appUser: { id: string; name: string; login: string } | null;
 };
@@ -40,7 +43,7 @@ const emptyForm = {
   altegioStaffId: "",
   directMasterId: "",
   appUserId: "",
-  paySchemeId: "",
+  paySchemeIds: [] as string[],
   phone: "",
   instagramUsername: "",
   telegramUsername: "",
@@ -81,6 +84,7 @@ export default function TeamPeoplePage() {
   const [editingId, setEditingId] = useState<string | null>(null);
   const [form, setForm] = useState(emptyForm);
   const [showForm, setShowForm] = useState(false);
+  const [preview, setPreview] = useState<{ name: string; schemes: SchemeRef[] } | null>(null);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -97,7 +101,7 @@ export default function TeamPeoplePage() {
       setMembers(memJson.members || []);
       setMasters(memJson.masters || []);
       setUsers(memJson.users || []);
-      setSchemes((schJson.schemes || []).filter((s: SchemeBrief & { isActive?: boolean }) => s.isActive !== false));
+      setSchemes(schJson.schemes || []);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Помилка");
     } finally {
@@ -117,6 +121,17 @@ export default function TeamPeoplePage() {
     return users.filter((u) => !u.linked || u.id === form.appUserId);
   }, [users, form.appUserId]);
 
+  const selectedSchemes = useMemo(
+    () => schemes.filter((s) => form.paySchemeIds.includes(s.id)),
+    [schemes, form.paySchemeIds],
+  );
+  const formCollision = collisionWarningText(findSchemeCollisions(selectedSchemes));
+
+  function memberSchemes(m: MemberRow): SchemeRef[] {
+    if (m.paySchemes && m.paySchemes.length > 0) return m.paySchemes;
+    return m.payScheme ? [m.payScheme] : [];
+  }
+
   function openCreate() {
     setEditingId(null);
     setForm(emptyForm);
@@ -131,7 +146,7 @@ export default function TeamPeoplePage() {
       altegioStaffId: m.altegioStaffId != null ? String(m.altegioStaffId) : "",
       directMasterId: m.directMasterId || "",
       appUserId: m.appUserId || "",
-      paySchemeId: m.paySchemeId || "",
+      paySchemeIds: (m.paySchemes || (m.payScheme ? [m.payScheme] : [])).map((s) => s.id),
       phone: m.phone || "",
       instagramUsername: m.instagramUsername || "",
       telegramUsername: m.telegramUsername || "",
@@ -152,7 +167,7 @@ export default function TeamPeoplePage() {
         altegioStaffId: form.altegioStaffId ? Number(form.altegioStaffId) : null,
         directMasterId: form.directMasterId || null,
         appUserId: form.appUserId || null,
-        paySchemeId: form.paySchemeId || null,
+        paySchemeIds: form.paySchemeIds,
         phone: form.phone || null,
         instagramUsername: form.instagramUsername || null,
         telegramUsername: form.telegramUsername || null,
@@ -218,8 +233,7 @@ export default function TeamPeoplePage() {
   return (
     <main className="p-3 space-y-3 max-w-6xl">
       <p className="text-xs text-gray-600 bg-white border rounded-xl px-3 py-2">
-        Довідник людей салону: роль, схема нарахування ЗП, звʼязок з Altegio / Direct / логіном. Автонарахування за
-        період — пізніше.
+        Довідник людей салону. Схем ЗП може бути кілька — вони додаються. «Подивитись» рахує приклад, не виплату.
       </p>
       {error && <div className="alert alert-error text-sm py-2">{error}</div>}
       <div className="flex flex-wrap gap-2">
@@ -233,6 +247,14 @@ export default function TeamPeoplePage() {
           Оновити
         </button>
       </div>
+
+      {preview && (
+        <PaySchemePreview
+          personName={preview.name}
+          schemes={preview.schemes}
+          onClose={() => setPreview(null)}
+        />
+      )}
 
       {showForm && (
         <div
@@ -285,23 +307,40 @@ export default function TeamPeoplePage() {
                 </select>
               </label>
 
-              <label className="form-control">
+              <div className="form-control col-span-2">
                 <span className="label py-0 min-h-0">
-                  <span className="label-text text-[11px] text-gray-500">Схема ЗП</span>
+                  <span className="label-text text-[11px] text-gray-500">Схеми ЗП</span>
                 </span>
-                <select
-                  className="select select-bordered select-sm h-8 min-h-8"
-                  value={form.paySchemeId}
-                  onChange={(e) => setForm((f) => ({ ...f, paySchemeId: e.target.value }))}
-                >
-                  <option value="">—</option>
-                  {schemes.map((s) => (
-                    <option key={s.id} value={s.id}>
-                      {s.title}
-                    </option>
-                  ))}
-                </select>
-              </label>
+                <div className="border border-gray-200 rounded-lg max-h-36 overflow-y-auto p-2 space-y-1">
+                  {schemes.length === 0 && (
+                    <p className="text-xs text-gray-400">Немає схем. Додайте їх у «Схеми ЗП».</p>
+                  )}
+                  {schemes
+                    .filter((s) => s.isActive !== false || form.paySchemeIds.includes(s.id))
+                    .map((s) => {
+                    const checked = form.paySchemeIds.includes(s.id);
+                    return (
+                      <label key={s.id} className="flex items-center gap-2 text-xs cursor-pointer">
+                        <input
+                          type="checkbox"
+                          className="checkbox checkbox-xs"
+                          checked={checked}
+                          onChange={() =>
+                            setForm((f) => ({
+                              ...f,
+                              paySchemeIds: checked
+                                ? f.paySchemeIds.filter((id) => id !== s.id)
+                                : [...f.paySchemeIds, s.id],
+                            }))
+                          }
+                        />
+                        <span>{s.title}</span>
+                      </label>
+                    );
+                  })}
+                </div>
+                {formCollision && <p className="text-[11px] text-amber-700 mt-1">{formCollision}</p>}
+              </div>
 
               <label className="form-control">
                 <span className="label py-0 min-h-0">
@@ -450,7 +489,26 @@ export default function TeamPeoplePage() {
                     <span className="text-gray-400">—</span>
                   )}
                 </td>
-                <td>{m.payScheme?.title || "—"}</td>
+                <td>
+                  {(() => {
+                    const assigned = memberSchemes(m);
+                    if (assigned.length === 0) return <span className="text-gray-400">—</span>;
+                    const warn = collisionWarningText(findSchemeCollisions(assigned));
+                    return (
+                      <div className="space-y-1 min-w-[8rem]">
+                        <div className="text-xs">{assigned.map((s) => s.title).join(", ")}</div>
+                        {warn && <div className="text-[11px] text-amber-700">{warn}</div>}
+                        <button
+                          type="button"
+                          className="btn btn-ghost btn-xs"
+                          onClick={() => setPreview({ name: m.name, schemes: assigned })}
+                        >
+                          Подивитись
+                        </button>
+                      </div>
+                    );
+                  })()}
+                </td>
                 <td className="tabular-nums text-gray-500">{m.altegioStaffId ?? "—"}</td>
                 <td>{m.directMaster?.name || "—"}</td>
                 <td>{m.appUser ? `${m.appUser.login}` : "—"}</td>
