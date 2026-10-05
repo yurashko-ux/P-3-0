@@ -16,6 +16,7 @@ import {
   hasAssignedPosition,
   isCalendarMaster,
 } from "@/lib/journal/staff";
+import { isHiddenJournalStaff, loadHiddenStaffIndex } from "@/lib/team/hidden-staff";
 
 export const BOOKING_START_HOUR = 9;
 export const BOOKING_END_HOUR = 20;
@@ -58,8 +59,8 @@ function rangesOverlap(aStart: number, aEnd: number, bStart: number, bEnd: numbe
 }
 
 export async function listBookableMasters() {
-  const staff = await listJournalStaffFromAltegio();
-  return staff.filter((s) => hasAssignedPosition(s) && isCalendarMaster(s)).map((s) => ({
+  const [staff, hidden] = await Promise.all([listJournalStaffFromAltegio(), loadHiddenStaffIndex()]);
+  return staff.filter((s) => hasAssignedPosition(s) && isCalendarMaster(s) && !isHiddenJournalStaff(hidden, s)).map((s) => ({
     id: String(s.altegioStaffId),
     name: s.name,
     altegioStaffId: s.altegioStaffId,

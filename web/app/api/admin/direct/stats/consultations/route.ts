@@ -3,6 +3,7 @@
 
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
+import { isHiddenDirectMaster, loadHiddenStaffIndex } from "@/lib/team/hidden-staff";
 import { getKyivDayUtcBounds, getTodayKyiv, clientCountsTowardNewLeadsKpi } from "@/lib/direct-stats-config";
 import {
   startOfMonthKyivFromDay,
@@ -121,8 +122,10 @@ export async function GET(req: NextRequest) {
 
     const masters = await prisma.directMaster.findMany({
       where: { isActive: true },
-      select: { id: true, name: true },
+      select: { id: true, name: true, altegioStaffId: true },
     });
+    const hiddenStaff = await loadHiddenStaffIndex();
+    const visibleMasters = masters.filter((m) => !isHiddenDirectMaster(hiddenStaff, m));
 
     const clients = await prisma.directClient.findMany({
       where: {
@@ -254,7 +257,7 @@ export async function GET(req: NextRequest) {
       startOfMonthKyiv,
       endOfMonthKyiv,
       summary,
-      masters: masters.map((m) => ({ id: m.id, name: m.name })),
+      masters: visibleMasters.map((m) => ({ id: m.id, name: m.name })),
       todayKyiv,
       clients: mapped,
     });

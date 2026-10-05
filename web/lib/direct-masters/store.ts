@@ -2,6 +2,7 @@
 // Функції для роботи з відповідальними (майстрами) в Prisma Postgres
 
 import { prisma } from '../prisma';
+import { isHiddenDirectMaster, loadHiddenStaffIndex } from '@/lib/team/hidden-staff';
 
 export type DirectMaster = {
   id: string;
@@ -333,7 +334,8 @@ export async function getDirectMastersForSelection(): Promise<DirectMaster[]> {
       orderBy: [{ order: 'asc' }, { name: 'asc' }],
     });
     
-    // Фільтруємо тестових
+    // Фільтруємо тестових і прихованих у Команді (звільнених).
+    const hidden = await loadHiddenStaffIndex();
     return dbMasters
       .filter(m => {
         // Виключаємо тестових
@@ -341,7 +343,8 @@ export async function getDirectMastersForSelection(): Promise<DirectMaster[]> {
         if (m.name.toLowerCase().includes('тест') || m.name.toLowerCase().includes('test')) return false;
         return true;
       })
-      .map(prismaMasterToDirectMaster);
+      .map(prismaMasterToDirectMaster)
+      .filter((m) => !isHiddenDirectMaster(hidden, m));
   } catch (err) {
     console.error('[direct-masters] Error getting masters for selection:', err);
     throw err;

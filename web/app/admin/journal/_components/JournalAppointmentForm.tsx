@@ -94,6 +94,8 @@ export type JournalAppointmentDraft = {
     staffIds?: number[];
   }>;
   participantStaffIds?: number[];
+  /** Імена вже збережених учасників — щоб прихований працівник лишався на картці запису. */
+  participantLabels?: Array<{ altegioStaffId: number; staffName?: string | null; role?: string | null }>;
   goods?: GoodDraft[];
   checkoutStatus?: string | null;
   paidAmount?: number | null;
@@ -334,10 +336,22 @@ export function JournalAppointmentForm({
     return map;
   }, [catalogMasters]);
 
-  const teamMembers = useMemo(
-    () => teamIds.map((id) => masterByAltegio.get(id)).filter(Boolean) as JournalMaster[],
-    [teamIds, masterByAltegio],
-  );
+  const teamMembers = useMemo(() => {
+    return teamIds
+      .map((id) => {
+        const fromCatalog = masterByAltegio.get(id);
+        if (fromCatalog) return fromCatalog;
+        const labeled = (draft?.participantLabels || []).find((p) => Number(p.altegioStaffId) === id);
+        if (!(id > 0)) return null;
+        return {
+          id: String(id),
+          name: labeled?.staffName || `Працівник ${id}`,
+          altegioStaffId: id,
+          positionTitle: labeled?.role || "",
+        } satisfies JournalMaster;
+      })
+      .filter((row): row is JournalMaster => Boolean(row));
+  }, [teamIds, masterByAltegio, draft?.participantLabels]);
   const primaryMaster = teamMembers[0] || null;
   const primaryStaffId = teamIds[0] || 0;
 

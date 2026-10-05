@@ -83,10 +83,54 @@ async function replaceMemberSchemes(
 
 export async function listTeamMembers() {
   const rows = await prisma.teamMember.findMany({
+    where: { hiddenAt: null },
     include: memberInclude,
     orderBy: [{ order: "asc" }, { name: "asc" }],
   });
   return rows.map(serializeMember);
+}
+
+export async function listHiddenTeamMembers() {
+  const rows = await prisma.teamMember.findMany({
+    where: { hiddenAt: { not: null } },
+    include: memberInclude,
+    orderBy: [{ hiddenAt: "desc" }, { name: "asc" }],
+  });
+  return rows.map(serializeMember);
+}
+
+export async function hideTeamMember(id: string, actor: { userId: string | null; name: string }) {
+  const existing = await prisma.teamMember.findUnique({ where: { id }, select: { id: true, name: true, hiddenAt: true } });
+  if (!existing) throw new Error("Людину не знайдено");
+  if (existing.hiddenAt) {
+    const row = await prisma.teamMember.findUniqueOrThrow({ where: { id }, include: memberInclude });
+    return serializeMember(row);
+  }
+  const updated = await prisma.teamMember.update({
+    where: { id },
+    data: {
+      hiddenAt: new Date(),
+      hiddenByUserId: actor.userId,
+      hiddenByName: actor.name.slice(0, 200),
+    },
+    include: memberInclude,
+  });
+  console.log(
+    `[team] Приховано ${id} «${updated.name}» ким=${actor.name} userId=${actor.userId || "—"}`,
+  );
+  return serializeMember(updated);
+}
+
+export async function restoreTeamMember(id: string, actor: { userId: string | null; name: string }) {
+  const existing = await prisma.teamMember.findUnique({ where: { id }, select: { id: true, name: true } });
+  if (!existing) throw new Error("Людину не знайдено");
+  const updated = await prisma.teamMember.update({
+    where: { id },
+    data: { hiddenAt: null, hiddenByUserId: null, hiddenByName: null },
+    include: memberInclude,
+  });
+  console.log(`[team] Повернуто з архіву ${id} «${updated.name}» ким=${actor.name} userId=${actor.userId || "—"}`);
+  return serializeMember(updated);
 }
 
 export async function listTeamSchemes() {

@@ -836,7 +836,8 @@ model AppUser {
   // Клієнти, які цей користувач останнім редагував
   clientsLastModified DirectClient[]         @relation("DirectClientLastModifiedBy")
   auditLogs           DirectClientAuditLog[]
-  teamMember          TeamMember?
+  teamMember          TeamMember?  @relation("TeamMemberLogin")
+  hiddenTeamMembers   TeamMember[] @relation("TeamMemberHiddenBy")
 
   @@index([login])
   @@index([telegramUserId])
@@ -915,16 +916,23 @@ model TeamMember {
   telegramChatId   BigInt?
   isActive         Boolean  @default(true)
   order            Int      @default(0)
+  /// Звільнений: не видаляємо картку, прибираємо зі списків CRM.
+  hiddenAt         DateTime?
+  hiddenByUserId   String?
+  /// Імʼя того, хто приховав, на момент дії.
+  hiddenByName     String?
   createdAt        DateTime @default(now())
   updatedAt        DateTime @updatedAt
 
   directMaster DirectMaster?  @relation(fields: [directMasterId], references: [id], onDelete: SetNull)
-  appUser      AppUser?       @relation(fields: [appUserId], references: [id], onDelete: SetNull)
+  appUser      AppUser?       @relation("TeamMemberLogin", fields: [appUserId], references: [id], onDelete: SetNull)
+  hiddenByUser AppUser?       @relation("TeamMemberHiddenBy", fields: [hiddenByUserId], references: [id], onDelete: SetNull)
   payScheme    TeamPayScheme? @relation(fields: [paySchemeId], references: [id], onDelete: SetNull)
   schemeLinks  TeamMemberScheme[]
 
   @@index([salonRole])
   @@index([isActive])
+  @@index([hiddenAt])
   @@index([order])
   @@index([paySchemeId])
   @@index([instagramUsername])

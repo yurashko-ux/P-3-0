@@ -7,6 +7,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { kvRead } from '@/lib/kv';
 import { prisma } from '@/lib/prisma';
+import { isHiddenDirectMaster, loadHiddenStaffIndex } from '@/lib/team/hidden-staff';
 import { verifyUserToken } from '@/lib/auth-rbac';
 import { isPreviewDeploymentHost } from '@/lib/auth-preview';
 import {
@@ -883,7 +884,11 @@ export async function GET(req: NextRequest) {
       row.rebookRatePct = row.paidAttended > 0 ? Math.round((row.rebooksCreated / row.paidAttended) * 1000) / 10 : 0;
     }
 
-    const mastersRows = masters.map((m) => rowsByMasterId.get(m.id)!).filter(Boolean);
+    const hiddenStaff = await loadHiddenStaffIndex();
+    const mastersRows = masters
+      .filter((m) => !isHiddenDirectMaster(hiddenStaff, m))
+      .map((m) => rowsByMasterId.get(m.id)!)
+      .filter(Boolean);
     const unassignedRow = rowsByMasterId.get(unassignedId)!;
     const excelDisplayNames = ['Галина', 'Олена', 'Маряна', 'Олександра'];
     const allRowsForExcel = [...mastersRows, unassignedRow];

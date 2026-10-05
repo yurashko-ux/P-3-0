@@ -3,6 +3,7 @@
 
 import { NextRequest, NextResponse } from 'next/server';
 import { getAllDirectMasters, saveDirectMaster, deleteDirectMaster, getDirectMastersForSelection } from '@/lib/direct-masters/store';
+import { isHiddenDirectMaster, loadHiddenStaffIndex } from '@/lib/team/hidden-staff';
 import { randomUUID } from 'crypto';
 
 function isAuthorized(req: NextRequest): boolean {
@@ -37,8 +38,10 @@ export async function GET(req: NextRequest) {
     }
 
     const masters = await getAllDirectMasters();
+    const hidden = await loadHiddenStaffIndex();
+    const visible = masters.filter((m) => !isHiddenDirectMaster(hidden, m));
     // Якщо onlyMasters=true, фільтруємо тільки майстрів
-    const filtered = onlyMasters ? masters.filter(m => m.role === 'master') : masters;
+    const filtered = onlyMasters ? visible.filter(m => m.role === 'master') : visible;
     return NextResponse.json({ ok: true, masters: filtered });
   } catch (err) {
     console.error('[direct/masters] GET error:', err);

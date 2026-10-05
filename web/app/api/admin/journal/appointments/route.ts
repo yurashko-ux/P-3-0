@@ -7,6 +7,7 @@ import {
   listAppointmentsForDay,
 } from "@/lib/journal";
 import { listJournalStaffFromAltegio, hasAssignedPosition, isCalendarColumn } from "@/lib/journal/staff";
+import { isHiddenJournalStaff, loadHiddenStaffIndex } from "@/lib/team/hidden-staff";
 import { ensureCanonicalServicesSeeded } from "@/lib/journal/services";
 
 export const dynamic = "force-dynamic";
@@ -53,7 +54,8 @@ export async function GET(req: NextRequest) {
         null,
       altegioLinks: s.altegioLinks,
     }));
-    const staffBase = staffAll.filter(hasAssignedPosition);
+    const hidden = await loadHiddenStaffIndex();
+    const staffBase = staffAll.filter(hasAssignedPosition).filter((row) => !isHiddenJournalStaff(hidden, row));
     const staffIds = staffBase.map((s) => s.altegioStaffId).filter((id) => id > 0);
     const teamRows =
       staffIds.length > 0

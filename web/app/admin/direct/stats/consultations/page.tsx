@@ -551,6 +551,11 @@ function ConsultationsPageContent() {
                           <option value="" style={{ backgroundColor: consultationControlBgHex(c.rowColorKey) }}>
                             —
                           </option>
+                          {c.masterId && !masters.some((m) => m.id === c.masterId) && (
+                            <option value={c.masterId} style={{ backgroundColor: consultationControlBgHex(c.rowColorKey) }}>
+                              {c.masterDisplayName || "поточний майстер"}
+                            </option>
+                          )}
                           {masters.map((m) => (
                             <option
                               key={m.id}

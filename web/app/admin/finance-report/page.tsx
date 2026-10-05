@@ -44,6 +44,7 @@ import {
   buildFinanceExpenseBreakdowns,
   type FinanceExpenseBreakdownItem,
 } from "@/lib/finance/expense-breakdown";
+import { isHiddenExpenseRow, loadHiddenStaffIndex } from "@/lib/team/hidden-staff";
 import {
   getEncashmentConfirmationSummary,
   type EncashmentConfirmationSummary,
@@ -652,11 +653,22 @@ async function getSummaryForMonth(
     const accountingTaxesTotal = accounting + taxes + discountAmount;
     const expensesWithoutSalary = rent + marketingTotal + otherExpensesTotal + accountingTaxesTotal;
     const totalExpenses = salary + expensesWithoutSalary;
-    const { salaryBreakdown, rentBreakdown } = buildFinanceExpenseBreakdowns(expenses, {
+    const expenseBreakdowns = buildFinanceExpenseBreakdowns(expenses, {
       salary,
       rent,
       rentManual,
     });
+    let salaryBreakdown = expenseBreakdowns.salaryBreakdown;
+    const rentBreakdown = expenseBreakdowns.rentBreakdown;
+    try {
+      const hiddenStaff = await loadHiddenStaffIndex();
+      salaryBreakdown = salaryBreakdown.filter((row) => !isHiddenExpenseRow(hiddenStaff, row));
+    } catch (hideErr) {
+      console.warn(
+        "[finance-report] Не вдалося прибрати прихованих зі ЗП:",
+        hideErr instanceof Error ? hideErr.message : hideErr,
+      );
+    }
     
     const profit = totalIncome - totalExpenses;
     const ownerProfit = profit - management;

@@ -215,6 +215,13 @@ export default function JournalDayPage() {
         participantStaffIds: (a.participants || [])
           .map((x: { altegioStaffId: number }) => Number(x.altegioStaffId))
           .filter((id: number) => id > 0),
+        participantLabels: (a.participants || []).map(
+          (x: { altegioStaffId: number; staffName?: string | null; role?: string | null }) => ({
+            altegioStaffId: Number(x.altegioStaffId),
+            staffName: x.staffName || a.staffName || null,
+            role: x.role || null,
+          }),
+        ),
         goods: (a.goodLines || []).map(
           (g: {
             id: string;

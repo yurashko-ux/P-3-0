@@ -16,6 +16,7 @@ import {
 import type { DirectClient } from '@/lib/direct-types';
 import { Prisma } from '@prisma/client';
 import { prisma } from '@/lib/prisma';
+import { stripHiddenFromMasterPanels } from '@/lib/team/hidden-staff';
 import { getDisplayedState } from '@/lib/direct-displayed-state';
 import { isKyivCalendarDayEqualToReference } from '@/lib/direct-kyiv-today';
 import { kyivDayFromISO } from '@/lib/altegio/records-grouping';
@@ -730,6 +731,9 @@ export async function GET(req: NextRequest) {
             }
             masterFilterPanelCounts = buildGlobalMasterFilterPanelCounts(allClients, mastersList);
             consultMasterFilterCounts = buildConsultMasterFilterPanelCounts(allClients, mastersList);
+            const hiddenPeople = await stripHiddenFromMasterPanels(masterFilterPanelCounts, consultMasterFilterCounts);
+            masterFilterPanelCounts = hiddenPeople.panel;
+            consultMasterFilterCounts = hiddenPeople.consult;
           } catch (globalAggErr) {
             console.warn(
               '[direct/clients] lightweight: глобальні лічильники фільтрів по всій базі не вдались:',
@@ -994,6 +998,9 @@ export async function GET(req: NextRequest) {
             }
             masterFilterPanelCounts = buildGlobalMasterFilterPanelCounts(clientsFullForGlobalCounts, mastersList);
             consultMasterFilterCounts = buildConsultMasterFilterPanelCounts(clientsFullForGlobalCounts, mastersList);
+            const hiddenPeople = await stripHiddenFromMasterPanels(masterFilterPanelCounts, consultMasterFilterCounts);
+            masterFilterPanelCounts = hiddenPeople.panel;
+            consultMasterFilterCounts = hiddenPeople.consult;
           } catch (masterPanelErr) {
             console.warn('[direct/clients] filterCountsOnly: masterFilterPanelCounts:', masterPanelErr);
           }
@@ -2186,6 +2193,19 @@ export async function GET(req: NextRequest) {
         clientsFullForGlobalCounts,
         mastersForGlobalFilterPanel
       );
+      try {
+        const hiddenPeople = await stripHiddenFromMasterPanels(
+          masterFilterPanelCountsHeavy,
+          consultMasterFilterCountsHeavy,
+        );
+        masterFilterPanelCountsHeavy = hiddenPeople.panel;
+        consultMasterFilterCountsHeavy = hiddenPeople.consult;
+      } catch (hideErr) {
+        console.warn(
+          "[direct/clients] не вдалося прибрати прихованих з фільтра майстрів:",
+          hideErr instanceof Error ? hideErr.message : hideErr,
+        );
+      }
       binotelCallsFilterCountsHeavy = await computeBinotelCallsFilterCountsFromDb({
         kyivDay: binotelCallsKyivDay,
       });

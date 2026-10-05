@@ -3,7 +3,6 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { TEAM_SALON_ROLES } from "@/lib/team/constants";
 import { collisionWarningText, findSchemeCollisions, type SchemeRef } from "@/lib/team/scheme-stack";
-import { PaySchemePreview } from "./_components/PaySchemePreview";
 
 type SchemeBrief = SchemeRef & { isActive?: boolean };
 type MasterOpt = { id: string; name: string; role: string; altegioStaffId: number | null; linked: boolean };
@@ -84,7 +83,6 @@ export default function TeamPeoplePage() {
   const [editingId, setEditingId] = useState<string | null>(null);
   const [form, setForm] = useState(emptyForm);
   const [showForm, setShowForm] = useState(false);
-  const [preview, setPreview] = useState<{ name: string; schemes: SchemeRef[] } | null>(null);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -212,6 +210,25 @@ export default function TeamPeoplePage() {
     }
   }
 
+  async function hideMember(member: MemberRow) {
+    if (!confirm(`Приховати «${member.name}»? Людина зникне зі списків CRM. Картку й документи не видаляємо.`)) return;
+    setBusy(true);
+    setError(null);
+    try {
+      const res = await fetch(`/api/admin/team/members/${member.id}/hide`, {
+        method: "POST",
+        credentials: "include",
+      });
+      const json = await res.json();
+      if (!res.ok || !json.ok) throw new Error(json.error || "Не приховано");
+      await load();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Помилка приховування");
+    } finally {
+      setBusy(false);
+    }
+  }
+
   async function importAltegio() {
     setBusy(true);
     setError(null);
@@ -233,7 +250,7 @@ export default function TeamPeoplePage() {
   return (
     <main className="p-3 space-y-3 max-w-6xl">
       <p className="text-xs text-gray-600 bg-white border rounded-xl px-3 py-2">
-        Довідник людей салону. Схем ЗП може бути кілька — вони додаються. «Подивитись» рахує приклад, не виплату.
+        Довідник людей салону. Схем ЗП може бути кілька — вони додаються. Звільнених ховаємо в «Архів», не видаляємо.
       </p>
       {error && <div className="alert alert-error text-sm py-2">{error}</div>}
       <div className="flex flex-wrap gap-2">
@@ -247,14 +264,6 @@ export default function TeamPeoplePage() {
           Оновити
         </button>
       </div>
-
-      {preview && (
-        <PaySchemePreview
-          personName={preview.name}
-          schemes={preview.schemes}
-          onClose={() => setPreview(null)}
-        />
-      )}
 
       {showForm && (
         <div
@@ -470,6 +479,7 @@ export default function TeamPeoplePage() {
               <th>Direct</th>
               <th>Логін</th>
               <th></th>
+              <th></th>
             </tr>
           </thead>
           <tbody>
@@ -505,13 +515,6 @@ export default function TeamPeoplePage() {
                           </div>
                         ))}
                         {warn && <div className="text-[11px] text-amber-700">{warn}</div>}
-                        <button
-                          type="button"
-                          className="btn btn-ghost btn-xs"
-                          onClick={() => setPreview({ name: m.name, schemes: assigned })}
-                        >
-                          Подивитись
-                        </button>
                       </div>
                     );
                   })()}
@@ -519,6 +522,11 @@ export default function TeamPeoplePage() {
                 <td className="tabular-nums text-gray-500">{m.altegioStaffId ?? "—"}</td>
                 <td>{m.directMaster?.name || "—"}</td>
                 <td>{m.appUser ? `${m.appUser.login}` : "—"}</td>
+                <td className="whitespace-nowrap">
+                  <button className="btn btn-ghost btn-xs" disabled={busy} onClick={() => void hideMember(m)}>
+                    Приховати
+                  </button>
+                </td>
                 <td className="whitespace-nowrap">
                   <button className="btn btn-ghost btn-xs" onClick={() => openEdit(m)}>
                     Змінити
