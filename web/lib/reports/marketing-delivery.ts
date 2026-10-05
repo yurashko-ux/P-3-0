@@ -128,3 +128,48 @@ export async function deliverDueMarketingReports(options: {
     items,
   };
 }
+
+/** Тест з адмінки: денний звіт за день у групу. Не чіпає ключ «вже відправлено» крона. */
+export async function sendMarketingDayReport(kyivDay: string): Promise<{
+  kyivDay: string;
+  chatId: number;
+  text: string;
+  leads: number;
+  consultationsCreated: number;
+  consultationsAttended: number;
+  consultationsNoShow: number;
+  paidRecordsCreated: number;
+}> {
+  const chatId = TELEGRAM_ENV.MARKETING_GROUP_CHAT_ID;
+  if (chatId == null) {
+    throw new Error("Не задано TELEGRAM_MARKETING_GROUP_CHAT_ID");
+  }
+  assertReportsBotToken();
+  const data = await buildMarketingReport("day", kyivDay, kyivDay);
+  const text = formatMarketingReportTelegram(data);
+  await sendMessage(
+    chatId,
+    text,
+    { parse_mode: "HTML", link_preview_options: { is_disabled: true } },
+    TELEGRAM_ENV.REPORTS_BOT_TOKEN,
+  );
+  console.log("[reports/marketing] Тестова відправка денного звіту", {
+    kyivDay,
+    chatId,
+    leads: data.leads,
+    consultationsCreated: data.consultationsCreated,
+    consultationsAttended: data.consultationsAttended,
+    consultationsNoShow: data.consultationsNoShow,
+    paidRecordsCreated: data.paidRecordsCreated,
+  });
+  return {
+    kyivDay,
+    chatId,
+    text,
+    leads: data.leads,
+    consultationsCreated: data.consultationsCreated,
+    consultationsAttended: data.consultationsAttended,
+    consultationsNoShow: data.consultationsNoShow,
+    paidRecordsCreated: data.paidRecordsCreated,
+  };
+}
