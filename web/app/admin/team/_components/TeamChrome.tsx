@@ -6,6 +6,7 @@ import { usePathname } from "next/navigation";
 const LINKS = [
   { href: "/admin/team", label: "Люди", exact: true },
   { href: "/admin/team/schemes", label: "Схеми ЗП" },
+  { href: "/admin/team/payroll", label: "Нарахування ЗП" },
   { href: "/admin/team/archive", label: "Архів" },
 ];
 
