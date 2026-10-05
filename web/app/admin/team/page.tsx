@@ -495,8 +495,15 @@ export default function TeamPeoplePage() {
                     if (assigned.length === 0) return <span className="text-gray-400">—</span>;
                     const warn = collisionWarningText(findSchemeCollisions(assigned));
                     return (
-                      <div className="space-y-1 min-w-[8rem]">
-                        <div className="text-xs">{assigned.map((s) => s.title).join(", ")}</div>
+                      <div className="flex flex-col gap-1 min-w-[9rem] max-w-[16rem] py-1">
+                        {assigned.map((s) => (
+                          <div
+                            key={s.id}
+                            className="text-xs leading-snug px-2 py-1 rounded-md border border-gray-200 bg-white"
+                          >
+                            {s.title}
+                          </div>
+                        ))}
                         {warn && <div className="text-[11px] text-amber-700">{warn}</div>}
                         <button
                           type="button"
