@@ -672,6 +672,8 @@ model FinanceOperation {
   appointmentId           String?
   directClientId          String?
   clientName              String?
+  /// Instagram на момент оплати — хто платив, навіть якщо картку потім перейменують
+  clientInstagram         String?
   /// agency_1 | agency_2 | organic — зріз leadAgency на момент оплати
   leadAgency              String?
   consultationAt          DateTime?

@@ -6,6 +6,7 @@ type AppointmentHit = {
   id: string;
   kyivDay: string;
   clientName: string;
+  clientInstagram: string | null;
   staffName: string | null;
 };
 
@@ -20,6 +21,8 @@ type Preview = {
   appointmentId: string;
   kyivDay: string;
   clientName: string;
+  clientInstagram: string | null;
+  directClientId: string | null;
   suggestedAmount: number;
   leadAgencyLabel: string;
   consultationAt: string | null;
@@ -33,12 +36,51 @@ type OperationRow = {
   amount: number;
   methodLabel: string;
   clientName: string | null;
+  clientInstagram: string | null;
+  directClientId: string | null;
   leadAgencyLabel: string;
   consultationAt: string | null;
   consultationMasterName: string | null;
   createdByName: string | null;
   lines: PreviewLine[];
 };
+
+function clientHref(id: string, label: string): string {
+  const params = new URLSearchParams({ clientIds: id, source: "journalClient" });
+  if (label.trim()) params.set("label", label.trim());
+  return `/admin/direct?${params.toString()}`;
+}
+
+function ClientWhoPaid({
+  id,
+  name,
+  instagram,
+}: {
+  id: string | null;
+  name: string | null;
+  instagram: string | null;
+}) {
+  const label = name || (instagram ? `@${instagram}` : "—");
+  const handle = instagram && !label.includes(`@${instagram}`) ? `@${instagram}` : null;
+  return (
+    <div>
+      {id ? (
+        <a
+          href={clientHref(id, name || "")}
+          target="_blank"
+          rel="noopener noreferrer"
+          className="link link-hover"
+          title="Відкрити клієнта в Direct"
+        >
+          {label}
+        </a>
+      ) : (
+        <span>{label}</span>
+      )}
+      {handle ? <div className="text-gray-500">{handle}</div> : null}
+    </div>
+  );
+}
 
 function formatUah(n: number): string {
   return new Intl.NumberFormat("uk-UA", { minimumFractionDigits: 0, maximumFractionDigits: 2 }).format(n || 0);
@@ -155,8 +197,8 @@ export default function FinanceOperationsPage() {
     <main className="px-3 pb-6 pt-2 space-y-3">
       <div className="flex flex-wrap items-center justify-between gap-2">
         <p className="text-xs text-gray-600 max-w-3xl">
-          Один рядок — один вхідний платіж. Запис, майстри послуг, консультація і агенція ліда фіксуються в момент
-          збереження і далі не змінюються разом із карткою клієнта.
+          Один рядок — один вхідний платіж. Хто платив береться з клієнта запису. Запис, клієнт, майстри послуг,
+          консультація і агенція ліда фіксуються в момент збереження і далі не змінюються разом із карткою.
         </p>
         <button
           className="btn btn-sm btn-primary"
@@ -194,6 +236,9 @@ export default function FinanceOperationsPage() {
                     onClick={() => void pickAppointment(hit.id)}
                   >
                     <span className="tabular-nums">{hit.kyivDay}</span> · {hit.clientName}
+                    {hit.clientInstagram && !hit.clientName.includes(`@${hit.clientInstagram}`)
+                      ? ` · @${hit.clientInstagram}`
+                      : ""}
                     {hit.staffName ? ` · ${hit.staffName}` : ""}
                   </button>
                 </li>
@@ -203,9 +248,19 @@ export default function FinanceOperationsPage() {
 
           {preview && (
             <div className="space-y-2 border rounded-lg p-2">
-              <div className="text-sm font-medium">
-                {preview.clientName} · {preview.kyivDay}
+              <div className="text-sm font-medium flex flex-wrap items-baseline gap-x-2">
+                <ClientWhoPaid
+                  id={preview.directClientId}
+                  name={preview.clientName}
+                  instagram={preview.clientInstagram}
+                />
+                <span className="text-gray-500 font-normal tabular-nums">{preview.kyivDay}</span>
               </div>
+              {!preview.directClientId && (
+                <p className="text-xs text-error">
+                  На записі немає клієнта Direct. Платіж не збережеться, поки не буде зрозуміло, хто платив.
+                </p>
+              )}
               <p className="text-xs text-gray-600">
                 Агенція: {preview.leadAgencyLabel}. Консультація: {formatWhen(preview.consultationAt)}, майстер{" "}
                 {preview.consultationMasterName || "—"}.
@@ -263,7 +318,11 @@ export default function FinanceOperationsPage() {
             <button className="btn btn-sm btn-ghost" disabled={busy} onClick={() => setOpen(false)}>
               Скасувати
             </button>
-            <button className="btn btn-sm btn-primary" disabled={busy || !preview} onClick={() => void save()}>
+            <button
+              className="btn btn-sm btn-primary"
+              disabled={busy || !preview || !preview.directClientId}
+              onClick={() => void save()}
+            >
               {busy ? "…" : "Зберегти"}
             </button>
           </div>
@@ -288,7 +347,9 @@ export default function FinanceOperationsPage() {
             {operations.map((row) => (
               <tr key={row.id}>
                 <td className="whitespace-nowrap tabular-nums">{row.kyivDay}</td>
-                <td>{row.clientName || "—"}</td>
+                <td className="text-xs">
+                  <ClientWhoPaid id={row.directClientId} name={row.clientName} instagram={row.clientInstagram} />
+                </td>
                 <td className="tabular-nums whitespace-nowrap">{formatUah(row.amount)} ₴</td>
                 <td>{row.methodLabel}</td>
                 <td>{row.leadAgencyLabel}</td>

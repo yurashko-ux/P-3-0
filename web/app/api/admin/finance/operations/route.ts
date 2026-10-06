@@ -40,6 +40,8 @@ export async function GET(req: NextRequest) {
       method: row.method,
       methodLabel: methodLabel(row.method),
       clientName: row.clientName,
+      clientInstagram: row.clientInstagram,
+      directClientId: row.directClientId,
       appointmentId: row.appointmentId,
       leadAgency: row.leadAgency,
       leadAgencyLabel: leadAgencyLabel(row.leadAgency),
@@ -79,7 +81,7 @@ export async function POST(req: NextRequest) {
   } catch (err) {
     console.error("[api/admin/finance/operations] POST error:", err);
     const message = err instanceof Error ? err.message : "Помилка збереження";
-    const status = /вкажіть|спосіб|день|не знайдено|суму/i.test(message) ? 400 : 500;
+    const status = /вкажіть|спосіб|день|не знайдено|суму|клієнта/i.test(message) ? 400 : 500;
     return NextResponse.json({ ok: false, error: message }, { status });
   }
 }

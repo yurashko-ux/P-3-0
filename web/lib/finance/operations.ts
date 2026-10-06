@@ -52,6 +52,7 @@ export type OperationPreview = {
   appointmentId: string;
   kyivDay: string;
   clientName: string;
+  clientInstagram: string | null;
   directClientId: string | null;
   suggestedAmount: number;
   leadAgency: string | null;
@@ -62,24 +63,37 @@ export type OperationPreview = {
   lines: OperationLineSnapshot[];
 };
 
-function clientLabel(appointment: {
-  clientName: string | null;
-  directClient: {
-    firstName: string | null;
-    lastName: string | null;
-    instagramUsername: string;
-  } | null;
-}): string {
-  const fromCard = [appointment.directClient?.lastName, appointment.directClient?.firstName]
-    .filter(Boolean)
-    .join(" ")
-    .trim();
-  return (
-    appointment.clientName?.trim() ||
-    fromCard ||
-    appointment.directClient?.instagramUsername ||
-    "Без імені"
-  );
+const clientCardSelect = {
+  id: true,
+  firstName: true,
+  lastName: true,
+  instagramUsername: true,
+  leadAgency: true,
+  consultationBookingDate: true,
+  consultationMasterId: true,
+  consultationMasterName: true,
+} as const;
+
+type ClientCard = {
+  id: string;
+  firstName: string | null;
+  lastName: string | null;
+  instagramUsername: string;
+  leadAgency: string | null;
+  consultationBookingDate: Date | null;
+  consultationMasterId: string | null;
+  consultationMasterName: string | null;
+};
+
+function clientLabel(clientName: string | null, client: Pick<ClientCard, "firstName" | "lastName" | "instagramUsername"> | null): string {
+  const fromCard = [client?.lastName, client?.firstName].filter(Boolean).join(" ").trim();
+  const instagram = client?.instagramUsername?.replace(/^@/, "").trim();
+  return clientName?.trim() || fromCard || (instagram ? `@${instagram}` : "") || "Без імені";
+}
+
+function instagramOf(client: Pick<ClientCard, "instagramUsername"> | null): string | null {
+  const value = client?.instagramUsername?.replace(/^@/, "").trim();
+  return value || null;
 }
 
 export async function previewFinanceOperation(appointmentId: string): Promise<OperationPreview> {
@@ -88,18 +102,7 @@ export async function previewFinanceOperation(appointmentId: string): Promise<Op
     include: {
       lines: { orderBy: { id: "asc" } },
       participants: { orderBy: { sortOrder: "asc" } },
-      directClient: {
-        select: {
-          id: true,
-          firstName: true,
-          lastName: true,
-          instagramUsername: true,
-          leadAgency: true,
-          consultationBookingDate: true,
-          consultationMasterId: true,
-          consultationMasterName: true,
-        },
-      },
+      directClient: { select: clientCardSelect },
     },
   });
   if (!appointment || appointment.status === "deleted") {
@@ -144,13 +147,25 @@ export async function previewFinanceOperation(appointmentId: string): Promise<Op
     }
   }
 
-  const client = appointment.directClient;
+  let client: ClientCard | null = appointment.directClient;
+  if (!client && appointment.altegioClientId && appointment.altegioClientId > 0) {
+    client = await prisma.directClient.findFirst({
+      where: { altegioClientId: appointment.altegioClientId },
+      select: clientCardSelect,
+    });
+    if (client) {
+      console.log(
+        `[finance/operations] Клієнта запису ${appointment.id} знайдено за altegioClientId=${appointment.altegioClientId} → ${client.id}`,
+      );
+    }
+  }
   const agency = client?.leadAgency?.trim() || null;
   return {
     appointmentId: appointment.id,
     kyivDay: appointment.kyivDay,
-    clientName: clientLabel(appointment),
-    directClientId: client?.id || appointment.directClientId,
+    clientName: clientLabel(appointment.clientName, client),
+    clientInstagram: instagramOf(client),
+    directClientId: client?.id || null,
     suggestedAmount: suggested,
     leadAgency: agency,
     leadAgencyLabel: leadAgencyLabel(agency),
@@ -173,6 +188,9 @@ export async function createFinanceOperation(
   if (!(amount > 0)) throw new Error("Вкажіть суму платежу");
 
   const preview = await previewFinanceOperation(input.appointmentId);
+  if (!preview.directClientId) {
+    throw new Error("Запис без клієнта Direct. Платіж має бути привʼязаний до того, хто платив.");
+  }
   const actor = actorOf(auth);
   const created = await prisma.financeOperation.create({
     data: {
@@ -182,6 +200,7 @@ export async function createFinanceOperation(
       appointmentId: preview.appointmentId,
       directClientId: preview.directClientId,
       clientName: preview.clientName,
+      clientInstagram: preview.clientInstagram,
       leadAgency: preview.leadAgency,
       consultationAt: preview.consultationAt ? new Date(preview.consultationAt) : null,
       consultationMasterId: preview.consultationMasterId,
@@ -201,7 +220,7 @@ export async function createFinanceOperation(
     include: { lines: { orderBy: { sortOrder: "asc" } } },
   });
   console.log(
-    `[finance/operations] Платіж ${created.id} ${amount} ₴ ${method} запис=${preview.appointmentId} агенція=${preview.leadAgency || "—"} ким=${actor.name}`,
+    `[finance/operations] Платіж ${created.id} ${amount} ₴ ${method} запис=${preview.appointmentId} клієнт=${preview.directClientId} @${preview.clientInstagram || "—"} агенція=${preview.leadAgency || "—"} ким=${actor.name}`,
   );
   return created;
 }
@@ -253,7 +272,8 @@ export async function searchAppointmentsForOperation(query: string) {
   return rows.map((row) => ({
     id: row.id,
     kyivDay: row.kyivDay,
-    clientName: clientLabel(row),
+    clientName: clientLabel(row.clientName, row.directClient),
+    clientInstagram: instagramOf(row.directClient),
     staffName: row.staffName,
   }));
 }
