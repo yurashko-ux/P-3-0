@@ -1,6 +1,5 @@
-// Маркетинговий звіт для групи агенції.
-// Воронка (консультації, платні) — лише зірочка (agency_1, Агенція 2).
-// Нові ліди — усі джерела, з Instagram-посиланням на кожного ліда.
+// Маркетинговий звіт для групи агенції: лише ліди зі зірочкою (agency_1, Агенція 2).
+// Нові ліди — Instagram-посилання на кожного ліда Агенції 2*.
 
 import { getAllDirectClients } from "@/lib/direct-store";
 import {
@@ -20,8 +19,8 @@ import type { DirectClient } from "@/lib/direct-types";
 
 export type MarketingReportKind = "day" | "week" | "month";
 
-/** agency_heart = Агенція 1 (agency_2), agency_star = Агенція 2 (agency_1), organic = решта. */
-export type MarketingLeadSourceKey = "agency_heart" | "agency_star" | "organic";
+/** agency_star = Агенція 2 (agency_1, зірочка). */
+export type MarketingLeadSourceKey = "agency_star";
 
 export type MarketingLeadLink = LeadInstagramLink;
 
@@ -44,11 +43,10 @@ export type MarketingReportData = {
   paidRecordsCreated: number;
 };
 
-const LEAD_SOURCES: Array<{ key: MarketingLeadSourceKey; label: string }> = [
-  { key: "agency_heart", label: "Агенція 1♥" },
-  { key: "agency_star", label: "Агенція 2*" },
-  { key: "organic", label: "Органіка" },
-];
+const STARRED_LEAD_SOURCE: { key: MarketingLeadSourceKey; label: string } = {
+  key: "agency_star",
+  label: "Ліди Агенція 2*",
+};
 
 function inRange(day: string, from: string, to: string): boolean {
   return Boolean(day) && day >= from && day <= to;
@@ -105,12 +103,6 @@ export function marketingPeriodsForRunDay(runKyivDay: string): Array<{
   return periods;
 }
 
-function leadSourceKey(leadAgency: DirectClient["leadAgency"]): MarketingLeadSourceKey {
-  if (leadAgency === "agency_2") return "agency_heart";
-  if (leadAgency === "agency_1") return "agency_star";
-  return "organic";
-}
-
 function toLeadLink(client: DirectClient): MarketingLeadLink & { sortKey: string } {
   return leadInstagramLink(client);
 }
@@ -125,17 +117,16 @@ export function countStarredMarketing(
   let consultationsAttended = 0;
   let consultationsNoShow = 0;
   let paidRecordsCreated = 0;
-  const buckets = new Map<MarketingLeadSourceKey, Array<MarketingLeadLink & { sortKey: string }>>();
-  for (const source of LEAD_SOURCES) buckets.set(source.key, []);
+  const starredLeads: Array<MarketingLeadLink & { sortKey: string }> = [];
 
   for (const client of clients) {
+    if (client.leadAgency !== "agency_1") continue;
+
     const firstContactDay = toKyivDay(client.firstContactDate);
     if (clientCountsTowardNewLeadsKpi(client) && inRange(firstContactDay, from, to)) {
-      buckets.get(leadSourceKey(client.leadAgency))!.push(toLeadLink(client));
-      if (client.leadAgency === "agency_1") leads += 1;
+      leads += 1;
+      starredLeads.push(toLeadLink(client));
     }
-
-    if (client.leadAgency !== "agency_1") continue;
 
     const consultCreatedDay = toKyivDay(client.consultationRecordCreatedAt);
     if (inRange(consultCreatedDay, from, to)) consultationsCreated += 1;
@@ -152,15 +143,14 @@ export function countStarredMarketing(
     if (inRange(paidCreatedDay, from, to)) paidRecordsCreated += 1;
   }
 
-  const leadSources: MarketingLeadSourceGroup[] = LEAD_SOURCES.map((source) => {
-    const rows = buckets.get(source.key) ?? [];
-    rows.sort((a, b) => a.sortKey.localeCompare(b.sortKey));
-    return {
-      key: source.key,
-      label: source.label,
-      leads: rows.map(({ username, href }) => ({ username, href })),
-    };
-  });
+  starredLeads.sort((a, b) => a.sortKey.localeCompare(b.sortKey));
+  const leadSources: MarketingLeadSourceGroup[] = [
+    {
+      key: STARRED_LEAD_SOURCE.key,
+      label: STARRED_LEAD_SOURCE.label,
+      leads: starredLeads.map(({ username, href }) => ({ username, href })),
+    },
+  ];
 
   return {
     leads,
@@ -200,7 +190,7 @@ function periodTitle(data: MarketingReportData): string {
 export function formatMarketingReportTelegram(data: MarketingReportData): string {
   const kindLabel =
     data.kind === "week" ? "тиждень" : data.kind === "month" ? "місяць" : "день";
-  const leadLines = ["Нові ліди"];
+  const leadLines: string[] = [];
   for (const group of data.leadSources) {
     leadLines.push(`${group.label}: <b>${group.leads.length}</b>`);
     for (const lead of group.leads) leadLines.push(formatLeadInstagramTelegramLine(lead));
