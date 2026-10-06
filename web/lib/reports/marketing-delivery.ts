@@ -8,6 +8,7 @@ import {
   buildMarketingReport,
   formatMarketingReportTelegram,
   marketingPeriodsForRunDay,
+  splitMarketingTelegramMessages,
   type MarketingReportKind,
 } from "@/lib/reports/marketing";
 
@@ -86,12 +87,15 @@ export async function deliverDueMarketingReports(options: {
     try {
       const data = await buildMarketingReport(period.kind, period.from, period.to, clients);
       const text = formatMarketingReportTelegram(data);
-      await sendMessage(
-        chatId,
-        text,
-        { parse_mode: "HTML", link_preview_options: { is_disabled: true } },
-        TELEGRAM_ENV.REPORTS_BOT_TOKEN,
-      );
+      const parts = splitMarketingTelegramMessages(text);
+      for (const part of parts) {
+        await sendMessage(
+          chatId,
+          part,
+          { parse_mode: "HTML", link_preview_options: { is_disabled: true } },
+          TELEGRAM_ENV.REPORTS_BOT_TOKEN,
+        );
+      }
       await writeLastRun(period.kind, {
         runKyivDay: options.runKyivDay,
         ok: true,
@@ -103,6 +107,10 @@ export async function deliverDueMarketingReports(options: {
         to: period.to,
         chatId,
         leads: data.leads,
+        parts: parts.length,
+        newLeadsBySource: Object.fromEntries(
+          data.leadSources.map((group) => [group.label, group.leads.length]),
+        ),
       });
       items.push({ kind: period.kind, from: period.from, to: period.to, ok: true });
     } catch (err) {
@@ -147,16 +155,23 @@ export async function sendMarketingDayReport(kyivDay: string): Promise<{
   assertReportsBotToken();
   const data = await buildMarketingReport("day", kyivDay, kyivDay);
   const text = formatMarketingReportTelegram(data);
-  await sendMessage(
-    chatId,
-    text,
-    { parse_mode: "HTML", link_preview_options: { is_disabled: true } },
-    TELEGRAM_ENV.REPORTS_BOT_TOKEN,
-  );
+  const parts = splitMarketingTelegramMessages(text);
+  for (const part of parts) {
+    await sendMessage(
+      chatId,
+      part,
+      { parse_mode: "HTML", link_preview_options: { is_disabled: true } },
+      TELEGRAM_ENV.REPORTS_BOT_TOKEN,
+    );
+  }
   console.log("[reports/marketing] Тестова відправка денного звіту", {
     kyivDay,
     chatId,
     leads: data.leads,
+    parts: parts.length,
+    newLeadsBySource: Object.fromEntries(
+      data.leadSources.map((group) => [group.label, group.leads.length]),
+    ),
     consultationsCreated: data.consultationsCreated,
     consultationsAttended: data.consultationsAttended,
     consultationsNoShow: data.consultationsNoShow,

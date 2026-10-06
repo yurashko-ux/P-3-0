@@ -5,6 +5,7 @@ import { TELEGRAM_ENV, assertReportsBotToken } from "@/lib/telegram/env";
 import { kvWrite } from "@/lib/kv";
 import { buildDailyOpsReport } from "@/lib/reports/daily-ops";
 import { formatDailyReportTelegram } from "@/lib/reports/format-telegram";
+import { splitTelegramHtml } from "@/lib/reports/lead-instagram-links";
 import { getDailyReportRecipients } from "@/lib/reports/recipients";
 
 export type DeliverDailyReportResult = {
@@ -77,12 +78,15 @@ export async function deliverDailyReport(options?: {
   for (const chatId of chatIds) {
     const name = nameByChatId.get(chatId) ?? null;
     try {
-      await sendMessage(
-        chatId,
-        text,
-        { parse_mode: "HTML", link_preview_options: { is_disabled: true } },
-        botToken,
-      );
+      const parts = splitTelegramHtml(text);
+      for (const part of parts) {
+        await sendMessage(
+          chatId,
+          part,
+          { parse_mode: "HTML", link_preview_options: { is_disabled: true } },
+          botToken,
+        );
+      }
       result.sent += 1;
       result.deliveries.push({ chatId, name, ok: true });
       await logOutgoing({

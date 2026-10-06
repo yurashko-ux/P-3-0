@@ -2,6 +2,10 @@
 
 import type { DailyOpsReportData } from "@/lib/reports/daily-ops";
 import { formatNameListForTelegram } from "@/lib/reports/daily-ops-extras";
+import {
+  formatLeadInstagramTelegramLine,
+  type LeadInstagramLink,
+} from "@/lib/reports/lead-instagram-links";
 
 function formatKyivDateLabel(kyivDay: string): string {
   const [, m, d] = kyivDay.split("-");
@@ -62,15 +66,25 @@ function formatActiveBasePeople(
   return `${countHtml}${namesHtml}`;
 }
 
+function formatLeadSourceLines(
+  title: string,
+  count: number,
+  leads: LeadInstagramLink[],
+): string[] {
+  const lines = [`${title}: <b>${count}</b>`];
+  for (const lead of leads) lines.push(formatLeadInstagramTelegramLine(lead));
+  return lines;
+}
+
 export function formatDailyReportTelegram(data: DailyOpsReportData): string {
   const missedNames = formatNameListForTelegram(data.callsMissedNames);
 
   return [
     `<b>📊 Щоденний звіт · ${formatKyivDateLabel(data.kyivDay)}</b>`,
     "────────────────",
-    `👤 Ліди Агенція 1♥: <b>${data.newLeadsAgency1Count}</b>`,
-    `👤 Ліди Агенція 2*: <b>${data.newLeadsAgency2Count}</b>`,
-    `👤 Ліди Organic: <b>${data.newLeadsOrganicCount}</b>`,
+    ...formatLeadSourceLines("👤 Ліди Агенція 1♥", data.newLeadsAgency1Count, data.newLeadsAgency1Links),
+    ...formatLeadSourceLines("👤 Ліди Агенція 2*", data.newLeadsAgency2Count, data.newLeadsAgency2Links),
+    ...formatLeadSourceLines("👤 Ліди Organic", data.newLeadsOrganicCount, data.newLeadsOrganicLinks),
     `Записалось на консультацію: <b>${data.leadsRecordsCount}</b>`,
     `Прийшло на консультацію: <b>${data.consultationRealized}</b>`,
     `Нові клієнти: <b>${data.newClientsCount}</b>`,

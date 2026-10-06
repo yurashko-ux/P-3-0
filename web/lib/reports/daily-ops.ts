@@ -17,19 +17,23 @@ import {
   getActiveBaseDailyMetrics,
   getBinotelIncomingMissedOnKyivDay,
 } from "@/lib/reports/daily-ops-extras";
-import type { DirectClient, DirectLeadAgency } from "@/lib/direct-types";
+import type { DirectClient } from "@/lib/direct-types";
 import { countLeadsStatsRecordsOnKyivDay } from "@/lib/direct-leads-stats-filters";
 import { fetchFinanceSummary } from "@/lib/altegio/analytics";
+import { leadInstagramLink, type LeadInstagramLink } from "@/lib/reports/lead-instagram-links";
 
 export type DailyOpsReportData = {
   kyivDay: string;
   newLeadsCount: number;
   /** Нові ліди з серцем (agency_2, Агенція 1). */
   newLeadsAgency1Count: number;
+  newLeadsAgency1Links: LeadInstagramLink[];
   /** Нові ліди зі зірочкою (agency_1, Агенція 2). */
   newLeadsAgency2Count: number;
+  newLeadsAgency2Links: LeadInstagramLink[];
   /** Нові ліди без знака агенції. Решта офіційного newLeadsCount після двох агенцій. */
   newLeadsOrganicCount: number;
+  newLeadsOrganicLinks: LeadInstagramLink[];
   /** Колонка «Записів» у таблиці «Ліди» (F4 за день). */
   leadsRecordsCount: number;
   consultationCreated: number;
@@ -134,29 +138,41 @@ export async function buildDailyOpsReport(options?: {
   ]);
 
   const newLeadsCount = today.newLeadsCount ?? 0;
-  const countAgency = (agency: DirectLeadAgency) => {
-    let n = 0;
-    for (const client of clients) {
-      if (client.leadAgency !== agency) continue;
-      if (!clientCountsTowardNewLeadsKpi(client)) continue;
-      if (toKyivDay(client.firstContactDate) !== kyivDay) continue;
-      n += 1;
-    }
-    return n;
-  };
-  const newLeadsAgency2Count = Math.min(countAgency("agency_1"), newLeadsCount);
+  const heartRows: Array<LeadInstagramLink & { sortKey: string }> = [];
+  const starRows: Array<LeadInstagramLink & { sortKey: string }> = [];
+  const organicRows: Array<LeadInstagramLink & { sortKey: string }> = [];
+  for (const client of clients) {
+    if (!clientCountsTowardNewLeadsKpi(client)) continue;
+    if (toKyivDay(client.firstContactDate) !== kyivDay) continue;
+    const link = leadInstagramLink(client);
+    if (client.leadAgency === "agency_2") heartRows.push(link);
+    else if (client.leadAgency === "agency_1") starRows.push(link);
+    else organicRows.push(link);
+  }
+  const newLeadsAgency2Count = Math.min(starRows.length, newLeadsCount);
   const newLeadsAgency1Count = Math.min(
-    countAgency("agency_2"),
+    heartRows.length,
     Math.max(0, newLeadsCount - newLeadsAgency2Count),
   );
   const newLeadsOrganicCount = Math.max(0, newLeadsCount - newLeadsAgency2Count - newLeadsAgency1Count);
+  const takeLeadLinks = (
+    rows: Array<LeadInstagramLink & { sortKey: string }>,
+    count: number,
+  ): LeadInstagramLink[] =>
+    rows
+      .sort((a, b) => a.sortKey.localeCompare(b.sortKey))
+      .slice(0, Math.max(0, count))
+      .map(({ username, href }) => ({ username, href }));
 
   return {
     kyivDay,
     newLeadsCount,
     newLeadsAgency1Count,
+    newLeadsAgency1Links: takeLeadLinks(heartRows, newLeadsAgency1Count),
     newLeadsAgency2Count,
+    newLeadsAgency2Links: takeLeadLinks(starRows, newLeadsAgency2Count),
     newLeadsOrganicCount,
+    newLeadsOrganicLinks: takeLeadLinks(organicRows, newLeadsOrganicCount),
     leadsRecordsCount: countLeadsStatsRecordsOnKyivDay(clients as DirectClient[], kyivDay),
     consultationCreated: today.consultationCreated ?? 0,
     consultationRealized: today.consultationRealized ?? 0,
