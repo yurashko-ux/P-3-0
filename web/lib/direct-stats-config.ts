@@ -47,6 +47,15 @@ export function clientCountsTowardNewLeadsKpi(client: {
   if (client.state === 'binotel-lead') return false;
   const u = String(client.instagramUsername || '');
   if (u.startsWith('binotel_')) return false;
+  // Картка з Altegio/дзвінка без реального Instagram — не новий лід звіту.
+  if (
+    u.startsWith('missing_instagram_') ||
+    u.startsWith('no_instagram_') ||
+    u.startsWith('altegio_') ||
+    u.startsWith('__no_ig__')
+  ) {
+    return false;
+  }
   return true;
 }
 
