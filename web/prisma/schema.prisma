@@ -162,6 +162,7 @@ model DirectClient {
   inactiveBaseLinkTokens InactiveBaseCampaignLinkToken[]
   salonAppointments      SalonAppointment[]
   depositAccounts        ClientDepositAccount[]
+  financeOperations      FinanceOperation[]
 
   // Індекси для швидкого пошуку
   @@unique([instagramUsername])
@@ -503,6 +504,7 @@ model SalonAppointment {
   participants         SalonAppointmentParticipant[]
   goodLines            SalonAppointmentGoodLine[]
   changeLogs           SalonAppointmentChangeLog[]
+  financeOperations    FinanceOperation[]
 
   @@index([datetime])
   @@index([kyivDay])
@@ -658,6 +660,54 @@ model SalonCheckoutPayment {
   @@index([paymentKind])
   @@index([depositAccountId])
   @@map("salon_checkout_payments")
+}
+
+/// Вхідний платіж Kresco. Ланцюжок фіксується в момент збереження і далі не перераховується з картки клієнта.
+model FinanceOperation {
+  id                      String   @id @default(uuid())
+  kyivDay                 String
+  amount                  Float
+  /// cash | card | deposit
+  method                  String
+  appointmentId           String?
+  directClientId          String?
+  clientName              String?
+  /// agency_1 | agency_2 | organic — зріз leadAgency на момент оплати
+  leadAgency              String?
+  consultationAt          DateTime?
+  consultationMasterId    String?
+  consultationMasterName  String?
+  createdByUserId         String?
+  createdByName           String?
+  createdAt               DateTime @default(now())
+
+  appointment  SalonAppointment?       @relation(fields: [appointmentId], references: [id], onDelete: SetNull)
+  directClient DirectClient?           @relation(fields: [directClientId], references: [id], onDelete: SetNull)
+  lines        FinanceOperationLine[]
+
+  @@index([kyivDay])
+  @@index([appointmentId])
+  @@index([directClientId])
+  @@index([leadAgency])
+  @@index([method])
+  @@map("finance_operations")
+}
+
+/// Зріз послуги запису на момент оплати. Якщо на рядку кілька людей — кожному повна сума рядка.
+model FinanceOperationLine {
+  id             String @id @default(uuid())
+  operationId    String
+  title          String
+  amount         Float  @default(0)
+  staffName      String?
+  altegioStaffId Int?
+  sortOrder      Int    @default(0)
+
+  operation FinanceOperation @relation(fields: [operationId], references: [id], onDelete: Cascade)
+
+  @@index([operationId])
+  @@index([altegioStaffId])
+  @@map("finance_operation_lines")
 }
 
 /// Товар / волосся в чеку каси (не змішуємо з SalonAppointmentLine).
