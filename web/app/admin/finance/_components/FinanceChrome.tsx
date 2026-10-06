@@ -8,6 +8,7 @@ export function FinanceChrome({ children }: { children: React.ReactNode }) {
   const onDocs = pathname === "/admin/finance" || pathname === "/admin/finance/";
   const onPayments = pathname?.startsWith("/admin/finance/payments");
   const onOperations = pathname?.startsWith("/admin/finance/operations");
+  const onArchive = pathname?.startsWith("/admin/finance/archive");
 
   return (
     <div className="min-h-screen bg-[#f6f7fb] text-gray-900">
@@ -30,6 +31,12 @@ export function FinanceChrome({ children }: { children: React.ReactNode }) {
           className={`btn btn-sm min-h-0 h-8 ${onOperations ? "btn-neutral" : "btn-ghost"}`}
         >
           Фінансові операції
+        </Link>
+        <Link
+          href="/admin/finance/archive"
+          className={`btn btn-sm min-h-0 h-8 ${onArchive ? "btn-neutral" : "btn-ghost"}`}
+        >
+          Архів Altegio
         </Link>
         <Link
           href="/admin/finance-report"

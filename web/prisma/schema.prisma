@@ -163,6 +163,7 @@ model DirectClient {
   salonAppointments      SalonAppointment[]
   depositAccounts        ClientDepositAccount[]
   financeOperations      FinanceOperation[]
+  altegioClientArchives  AltegioClientArchive[]
 
   // Індекси для швидкого пошуку
   @@unique([instagramUsername])
@@ -1204,6 +1205,106 @@ model AltegioFinanceSyncState {
   @@unique([companyId, syncKey])
   @@index([status])
   @@map("altegio_finance_sync_states")
+}
+
+/// Каталог клієнтів Altegio. Не створює лідів Direct і не перезаписує картку.
+model AltegioClientArchive {
+  id               String    @id @default(uuid())
+  companyId        String
+  altegioClientId  Int
+  name             String?
+  phone            String?
+  email            String?
+  spent            Float?
+  visits           Int?
+  lastVisitAt      DateTime?
+  directClientId   String?
+  rawData          Json?
+  syncedAt         DateTime  @default(now())
+
+  directClient DirectClient? @relation(fields: [directClientId], references: [id], onDelete: SetNull)
+
+  @@unique([companyId, altegioClientId])
+  @@index([companyId])
+  @@index([name])
+  @@index([phone])
+  @@index([directClientId])
+  @@map("altegio_client_archive")
+}
+
+/// Оплата візиту з Altegio. Не пишеться в FinanceOperation і не годує зарплату.
+model AltegioVisitPayment {
+  id                   String   @id @default(uuid())
+  companyId            String
+  altegioRecordId      Int
+  txKey                String
+  altegioTransactionId Int?
+  appointmentId        String?
+  altegioClientId      Int?
+  clientName           String?
+  kyivDay              String?
+  amount               Float    @default(0)
+  method               String?
+  staffId              Int?
+  staffName            String?
+  serviceTitle         String?
+  deleted              Boolean  @default(false)
+  rawData              Json?
+  syncedAt             DateTime @default(now())
+
+  @@unique([companyId, altegioRecordId, txKey])
+  @@index([companyId])
+  @@index([altegioRecordId])
+  @@index([altegioClientId])
+  @@index([kyivDay])
+  @@index([appointmentId])
+  @@map("altegio_visit_payments")
+}
+
+/// Запис уже перевірено на оплати, навіть якщо їх нуль.
+model AltegioVisitPaymentScan {
+  id              String   @id @default(uuid())
+  companyId       String
+  altegioRecordId Int
+  paymentCount    Int      @default(0)
+  scannedAt       DateTime @default(now())
+
+  @@unique([companyId, altegioRecordId])
+  @@index([companyId])
+  @@map("altegio_visit_payment_scans")
+}
+
+/// Курсор батчів архіву, щоб повторний запуск продовжував з місця зупинки.
+model AltegioArchiveCursor {
+  id        String   @id @default(uuid())
+  companyId String
+  syncKey   String
+  cursor    String   @default("")
+  status    String   @default("idle")
+  detail    String?
+  updatedAt DateTime @updatedAt
+
+  @@unique([companyId, syncKey])
+  @@index([status])
+  @@map("altegio_archive_cursors")
+}
+
+/// Звірка місяця: скільки віддав Altegio і скільки лежить в архіві.
+model AltegioArchiveMonthCheck {
+  id         String   @id @default(uuid())
+  companyId  String
+  kyivMonth  String
+  kind       String
+  apiCount   Int      @default(0)
+  dbCount    Int      @default(0)
+  dbAmount   Float    @default(0)
+  note       String?
+  checkedAt  DateTime @default(now())
+
+  @@unique([companyId, kyivMonth, kind])
+  @@index([companyId])
+  @@index([kind])
+  @@map("altegio_archive_month_checks")
 }
 
 // Намір платежу, створений адміністратором з Telegram/UI до появи документа в Altegio.
