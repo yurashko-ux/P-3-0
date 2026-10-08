@@ -8,6 +8,7 @@ type CashTile = {
   currency: "UAH" | "USD" | "EUR";
   balanceUah: number;
   balanceFx: number | null;
+  factBalanceUah: number | null;
 };
 
 function money(n: number, digits = 0) {
@@ -51,7 +52,7 @@ export default function CashBalancesPage() {
     <main className="px-3 pb-6 pt-2 space-y-3">
       <div className="flex items-center gap-2">
         <p className="text-xs text-gray-600">
-          Готівка в касах: Каса, Долар, Євро. ФОП і банк тут не показуємо.
+          Усі рахунки. Безготівка — зі зведення; якщо в банку є незведений платіж, у дужках фактичний баланс.
         </p>
         <button type="button" className="btn btn-sm ml-auto" onClick={() => void load()} disabled={loading}>
           {loading ? "…" : "Оновити"}
@@ -65,10 +66,10 @@ export default function CashBalancesPage() {
       )}
 
       {!loading && !error && tiles.length === 0 && (
-        <p className="text-sm text-gray-500">Готівкових кас немає.</p>
+        <p className="text-sm text-gray-500">Рахунків немає.</p>
       )}
 
-      <div className="grid grid-cols-2 sm:grid-cols-3 gap-2 max-w-xl">
+      <div className="grid grid-cols-2 sm:grid-cols-3 gap-2 max-w-3xl">
         {tiles.map((tile) => (
           <div
             key={tile.id}
@@ -85,6 +86,11 @@ export default function CashBalancesPage() {
             ) : (
               <span className="mt-1 text-lg font-semibold tabular-nums text-gray-900">
                 {money(tile.balanceUah)} грн
+              </span>
+            )}
+            {tile.factBalanceUah != null && (
+              <span className="mt-0.5 text-[11px] tabular-nums text-gray-500">
+                (факт: {money(tile.factBalanceUah)} грн)
               </span>
             )}
           </div>
