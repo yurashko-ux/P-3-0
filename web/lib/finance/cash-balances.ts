@@ -1,11 +1,17 @@
 // Залишки рахунків для розділу Каса.
-// Готівка: баланс Altegio плюс рухи Kresco, які в Altegio не відправлялись.
-// Безготівка: баланс зі зведення (Altegio). Якщо в банку є незведений платіж — поруч фактичний баланс monobank.
+// Готівка: ручний старт на кінець дня + оплати і документи Kresco з наступного дня.
+// Безготівка: фактичний баланс monobank. Зведення платежів тут не рахуємо.
 
 import { prisma } from "@/lib/prisma";
 import { fetchAltegioAccounts } from "@/lib/altegio/accounts";
 import { isCashAltegioAccount } from "@/lib/bank/incoming-reconcile-matching";
 import { isEurCashAccountTitle, isUsdCashAccountTitle } from "@/lib/journal/checkout";
+import {
+  CASH_OPENING_EUR,
+  CASH_OPENING_KYIV_DAY,
+  CASH_OPENING_UAH,
+  CASH_OPENING_USD,
+} from "@/lib/finance/cash-openings";
 
 export type CashCurrency = "UAH" | "USD" | "EUR";
 
@@ -13,12 +19,15 @@ export type CashBalanceTile = {
   id: number;
   title: string;
   currency: CashCurrency;
-  /** Готівка: Altegio + локальні рухи. Безготівка: баланс зі зведення (Altegio). */
-  balanceUah: number;
-  /** Скільки валюти реально прийняли в Kresco і ще не відправили в Altegio. */
+  cash: boolean;
+  /** Готівка в грн або фактичний баланс банку. null — суми немає. */
+  balanceUah: number | null;
+  /** Залишок у валюті каси. null — валютний старт ще не заданий або це гривня. */
   balanceFx: number | null;
-  /** Фактичний баланс monobank, якщо є незведений банківський платіж. */
-  factBalanceUah: number | null;
+  /** Готівкова каса без початкового залишку. */
+  openingPending: boolean;
+  /** Безготівковий рахунок прив’язаний до monobank. */
+  hasBank: boolean;
 };
 
 function money(n: number): number {
@@ -31,6 +40,12 @@ function currencyOf(title: string): CashCurrency {
   return "UAH";
 }
 
+function openingOf(currency: CashCurrency): number | null {
+  if (currency === "USD") return CASH_OPENING_USD;
+  if (currency === "EUR") return CASH_OPENING_EUR;
+  return CASH_OPENING_UAH;
+}
+
 function isClientDepositTitle(title: string): boolean {
   const t = String(title || "").toLowerCase();
   return /депозит|deposit|рахунок клієнт|personal account|loyalty/.test(t);
@@ -38,7 +53,7 @@ function isClientDepositTitle(title: string): boolean {
 
 function sortTiles(a: CashBalanceTile, b: CashBalanceTile): number {
   const cashRank = (t: CashBalanceTile) => {
-    if (!isCashAltegioAccount(t.title)) return 3;
+    if (!t.cash) return 3;
     if (t.currency === "USD") return 1;
     if (t.currency === "EUR") return 2;
     return 0;
@@ -58,147 +73,160 @@ export async function listCashBalances(): Promise<CashBalanceTile[]> {
     .map((account) => ({
       id: Number(account.id) || 0,
       title: account.title,
-      balanceUah: account.rawBalance != null ? money(account.rawBalance) : 0,
       cash: isCashAltegioAccount(account.title),
+      currency: currencyOf(account.title),
     }))
     .filter((account) => account.id > 0 && !isClientDepositTitle(account.title));
 
-  const ids = listed.map((account) => account.id);
-  const cashIds = listed.filter((account) => account.cash).map((account) => account.id);
-  const uahById = new Map(listed.map((account) => [account.id, account.balanceUah]));
-  const fxById = new Map<number, number>();
-
-  if (ids.length === 0) {
+  if (listed.length === 0) {
     console.log("[finance/cash] Рахунків Altegio немає");
     return [];
   }
 
-  const [payments, documents] = await Promise.all([
-    prisma.salonCheckoutPayment.findMany({
-      where: { altegioTransactionId: null, accountId: { in: cashIds.length > 0 ? cashIds : [-1] } },
-      select: { accountId: true, amount: true, amountFx: true, currencyCode: true },
-    }),
-    prisma.financeDocument.findMany({
-      where: {
-        syncStatus: "local",
-        status: { not: "void" },
-        OR: [
-          { accountId: { in: cashIds.length > 0 ? cashIds : [-1] } },
-          { counterAccountId: { in: cashIds.length > 0 ? cashIds : [-1] } },
-        ],
-      },
-      select: {
-        type: true,
-        amountUah: true,
-        accountId: true,
-        counterAccountId: true,
-      },
-    }),
-  ]);
+  const cashAccounts = listed.filter((account) => account.cash && openingOf(account.currency) != null);
+  const cashIds = cashAccounts.map((account) => account.id);
+  const uahExtra = new Map<number, number>();
+  const fxExtra = new Map<number, number>();
 
-  for (const payment of payments) {
-    uahById.set(payment.accountId, money((uahById.get(payment.accountId) || 0) + payment.amount));
-    const fx = payment.amountFx != null && payment.amountFx > 0 ? payment.amountFx : 0;
-    const code = String(payment.currencyCode || "").toUpperCase();
-    if (fx > 0 && (code === "USD" || code === "EUR")) {
-      fxById.set(payment.accountId, money((fxById.get(payment.accountId) || 0) + fx));
+  if (cashIds.length > 0) {
+    const [payments, documents] = await Promise.all([
+      prisma.salonCheckoutPayment.findMany({
+        where: {
+          accountId: { in: cashIds },
+          checkout: { kyivDay: { gt: CASH_OPENING_KYIV_DAY } },
+        },
+        select: { accountId: true, amount: true, amountFx: true, currencyCode: true },
+      }),
+      prisma.financeDocument.findMany({
+        where: {
+          source: "kresco",
+          status: { not: "void" },
+          kyivDay: { gt: CASH_OPENING_KYIV_DAY },
+          OR: [{ accountId: { in: cashIds } }, { counterAccountId: { in: cashIds } }],
+        },
+        select: {
+          type: true,
+          amountUah: true,
+          accountId: true,
+          counterAccountId: true,
+        },
+      }),
+    ]);
+
+    const currencyById = new Map(cashAccounts.map((account) => [account.id, account.currency]));
+    for (const payment of payments) {
+      const currency = currencyById.get(payment.accountId) || "UAH";
+      const code = String(payment.currencyCode || "").toUpperCase();
+      const fx = payment.amountFx != null && payment.amountFx > 0 ? payment.amountFx : 0;
+      if (currency !== "UAH" && fx > 0 && code === currency) {
+        fxExtra.set(payment.accountId, money((fxExtra.get(payment.accountId) || 0) + fx));
+      } else {
+        uahExtra.set(payment.accountId, money((uahExtra.get(payment.accountId) || 0) + payment.amount));
+      }
+    }
+
+    const addUah = (accountId: number | null | undefined, delta: number) => {
+      const id = Number(accountId) || 0;
+      if (!currencyById.has(id)) return;
+      uahExtra.set(id, money((uahExtra.get(id) || 0) + delta));
+    };
+    for (const doc of documents) {
+      const amount = money(doc.amountUah);
+      if (!(amount > 0)) continue;
+      if (doc.type === "income") addUah(doc.accountId, amount);
+      else if (doc.type === "expense") addUah(doc.accountId, -amount);
+      else if (doc.type === "transfer") {
+        addUah(doc.accountId, -amount);
+        addUah(doc.counterAccountId, amount);
+      }
     }
   }
 
-  const addUah = (accountId: number | null | undefined, delta: number) => {
-    const id = Number(accountId) || 0;
-    if (!uahById.has(id)) return;
-    uahById.set(id, money((uahById.get(id) || 0) + delta));
-  };
-
-  for (const doc of documents) {
-    const amount = money(doc.amountUah);
-    if (!(amount > 0)) continue;
-    if (doc.type === "income") addUah(doc.accountId, amount);
-    else if (doc.type === "expense") addUah(doc.accountId, -amount);
-    else if (doc.type === "transfer") {
-      addUah(doc.accountId, -amount);
-      addUah(doc.counterAccountId, amount);
-    }
-  }
-
-  const factByAltegioId = await loadUnreconciledBankFacts(
-    listed.filter((account) => !account.cash).map((account) => account.id),
-  );
+  const bankByAltegio = await loadBankBalances(listed.filter((account) => !account.cash).map((account) => account.id));
 
   const tiles = listed
     .map((account) => {
-      const currency = currencyOf(account.title);
-      const fx = fxById.get(account.id);
+      if (!account.cash) {
+        const bank = bankByAltegio.get(account.id);
+        return {
+          id: account.id,
+          title: account.title,
+          currency: account.currency,
+          cash: false,
+          balanceUah: bank ?? null,
+          balanceFx: null,
+          openingPending: false,
+          hasBank: bank != null,
+        };
+      }
+      const opening = openingOf(account.currency);
+      if (opening == null) {
+        return {
+          id: account.id,
+          title: account.title,
+          currency: account.currency,
+          cash: true,
+          balanceUah: null,
+          balanceFx: null,
+          openingPending: true,
+          hasBank: false,
+        };
+      }
+      const fxDelta = fxExtra.get(account.id) || 0;
+      const uahDelta = uahExtra.get(account.id) || 0;
+      if (account.currency === "UAH") {
+        return {
+          id: account.id,
+          title: account.title,
+          currency: account.currency,
+          cash: true,
+          balanceUah: money(opening + uahDelta),
+          balanceFx: null,
+          openingPending: false,
+          hasBank: false,
+        };
+      }
       return {
         id: account.id,
         title: account.title,
-        currency,
-        balanceUah: uahById.get(account.id) || 0,
-        balanceFx: account.cash && currency !== "UAH" && fx != null && fx > 0 ? fx : null,
-        factBalanceUah: account.cash ? null : factByAltegioId.get(account.id) ?? null,
+        currency: account.currency,
+        cash: true,
+        balanceFx: money(opening + fxDelta),
+        balanceUah: uahDelta !== 0 ? uahDelta : null,
+        openingPending: false,
+        hasBank: false,
       };
     })
     .sort(sortTiles);
 
   console.log(
-    `[finance/cash] Рахунки: ${tiles
-      .map((t) => {
-        const fx = t.balanceFx != null ? ` / ${t.balanceFx} ${t.currency}` : "";
-        const fact = t.factBalanceUah != null ? ` факт=${t.factBalanceUah}` : "";
-        return `${t.title}=${t.balanceUah} грн${fx}${fact}`;
+    `[finance/cash] Рахунки з ${CASH_OPENING_KYIV_DAY}: ${tiles
+      .map((tile) => {
+        if (tile.openingPending) return `${tile.title}=старт не заданий`;
+        if (!tile.cash && !tile.hasBank) return `${tile.title}=немає банку`;
+        const fx = tile.balanceFx != null ? `${tile.balanceFx} ${tile.currency}` : "";
+        const uah = tile.balanceUah != null ? `${tile.balanceUah} грн` : "";
+        return `${tile.title}=${[fx, uah].filter(Boolean).join(" / ")}`;
       })
       .join("; ")}`,
   );
   return tiles;
 }
 
-/** Фактичний баланс monobank по рахунку Altegio, якщо є хоч один незведений банківський платіж. */
-async function loadUnreconciledBankFacts(altegioIds: number[]): Promise<Map<number, number>> {
+async function loadBankBalances(altegioIds: number[]): Promise<Map<number, number>> {
   const out = new Map<number, number>();
   if (altegioIds.length === 0) return out;
-
   const bankAccounts = await prisma.bankAccount.findMany({
     where: {
       includeInOperationsTable: true,
       altegioAccountId: { in: altegioIds.map(String) },
     },
-    select: { id: true, altegioAccountId: true, balance: true },
+    select: { altegioAccountId: true, balance: true },
   });
-  if (bankAccounts.length === 0) return out;
-
-  const unmatched = await prisma.bankStatementItem.findMany({
-    where: {
-      accountId: { in: bankAccounts.map((account) => account.id) },
-      OR: [
-        {
-          amount: { gt: BigInt(0) },
-          altegioIncomingMatch: null,
-          altegioDepositMatch: null,
-        },
-        {
-          amount: { lt: BigInt(0) },
-          altegioPaymentMatch: null,
-        },
-      ],
-    },
-    select: { accountId: true },
-    distinct: ["accountId"],
-  });
-  const unmatchedBankIds = new Set(unmatched.map((row) => row.accountId));
-
-  const byAltegio = new Map<number, { balance: number; unmatched: boolean }>();
   for (const account of bankAccounts) {
     const altegioId = Number(account.altegioAccountId) || 0;
     if (!(altegioId > 0)) continue;
-    const current = byAltegio.get(altegioId) || { balance: 0, unmatched: false };
-    current.balance = money(current.balance + kopToUah(account.balance));
-    if (unmatchedBankIds.has(account.id)) current.unmatched = true;
-    byAltegio.set(altegioId, current);
-  }
-
-  for (const [altegioId, row] of byAltegio) {
-    if (row.unmatched) out.set(altegioId, row.balance);
+    out.set(altegioId, money((out.get(altegioId) || 0) + kopToUah(account.balance)));
   }
   return out;
 }

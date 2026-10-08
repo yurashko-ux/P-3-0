@@ -6,9 +6,11 @@ type CashTile = {
   id: number;
   title: string;
   currency: "UAH" | "USD" | "EUR";
-  balanceUah: number;
+  cash: boolean;
+  balanceUah: number | null;
   balanceFx: number | null;
-  factBalanceUah: number | null;
+  openingPending: boolean;
+  hasBank: boolean;
 };
 
 function money(n: number, digits = 0) {
@@ -52,7 +54,7 @@ export default function CashBalancesPage() {
     <main className="px-3 pb-6 pt-2 space-y-3">
       <div className="flex items-center gap-2">
         <p className="text-xs text-gray-600">
-          Усі рахунки. Безготівка — зі зведення; якщо в банку є незведений платіж, у дужках фактичний баланс.
+          Готівка — залишок на кінець 8 жовтня плюс рухи Kresco з 9 жовтня. Безготівка — фактичний баланс банку.
         </p>
         <button type="button" className="btn btn-sm ml-auto" onClick={() => void load()} disabled={loading}>
           {loading ? "…" : "Оновити"}
@@ -76,21 +78,22 @@ export default function CashBalancesPage() {
             className="flex flex-col items-center justify-center min-h-[6.5rem] rounded-lg border-2 border-gray-200 bg-white px-3 py-3 text-center"
           >
             <span className="text-[11px] font-medium text-gray-800 leading-tight">{tile.title}</span>
-            {tile.balanceFx != null ? (
+            {tile.openingPending ? (
+              <span className="mt-1 text-[11px] text-gray-500">Початковий залишок ще не заданий</span>
+            ) : !tile.cash && !tile.hasBank ? (
+              <span className="mt-1 text-[11px] text-gray-500">Немає банківського рахунку</span>
+            ) : tile.balanceFx != null ? (
               <>
                 <span className="mt-1 text-lg font-semibold tabular-nums text-gray-900">
                   {money(tile.balanceFx)} {fxSymbol(tile.currency)}
                 </span>
-                <span className="text-[11px] tabular-nums text-gray-500">{money(tile.balanceUah)} грн</span>
+                {tile.balanceUah != null && (
+                  <span className="text-[11px] tabular-nums text-gray-500">{money(tile.balanceUah)} грн</span>
+                )}
               </>
             ) : (
               <span className="mt-1 text-lg font-semibold tabular-nums text-gray-900">
-                {money(tile.balanceUah)} грн
-              </span>
-            )}
-            {tile.factBalanceUah != null && (
-              <span className="mt-0.5 text-[11px] tabular-nums text-gray-500">
-                (факт: {money(tile.factBalanceUah)} грн)
+                {money(tile.balanceUah || 0)} грн
               </span>
             )}
           </div>
