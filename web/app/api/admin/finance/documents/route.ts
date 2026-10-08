@@ -25,7 +25,9 @@ export async function GET(req: NextRequest) {
     return NextResponse.json({
       ok: true,
       documents,
-      ...(options ? { accounts: options.accounts, purposes: options.purposes } : {}),
+      ...(options
+        ? { accounts: options.accounts, purposes: options.purposes, accountArchive: options.accountArchive }
+        : {}),
     });
   } catch (err) {
     console.error("[api/admin/finance/documents] GET error:", err);

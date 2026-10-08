@@ -19,6 +19,7 @@ import { createWriteOff } from "@/lib/warehouse/documents-kresco";
 import { getUsdUahRate } from "@/lib/warehouse/fx";
 import { resolveJournalCompanyId } from "./company-id";
 import { isJournalAltegioWriteSkipped } from "./altegio-write-gate";
+import { hiddenFinanceAccountIds } from "@/lib/finance/account-archive";
 
 function toMoney(n: number): number {
   return Math.round(n * 100) / 100;
@@ -123,9 +124,12 @@ export async function getCheckoutContext(appointmentId: string, catalogSearch?: 
   if (!appointment) throw new Error("Запис не знайдено");
   if (appointment.status === "deleted") throw new Error("Запис видалено");
 
-  const accountsAll = await fetchAltegioAccounts();
+  const [accountsAll, hiddenAccountIds] = await Promise.all([
+    fetchAltegioAccounts(),
+    hiddenFinanceAccountIds(),
+  ]);
   const accounts = accountsAll
-    .filter((a) => !isDepositAccountTitle(a.title))
+    .filter((a) => !isDepositAccountTitle(a.title) && !hiddenAccountIds.has(Number(a.id) || 0))
     .map((a) => ({
       id: Number(a.id),
       title: a.title,
@@ -600,7 +604,11 @@ export async function closeVisitFromKresco(input: CloseVisitInput) {
     }
   }
 
+  const hiddenAccountIds = await hiddenFinanceAccountIds();
   for (const part of accountParts) {
+    if (hiddenAccountIds.has(part.accountId)) {
+      throw new Error(`Рахунок «${part.accountTitle || part.accountId}» в архіві`);
+    }
     const account = accounts.find((a) => Number(a.id) === part.accountId);
     if (!account && !part.accountTitle) {
       throw new Error(`Рахунок Altegio #${part.accountId} не знайдено`);

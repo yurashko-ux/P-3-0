@@ -4,6 +4,7 @@ import { prisma } from "@/lib/prisma";
 import { kyivCalendarTodayYmd, kyivYmdFromDateTimeInput } from "@/lib/direct-kyiv-today";
 import { fetchAltegioAccounts } from "@/lib/altegio/accounts";
 import { ALTEGIO_ENV } from "@/lib/altegio/env";
+import { hiddenFinanceAccountIds, listFinanceAccountArchive } from "@/lib/finance/account-archive";
 
 function toMoney(n: number): number {
   return Math.round(n * 100) / 100;
@@ -44,7 +45,7 @@ export async function listFinanceDocuments(params?: { limit?: number; type?: str
 
 export async function listFinanceFormOptions() {
   const companyId = resolveCompanyId();
-  const [accounts, purposes] = await Promise.all([
+  const [accounts, purposes, hiddenIds, accountArchive] = await Promise.all([
     fetchAltegioAccounts(),
     prisma.altegioPaymentPurpose.findMany({
       where: {
@@ -55,12 +56,15 @@ export async function listFinanceFormOptions() {
       orderBy: { title: "asc" },
       take: 500,
     }),
+    hiddenFinanceAccountIds(),
+    listFinanceAccountArchive(),
   ]);
 
   return {
     accounts: accounts
       .map((a) => ({ id: Number(a.id), title: a.title, type: a.type }))
-      .filter((a) => a.id > 0),
+      .filter((a) => a.id > 0 && !hiddenIds.has(a.id)),
+    accountArchive,
     purposes: purposes.map((p) => ({
       id: p.id,
       title: p.title,

@@ -12,6 +12,7 @@ import {
   CASH_OPENING_UAH,
   CASH_OPENING_USD,
 } from "@/lib/finance/cash-openings";
+import { hiddenFinanceAccountIds } from "@/lib/finance/account-archive";
 
 export type CashCurrency = "UAH" | "USD" | "EUR";
 
@@ -68,7 +69,7 @@ function kopToUah(kop: bigint): number {
 }
 
 export async function listCashBalances(): Promise<CashBalanceTile[]> {
-  const accounts = await fetchAltegioAccounts();
+  const [accounts, hiddenIds] = await Promise.all([fetchAltegioAccounts(), hiddenFinanceAccountIds()]);
   const listed = accounts
     .map((account) => ({
       id: Number(account.id) || 0,
@@ -76,7 +77,9 @@ export async function listCashBalances(): Promise<CashBalanceTile[]> {
       cash: isCashAltegioAccount(account.title),
       currency: currencyOf(account.title),
     }))
-    .filter((account) => account.id > 0 && !isClientDepositTitle(account.title));
+    .filter(
+      (account) => account.id > 0 && !isClientDepositTitle(account.title) && !hiddenIds.has(account.id),
+    );
 
   if (listed.length === 0) {
     console.log("[finance/cash] Рахунків Altegio немає");

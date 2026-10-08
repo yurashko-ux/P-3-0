@@ -1802,3 +1802,13 @@ model WarehouseStockMonthSnapshot {
   @@index([productId])
   @@map("warehouse_stock_month_snapshots")
 }
+
+/// Рахунок Altegio, прихований з Каси, оплати журналу і вибору в документі.
+model HiddenFinanceAccount {
+  altegioAccountId Int      @id
+  title            String
+  hiddenAt         DateTime @default(now())
+  hiddenBy         String?
+
+  @@map("hidden_finance_accounts")
+}
