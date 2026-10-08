@@ -4,6 +4,18 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 
 type AccountOpt = { id: number; title: string; type?: string | null };
 type ArchiveAccount = { id: number; title: string; hidden: boolean };
+type SnapshotLine = {
+  accountId: number;
+  title: string;
+  cash: boolean;
+  currency: "UAH" | "USD" | "EUR";
+  balanceUah: number | null;
+  balanceFx: number | null;
+  openingPending: boolean;
+  hasBank: boolean;
+  countedUah: number | null;
+};
+type CashSnapshot = { kyivDay: string; lines: SnapshotLine[] };
 type PurposeOpt = { id: string; title: string; externalId: number | null; source?: string | null };
 
 type DocRow = {
@@ -47,10 +59,22 @@ function money(n: number) {
   return n.toLocaleString("uk-UA", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 }
 
+function snapshotAmount(line: SnapshotLine): string {
+  if (line.openingPending) return "Початковий залишок ще не заданий";
+  if (!line.cash && !line.hasBank) return "Немає банківського рахунку";
+  if (line.balanceFx != null) {
+    const symbol = line.currency === "USD" ? "$" : line.currency === "EUR" ? "€" : line.currency;
+    const fx = `${money(line.balanceFx)} ${symbol}`;
+    return line.balanceUah != null ? `${fx} (${money(line.balanceUah)} грн)` : fx;
+  }
+  return `${money(line.balanceUah || 0)} грн`;
+}
+
 export default function FinanceDocumentsPage() {
   const [documents, setDocuments] = useState<DocRow[]>([]);
   const [accounts, setAccounts] = useState<AccountOpt[]>([]);
   const [accountArchive, setAccountArchive] = useState<ArchiveAccount[]>([]);
+  const [snapshots, setSnapshots] = useState<CashSnapshot[]>([]);
   const [purposes, setPurposes] = useState<PurposeOpt[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
@@ -62,15 +86,18 @@ export default function FinanceDocumentsPage() {
     setLoading(true);
     setError(null);
     try {
-      const res = await fetch("/api/admin/finance/documents?options=1&limit=80", {
-        credentials: "include",
-      });
+      const [res, snapRes] = await Promise.all([
+        fetch("/api/admin/finance/documents?options=1&limit=80", { credentials: "include" }),
+        fetch("/api/admin/finance/cash/snapshots", { credentials: "include" }),
+      ]);
       const json = await res.json();
       if (!res.ok || !json.ok) throw new Error(json.error || "Помилка завантаження");
       setDocuments(json.documents || []);
       setAccounts(json.accounts || []);
       setAccountArchive(json.accountArchive || []);
       setPurposes((json.purposes || []).filter((p: PurposeOpt) => p.externalId != null));
+      const snapJson = await snapRes.json().catch(() => null);
+      setSnapshots(snapRes.ok && snapJson?.ok ? snapJson.snapshots || [] : []);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Помилка");
     } finally {
@@ -196,6 +223,43 @@ export default function FinanceDocumentsPage() {
         {!loading && accountArchive.length === 0 && (
           <p className="text-xs text-gray-500">Рахунків немає.</p>
         )}
+      </div>
+      <div className="bg-white border rounded-xl p-3 space-y-2 max-w-xl">
+        <div className="font-semibold text-sm">Знімки каси</div>
+        <p className="text-xs text-gray-500">
+          Опівночі за Києвом. Гривнева каса — розрахунок і перерахунок, різниця якщо не збігаються.
+        </p>
+        {!loading && snapshots.length === 0 && <p className="text-xs text-gray-500">Знімків ще немає.</p>}
+        {snapshots.map((snapshot) => (
+          <div key={snapshot.kyivDay} className="pt-2 border-t space-y-1">
+            <div className="text-xs font-medium">{snapshot.kyivDay}</div>
+            {snapshot.lines.map((line) => {
+              const uahCount = line.cash && line.currency === "UAH" && line.countedUah != null && line.balanceUah != null;
+              const diff = uahCount ? Math.round((line.countedUah! - line.balanceUah!) * 100) / 100 : null;
+              return (
+                <div key={line.accountId} className="flex items-baseline justify-between gap-2 text-xs">
+                  <span>{line.title}</span>
+                  <span className="tabular-nums text-right">
+                    {uahCount ? (
+                      <>
+                        {money(line.balanceUah || 0)} грн ({money(line.countedUah || 0)} грн)
+                        {diff != null && diff !== 0 && (
+                          <span className={diff > 0 ? "text-green-600" : "text-red-600"}>
+                            {" "}
+                            {diff > 0 ? "+" : ""}
+                            {money(diff)} грн
+                          </span>
+                        )}
+                      </>
+                    ) : (
+                      snapshotAmount(line)
+                    )}
+                  </span>
+                </div>
+              );
+            })}
+          </div>
+        ))}
       </div>
       {error && <div className="alert alert-error text-sm py-2">{error}</div>}
       <div className="flex flex-wrap gap-2">

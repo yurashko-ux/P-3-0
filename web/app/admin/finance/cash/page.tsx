@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
+import { CashCountModal } from "./CashCountModal";
 
 type CashTile = {
   id: number;
@@ -11,6 +12,7 @@ type CashTile = {
   balanceFx: number | null;
   openingPending: boolean;
   hasBank: boolean;
+  countedUah: number | null;
 };
 
 function money(n: number, digits = 0) {
@@ -26,10 +28,15 @@ function fxSymbol(currency: CashTile["currency"]) {
   return currency;
 }
 
+function isUahTill(tile: CashTile): boolean {
+  return tile.cash && tile.currency === "UAH" && !tile.openingPending;
+}
+
 export default function CashBalancesPage() {
   const [tiles, setTiles] = useState<CashTile[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
+  const [countTile, setCountTile] = useState<CashTile | null>(null);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -72,33 +79,69 @@ export default function CashBalancesPage() {
       )}
 
       <div className="grid grid-cols-2 sm:grid-cols-3 gap-2 max-w-3xl">
-        {tiles.map((tile) => (
-          <div
-            key={tile.id}
-            className="flex flex-col items-center justify-center min-h-[6.5rem] rounded-lg border-2 border-gray-200 bg-white px-3 py-3 text-center"
-          >
-            <span className="text-[11px] font-medium text-gray-800 leading-tight">{tile.title}</span>
-            {tile.openingPending ? (
-              <span className="mt-1 text-[11px] text-gray-500">Початковий залишок ще не заданий</span>
-            ) : !tile.cash && !tile.hasBank ? (
-              <span className="mt-1 text-[11px] text-gray-500">Немає банківського рахунку</span>
-            ) : tile.balanceFx != null ? (
-              <>
-                <span className="mt-1 text-lg font-semibold tabular-nums text-gray-900">
-                  {money(tile.balanceFx)} {fxSymbol(tile.currency)}
-                </span>
-                {tile.balanceUah != null && (
-                  <span className="text-[11px] tabular-nums text-gray-500">{money(tile.balanceUah)} грн</span>
-                )}
-              </>
-            ) : (
-              <span className="mt-1 text-lg font-semibold tabular-nums text-gray-900">
-                {money(tile.balanceUah || 0)} грн
-              </span>
-            )}
-          </div>
-        ))}
+        {tiles.map((tile) => {
+          const book = tile.balanceUah;
+          const counted = tile.countedUah;
+          const diff = counted != null && book != null ? Math.round((counted - book) * 100) / 100 : null;
+          return (
+            <div
+              key={tile.id}
+              className={`relative flex flex-col items-center justify-center min-h-[6.5rem] rounded-lg border-2 border-gray-200 bg-white px-3 py-3 text-center ${isUahTill(tile) ? "pb-7" : ""}`}
+            >
+              <span className="text-[11px] font-medium text-gray-800 leading-tight">{tile.title}</span>
+              {tile.openingPending ? (
+                <span className="mt-1 text-[11px] text-gray-500">Початковий залишок ще не заданий</span>
+              ) : !tile.cash && !tile.hasBank ? (
+                <span className="mt-1 text-[11px] text-gray-500">Немає банківського рахунку</span>
+              ) : tile.balanceFx != null ? (
+                <>
+                  <span className="mt-1 text-lg font-semibold tabular-nums text-gray-900">
+                    {money(tile.balanceFx)} {fxSymbol(tile.currency)}
+                  </span>
+                  {tile.balanceUah != null && (
+                    <span className="text-[11px] tabular-nums text-gray-500">{money(tile.balanceUah)} грн</span>
+                  )}
+                </>
+              ) : (
+                <>
+                  <span className="mt-1 text-lg font-semibold tabular-nums text-gray-900">
+                    {money(book || 0)} грн
+                  </span>
+                  {counted != null && (
+                    <span className="text-[11px] tabular-nums text-gray-500">({money(counted)} грн)</span>
+                  )}
+                  {diff != null && diff !== 0 && (
+                    <span className={`text-[11px] font-medium tabular-nums ${diff > 0 ? "text-green-600" : "text-red-600"}`}>
+                      {diff > 0 ? "+" : ""}
+                      {money(diff)} грн
+                    </span>
+                  )}
+                </>
+              )}
+              {isUahTill(tile) && (
+                <button
+                  type="button"
+                  className="btn btn-ghost btn-xs absolute bottom-1 right-1 min-h-0 h-6 px-1.5 text-[10px]"
+                  onClick={() => setCountTile(tile)}
+                >
+                  Касовка
+                </button>
+              )}
+            </div>
+          );
+        })}
       </div>
+      {countTile && (
+        <CashCountModal
+          accountId={countTile.id}
+          accountTitle={countTile.title}
+          onClose={() => setCountTile(null)}
+          onSaved={() => {
+            setCountTile(null);
+            void load();
+          }}
+        />
+      )}
     </main>
   );
 }

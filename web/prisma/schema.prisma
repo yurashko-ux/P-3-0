@@ -1812,3 +1812,27 @@ model HiddenFinanceAccount {
 
   @@map("hidden_finance_accounts")
 }
+
+/// Перерахунок гривневої каси за день (Київ). На плитці лишається останній.
+model CashTillCount {
+  id           String   @id @default(uuid())
+  kyivDay      String
+  accountId    Int
+  accountTitle String
+  countedUah   Float
+  lines        Json
+  createdAt    DateTime @default(now())
+  createdBy    String?
+
+  @@index([kyivDay, accountId, createdAt])
+  @@map("cash_till_counts")
+}
+
+/// Нічний знімок усіх плиток Каси. Один запис на календарний день Києва.
+model CashDaySnapshot {
+  kyivDay    String   @id
+  capturedAt DateTime @default(now())
+  lines      Json
+
+  @@map("cash_day_snapshots")
+}
