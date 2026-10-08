@@ -17,6 +17,9 @@ type PayRow = {
   accountId: number;
   accountTitle: string | null;
   amount: number;
+  amountFx: number | null;
+  currencyCode: string | null;
+  fxRate: number | null;
   paymentKind: string;
   checkoutStatus: string;
   altegioRecordId: number | null;
@@ -26,6 +29,24 @@ type PayRow = {
 
 function money(n: number) {
   return n.toLocaleString("uk-UA", { maximumFractionDigits: 0 });
+}
+
+function fxReceivedLabel(row: PayRow): string | null {
+  const code = (row.currencyCode || "").toUpperCase();
+  if (!code || code === "UAH") return null;
+  const received =
+    row.amountFx != null && row.amountFx > 0
+      ? row.amountFx
+      : row.fxRate != null && row.fxRate > 0
+        ? Math.round((row.amount / row.fxRate) * 100) / 100
+        : null;
+  if (received == null || !(received > 0)) return null;
+  const symbol = code === "USD" ? "$" : code === "EUR" ? "€" : code;
+  const formatted = received.toLocaleString("uk-UA", {
+    minimumFractionDigits: 0,
+    maximumFractionDigits: 2,
+  });
+  return `(${formatted} ${symbol})`;
 }
 
 function todayYmd() {
@@ -190,12 +211,17 @@ function FinanceVisitPaymentsInner() {
             </tr>
           </thead>
           <tbody>
-            {payments.map((p) => (
+            {payments.map((p) => {
+              const fxLabel = fxReceivedLabel(p);
+              return (
               <tr key={p.id}>
                 <td className="tabular-nums whitespace-nowrap">{p.kyivDay}</td>
                 <td>{p.client}</td>
                 <td>{p.master}</td>
-                <td>{p.accountTitle || `#${p.accountId}`}</td>
+                <td>
+                  {p.accountTitle || `#${p.accountId}`}
+                  {fxLabel ? <span className="text-gray-600"> {fxLabel}</span> : null}
+                </td>
                 <td>{p.paymentKind === "deposit" ? "Завдаток" : "Каса"}</td>
                 <td className="text-right tabular-nums font-medium">{money(p.amount)} грн</td>
                 <td>
@@ -224,7 +250,8 @@ function FinanceVisitPaymentsInner() {
                   )}
                 </td>
               </tr>
-            ))}
+              );
+            })}
           </tbody>
         </table>
         {!loading && payments.length === 0 && (
