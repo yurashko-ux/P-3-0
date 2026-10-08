@@ -278,7 +278,9 @@ export default function FinanceDocumentsPage() {
                   </td>
                   <td className="text-xs">{d.purposeTitle || d.title || "—"}</td>
                   <td className="text-xs">
-                    {d.syncStatus === "synced" ? (
+                    {d.syncStatus === "local" ? (
+                      <span className="text-success">лише Kresco</span>
+                    ) : d.syncStatus === "synced" ? (
                       <span className="text-success">synced</span>
                     ) : d.syncStatus === "error" ? (
                       <span className="text-error" title={d.syncError || ""}>

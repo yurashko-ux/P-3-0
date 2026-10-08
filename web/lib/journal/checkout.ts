@@ -400,6 +400,7 @@ async function writeOffGoodsForCheckout(params: {
   clientLabel: string;
   kyivDay: string;
   createdBy?: string | null;
+  localOnly?: boolean;
 }): Promise<{ warehouseDocumentId: string | null; stockError: string | null }> {
   if (params.goods.length === 0) {
     return { warehouseDocumentId: params.existingWarehouseDocumentId, stockError: null };
@@ -427,6 +428,7 @@ async function writeOffGoodsForCheckout(params: {
         title: titleBase,
         createdBy: params.createdBy || null,
         parentDocumentId: firstDocId || undefined,
+        localOnly: params.localOnly,
         lines: lines.map((l) => ({ productId: l.productId, quantity: l.quantity })),
       });
       if (!firstDocId) firstDocId = doc.id;
@@ -852,7 +854,7 @@ export async function closeVisitFromKresco(input: CloseVisitInput) {
     });
 
     let depositAccountId: string | null = null;
-    if (hasDeposit && depositMeta && !skipAltegioWrite) {
+    if (hasDeposit && depositMeta && altegioClientId > 0) {
       try {
         const spend = await appendDepositSpend({
           altegioClientId,
@@ -871,7 +873,7 @@ export async function closeVisitFromKresco(input: CloseVisitInput) {
         depositAccountId = spend.accountId;
       } catch (ledgerErr) {
         console.error(
-          `[journal/checkout] Ledger spend не записано (оплата в Altegio вже є):`,
+          `[journal/checkout] Ledger spend не записано:`,
           ledgerErr instanceof Error ? ledgerErr.message : ledgerErr,
         );
       }
@@ -885,6 +887,7 @@ export async function closeVisitFromKresco(input: CloseVisitInput) {
       clientLabel,
       kyivDay: appointment.kyivDay,
       createdBy: input.createdBy,
+      localOnly: skipAltegioWrite,
     });
 
     await prisma.salonCheckout.update({

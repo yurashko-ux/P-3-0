@@ -1,10 +1,11 @@
-// Поповнення завдатку з журналу / каси (dual-write в Altegio).
+// Поповнення завдатку з журналу. Поки журнал не пише в Altegio — лише локальний ledger.
 
 import { prisma } from "@/lib/prisma";
 import { fetchAltegioAccounts } from "@/lib/altegio/accounts";
 import { fetchDepositsForClientIds } from "@/lib/altegio/client-deposits";
 import { topUpClientDepositInAltegio } from "@/lib/altegio/deposit-topup-write";
 import { appendDepositTopUp } from "@/lib/deposits/store";
+import { isJournalAltegioWriteSkipped } from "@/lib/journal/altegio-write-gate";
 
 function toMoney(n: number): number {
   return Math.round(n * 100) / 100;
@@ -65,17 +66,26 @@ export async function topUpDepositFromAppointment(input: DepositTopUpFromAppoint
         ? appointment.altegioStaffId
         : null;
 
-  const result = await topUpClientDepositInAltegio({
-    clientId,
-    depositId,
-    amount,
-    accountId,
-    masterId,
-    comment: input.comment || `Kresco каса ${appointment.kyivDay}`,
-  });
+  const skipAltegio = isJournalAltegioWriteSkipped();
+  const result = skipAltegio
+    ? {
+        documentId: null,
+        depositTransactionId: null,
+        paymentTransactionId: null,
+        balanceAfter: null as number | null,
+        raw: null,
+      }
+    : await topUpClientDepositInAltegio({
+        clientId,
+        depositId,
+        amount,
+        accountId,
+        masterId,
+        comment: input.comment || `Kresco каса ${appointment.kyivDay}`,
+      });
 
   try {
-    await appendDepositTopUp({
+    const entry = await appendDepositTopUp({
       altegioClientId: clientId,
       altegioDepositId: depositId,
       amount,
@@ -89,11 +99,13 @@ export async function topUpDepositFromAppointment(input: DepositTopUpFromAppoint
       comment: input.comment || `Поповнення з каси`,
       title: deposit.depositTypeTitle,
     });
+    if (skipAltegio) result.balanceAfter = entry.balanceAfter;
   } catch (ledgerErr) {
     console.error(
-      `[journal/deposit-topup] Ledger не записано (Altegio уже поповнено):`,
+      `[journal/deposit-topup] Ledger не записано${skipAltegio ? "" : " (Altegio уже поповнено)"}:`,
       ledgerErr instanceof Error ? ledgerErr.message : ledgerErr,
     );
+    if (skipAltegio) throw ledgerErr;
   }
 
   // Оновлений список рахунків після поповнення
@@ -107,9 +119,13 @@ export async function topUpDepositFromAppointment(input: DepositTopUpFromAppoint
       blocked: Boolean(d.blocked),
     }))
     .sort((a, b) => b.balance - a.balance);
+  if (skipAltegio && result.balanceAfter != null) {
+    const row = clientDeposits.find((d) => d.depositId === depositId);
+    if (row) row.balance = toMoney(result.balanceAfter);
+  }
 
   console.log(
-    `[journal/deposit-topup] ✅ appointment=${appointment.id} deposit=${depositId} +${amount} → balanceAfter=${result.balanceAfter ?? "—"}`,
+    `[journal/deposit-topup] appointment=${appointment.id} deposit=${depositId} +${amount} → balanceAfter=${result.balanceAfter ?? "—"}${skipAltegio ? " (лише Kresco)" : ""}`,
   );
 
   return {

@@ -528,6 +528,8 @@ export async function createWriteOff(input: {
   occurredAt?: string;
   createdBy?: string | null;
   parentDocumentId?: string;
+  /** Списання з каси запису Kresco: зменшити залишок тут, в Altegio не відправляти. */
+  localOnly?: boolean;
   lines: Array<{ productId: string; quantity: number }>;
 }) {
   const storage = await requireStorage(input.storageId);
@@ -581,21 +583,30 @@ export async function createWriteOff(input: {
     },
   });
 
-  await postOperationAndApply({
-    documentId: document.id,
-    typeId: ALTEGIO_STORAGE_OP.writeOff,
-    storageAltegioId: storage.altegioStorageId as number,
-    comment: document.comment || title,
-    occurredAt,
-    lines: rawLines.map((line) => {
-      const product = byId.get(line.productId)!;
-      return {
-        altegioGoodId: product.altegioGoodId as number,
-        amount: line.quantity,
-        costUah: round2(product.costPerUnit * line.quantity),
-      };
-    }),
-  });
+  if (input.localOnly) {
+    await prisma.warehouseDocument.update({
+      where: { id: document.id },
+      data: { status: "posted", syncStatus: "local", syncError: null },
+    });
+    await applyPostedWarehouseDocument(document.id);
+    console.log(`[warehouse/docs] Списання ${document.id} лише в Kresco (каса запису)`);
+  } else {
+    await postOperationAndApply({
+      documentId: document.id,
+      typeId: ALTEGIO_STORAGE_OP.writeOff,
+      storageAltegioId: storage.altegioStorageId as number,
+      comment: document.comment || title,
+      occurredAt,
+      lines: rawLines.map((line) => {
+        const product = byId.get(line.productId)!;
+        return {
+          altegioGoodId: product.altegioGoodId as number,
+          amount: line.quantity,
+          costUah: round2(product.costPerUnit * line.quantity),
+        };
+      }),
+    });
+  }
 
   return prisma.warehouseDocument.findUniqueOrThrow({
     where: { id: document.id },

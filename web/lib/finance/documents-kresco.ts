@@ -1,9 +1,8 @@
-// Фінансові документи Kresco з dual-write в Altegio (етап 6).
+// Фінансові документи Kresco. Ручні прихід/розхід/переміщення лишаються лише тут, в Altegio не йдуть.
 
 import { prisma } from "@/lib/prisma";
 import { kyivCalendarTodayYmd, kyivYmdFromDateTimeInput } from "@/lib/direct-kyiv-today";
 import { fetchAltegioAccounts } from "@/lib/altegio/accounts";
-import { createManualAltegioFinanceDocument } from "@/lib/altegio/finance-transactions-create";
 import { ALTEGIO_ENV } from "@/lib/altegio/env";
 
 function toMoney(n: number): number {
@@ -130,8 +129,9 @@ export async function createFinanceDocument(input: CreateFinanceDocumentInput) {
   const doc = await prisma.financeDocument.create({
     data: {
       type,
-      status: "pending",
-      syncStatus: "pending",
+      status: "posted",
+      syncStatus: "local",
+      syncError: null,
       source: "kresco",
       title: purposeTitle,
       amountUah,
@@ -149,44 +149,6 @@ export async function createFinanceDocument(input: CreateFinanceDocumentInput) {
     },
   });
 
-  try {
-    const result = await createManualAltegioFinanceDocument({
-      type,
-      accountId,
-      accountTitle: account.title,
-      counterAccountId,
-      counterAccountTitle,
-      expenseId: purposeExternalId,
-      purposeTitle,
-      amountUah,
-      occurredAt,
-      comment: input.comment,
-    });
-
-    const updated = await prisma.financeDocument.update({
-      where: { id: doc.id },
-      data: {
-        status: "posted",
-        syncStatus: "synced",
-        syncError: null,
-        altegioTransactionId: result.source.altegioId,
-        localAltegioTxId: result.source.id,
-        altegioCounterTransactionId: result.target?.altegioId ?? null,
-        localAltegioCounterTxId: result.target?.id ?? null,
-      },
-    });
-
-    console.log(
-      `[finance/documents] ✅ ${type} ${amountUah} грн doc=${doc.id} altegio=${result.source.altegioId}`,
-    );
-    return updated;
-  } catch (err) {
-    const message = err instanceof Error ? err.message : String(err);
-    await prisma.financeDocument.update({
-      where: { id: doc.id },
-      data: { status: "sync_error", syncStatus: "error", syncError: message },
-    });
-    console.error(`[finance/documents] Помилка dual-write doc=${doc.id}:`, message);
-    throw new Error(message);
-  }
+  console.log(`[finance/documents] ${type} ${amountUah} грн doc=${doc.id} лише Kresco`);
+  return doc;
 }
