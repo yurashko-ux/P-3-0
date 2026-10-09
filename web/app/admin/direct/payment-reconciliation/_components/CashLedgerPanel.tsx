@@ -61,7 +61,10 @@ function timeLabel(iso: string): string {
   return date.toLocaleTimeString("uk-UA", { timeZone: "Europe/Kyiv", hour: "2-digit", minute: "2-digit" });
 }
 
-/** Один клієнт і один рахунок за день — один рядок, суми з знаком. */
+/**
+ * Один клієнт, один рахунок, одне призначення і один напрямок за день — один рядок.
+ * Вхідний переказ і вихідна комісія не зливаються, навіть якщо клієнт порожній.
+ */
 function aggregateDayRows(dayRows: LedgerRow[]): LedgerRow[] {
   const groups = new Map<
     string,
@@ -69,10 +72,8 @@ function aggregateDayRows(dayRows: LedgerRow[]): LedgerRow[] {
   >();
   for (const row of dayRows) {
     const client = row.clientName.trim();
-    // Без клієнта кожен платіж лишається окремим рядком: переказ і комісія не одна операція.
-    const key = client
-      ? `${client}\0${row.accountTitle}\0${row.currency}`
-      : row.id;
+    const purpose = row.title.trim();
+    const key = `${client}\0${row.accountTitle}\0${row.currency}\0${row.direction}\0${purpose}`;
     const signed = row.direction === "out" ? -row.amount : row.amount;
     const current = groups.get(key);
     if (!current) {
