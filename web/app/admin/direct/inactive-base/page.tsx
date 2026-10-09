@@ -946,6 +946,9 @@ function InactiveBasePageContent() {
                   className="text-right w-16"
                 />
                 <th className="text-[10px] whitespace-nowrap">Статус</th>
+                <SortableTh label="Телефон" field="phone" sortBy={sortBy} sortOrder={sortOrder} onSort={handleSort} />
+                <th className="text-[10px] whitespace-nowrap">Дзвінки</th>
+                <th className="text-[10px] whitespace-nowrap">Статус дзвінків</th>
                 <th>
                   <div className="flex items-center gap-1">
                     <button
@@ -996,9 +999,6 @@ function InactiveBasePageContent() {
                   </div>
                 </th>
                 <th className="text-[10px] whitespace-nowrap">Статус повідомлень</th>
-                <SortableTh label="Телефон" field="phone" sortBy={sortBy} sortOrder={sortOrder} onSort={handleSort} />
-                <th className="text-[10px] whitespace-nowrap">Дзвінки</th>
-                <th className="text-[10px] whitespace-nowrap">Статус дзвінків</th>
               </tr>
             </thead>
             <tbody>
@@ -1201,6 +1201,55 @@ function InactiveBasePageContent() {
                           />
                         )}
                       </td>
+                      <td className={`text-xs whitespace-nowrap ${isMember ? "pl-4" : ""}`}>
+                        {isCollapsedGroupLeader ? (
+                          <span className="text-base-content/40">—</span>
+                        ) : (
+                          <div className="flex items-center gap-1 min-w-0">
+                            {client.phone ? (
+                              <button
+                                type="button"
+                                className="link link-hover font-mono truncate max-w-[120px] text-left"
+                                title={`${client.phone} — історія дзвінків`}
+                                onClick={() => openBinotelHistory(client)}
+                              >
+                                {client.phone}
+                              </button>
+                            ) : (
+                              <span className="text-base-content/40">—</span>
+                            )}
+                            {client.phone ? (
+                              <button
+                                type="button"
+                                className="inline-flex h-6 shrink-0 items-center justify-center rounded-md px-0.5 text-base hover:bg-black/5"
+                                title="Надіслати телефон клієнта в Telegram адміністратора"
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  void sendPhoneToTelegram(client.id);
+                                }}
+                              >
+                                📞
+                              </button>
+                            ) : null}
+                          </div>
+                        )}
+                      </td>
+                      <td className="text-xs align-top">
+                        <InactiveBaseCallsCell
+                          client={client}
+                          groupCallsTotal={
+                            isCollapsedGroupLeader
+                              ? campaignBinotelTotalCalls.get(row.campaignId) ?? 0
+                              : null
+                          }
+                          canListenCalls={canListenCalls}
+                          onOpenHistory={(dc) => setBinotelHistoryClient(dc)}
+                          onPlayRequest={(url) => setInlineRecordingUrl(url)}
+                        />
+                      </td>
+                      <td className="text-xs align-top">
+                        <InactiveBaseCallStatusCell client={client} hidden={isCollapsedGroupLeader} />
+                      </td>
                       <td className="text-xs overflow-visible">
                         <InactiveBaseChatCell
                           client={client}
@@ -1276,55 +1325,6 @@ function InactiveBasePageContent() {
                           channel="instagram"
                           hidden={isCollapsedGroupLeader}
                         />
-                      </td>
-                      <td className={`text-xs whitespace-nowrap ${isMember ? "pl-4" : ""}`}>
-                        {isCollapsedGroupLeader ? (
-                          <span className="text-base-content/40">—</span>
-                        ) : (
-                          <div className="flex items-center gap-1 min-w-0">
-                            {client.phone ? (
-                              <button
-                                type="button"
-                                className="link link-hover font-mono truncate max-w-[120px] text-left"
-                                title={`${client.phone} — історія дзвінків`}
-                                onClick={() => openBinotelHistory(client)}
-                              >
-                                {client.phone}
-                              </button>
-                            ) : (
-                              <span className="text-base-content/40">—</span>
-                            )}
-                            {client.phone ? (
-                              <button
-                                type="button"
-                                className="inline-flex h-6 shrink-0 items-center justify-center rounded-md px-0.5 text-base hover:bg-black/5"
-                                title="Надіслати телефон клієнта в Telegram адміністратора"
-                                onClick={(e) => {
-                                  e.stopPropagation();
-                                  void sendPhoneToTelegram(client.id);
-                                }}
-                              >
-                                📞
-                              </button>
-                            ) : null}
-                          </div>
-                        )}
-                      </td>
-                      <td className="text-xs align-top">
-                        <InactiveBaseCallsCell
-                          client={client}
-                          groupCallsTotal={
-                            isCollapsedGroupLeader
-                              ? campaignBinotelTotalCalls.get(row.campaignId) ?? 0
-                              : null
-                          }
-                          canListenCalls={canListenCalls}
-                          onOpenHistory={(dc) => setBinotelHistoryClient(dc)}
-                          onPlayRequest={(url) => setInlineRecordingUrl(url)}
-                        />
-                      </td>
-                      <td className="text-xs align-top">
-                        <InactiveBaseCallStatusCell client={client} hidden={isCollapsedGroupLeader} />
                       </td>
                     </tr>
                   );
