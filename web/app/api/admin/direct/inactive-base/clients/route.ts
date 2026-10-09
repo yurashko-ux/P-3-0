@@ -84,6 +84,10 @@ const CLIENT_SELECT = {
   telegramChatId: true,
   telegramUserId: true,
   callStatusId: true,
+  state: true,
+  callbackReminderKyivDay: true,
+  callbackReminderNote: true,
+  callbackReminderHistory: true,
 } as const;
 
 const SORT_FIELDS = [
@@ -105,6 +109,27 @@ function compareName(
   const na = [a.firstName, a.lastName].filter(Boolean).join(' ').trim() || a.instagramUsername;
   const nb = [b.firstName, b.lastName].filter(Boolean).join(' ').trim() || b.instagramUsername;
   return na.localeCompare(nb, 'uk');
+}
+
+function parseCallbackReminderHistory(raw: unknown): Array<{
+  createdAt: string;
+  scheduledKyivDay: string | null;
+  note: string | null;
+}> {
+  if (!Array.isArray(raw)) return [];
+  const out: Array<{ createdAt: string; scheduledKyivDay: string | null; note: string | null }> = [];
+  for (const item of raw) {
+    if (!item || typeof item !== "object") continue;
+    const row = item as Record<string, unknown>;
+    const createdAt = typeof row.createdAt === "string" ? row.createdAt : "";
+    if (!createdAt) continue;
+    out.push({
+      createdAt,
+      scheduledKyivDay: typeof row.scheduledKyivDay === "string" ? row.scheduledKyivDay : null,
+      note: typeof row.note === "string" ? row.note : null,
+    });
+  }
+  return out;
 }
 
 function comparePhone(a: string | null | undefined, b: string | null | undefined): number {
@@ -432,6 +457,12 @@ export async function GET(req: NextRequest) {
       firstName: c.firstName,
       lastName: c.lastName,
       phone: c.phone,
+      state: (c as { state?: string | null }).state ?? null,
+      callbackReminderKyivDay: (c as { callbackReminderKyivDay?: string | null }).callbackReminderKyivDay ?? null,
+      callbackReminderNote: (c as { callbackReminderNote?: string | null }).callbackReminderNote ?? null,
+      callbackReminderHistory: parseCallbackReminderHistory(
+        (c as { callbackReminderHistory?: unknown }).callbackReminderHistory
+      ),
       spent: c.spent ?? null,
       visits: c.visits ?? null,
       daysSinceLastVisit: c.daysSinceLastVisit,

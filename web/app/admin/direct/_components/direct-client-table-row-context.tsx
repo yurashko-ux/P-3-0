@@ -95,8 +95,12 @@ export function DirectClientTableRowProvider({
   );
 }
 
+export function useDirectClientTableRowContextOptional(): DirectClientTableRowContextValue | null {
+  return useContext(DirectClientTableRowContext);
+}
+
 export function useDirectClientTableRowContext(): DirectClientTableRowContextValue {
-  const ctx = useContext(DirectClientTableRowContext);
+  const ctx = useDirectClientTableRowContextOptional();
   if (!ctx) {
     throw new Error("useDirectClientTableRowContext має використовуватись всередині DirectClientTableRowProvider");
   }

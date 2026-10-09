@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import type { CallbackReminderHistoryEntry } from "@/lib/direct-types";
 import type { DirectChatChannel } from "@/lib/direct-channel-chat";
 import type { DirectClient } from "@/lib/direct-types";
 import { isTechnicalDirectInstagramUsername } from "@/lib/altegio/client-utils";
@@ -22,6 +23,10 @@ export type InactiveBaseClientRow = {
   firstName: string | null;
   lastName: string | null;
   phone: string | null;
+  state?: string | null;
+  callbackReminderKyivDay?: string | null;
+  callbackReminderNote?: string | null;
+  callbackReminderHistory?: CallbackReminderHistoryEntry[];
   spent?: number | null;
   visits?: number | null;
   daysSinceLastVisit?: number;

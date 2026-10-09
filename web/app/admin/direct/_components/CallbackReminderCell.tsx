@@ -3,7 +3,7 @@
 
 "use client";
 
-import { useDirectClientTableRowContext } from "./direct-client-table-row-context";
+import { useDirectClientTableRowContextOptional } from "./direct-client-table-row-context";
 import type { DirectClient } from "@/lib/direct-types";
 import {
   formatDateDDMMYY,
@@ -46,6 +46,9 @@ type Props = {
   client: DirectClient;
   /** Червона крапка (одна на рядок): winningKey === callbackReminder */
   showActivityDot?: boolean;
+  /** Якщо передано — не беремо дії з контексту таблиці Direct (неактивна база). */
+  onOpen?: (client: DirectClient) => void;
+  onSendPhone?: (client: DirectClient) => void | Promise<void>;
 };
 
 /** У колонці нічого не показуємо для IG-лідів (стан message); Binotel — показуємо як завжди */
@@ -83,8 +86,15 @@ function activeCommentTooltip(client: DirectClient): string | null {
   return note.length > COMMENT_TOOLTIP_MAX ? `${note.slice(0, COMMENT_TOOLTIP_MAX)}…` : note;
 }
 
-export function CallbackReminderCell({ client, showActivityDot = false }: Props) {
-  const { onOpenCallbackReminder, onSendClientPhoneToAdminTelegram } = useDirectClientTableRowContext();
+export function CallbackReminderCell({
+  client,
+  showActivityDot = false,
+  onOpen,
+  onSendPhone,
+}: Props) {
+  const rowCtx = useDirectClientTableRowContextOptional();
+  const onOpenCallbackReminder = onOpen ?? rowCtx?.onOpenCallbackReminder;
+  const onSendClientPhoneToAdminTelegram = onSendPhone ?? rowCtx?.onSendClientPhoneToAdminTelegram;
 
   if (isIgLeadHideCallbackColumn(client)) {
     return <div className="min-h-[1.25rem]" aria-hidden onClick={(e) => e.stopPropagation()} />;
@@ -108,9 +118,9 @@ export function CallbackReminderCell({ client, showActivityDot = false }: Props)
 
   const commentTooltip = activeCommentTooltip(client);
 
-  const open = () => onOpenCallbackReminder(client);
+  const open = () => onOpenCallbackReminder?.(client);
   const sendPhoneToTelegram = () => {
-    void onSendClientPhoneToAdminTelegram(client);
+    if (onSendClientPhoneToAdminTelegram) void onSendClientPhoneToAdminTelegram(client);
   };
 
   const dateLabel =

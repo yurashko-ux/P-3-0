@@ -11,6 +11,8 @@ import {
 import type { DirectClient, DirectStatus } from "@/lib/direct-types";
 import { kyivDayFromISO } from "@/lib/altegio/records-grouping";
 import { BinotelCallHistoryModal } from "../_components/BinotelCallHistoryModal";
+import { CallbackReminderCell } from "../_components/CallbackReminderCell";
+import { CallbackReminderModal } from "../_components/CallbackReminderModal";
 import { DirectStatusCell } from "../_components/DirectStatusCell";
 import { InlineCallRecordingPlayer } from "../_components/InlineCallRecordingPlayer";
 import { formatDateDDMMYY, getFullName } from "../_components/direct-client-table-formatters";
@@ -164,6 +166,7 @@ function InactiveBasePageContent() {
   );
   const [permissions, setPermissions] = useState<Record<string, string> | null>(null);
   const [binotelHistoryClient, setBinotelHistoryClient] = useState<DirectClient | null>(null);
+  const [callbackReminderClient, setCallbackReminderClient] = useState<DirectClient | null>(null);
   const [linkHistoryClient, setLinkHistoryClient] = useState<InactiveBaseClientRow | null>(null);
   const [inlineRecordingUrl, setInlineRecordingUrl] = useState<string | null>(null);
   const [statuses, setStatuses] = useState<DirectStatus[]>([]);
@@ -206,7 +209,7 @@ function InactiveBasePageContent() {
     [clients]
   );
 
-  const tableColSpan = 14;
+  const tableColSpan = 15;
 
   const openBinotelHistory = useCallback((client: InactiveBaseClientRow) => {
     setBinotelHistoryClient(inactiveBaseRowToDirectClient(client));
@@ -947,6 +950,7 @@ function InactiveBasePageContent() {
                 />
                 <th className="text-[10px] whitespace-nowrap">Статус</th>
                 <SortableTh label="Телефон" field="phone" sortBy={sortBy} sortOrder={sortOrder} onSort={handleSort} />
+                <th className="text-[10px] whitespace-nowrap">Передзвонити</th>
                 <th className="text-[10px] whitespace-nowrap">Дзвінки</th>
                 <th className="text-[10px] whitespace-nowrap">Статус дзвінків</th>
                 <th>
@@ -1235,6 +1239,17 @@ function InactiveBasePageContent() {
                         )}
                       </td>
                       <td className="text-xs align-top">
+                        {isCollapsedGroupLeader ? (
+                          <span className="text-[10px] opacity-40">—</span>
+                        ) : (
+                          <CallbackReminderCell
+                            client={inactiveBaseRowToDirectClient(client)}
+                            onOpen={(dc) => setCallbackReminderClient(dc)}
+                            onSendPhone={(dc) => sendPhoneToTelegram(dc.id)}
+                          />
+                        )}
+                      </td>
+                      <td className="text-xs align-top">
                         <InactiveBaseCallsCell
                           client={client}
                           groupCallsTotal={
@@ -1422,6 +1437,26 @@ function InactiveBasePageContent() {
         showCallStatusPanel
         onCallStatusUpdated={() => {
           window.dispatchEvent(new CustomEvent("inactive-base:reload-clients"));
+        }}
+      />
+      <CallbackReminderModal
+        client={callbackReminderClient}
+        isOpen={!!callbackReminderClient}
+        onClose={() => setCallbackReminderClient(null)}
+        onSaved={(fresh) => {
+          setClients((prev) =>
+            prev.map((row) =>
+              row.id === fresh.id
+                ? {
+                    ...row,
+                    callbackReminderKyivDay: fresh.callbackReminderKyivDay ?? null,
+                    callbackReminderNote: fresh.callbackReminderNote ?? null,
+                    callbackReminderHistory: fresh.callbackReminderHistory ?? [],
+                  }
+                : row
+            )
+          );
+          setCallbackReminderClient(fresh);
         }}
       />
       {inlineRecordingUrl ? (
