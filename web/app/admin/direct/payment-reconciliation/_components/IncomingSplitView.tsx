@@ -36,7 +36,6 @@ import {
   type DepositRealizationMeta,
   type DepositRealizationStatus,
 } from "@/lib/bank/deposit-realization";
-import { CashKindSwitch, CashLedgerPanel, type CashKindFilter } from "./CashLedgerPanel";
 
 type AltegioIncomingItem = {
   altegioId: number;
@@ -3334,7 +3333,6 @@ export function IncomingSplitView({
   const [reconciling, setReconciling] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [expandedAccounts, setExpandedAccounts] = useState<Set<string>>(() => new Set());
-  const [altegioCashFilter, setAltegioCashFilter] = useState<CashKindFilter>("non_cash");
   const depositTabFetchSeqRef = useRef(0);
   const depositTabClientIdsRef = useRef<number[]>([]);
   const depositTabPayerNamesRef = useRef<string[]>([]);
@@ -3895,27 +3893,16 @@ export function IncomingSplitView({
     ? depositSplit.activeDays.length > 0 || depositSplit.realizedDays.length > 0
     : visibleAlignedDays.length > 0;
 
-  const ledgerStatus = reconciliationStatus === "linked" ? "linked" : reconciliationStatus === "all" ? "all" : "open";
-
   return (
     <div className={`flex min-h-0 flex-1 flex-col px-1 py-2 ${className}`.trim()}>
       {error ? (
         <div className="rounded border border-red-200 bg-red-50 px-3 py-2 text-xs text-red-800">{error}</div>
       ) : null}
 
-      {!isDepositsView ? (
-        <div className="mb-1 flex items-center gap-1 px-1">
-          <span className="shrink-0 text-[10px] font-semibold text-emerald-900">Altegio</span>
-          <CashKindSwitch value={altegioCashFilter} onChange={setAltegioCashFilter} />
-        </div>
-      ) : null}
-
       {showPageLoading ? (
         <div className="rounded-xl border border-gray-200 bg-white px-4 py-10 text-center text-sm text-gray-500">
           Завантаження...
         </div>
-      ) : !isDepositsView && altegioCashFilter === "cash" ? (
-        <CashLedgerPanel direction="in" status={ledgerStatus} />
       ) : !hasAnyData ? (
         <div className="rounded-xl border border-gray-200 bg-white px-4 py-10 text-center text-sm text-gray-500">
           {isDepositsView
@@ -4364,12 +4351,6 @@ export function IncomingSplitView({
           </div>
         </div>
       )}
-
-      {!showPageLoading && !isDepositsView && altegioCashFilter === "all" ? (
-        <div className="mt-2 min-h-0 flex-1">
-          <CashLedgerPanel direction="in" status={ledgerStatus} />
-        </div>
-      ) : null}
     </div>
   );
 }

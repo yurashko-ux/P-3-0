@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import { IncomingSplitView, type IncomingSplitControls } from "@/app/admin/direct/payment-reconciliation/_components/IncomingSplitView";
-import { CashKindSwitch, CashLedgerPanel, type CashKindFilter } from "@/app/admin/direct/payment-reconciliation/_components/CashLedgerPanel";
+import { CashLedgerPanel } from "@/app/admin/direct/payment-reconciliation/_components/CashLedgerPanel";
 
 type ReconciliationRow = {
   bank: {
@@ -81,7 +81,7 @@ const STATUS_OPTIONS = [
   { value: "linked", label: "Зведені" },
 ] as const;
 
-type PaymentDirection = "out" | "in";
+type PaymentDirection = "out" | "in" | "cash";
 type BasePaymentStatus = (typeof STATUS_OPTIONS)[number]["value"];
 type PaymentStatus = BasePaymentStatus | "deposits";
 
@@ -237,7 +237,9 @@ function StatusButtonGroup({
             isActiveGroup && !depositsActive && activeStatus === option.value
               ? direction === "out"
                 ? "bg-blue-600 text-white"
-                : "bg-emerald-600 text-white"
+                : direction === "cash"
+                  ? "bg-amber-700 text-white"
+                  : "bg-emerald-600 text-white"
               : "bg-gray-100 text-gray-700 hover:bg-gray-200"
           }`}
           onClick={() => onSelect(direction, option.value)}
@@ -256,7 +258,8 @@ export default function PaymentReconciliationPage() {
   const [loading, setLoading] = useState(false);
   const [actionMessage, setActionMessage] = useState<string | null>(null);
   const [incomingControls, setIncomingControls] = useState<IncomingSplitControls | null>(null);
-  const [outgoingCashFilter, setOutgoingCashFilter] = useState<CashKindFilter>("non_cash");
+  const [cashCounts, setCashCounts] = useState({ all: 0, open: 0, linked: 0 });
+  const [cashReload, setCashReload] = useState(0);
   const rows = useMemo(() => filterRows(data.rows, status), [data.rows, status]);
   const statusCounts = useMemo(() => {
     const linked = data.rows.filter(isLinked).length;
@@ -302,7 +305,7 @@ export default function PaymentReconciliationPage() {
 
   function handleDirectionStatusSelect(nextDirection: PaymentDirection, nextStatus: PaymentStatus) {
     setDirection(nextDirection);
-    if (nextDirection === "out" && nextStatus === "deposits") {
+    if ((nextDirection === "out" || nextDirection === "cash") && nextStatus === "deposits") {
       setStatus("open");
     } else {
       setStatus(nextStatus);
@@ -371,13 +374,14 @@ export default function PaymentReconciliationPage() {
 
   const showOutgoingTable = direction === "out";
   const showIncomingSplit = direction === "in" && (status === "open" || status === "linked" || status === "deposits" || status === "all");
+  const showCash = direction === "cash";
   const incomingStatusCounts = incomingControls?.statusCounts ?? { all: 0, open: 0, linked: 0, deposits: 0 };
-  const outgoingLedgerStatus = status === "linked" ? "linked" : status === "all" ? "all" : "open";
+  const cashLedgerStatus = status === "linked" ? "linked" : status === "all" ? "all" : "open";
 
   return (
     <main
       className={`min-h-screen bg-base-200 text-gray-900 ${
-        showIncomingSplit ? "flex flex-col" : ""
+        showIncomingSplit || showCash ? "flex flex-col" : ""
       }`}
     >
       <div className="sticky top-0 z-20 border-b border-gray-200 bg-white/95 backdrop-blur">
@@ -418,7 +422,20 @@ export default function PaymentReconciliationPage() {
             </button>
           </div>
 
-          {(showOutgoingTable || showIncomingSplit || direction === "in") ? (
+          <div className="h-6 w-px bg-gray-300" aria-hidden />
+
+          <div className="flex flex-wrap items-center gap-1.5 rounded-lg border border-amber-200 bg-amber-50/60 px-2 py-1">
+            <span className="text-[10px] font-bold uppercase tracking-wide text-amber-900">Готівка</span>
+            <StatusButtonGroup
+              direction="cash"
+              activeDirection={direction}
+              activeStatus={status}
+              statusCounts={cashCounts}
+              onSelect={handleDirectionStatusSelect}
+            />
+          </div>
+
+          {(showOutgoingTable || showIncomingSplit || showCash || direction === "in") ? (
             <div className="ml-auto flex flex-wrap items-center gap-1">
               {direction === "in" ? (
                 <button
@@ -436,6 +453,10 @@ export default function PaymentReconciliationPage() {
                 className="btn btn-primary btn-xs h-6 min-h-0 px-2 text-[10px]"
                 disabled={loading || Boolean(incomingControls?.loading) || Boolean(incomingControls?.reconciling)}
                 onClick={() => {
+                  if (showCash) {
+                    setCashReload((value) => value + 1);
+                    return;
+                  }
                   if (showIncomingSplit) {
                     incomingControls?.refresh();
                     return;
@@ -465,16 +486,17 @@ export default function PaymentReconciliationPage() {
         />
       </div>
 
+      <div className={showCash ? "flex min-h-0 flex-1 flex-col p-2" : "hidden"} aria-hidden={!showCash}>
+        <CashLedgerPanel
+          direction="both"
+          status={cashLedgerStatus}
+          reloadToken={cashReload}
+          onCounts={setCashCounts}
+        />
+      </div>
+
       {showOutgoingTable ? (
       <div className="p-2 space-y-2">
-        <div className="flex items-center gap-1 px-1">
-          <span className="shrink-0 text-[10px] font-semibold text-emerald-900">Каса</span>
-          <CashKindSwitch value={outgoingCashFilter} onChange={setOutgoingCashFilter} />
-        </div>
-        {outgoingCashFilter !== "non_cash" ? (
-          <CashLedgerPanel direction="out" status={outgoingLedgerStatus} />
-        ) : null}
-        {outgoingCashFilter === "cash" ? null : (
         <div className="overflow-x-auto rounded-xl border border-gray-200 bg-white shadow-sm">
           <table
             className={`w-full table-fixed text-left text-xs ${
@@ -692,7 +714,6 @@ export default function PaymentReconciliationPage() {
             </tbody>
           </table>
         </div>
-        )}
       </div>
       ) : null}
     </main>

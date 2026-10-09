@@ -4,14 +4,6 @@ import { useEffect, useMemo, useState } from "react";
 import { cashCountUnit, type CashCountCurrency } from "@/lib/finance/cash-denominations";
 import { CASH_RECONCILE_FROM_KYIV_DAY } from "@/lib/finance/cash-openings";
 
-export type CashKindFilter = "all" | "cash" | "non_cash";
-
-export const CASH_KIND_OPTIONS: Array<{ value: CashKindFilter; label: string }> = [
-  { value: "all", label: "Всі" },
-  { value: "cash", label: "Готівкові" },
-  { value: "non_cash", label: "Безготівкові" },
-];
-
 type LedgerCount = {
   id: string;
   kyivDay: string;
@@ -54,39 +46,17 @@ function timeLabel(iso: string): string {
   return date.toLocaleTimeString("uk-UA", { timeZone: "Europe/Kyiv", hour: "2-digit", minute: "2-digit" });
 }
 
-export function CashKindSwitch({
-  value,
-  onChange,
-}: {
-  value: CashKindFilter;
-  onChange: (value: CashKindFilter) => void;
-}) {
-  return (
-    <div className="flex flex-wrap items-center gap-1">
-      {CASH_KIND_OPTIONS.map((option) => (
-        <button
-          key={option.value}
-          type="button"
-          className={`rounded px-1.5 py-0.5 text-[9px] font-medium transition-colors ${
-            value === option.value
-              ? "bg-emerald-700 text-white"
-              : "bg-white text-emerald-900 ring-1 ring-emerald-200 hover:bg-emerald-100"
-          }`}
-          onClick={() => onChange(option.value)}
-        >
-          {option.label}
-        </button>
-      ))}
-    </div>
-  );
-}
-
 export function CashLedgerPanel({
-  direction,
+  direction = "both",
   status,
+  reloadToken = 0,
+  onCounts,
 }: {
-  direction: "in" | "out";
+  /** both — вхідні і вихідні в одній таблиці, по днях */
+  direction?: "in" | "out" | "both";
   status: "open" | "linked" | "all";
+  reloadToken?: number;
+  onCounts?: (counts: { all: number; open: number; linked: number }) => void;
 }) {
   const [rows, setRows] = useState<LedgerRow[]>([]);
   const [loading, setLoading] = useState(true);
@@ -111,11 +81,20 @@ export function CashLedgerPanel({
     return () => {
       cancelled = true;
     };
-  }, []);
+  }, [reloadToken]);
+
+  useEffect(() => {
+    const scoped = rows.filter((row) => direction === "both" || row.direction === direction);
+    onCounts?.({
+      all: scoped.length,
+      open: scoped.filter((row) => !row.posted).length,
+      linked: scoped.filter((row) => row.posted).length,
+    });
+  }, [rows, direction, onCounts]);
 
   const days = useMemo(() => {
     const visible = rows.filter((row) => {
-      if (row.direction !== direction) return false;
+      if (direction !== "both" && row.direction !== direction) return false;
       if (status === "linked") return row.posted;
       if (status === "open") return !row.posted;
       return true;
@@ -136,7 +115,7 @@ export function CashLedgerPanel({
             counts.set(row.count.id, { ...row.count, accountTitle: row.accountTitle });
           }
         }
-        return { kyivDay, rows: dayRows, counts: [...counts.values()] };
+        return { kyivDay, rows: [...dayRows].sort((a, b) => b.occurredAt.localeCompare(a.occurredAt)), counts: [...counts.values()] };
       });
   }, [rows, direction, status]);
 
