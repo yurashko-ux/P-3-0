@@ -121,10 +121,7 @@ export default function CashBalancesPage() {
 
   return (
     <main className="px-3 pb-6 pt-2 space-y-3">
-      <div className="flex items-center gap-2">
-        <p className="text-xs text-gray-600">
-          Готівка — остання проведена касовка. Не проведені платежі під сумою. Безготівка — баланс банку.
-        </p>
+      <div className="flex items-center">
         <button type="button" className="btn btn-sm ml-auto" onClick={() => void load()} disabled={loading}>
           {loading ? "…" : "Оновити"}
         </button>
