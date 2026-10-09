@@ -6,7 +6,7 @@ import { prisma } from "@/lib/prisma";
 import { isCashAltegioAccount } from "@/lib/bank/incoming-reconcile-matching";
 import { isDepositTopUpPaymentPurpose } from "@/lib/altegio/payment-purpose-labels";
 import { isEurCashAccountTitle, isUsdCashAccountTitle } from "@/lib/journal/checkout";
-import { CASH_OPENING_KYIV_DAY } from "@/lib/finance/cash-openings";
+import { CASH_OPENING_KYIV_DAY, CASH_RECONCILE_FROM_KYIV_DAY } from "@/lib/finance/cash-openings";
 
 type CashCurrency = "UAH" | "USD" | "EUR";
 
@@ -364,7 +364,7 @@ export async function listCashLedger(): Promise<CashLedgerRow[]> {
       occurredAt: movement.occurredAt.toISOString(),
       title: movement.title,
       recordId: movement.recordId,
-      posted: Boolean(posting),
+      posted: Boolean(posting) || movement.kyivDay < CASH_RECONCILE_FROM_KYIV_DAY,
       count: count
         ? {
             id: count.id,
@@ -403,7 +403,8 @@ export async function listCashLedger(): Promise<CashLedgerRow[]> {
       occurredAt: tx.operationDate.toISOString(),
       title: tx.counterpartyName?.trim() || tx.paymentPurpose?.trim() || tx.comment?.trim() || "Платіж Altegio",
       recordId: null,
-      posted: false,
+      // До 09.10.2026 готівка вже в початковому залишку — у списку вона зведена без касовки.
+      posted: tx.kyivDay < CASH_RECONCILE_FROM_KYIV_DAY,
       count: null,
     });
   }

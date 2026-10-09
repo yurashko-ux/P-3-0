@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { cashCountUnit, type CashCountCurrency } from "@/lib/finance/cash-denominations";
+import { CASH_RECONCILE_FROM_KYIV_DAY } from "@/lib/finance/cash-openings";
 
 export type CashKindFilter = "all" | "cash" | "non_cash";
 
@@ -154,7 +155,7 @@ export function CashLedgerPanel({
   }
 
   return (
-    <div className="flex min-h-0 flex-1 flex-col overflow-y-auto rounded-xl border border-gray-200 bg-white shadow-sm">
+    <div className="flex min-h-0 w-1/2 max-w-[50%] flex-1 flex-col self-start overflow-y-auto rounded-xl border border-gray-200 bg-white shadow-sm">
       {days.map((day) => (
         <section key={day.kyivDay} className="border-t-2 border-gray-800 first:border-t-0">
           <div className="grid grid-cols-[minmax(0,1fr)_minmax(180px,240px)] bg-slate-300 text-[10px]">
@@ -198,7 +199,9 @@ export function CashLedgerPanel({
             </table>
             <div className="border-l border-gray-200 bg-emerald-50/40 px-2 py-2 text-[11px]">
               {day.counts.length === 0 ? (
-                <span className="text-gray-400">—</span>
+                <span className="text-gray-400">
+                  {day.kyivDay < CASH_RECONCILE_FROM_KYIV_DAY ? "до 09.10.2026" : "—"}
+                </span>
               ) : (
                 day.counts.map((count) => (
                   <div key={count.id} className="mb-2 last:mb-0">
