@@ -78,10 +78,6 @@
     {
       "path": "/api/cron/reports-daily",
       "schedule": "*/5 * * * *"
-    },
-    {
-      "path": "/api/cron/cash-day-snapshot",
-      "schedule": "0 21 * * *"
     }
   ],
   "rewrites": [

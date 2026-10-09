@@ -1,5 +1,5 @@
-// Касовка гривневої каси і нічний знімок усіх плиток.
-// Знімок опівночі фіксує день, який щойно закінчився.
+// Касовка каси: рядок з’являється, коли адміністратор натискає «Зберегти».
+// Нічний знімок усіх плиток лишився лише для старих даних, нові опівночі не пишемо.
 
 import { prisma } from "@/lib/prisma";
 import { kyivCalendarTodayYmd, kyivCalendarYesterdayYmd } from "@/lib/direct-kyiv-today";
@@ -96,6 +96,52 @@ export async function saveCashTillCount(input: {
     `[finance/cash-count] ${kyivDay} каса ${accountId} «${tile.title}»: факт ${countedUah} ${currency}, документи ${book}${posting.matched ? `, проведено ${posting.posted}` : ""}`,
   );
   return { countedUah, kyivDay };
+}
+
+export type SavedCashCountRow = {
+  id: string;
+  kyivDay: string;
+  savedAt: string;
+  authorName: string;
+  accountTitle: string;
+  currency: string;
+  counted: number;
+};
+
+/** Усі натискання «Зберегти», новіші зверху. Дві касовки одного дня — два рядки. */
+export async function listSavedCashCounts(limit = 200): Promise<SavedCashCountRow[]> {
+  const take = Math.min(Math.max(limit, 1), 500);
+  const rows = await prisma.cashTillCount.findMany({
+    orderBy: { createdAt: "desc" },
+    take,
+    select: {
+      id: true,
+      kyivDay: true,
+      accountTitle: true,
+      countedUah: true,
+      currency: true,
+      createdAt: true,
+      createdBy: true,
+    },
+  });
+  const userIds = [...new Set(rows.map((row) => row.createdBy || "").filter(Boolean))];
+  const users =
+    userIds.length === 0
+      ? []
+      : await prisma.appUser.findMany({
+          where: { id: { in: userIds } },
+          select: { id: true, name: true },
+        });
+  const names = new Map(users.map((user) => [user.id, user.name]));
+  return rows.map((row) => ({
+    id: row.id,
+    kyivDay: row.kyivDay,
+    savedAt: row.createdAt.toISOString(),
+    authorName: row.createdBy ? names.get(row.createdBy) || row.createdBy : "—",
+    accountTitle: row.accountTitle,
+    currency: row.currency,
+    counted: row.countedUah,
+  }));
 }
 
 function snapshotLine(tile: CashBalanceTile, countedUah: number | null): CashSnapshotLine {

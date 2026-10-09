@@ -1,7 +1,7 @@
-// Опівночі за Києвом (21:00 UTC) фіксує знімок усіх плиток Каси за день, що закінчився.
+// Раніше опівночі за Києвом фіксував знімок усіх плиток. Розклад вимкнено:
+// касовка зберігається кнопкою «Зберегти» і потрапляє у вкладку Фінанси → Каса.
 
 import { NextRequest, NextResponse } from "next/server";
-import { captureCashDaySnapshot } from "@/lib/finance/cash-count";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
@@ -26,10 +26,8 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ ok: false, error: "forbidden" }, { status: 403 });
   }
   try {
-    const dayParam = (req.nextUrl.searchParams.get("day") || "").trim();
-    const result = await captureCashDaySnapshot(dayParam || undefined);
-    console.log("[cron/cash-day-snapshot]", result);
-    return NextResponse.json({ ok: true, ...result });
+    console.log("[cron/cash-day-snapshot] Вимкнено: касовка зберігається кнопкою «Зберегти»");
+    return NextResponse.json({ ok: true, disabled: true });
   } catch (err) {
     console.error("[cron/cash-day-snapshot]", err);
     return NextResponse.json(

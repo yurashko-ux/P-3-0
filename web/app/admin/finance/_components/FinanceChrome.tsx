@@ -6,6 +6,7 @@ import { usePathname } from "next/navigation";
 export function FinanceChrome({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
   const onDocs = pathname === "/admin/finance" || pathname === "/admin/finance/";
+  const onKasa = pathname?.startsWith("/admin/finance/kasa");
   const onPayments = pathname?.startsWith("/admin/finance/payments");
   const onRecords = pathname?.startsWith("/admin/finance/records");
   const onOperations = pathname?.startsWith("/admin/finance/operations");
@@ -20,6 +21,12 @@ export function FinanceChrome({ children }: { children: React.ReactNode }) {
           className={`btn btn-sm min-h-0 h-8 ${onDocs ? "btn-neutral" : "btn-ghost"}`}
         >
           Документи
+        </Link>
+        <Link
+          href="/admin/finance/kasa"
+          className={`btn btn-sm min-h-0 h-8 ${onKasa ? "btn-neutral" : "btn-ghost"}`}
+        >
+          Каса
         </Link>
         <Link
           href="/admin/finance/payments"

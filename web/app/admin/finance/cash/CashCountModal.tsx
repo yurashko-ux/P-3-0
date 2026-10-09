@@ -131,7 +131,7 @@ export function CashCountModal({ accountId, accountTitle, currency, onClose, onS
         </div>
         {error && <div className="alert alert-error mt-3 py-2 text-sm">{error}</div>}
         <button type="button" className="btn btn-primary btn-sm mt-3 w-full" disabled={busy} onClick={() => void submit()}>
-          {busy ? "…" : "Порахувати"}
+          {busy ? "…" : "Зберегти"}
         </button>
       </div>
     </div>
