@@ -61,6 +61,51 @@ function timeLabel(iso: string): string {
   return date.toLocaleTimeString("uk-UA", { timeZone: "Europe/Kyiv", hour: "2-digit", minute: "2-digit" });
 }
 
+/** Один клієнт і один рахунок за день — один рядок, суми з знаком. */
+function aggregateDayRows(dayRows: LedgerRow[]): LedgerRow[] {
+  const groups = new Map<
+    string,
+    LedgerRow & { signed: number; times: Set<string>; records: Set<number>; titles: Set<string> }
+  >();
+  for (const row of dayRows) {
+    const client = row.clientName.trim();
+    const key = `${client}\0${row.accountTitle}\0${row.currency}`;
+    const signed = row.direction === "out" ? -row.amount : row.amount;
+    const current = groups.get(key);
+    if (!current) {
+      groups.set(key, {
+        ...row,
+        clientName: client,
+        signed,
+        times: new Set([timeLabel(row.occurredAt)]),
+        records: new Set(row.recordId ? [row.recordId] : []),
+        titles: new Set(row.title ? [row.title] : []),
+      });
+      continue;
+    }
+    current.signed += signed;
+    current.times.add(timeLabel(row.occurredAt));
+    if (row.recordId) current.records.add(row.recordId);
+    if (row.title) current.titles.add(row.title);
+    if (row.occurredAt > current.occurredAt) current.occurredAt = row.occurredAt;
+  }
+  return [...groups.values()]
+    .sort((a, b) => b.occurredAt.localeCompare(a.occurredAt))
+    .map((group) => {
+      const signed = Math.round(group.signed * 100) / 100;
+      const incoming = signed >= 0;
+      const times = [...group.times].filter(Boolean);
+      return {
+        ...group,
+        direction: incoming ? "in" : "out",
+        amount: Math.abs(signed),
+        title: [...group.titles].join(", ") || "—",
+        recordId: group.records.size === 1 ? [...group.records][0] : null,
+        occurredAt: times.length === 1 ? group.occurredAt : "",
+      } as LedgerRow;
+    });
+}
+
 export function CashLedgerPanel({
   direction = "both",
   status,
@@ -100,10 +145,21 @@ export function CashLedgerPanel({
 
   useEffect(() => {
     const scoped = rows.filter((row) => direction === "both" || row.direction === direction);
+    const countGroups = (list: LedgerRow[]) => {
+      const byDay = new Map<string, LedgerRow[]>();
+      for (const row of list) {
+        const bucket = byDay.get(row.kyivDay) || [];
+        bucket.push(row);
+        byDay.set(row.kyivDay, bucket);
+      }
+      let total = 0;
+      for (const dayRows of byDay.values()) total += aggregateDayRows(dayRows).length;
+      return total;
+    };
     onCounts?.({
-      all: scoped.length,
-      open: scoped.filter((row) => !row.posted).length,
-      linked: scoped.filter((row) => row.posted).length,
+      all: countGroups(scoped),
+      open: countGroups(scoped.filter((row) => !row.posted)),
+      linked: countGroups(scoped.filter((row) => row.posted)),
     });
   }, [rows, direction, onCounts]);
 
@@ -130,7 +186,7 @@ export function CashLedgerPanel({
             counts.set(row.count.id, { ...row.count, accountTitle: row.accountTitle });
           }
         }
-        return { kyivDay, rows: [...dayRows].sort((a, b) => b.occurredAt.localeCompare(a.occurredAt)), counts: [...counts.values()] };
+        return { kyivDay, rows: aggregateDayRows(dayRows), counts: [...counts.values()] };
       });
   }, [rows, direction, status]);
 
@@ -152,17 +208,18 @@ export function CashLedgerPanel({
     <div className="flex min-h-0 w-1/2 max-w-[50%] flex-1 flex-col self-start overflow-y-auto rounded-xl border border-gray-200 bg-white shadow-sm">
       {days.map((day) => (
         <section key={day.kyivDay} className="border-t-2 border-gray-800 first:border-t-0">
-          <div className="grid grid-cols-[minmax(0,1fr)_minmax(180px,240px)] bg-slate-300 text-[10px]">
-            <div className="px-2 py-1 font-bold uppercase tracking-wide text-gray-900">
-              {dayLabel(day.kyivDay)}
-              <span className="ml-2 normal-case tracking-normal tabular-nums">{dayNetLabel(day.rows)}</span>
-            </div>
-            <div className="border-l border-gray-300 px-2 py-1 text-right font-semibold text-emerald-900">Касовка</div>
-          </div>
           <div className="grid grid-cols-[minmax(0,1fr)_minmax(180px,240px)]">
             <table className="w-full text-left text-[10px]">
-              <thead className="bg-gray-50 text-[9px] uppercase text-gray-500">
-                <tr>
+              <thead>
+                <tr className="bg-slate-300 text-[10px] text-gray-900">
+                  <th colSpan={7} className="px-2 py-1 text-left font-bold uppercase tracking-wide">
+                    {dayLabel(day.kyivDay)}
+                  </th>
+                  <th className="px-2 py-1 text-right font-bold normal-case tracking-normal tabular-nums">
+                    {dayNetLabel(day.rows)}
+                  </th>
+                </tr>
+                <tr className="bg-gray-50 text-[9px] uppercase text-gray-500">
                   <th className="px-2 py-1 font-medium">№</th>
                   <th className="px-2 py-1 font-medium">Клієнт</th>
                   <th className="px-2 py-1 font-medium">Призначення</th>
@@ -183,7 +240,9 @@ export function CashLedgerPanel({
                       <td className="px-2 py-1 tabular-nums text-gray-500">{index + 1}</td>
                       <td className="px-2 py-1 text-gray-800">{row.clientName || "—"}</td>
                       <td className="px-2 py-1 text-gray-700">{row.title}</td>
-                      <td className="whitespace-nowrap px-2 py-1 tabular-nums text-gray-600">{timeLabel(row.occurredAt)}</td>
+                      <td className="whitespace-nowrap px-2 py-1 tabular-nums text-gray-600">
+                        {timeLabel(row.occurredAt) || "—"}
+                      </td>
                       <td className="whitespace-nowrap px-2 py-1 tabular-nums text-gray-600">
                         {row.recordId ? row.recordId : "—"}
                       </td>
@@ -203,7 +262,11 @@ export function CashLedgerPanel({
                 })}
               </tbody>
             </table>
-            <div className="border-l border-gray-200 bg-emerald-50/40 px-2 py-2 text-[11px]">
+            <div className="border-l border-gray-200">
+              <div className="border-b border-gray-300 bg-slate-300 px-2 py-1 text-right text-[10px] font-semibold text-emerald-900">
+                Касовка
+              </div>
+              <div className="bg-emerald-50/40 px-2 py-2 text-[11px]">
               {day.counts.length === 0 ? (
                 <span className="text-gray-400">
                   {day.kyivDay < CASH_RECONCILE_FROM_KYIV_DAY ? "до 09.10.2026" : "—"}
@@ -220,6 +283,7 @@ export function CashLedgerPanel({
                   </div>
                 ))
               )}
+              </div>
             </div>
           </div>
         </section>
