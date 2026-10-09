@@ -2,6 +2,7 @@
 // У баланс після початкового залишку входять лише оплати Kresco і документи Kresco.
 // Старі рядки Altegio до цього дня в проводку не беремо: вони вже в початковому залишку.
 
+import { Prisma } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
 import { isCashAltegioAccount } from "@/lib/bank/incoming-reconcile-matching";
 import { isDepositTopUpPaymentPurpose } from "@/lib/altegio/payment-purpose-labels";
@@ -272,25 +273,6 @@ export async function postCashMovementsIfMatched(input: {
   return { matched: true, posted: fresh.length };
 }
 
-function clientNameFromAltegioRaw(raw: unknown): string {
-  if (!raw || typeof raw !== "object") return "";
-  const client = (raw as { client?: unknown }).client;
-  if (!client || typeof client !== "object") return "";
-  const row = client as { name?: unknown; surname?: unknown; patronymic?: unknown };
-  const name = typeof row.name === "string" ? row.name.trim() : "";
-  if (name) return name;
-  const parts = [row.surname, row.patronymic]
-    .map((value) => (typeof value === "string" ? value.trim() : ""))
-    .filter(Boolean);
-  return parts.join(" ");
-}
-
-function recordIdFromAltegioRaw(raw: unknown): number | null {
-  if (!raw || typeof raw !== "object") return null;
-  const id = Number((raw as { record_id?: unknown }).record_id);
-  return Number.isFinite(id) && id > 0 ? id : null;
-}
-
 function kopToAmount(value: bigint): number {
   const negative = value < 0n;
   const abs = negative ? -value : value;
@@ -310,6 +292,19 @@ async function authorNames(userIds: string[]): Promise<Map<string, string>> {
   return map;
 }
 
+type AltegioCashLedgerSource = {
+  altegioId: number;
+  accountId: string | null;
+  accountTitle: string | null;
+  amountKopiykas: bigint;
+  kyivDay: string;
+  operationDate: Date;
+  paymentPurpose: string | null;
+  comment: string | null;
+  clientName: string | null;
+  recordIdText: string | null;
+};
+
 export async function listCashLedger(): Promise<CashLedgerRow[]> {
   const { fetchAltegioAccounts } = await import("@/lib/altegio/accounts");
   const { hiddenFinanceAccountIds } = await import("@/lib/finance/account-archive");
@@ -322,6 +317,7 @@ export async function listCashLedger(): Promise<CashLedgerRow[]> {
     }))
     .filter((account) => account.id > 0 && isCashAltegioAccount(account.title) && !hiddenIds.has(account.id));
 
+  const cashAccountIds = cashAccounts.map((account) => String(account.id));
   const [movements, postings, altegioRows] = await Promise.all([
     loadCashBookMovements(cashAccounts),
     prisma.cashTillPosting.findMany({
@@ -340,22 +336,25 @@ export async function listCashLedger(): Promise<CashLedgerRow[]> {
         },
       },
     }),
-    prisma.altegioFinanceTransaction.findMany({
-      where: { deletedInAltegio: false, direction: { in: ["in", "out"] } },
-      select: {
-        altegioId: true,
-        accountId: true,
-        accountTitle: true,
-        amountKopiykas: true,
-        kyivDay: true,
-        operationDate: true,
-        direction: true,
-        counterpartyName: true,
-        paymentPurpose: true,
-        comment: true,
-        rawData: true,
-      },
-    }),
+    // Лише готівкові рахунки і два поля з rawData. Повний JSON не тягнемо: відповідь > 5 МБ.
+    cashAccountIds.length === 0
+      ? Promise.resolve([] as AltegioCashLedgerSource[])
+      : prisma.$queryRaw<AltegioCashLedgerSource[]>`
+          SELECT
+            "altegioId",
+            "accountId",
+            "accountTitle",
+            "amountKopiykas",
+            "kyivDay",
+            "operationDate",
+            "paymentPurpose",
+            "comment",
+            NULLIF(BTRIM("rawData"->'client'->>'name'), '') AS "clientName",
+            NULLIF("rawData"->>'record_id', '') AS "recordIdText"
+          FROM "altegio_finance_transactions"
+          WHERE "deletedInAltegio" = false
+            AND "accountId" IN (${Prisma.join(cashAccountIds)})
+        `,
   ]);
 
   const names = await authorNames(
@@ -407,12 +406,15 @@ export async function listCashLedger(): Promise<CashLedgerRow[]> {
     if (mirroredAltegioIds.has(tx.altegioId)) continue;
     const accountId = Number(tx.accountId) || 0;
     if (hiddenIds.has(accountId)) continue;
-    const signedAmount = kopToAmount(tx.amountKopiykas);
+    const signedAmount = kopToAmount(
+      typeof tx.amountKopiykas === "bigint" ? tx.amountKopiykas : BigInt(tx.amountKopiykas),
+    );
     const amount = money(Math.abs(signedAmount));
     if (!(amount > 0)) continue;
     // Знак суми — реальний рух каси. direction у базі хибний: стаття «Надання послуг» записана як витрата.
     const direction = signedAmount < 0 ? "out" : "in";
-    const clientName = clientNameFromAltegioRaw(tx.rawData);
+    const clientName = tx.clientName?.trim() || "";
+    const recordId = Number(tx.recordIdText);
     rows.push({
       id: `altegio:${tx.altegioId}`,
       sourceType: "altegio",
@@ -426,7 +428,7 @@ export async function listCashLedger(): Promise<CashLedgerRow[]> {
       occurredAt: tx.operationDate.toISOString(),
       title: tx.paymentPurpose?.trim() || tx.comment?.trim() || "Платіж Altegio",
       clientName,
-      recordId: recordIdFromAltegioRaw(tx.rawData),
+      recordId: Number.isFinite(recordId) && recordId > 0 ? recordId : null,
       posted: tx.kyivDay < CASH_RECONCILE_FROM_KYIV_DAY,
       count: null,
     });
