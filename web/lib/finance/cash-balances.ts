@@ -1,7 +1,7 @@
 // Залишки рахунків для розділу Каса.
-// Готівка: ручний старт на кінець дня + платежі Altegio і рухи Kresco з наступного дня.
-// Плюс і мінус лягають на залишок одразу, без очікування касовки.
-// Безготівка: фактичний баланс monobank. Зведення платежів тут не рахуємо.
+// Готівка: сума останньої касовки, якою платежі проведено. Якщо касовки ще не було — початковий залишок.
+// Не проведені платежі в цю суму не входять, їхній баланс окремо знизу.
+// Безготівка: фактичний баланс monobank.
 
 import { prisma } from "@/lib/prisma";
 import { fetchAltegioAccounts } from "@/lib/altegio/accounts";
@@ -14,8 +14,7 @@ import {
   CASH_OPENING_USD,
 } from "@/lib/finance/cash-openings";
 import { hiddenFinanceAccountIds } from "@/lib/finance/account-archive";
-import { kyivCalendarTodayYmd } from "@/lib/direct-kyiv-today";
-import { openCashNetsForAccounts, sumUnmirroredAltegioCashByAccount } from "@/lib/finance/cash-posting";
+import { openCashNetsForAccounts } from "@/lib/finance/cash-posting";
 
 export type CashCurrency = "UAH" | "USD" | "EUR";
 
@@ -95,83 +94,6 @@ export async function listCashBalances(): Promise<CashBalanceTile[]> {
     return [];
   }
 
-  const cashAccounts = listed.filter((account) => account.cash && openingOf(account.currency) != null);
-  const cashIds = cashAccounts.map((account) => account.id);
-  const uahExtra = new Map<number, number>();
-  const fxExtra = new Map<number, number>();
-
-  if (cashIds.length > 0) {
-    const [payments, documents] = await Promise.all([
-      prisma.salonCheckoutPayment.findMany({
-        where: {
-          accountId: { in: cashIds },
-          checkout: { kyivDay: { gt: CASH_OPENING_KYIV_DAY } },
-        },
-        select: { accountId: true, amount: true, amountFx: true, currencyCode: true, altegioTransactionId: true },
-      }),
-      prisma.financeDocument.findMany({
-        where: {
-          source: "kresco",
-          status: { not: "void" },
-          kyivDay: { gt: CASH_OPENING_KYIV_DAY },
-          OR: [{ accountId: { in: cashIds } }, { counterAccountId: { in: cashIds } }],
-        },
-        select: {
-          type: true,
-          amountUah: true,
-          accountId: true,
-          counterAccountId: true,
-          altegioTransactionId: true,
-        },
-      }),
-    ]);
-
-    const currencyById = new Map(cashAccounts.map((account) => [account.id, account.currency]));
-    const mirroredAltegioIds = new Set<number>();
-    const rememberMirror = (altegioId: number | null | undefined) => {
-      const id = Number(altegioId) || 0;
-      if (id > 0) mirroredAltegioIds.add(id);
-    };
-    for (const payment of payments) {
-      rememberMirror(payment.altegioTransactionId);
-      const currency = currencyById.get(payment.accountId) || "UAH";
-      const code = String(payment.currencyCode || "").toUpperCase();
-      const fx = payment.amountFx != null && payment.amountFx > 0 ? payment.amountFx : 0;
-      if (currency !== "UAH" && fx > 0 && code === currency) {
-        fxExtra.set(payment.accountId, money((fxExtra.get(payment.accountId) || 0) + fx));
-      } else {
-        uahExtra.set(payment.accountId, money((uahExtra.get(payment.accountId) || 0) + payment.amount));
-      }
-    }
-
-    const addUah = (accountId: number | null | undefined, delta: number) => {
-      const id = Number(accountId) || 0;
-      if (!currencyById.has(id)) return;
-      uahExtra.set(id, money((uahExtra.get(id) || 0) + delta));
-    };
-    for (const doc of documents) {
-      rememberMirror(doc.altegioTransactionId);
-      const amount = money(doc.amountUah);
-      if (!(amount > 0)) continue;
-      if (doc.type === "income") addUah(doc.accountId, amount);
-      else if (doc.type === "expense") addUah(doc.accountId, -amount);
-      else if (doc.type === "transfer") {
-        addUah(doc.accountId, -amount);
-        addUah(doc.counterAccountId, amount);
-      }
-    }
-
-    const altegioNets = await sumUnmirroredAltegioCashByAccount(cashAccounts, mirroredAltegioIds);
-    for (const [accountId, net] of altegioNets) {
-      const currency = currencyById.get(accountId) || "UAH";
-      if (currency === "UAH") {
-        uahExtra.set(accountId, money((uahExtra.get(accountId) || 0) + net));
-      } else {
-        fxExtra.set(accountId, money((fxExtra.get(accountId) || 0) + net));
-      }
-    }
-  }
-
   const bankByAltegio = await loadBankBalances(listed.filter((account) => !account.cash).map((account) => account.id));
 
   const tiles = listed
@@ -208,15 +130,13 @@ export async function listCashBalances(): Promise<CashBalanceTile[]> {
           openPaymentsCount: 0,
         };
       }
-      const fxDelta = fxExtra.get(account.id) || 0;
-      const uahDelta = uahExtra.get(account.id) || 0;
       if (account.currency === "UAH") {
         return {
           id: account.id,
           title: account.title,
           currency: account.currency,
           cash: true,
-          balanceUah: money(opening + uahDelta),
+          balanceUah: money(opening),
           balanceFx: null,
           openingPending: false,
           hasBank: false,
@@ -230,8 +150,8 @@ export async function listCashBalances(): Promise<CashBalanceTile[]> {
         title: account.title,
         currency: account.currency,
         cash: true,
-        balanceFx: money(opening + fxDelta),
-        balanceUah: uahDelta !== 0 ? uahDelta : null,
+        balanceFx: money(opening),
+        balanceUah: null,
         openingPending: false,
         hasBank: false,
         countedUah: null,
@@ -241,13 +161,12 @@ export async function listCashBalances(): Promise<CashBalanceTile[]> {
     })
     .sort(sortTiles);
 
-  const today = kyivCalendarTodayYmd();
   const cashTiles = tiles.filter((tile) => tile.cash && !tile.openingPending);
   const countableIds = cashTiles.map((tile) => tile.id);
   if (countableIds.length > 0) {
     const [counts, openNets] = await Promise.all([
       prisma.cashTillCount.findMany({
-        where: { kyivDay: today, accountId: { in: countableIds } },
+        where: { accountId: { in: countableIds }, matchedBook: true },
         orderBy: { createdAt: "desc" },
         select: { accountId: true, countedUah: true },
       }),
@@ -260,7 +179,12 @@ export async function listCashBalances(): Promise<CashBalanceTile[]> {
       if (!latest.has(row.accountId)) latest.set(row.accountId, row.countedUah);
     }
     for (const tile of tiles) {
-      if (latest.has(tile.id)) tile.countedUah = latest.get(tile.id) ?? null;
+      const counted = latest.get(tile.id);
+      if (counted != null) {
+        if (tile.currency === "UAH") tile.balanceUah = money(counted);
+        else tile.balanceFx = money(counted);
+        tile.countedUah = money(counted);
+      }
       const open = openNets.get(tile.id);
       if (open) {
         tile.openPaymentsNet = open.net;

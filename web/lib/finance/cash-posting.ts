@@ -1,6 +1,6 @@
 // Готівкові рухи каси і проводка збіжною касовкою.
-// Баланс плитки: початковий залишок плюс рухи Kresco і готівкові платежі Altegio з наступного дня.
-// Старі рядки Altegio до цього дня в баланс не беремо: вони вже в початковому залишку.
+// Плитка показує останню касовку, якою платежі проведено. Не проведені в неї не входять.
+// Старі рядки Altegio до 09.10 у проводку не беремо: вони вже в початковому залишку.
 
 import { Prisma } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
@@ -270,7 +270,7 @@ export async function postCashMovementsIfMatched(input: {
   const matched = cashAmountsEqual(input.counted, input.book);
   if (!matched) {
     console.log(
-      `[finance/cash-posting] Каса ${input.accountId} «${input.accountTitle}»: факт ${input.counted} ≠ документи ${input.book}, проводки немає`,
+      `[finance/cash-posting] Каса ${input.accountId} «${input.accountTitle}»: факт ${input.counted} ≠ очікувана касовка ${input.book}, проводки немає`,
     );
     return { matched: false, posted: 0 };
   }
@@ -288,80 +288,100 @@ export async function postCashMovementsIfMatched(input: {
       movement.currency === input.currency
       && !postedKeys.has(postingKey(movement.sourceType, movement.sourceId, movement.accountId)),
   );
+  const mirroredAltegioIds = new Set(
+    movements.map((movement) => movement.altegioTransactionId).filter((id): id is number => id != null && id > 0),
+  );
+  const altegioFresh = await loadUnpostedAltegioCash(input.accountId, input.accountTitle, postedKeys, mirroredAltegioIds);
 
   await prisma.cashTillCount.update({
     where: { id: input.countId },
     data: { matchedBook: true },
   });
 
-  if (fresh.length > 0) {
+  const toPost = [
+    ...fresh.map((movement) => ({
+      countId: input.countId,
+      accountId: movement.accountId,
+      sourceType: movement.sourceType,
+      sourceId: movement.sourceId,
+      direction: movement.direction,
+      amount: movement.amount,
+      kyivDay: movement.kyivDay,
+    })),
+    ...altegioFresh.map((movement) => ({
+      countId: input.countId,
+      accountId: movement.accountId,
+      sourceType: "altegio",
+      sourceId: movement.sourceId,
+      direction: movement.direction,
+      amount: movement.amount,
+      kyivDay: movement.kyivDay,
+    })),
+  ];
+  if (toPost.length > 0) {
     await prisma.cashTillPosting.createMany({
-      data: fresh.map((movement) => ({
-        countId: input.countId,
-        accountId: movement.accountId,
-        sourceType: movement.sourceType,
-        sourceId: movement.sourceId,
-        direction: movement.direction,
-        amount: movement.amount,
-        kyivDay: movement.kyivDay,
-      })),
+      data: toPost,
       skipDuplicates: true,
     });
   }
 
   console.log(
-    `[finance/cash-posting] Касовка ${input.countId} провела ${fresh.length} платежів каси ${input.accountId} «${input.accountTitle}» (${input.counted} ${input.currency})`,
+    `[finance/cash-posting] Касовка ${input.countId} провела ${toPost.length} платежів каси ${input.accountId} «${input.accountTitle}» (${input.counted} ${input.currency})`,
   );
-  return { matched: true, posted: fresh.length };
+  return { matched: true, posted: toPost.length };
 }
 
-/** Сума готівкових платежів Altegio з 09.10 по касах. Знак суми — напрямок. Дзеркала Kresco не додаємо вдруге. */
-export async function sumUnmirroredAltegioCashByAccount(
-  accounts: Array<{ id: number; title: string; currency: CashCurrency }>,
-  mirroredAltegioIds: ReadonlySet<number>,
-): Promise<Map<number, number>> {
-  const out = new Map<number, number>();
-  const byId = new Map(accounts.map((account) => [account.id, account]));
-  const cashAccountIds = accounts.map((account) => String(account.id));
-  if (cashAccountIds.length === 0) return out;
+type AltegioPostingRow = {
+  sourceId: string;
+  accountId: number;
+  direction: "in" | "out";
+  amount: number;
+  kyivDay: string;
+};
 
+/** Готівкові платежі Altegio цієї каси з 09.10, яких ще немає в проводці. */
+async function loadUnpostedAltegioCash(
+  accountId: number,
+  accountTitle: string,
+  postedKeys: ReadonlySet<string>,
+  mirroredAltegioIds: ReadonlySet<number>,
+): Promise<AltegioPostingRow[]> {
   const rows = await prisma.$queryRaw<
     Array<{
       altegioId: number;
-      accountId: string | null;
       accountTitle: string | null;
       amountKopiykas: bigint;
+      kyivDay: string;
       paymentPurpose: string | null;
     }>
   >`
-    SELECT "altegioId", "accountId", "accountTitle", "amountKopiykas", "paymentPurpose"
+    SELECT "altegioId", "accountTitle", "amountKopiykas", "kyivDay", "paymentPurpose"
     FROM "altegio_finance_transactions"
     WHERE "deletedInAltegio" = false
       AND "kyivDay" >= ${CASH_RECONCILE_FROM_KYIV_DAY}
-      AND "accountId" IN (${Prisma.join(cashAccountIds)})
+      AND "accountId" = ${String(accountId)}
   `;
-
+  const out: AltegioPostingRow[] = [];
   for (const tx of rows) {
-    const accountId = Number(tx.accountId) || 0;
-    const account = byId.get(accountId);
-    if (!account) continue;
-    const title = tx.accountTitle?.trim() || account.title;
+    const title = tx.accountTitle?.trim() || accountTitle;
     if (!isCashAltegioAccount(title)) continue;
     if (isDepositTopUpPaymentPurpose(tx.paymentPurpose || "")) continue;
     const altegioId = Number(tx.altegioId) || 0;
-    if (altegioId > 0 && mirroredAltegioIds.has(altegioId)) continue;
+    if (!(altegioId > 0) || mirroredAltegioIds.has(altegioId)) continue;
+    if (postedKeys.has(postingKey("altegio", String(altegioId), accountId))) continue;
     const signedAmount = kopToAmount(
       typeof tx.amountKopiykas === "bigint" ? tx.amountKopiykas : BigInt(tx.amountKopiykas),
     );
-    if (signedAmount === 0) continue;
-    out.set(accountId, money((out.get(accountId) || 0) + signedAmount));
+    const amount = money(Math.abs(signedAmount));
+    if (!(amount > 0)) continue;
+    out.push({
+      sourceId: String(altegioId),
+      accountId,
+      direction: signedAmount < 0 ? "out" : "in",
+      amount,
+      kyivDay: tx.kyivDay,
+    });
   }
-
-  console.log(
-    `[finance/cash-posting] Платежі Altegio в залишок каси: ${[...out.entries()]
-      .map(([id, net]) => `${byId.get(id)?.title || id}=${net}`)
-      .join("; ") || "немає"}`,
-  );
   return out;
 }
 
@@ -511,6 +531,9 @@ export async function listCashLedger(): Promise<CashLedgerRow[]> {
     const direction = signedAmount < 0 ? "out" : "in";
     const clientName = tx.clientName?.trim() || "";
     const recordId = Number(tx.recordIdText);
+    const posting = postingByKey.get(postingKey("altegio", String(tx.altegioId), accountId));
+    const count = posting?.count;
+    const author = count?.createdBy ? names.get(count.createdBy) || count.createdBy : "";
     rows.push({
       id: `altegio:${tx.altegioId}`,
       sourceType: "altegio",
@@ -525,8 +548,17 @@ export async function listCashLedger(): Promise<CashLedgerRow[]> {
       title: tx.paymentPurpose?.trim() || tx.comment?.trim() || "Платіж Altegio",
       clientName,
       recordId: Number.isFinite(recordId) && recordId > 0 ? recordId : null,
-      posted: tx.kyivDay < CASH_RECONCILE_FROM_KYIV_DAY,
-      count: null,
+      posted: Boolean(posting),
+      count: count
+        ? {
+            id: count.id,
+            kyivDay: count.kyivDay,
+            counted: count.countedUah,
+            currency: count.currency,
+            createdAt: count.createdAt.toISOString(),
+            authorName: author,
+          }
+        : null,
     });
   }
 

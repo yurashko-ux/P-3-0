@@ -70,9 +70,6 @@ function OpenPaymentsLine({ tile }: { tile: CashTile }) {
 
 function TileFace({ tile }: { tile: CashTile }) {
   const book = bookAmount(tile);
-  const counted = tile.countedUah;
-  const diff = counted != null && book != null ? Math.round((counted - book) * 100) / 100 : null;
-  const unit = tile.currency === "UAH" ? "грн" : fxSymbol(tile.currency);
   return (
     <>
       <span className="text-[11px] font-medium text-gray-700 leading-tight">{tile.title}</span>
@@ -86,34 +83,11 @@ function TileFace({ tile }: { tile: CashTile }) {
             {money(tile.balanceFx)} {fxSymbol(tile.currency)}
           </span>
           <OpenPaymentsLine tile={tile} />
-          {tile.balanceUah != null && (
-            <span className="text-[11px] tabular-nums text-gray-500">{money(tile.balanceUah)} грн</span>
-          )}
-          {counted != null && (
-            <span className="text-[11px] tabular-nums text-gray-500">
-              ({money(counted)} {unit})
-            </span>
-          )}
-          {diff != null && diff !== 0 && (
-            <span className={`text-[11px] font-medium tabular-nums ${diff > 0 ? "text-green-600" : "text-red-600"}`}>
-              {diff > 0 ? "+" : ""}
-              {money(diff)} {unit}
-            </span>
-          )}
         </>
       ) : (
         <>
           <span className="mt-1 text-lg font-semibold tabular-nums text-gray-900">{money(book || 0)} грн</span>
           <OpenPaymentsLine tile={tile} />
-          {counted != null && (
-            <span className="text-[11px] tabular-nums text-gray-500">({money(counted)} грн)</span>
-          )}
-          {diff != null && diff !== 0 && (
-            <span className={`text-[11px] font-medium tabular-nums ${diff > 0 ? "text-green-600" : "text-red-600"}`}>
-              {diff > 0 ? "+" : ""}
-              {money(diff)} грн
-            </span>
-          )}
         </>
       )}
     </>
@@ -149,7 +123,7 @@ export default function CashBalancesPage() {
     <main className="px-3 pb-6 pt-2 space-y-3">
       <div className="flex items-center gap-2">
         <p className="text-xs text-gray-600">
-          Готівка — залишок на кінець 8 жовтня плюс платежі з 9 жовтня. Безготівка — фактичний баланс банку.
+          Готівка — остання проведена касовка. Не проведені платежі під сумою. Безготівка — баланс банку.
         </p>
         <button type="button" className="btn btn-sm ml-auto" onClick={() => void load()} disabled={loading}>
           {loading ? "…" : "Оновити"}

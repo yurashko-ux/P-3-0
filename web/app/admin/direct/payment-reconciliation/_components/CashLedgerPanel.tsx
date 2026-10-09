@@ -88,6 +88,7 @@ function aggregateDayRows(dayRows: LedgerRow[]): LedgerRow[] {
       continue;
     }
     current.signed += signed;
+    current.posted = current.posted && row.posted;
     current.times.add(timeLabel(row.occurredAt));
     if (row.recordId) current.records.add(row.recordId);
     if (row.title) current.titles.add(row.title);

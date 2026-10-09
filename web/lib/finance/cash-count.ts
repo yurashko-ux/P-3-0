@@ -70,8 +70,10 @@ export async function saveCashTillCount(input: {
   const currency = tile.currency as CashCountCurrency;
   const lines = parseCashCountLines(input.lines, noteDenoms(currency));
   const countedUah = cashCountTotal(lines);
-  const book = bookAmount(tile);
-  if (book == null) throw new Error("Немає балансу каси");
+  const previous = bookAmount(tile);
+  if (previous == null) throw new Error("Немає балансу каси");
+  const openNet = tile.openPaymentsNet || 0;
+  const expected = Math.round((previous + openNet) * 100) / 100;
   const kyivDay = kyivCalendarTodayYmd();
   const saved = await prisma.cashTillCount.create({
     data: {
@@ -90,10 +92,10 @@ export async function saveCashTillCount(input: {
     accountTitle: tile.title,
     currency: tile.currency,
     counted: countedUah,
-    book,
+    book: expected,
   });
   console.log(
-    `[finance/cash-count] ${kyivDay} каса ${accountId} «${tile.title}»: факт ${countedUah} ${currency}, документи ${book}${posting.matched ? `, проведено ${posting.posted}` : ""}`,
+    `[finance/cash-count] ${kyivDay} каса ${accountId} «${tile.title}»: попередня ${previous}, не проведено ${openNet}, очікувано ${expected}, факт ${countedUah} ${currency}${posting.matched ? `, проведено ${posting.posted}` : ", проведення немає"}`,
   );
   return { countedUah, kyivDay };
 }
@@ -153,9 +155,10 @@ export async function deleteCashTillCount(id: string): Promise<void> {
     select: { id: true, kyivDay: true, accountTitle: true, countedUah: true, currency: true },
   });
   if (!existing) throw new Error("Касовку не знайдено");
+  const posted = await prisma.cashTillPosting.count({ where: { countId } });
   await prisma.cashTillCount.delete({ where: { id: countId } });
   console.log(
-    `[finance/cash-count] Видалено касовку ${countId}: ${existing.kyivDay} «${existing.accountTitle}» ${existing.countedUah} ${existing.currency}`,
+    `[finance/cash-count] Видалено касовку ${countId}: ${existing.kyivDay} «${existing.accountTitle}» ${existing.countedUah} ${existing.currency}. Знято проведення з ${posted} платежів`,
   );
 }
 

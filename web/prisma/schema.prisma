@@ -1845,7 +1845,7 @@ model CashTillPosting {
   id         String   @id @default(uuid())
   countId    String
   accountId  Int
-  /// checkout_payment | finance_document
+  /// checkout_payment | finance_document | altegio
   sourceType String
   sourceId   String
   /// in | out
