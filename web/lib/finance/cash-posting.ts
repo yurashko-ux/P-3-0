@@ -46,6 +46,7 @@ export type CashLedgerRow = {
   kyivDay: string;
   occurredAt: string;
   title: string;
+  clientName: string;
   recordId: number | null;
   posted: boolean;
   count: CashLedgerCount | null;
@@ -271,6 +272,25 @@ export async function postCashMovementsIfMatched(input: {
   return { matched: true, posted: fresh.length };
 }
 
+function clientNameFromAltegioRaw(raw: unknown): string {
+  if (!raw || typeof raw !== "object") return "";
+  const client = (raw as { client?: unknown }).client;
+  if (!client || typeof client !== "object") return "";
+  const row = client as { name?: unknown; surname?: unknown; patronymic?: unknown };
+  const name = typeof row.name === "string" ? row.name.trim() : "";
+  if (name) return name;
+  const parts = [row.surname, row.patronymic]
+    .map((value) => (typeof value === "string" ? value.trim() : ""))
+    .filter(Boolean);
+  return parts.join(" ");
+}
+
+function recordIdFromAltegioRaw(raw: unknown): number | null {
+  if (!raw || typeof raw !== "object") return null;
+  const id = Number((raw as { record_id?: unknown }).record_id);
+  return Number.isFinite(id) && id > 0 ? id : null;
+}
+
 function kopToAmount(value: bigint): number {
   const negative = value < 0n;
   const abs = negative ? -value : value;
@@ -333,6 +353,7 @@ export async function listCashLedger(): Promise<CashLedgerRow[]> {
         counterpartyName: true,
         paymentPurpose: true,
         comment: true,
+        rawData: true,
       },
     }),
   ]);
@@ -362,7 +383,8 @@ export async function listCashLedger(): Promise<CashLedgerRow[]> {
       amount: movement.amount,
       kyivDay: movement.kyivDay,
       occurredAt: movement.occurredAt.toISOString(),
-      title: movement.title,
+      title: movement.sourceType === "checkout_payment" ? "Оплата запису" : movement.title,
+      clientName: movement.sourceType === "checkout_payment" ? movement.title : "",
       recordId: movement.recordId,
       posted: Boolean(posting) || movement.kyivDay < CASH_RECONCILE_FROM_KYIV_DAY,
       count: count
@@ -385,11 +407,12 @@ export async function listCashLedger(): Promise<CashLedgerRow[]> {
     if (mirroredAltegioIds.has(tx.altegioId)) continue;
     const accountId = Number(tx.accountId) || 0;
     if (hiddenIds.has(accountId)) continue;
-    const direction = tx.direction === "out" ? "out" : tx.direction === "in" ? "in" : null;
-    if (!direction) continue;
-    const raw = kopToAmount(tx.amountKopiykas);
-    const amount = money(Math.abs(raw));
+    const signedAmount = kopToAmount(tx.amountKopiykas);
+    const amount = money(Math.abs(signedAmount));
     if (!(amount > 0)) continue;
+    // Знак суми — реальний рух каси. direction у базі хибний: стаття «Надання послуг» записана як витрата.
+    const direction = signedAmount < 0 ? "out" : "in";
+    const clientName = clientNameFromAltegioRaw(tx.rawData);
     rows.push({
       id: `altegio:${tx.altegioId}`,
       sourceType: "altegio",
@@ -401,9 +424,9 @@ export async function listCashLedger(): Promise<CashLedgerRow[]> {
       amount,
       kyivDay: tx.kyivDay,
       occurredAt: tx.operationDate.toISOString(),
-      title: tx.counterpartyName?.trim() || tx.paymentPurpose?.trim() || tx.comment?.trim() || "Платіж Altegio",
-      recordId: null,
-      // До 09.10.2026 готівка вже в початковому залишку — у списку вона зведена без касовки.
+      title: tx.paymentPurpose?.trim() || tx.comment?.trim() || "Платіж Altegio",
+      clientName,
+      recordId: recordIdFromAltegioRaw(tx.rawData),
       posted: tx.kyivDay < CASH_RECONCILE_FROM_KYIV_DAY,
       count: null,
     });

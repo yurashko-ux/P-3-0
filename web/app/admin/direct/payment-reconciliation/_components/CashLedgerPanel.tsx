@@ -22,6 +22,7 @@ type LedgerRow = {
   kyivDay: string;
   occurredAt: string;
   title: string;
+  clientName: string;
   recordId: number | null;
   posted: boolean;
   count: LedgerCount | null;
@@ -38,6 +39,20 @@ function dayLabel(kyivDay: string): string {
   const [year, month, day] = kyivDay.split("-");
   if (!day || !month || !year) return kyivDay;
   return `${day}.${month}.${year}`;
+}
+
+function dayNetLabel(rows: LedgerRow[]): string {
+  const byCurrency = new Map<string, number>();
+  for (const row of rows) {
+    const signed = row.direction === "out" ? -row.amount : row.amount;
+    byCurrency.set(row.currency, (byCurrency.get(row.currency) || 0) + signed);
+  }
+  return [...byCurrency.entries()]
+    .map(([currency, sum]) => {
+      const unit = cashCountUnit(currency === "USD" || currency === "EUR" ? currency : "UAH");
+      return `${money(sum)} ${unit}`;
+    })
+    .join(" · ");
 }
 
 function timeLabel(iso: string): string {
@@ -138,14 +153,19 @@ export function CashLedgerPanel({
       {days.map((day) => (
         <section key={day.kyivDay} className="border-t-2 border-gray-800 first:border-t-0">
           <div className="grid grid-cols-[minmax(0,1fr)_minmax(180px,240px)] bg-slate-300 text-[10px]">
-            <div className="px-2 py-1 font-bold uppercase tracking-wide text-gray-900">{dayLabel(day.kyivDay)}</div>
+            <div className="px-2 py-1 font-bold uppercase tracking-wide text-gray-900">
+              {dayLabel(day.kyivDay)}
+              <span className="ml-2 normal-case tracking-normal tabular-nums">{dayNetLabel(day.rows)}</span>
+            </div>
             <div className="border-l border-gray-300 px-2 py-1 text-right font-semibold text-emerald-900">Касовка</div>
           </div>
           <div className="grid grid-cols-[minmax(0,1fr)_minmax(180px,240px)]">
             <table className="w-full text-left text-[10px]">
               <thead className="bg-gray-50 text-[9px] uppercase text-gray-500">
                 <tr>
-                  <th className="px-2 py-1 font-medium">Хто</th>
+                  <th className="px-2 py-1 font-medium">№</th>
+                  <th className="px-2 py-1 font-medium">Клієнт</th>
+                  <th className="px-2 py-1 font-medium">Призначення</th>
                   <th className="px-2 py-1 font-medium">Час</th>
                   <th className="px-2 py-1 font-medium">Запис</th>
                   <th className="px-2 py-1 font-medium">Рахунок</th>
@@ -154,12 +174,15 @@ export function CashLedgerPanel({
                 </tr>
               </thead>
               <tbody>
-                {day.rows.map((row) => {
+                {day.rows.map((row, index) => {
                   const unit = cashCountUnit(row.currency);
                   const incoming = row.direction === "in";
+                  const signed = incoming ? row.amount : -row.amount;
                   return (
                     <tr key={row.id} className="border-t border-gray-100">
-                      <td className="px-2 py-1 text-gray-800">{row.title}</td>
+                      <td className="px-2 py-1 tabular-nums text-gray-500">{index + 1}</td>
+                      <td className="px-2 py-1 text-gray-800">{row.clientName || "—"}</td>
+                      <td className="px-2 py-1 text-gray-700">{row.title}</td>
                       <td className="whitespace-nowrap px-2 py-1 tabular-nums text-gray-600">{timeLabel(row.occurredAt)}</td>
                       <td className="whitespace-nowrap px-2 py-1 tabular-nums text-gray-600">
                         {row.recordId ? row.recordId : "—"}
@@ -168,8 +191,12 @@ export function CashLedgerPanel({
                       <td className={`px-2 py-1 font-semibold ${incoming ? "text-green-700" : "text-red-600"}`}>
                         {incoming ? "↓" : "↑"}
                       </td>
-                      <td className="whitespace-nowrap px-2 py-1 text-right font-semibold tabular-nums text-gray-900">
-                        {money(row.amount)} {unit}
+                      <td
+                        className={`whitespace-nowrap px-2 py-1 text-right font-semibold tabular-nums ${
+                          incoming ? "text-gray-900" : "text-red-600"
+                        }`}
+                      >
+                        {money(signed)} {unit}
                       </td>
                     </tr>
                   );
