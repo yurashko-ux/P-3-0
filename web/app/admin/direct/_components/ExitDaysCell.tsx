@@ -16,6 +16,8 @@ export type ExitDaysCellProps = {
   lastVisitAt?: string | null;
   /** У неактивній базі бейдж «Н/А» зайвий: він розтягує кожен рядок. */
   showInactiveBadge?: boolean;
+  /** Дата поруч із числом, в один рядок. */
+  dateBeside?: boolean;
 };
 
 function pillClass(days: number | null, restored: boolean, inactive: boolean): string {
@@ -54,6 +56,7 @@ export function ExitDaysCell({
   align = "right",
   lastVisitAt,
   showInactiveBadge = true,
+  dateBeside = false,
 }: ExitDaysCellProps) {
   const restored = status === "restored";
   const inactive = status === "inactive";
@@ -82,15 +85,13 @@ export function ExitDaysCell({
 
   const content = (
     <span
-      className={`inline-flex flex-col ${align === "right" ? "items-end" : "items-start"} leading-none gap-0.5`}
+      className={`inline-flex ${dateBeside ? "flex-row items-center gap-1" : `flex-col ${align === "right" ? "items-end" : "items-start"} gap-0.5`} leading-none`}
     >
       <span className="relative inline-flex items-center">
         <span
-          className={`inline-flex items-center justify-center rounded-full px-2 py-0.5 tabular-nums text-[12px] font-normal leading-none ${pillClass(
-            days,
-            restored,
-            inactive
-          )}`}
+          className={`inline-flex items-center justify-center rounded-full tabular-nums font-normal leading-none ${
+            dateBeside ? "px-1.5 py-0 text-[11px]" : "px-2 py-0.5 text-[12px]"
+          } ${pillClass(days, restored, inactive)}`}
         >
           {hasDays ? days : "—"}
         </span>
@@ -125,7 +126,7 @@ export function ExitDaysCell({
     return (
       <button
         type="button"
-        className="btn btn-ghost btn-xs h-auto min-h-0 px-0 py-0 hover:bg-transparent"
+        className="btn btn-ghost btn-xs !h-auto !min-h-0 !px-0 !py-0 hover:bg-transparent"
         title={title}
         onClick={(e) => {
           e.stopPropagation();

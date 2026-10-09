@@ -58,7 +58,7 @@ export function InactiveBaseNameCell({ client, directHref }: Props) {
       aria-label="Відкрити в Altegio"
       onClick={(e) => e.stopPropagation()}
     >
-      <ClientSpendLoyaltyBadge spent={client.spent} size="md" />
+      <ClientSpendLoyaltyBadge spent={client.spent} size="sm" />
     </a>
   ) : (
     <span className="shrink-0" title="Лід (без Altegio ID)">

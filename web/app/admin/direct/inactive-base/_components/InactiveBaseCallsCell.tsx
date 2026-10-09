@@ -69,7 +69,7 @@ export function InactiveBaseCallsCell({
 
   return (
     <span
-      className="inline-flex flex-col items-start gap-0.5"
+      className="inline-flex flex-row items-center gap-1"
       title={formatDateDDMMYYHHMM(startTime)}
     >
       <span className="inline-flex items-center justify-start gap-1">

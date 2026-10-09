@@ -95,7 +95,7 @@ export function InactiveBaseLinkClickCell({
 
   if (!onOpenHistory) {
     return (
-      <span className="inline-flex flex-col items-start gap-0.5" title={pillTitle}>
+      <span className="inline-flex flex-row items-center gap-1" title={pillTitle}>
         <span className={pillClass}>{pillContent}</span>
         {dateStr !== "-" ? (
           <span className="text-[10px] leading-none opacity-60 tabular-nums">{dateStr}</span>
@@ -107,7 +107,7 @@ export function InactiveBaseLinkClickCell({
   return (
     <button
       type="button"
-      className="inline-flex flex-col items-start gap-0.5 hover:opacity-80 transition-opacity cursor-pointer text-left"
+      className="inline-flex flex-row items-center gap-1 hover:opacity-80 transition-opacity cursor-pointer text-left"
       title={pillTitle}
       aria-label="Історія переходів по посиланнях"
       onClick={openHistory}
