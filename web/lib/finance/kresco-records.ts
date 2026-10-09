@@ -27,7 +27,8 @@ function kyivTime(datetime: Date): string {
 export async function listKrescoRecords(limit = 200): Promise<KrescoRecordRow[]> {
   const take = Math.min(Math.max(limit, 1), 500);
   const rows = await prisma.salonAppointment.findMany({
-    where: { krescoRecordNumber: { not: null } },
+    // Видалений у журналі запис (status deleted) у цьому списку не показуємо.
+    where: { krescoRecordNumber: { not: null }, status: { not: "deleted" } },
     orderBy: { krescoRecordNumber: "desc" },
     take,
     select: {
