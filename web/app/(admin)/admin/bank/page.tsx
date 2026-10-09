@@ -31,6 +31,7 @@ type BankConnection = {
 
 type OperationItem = {
   id: string;
+  paymentNumber?: number | null;
   time: string;
   amount: string;
   balance: string | null;
@@ -1222,6 +1223,7 @@ export default function BankPage() {
   const bankColgroup = (
     <colgroup>
       <col style={{ width: 56 }} />
+      <col style={{ width: 88 }} />
       <col style={{ width: 170 }} />
       <col style={{ width: 72 }} />
       <col style={{ width: 210 }} />
@@ -1240,6 +1242,7 @@ export default function BankPage() {
     <thead>
       <tr style={{ borderBottom: "2px solid #e8ebf0", textAlign: "left", background: "#f9fafb" }}>
         <th style={{ padding: "10px 12px", width: 56 }}>№</th>
+        <th style={{ padding: "10px 12px", width: 88 }}>Номер</th>
         <th style={{ padding: "10px 12px", minWidth: 170, position: "relative" }}>
           <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
             <button
@@ -1818,7 +1821,7 @@ export default function BankPage() {
                 <tbody>
                 {filteredAndSortedOperations.length === 0 ? (
                   <tr>
-                    <td colSpan={12} style={{ padding: "16px 12px", color: "rgba(0,0,0,0.55)" }}>
+                    <td colSpan={13} style={{ padding: "16px 12px", color: "rgba(0,0,0,0.55)" }}>
                       Немає операцій за обраними фільтрами.
                     </td>
                   </tr>
@@ -1851,6 +1854,9 @@ export default function BankPage() {
                         }}
                       >
                         <td style={{ padding: "10px 12px", color: "#6b7280", ...todaySep }}>{index + 1}</td>
+                        <td style={{ padding: "10px 12px", fontVariantNumeric: "tabular-nums", ...todaySep }}>
+                          {it.paymentNumber != null ? String(it.paymentNumber).padStart(5, "0") : "—"}
+                        </td>
                         <td style={{ padding: "10px 12px", ...todaySep }}>{formatDate(it.time)}</td>
                         <td style={{ padding: "10px 12px", ...todaySep }}>
                           <span
@@ -2051,7 +2057,7 @@ export default function BankPage() {
                 )}
                 {(hasMoreOperations || isLoadingMore) && (
                   <tr ref={loadMoreSentinelRef}>
-                    <td colSpan={12} style={{ padding: "12px", textAlign: "center", color: "rgba(0,0,0,0.55)" }}>
+                    <td colSpan={13} style={{ padding: "12px", textAlign: "center", color: "rgba(0,0,0,0.55)" }}>
                       {isLoadingMore ? "Завантаження ще операцій…" : "Прокрутіть вниз для завантаження ще"}
                     </td>
                   </tr>

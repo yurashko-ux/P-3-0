@@ -2,6 +2,8 @@
 
 import { prisma } from "@/lib/prisma";
 import { fetchAltegioAccounts } from "@/lib/altegio/accounts";
+import { isEurCashAccountTitle, isUsdCashAccountTitle } from "@/lib/journal/checkout";
+import { bankLinksForVisitPayments } from "@/lib/finance/visit-payment-bank";
 
 function toMoney(n: number): number {
   return Math.round(n * 100) / 100;
@@ -98,7 +100,7 @@ export async function listVisitPayments(params: ListVisitPaymentsParams = {}) {
     take,
   });
 
-  return rows.map((row) => {
+  const mapped = rows.map((row) => {
     const appt = row.checkout.appointment;
     const client =
       appt?.clientName ||
@@ -127,6 +129,112 @@ export async function listVisitPayments(params: ListVisitPaymentsParams = {}) {
       paidAmount: toMoney(row.checkout.paidAmount),
     };
   });
+
+  const links = await bankLinksForVisitPayments(mapped);
+  return mapped.map((row) => {
+    const bank = links.get(row.id) || null;
+    return { ...row, reconciled: bank != null, bank };
+  });
+}
+
+const RECONCILED_LOCK = "Платіж зведено з банком — змінити або видалити не можна";
+
+async function paymentRef(id: string) {
+  const row = await prisma.salonCheckoutPayment.findUnique({
+    where: { id },
+    include: {
+      checkout: {
+        select: {
+          id: true,
+          kyivDay: true,
+          appointment: {
+            select: {
+              clientName: true,
+              directClient: { select: { lastName: true, firstName: true } },
+            },
+          },
+        },
+      },
+    },
+  });
+  if (!row) throw new Error("Платіж не знайдено");
+  const appt = row.checkout.appointment;
+  const client =
+    appt?.clientName ||
+    [appt?.directClient?.lastName, appt?.directClient?.firstName].filter(Boolean).join(" ") ||
+    "—";
+  return { row, client };
+}
+
+async function assertPaymentEditable(id: string) {
+  const { row, client } = await paymentRef(id);
+  const links = await bankLinksForVisitPayments([
+    {
+      id: row.id,
+      altegioTransactionId: row.altegioTransactionId,
+      accountId: row.accountId,
+      accountTitle: row.accountTitle,
+      amount: row.amount,
+      kyivDay: row.checkout.kyivDay,
+      client,
+      paymentKind: row.paymentKind,
+    },
+  ]);
+  if (links.has(row.id)) throw new Error(RECONCILED_LOCK);
+  return row;
+}
+
+async function refreshCheckoutPaidAmount(checkoutId: string) {
+  const payments = await prisma.salonCheckoutPayment.findMany({
+    where: { checkoutId },
+    select: { amount: true },
+  });
+  const paidAmount = toMoney(payments.reduce((sum, payment) => sum + payment.amount, 0));
+  await prisma.salonCheckout.update({
+    where: { id: checkoutId },
+    data: { paidAmount },
+  });
+}
+
+export async function updateVisitPayment(input: {
+  id: string;
+  accountId: number;
+  amountUah: number;
+  amountFx?: number | null;
+}) {
+  const row = await assertPaymentEditable(input.id);
+  const accountId = Number(input.accountId) || 0;
+  const amountUah = toMoney(Number(input.amountUah) || 0);
+  if (!(accountId > 0)) throw new Error("Оберіть рахунок");
+  if (!(amountUah > 0)) throw new Error("Сума має бути більше 0");
+  const accounts = await listVisitPaymentFilterAccounts();
+  const account = accounts.find((item) => item.id === accountId);
+  if (!account) throw new Error("Рахунок не знайдено");
+
+  const fxAccount = isUsdCashAccountTitle(account.title) || isEurCashAccountTitle(account.title);
+  const amountFx = toMoney(Number(input.amountFx) || 0);
+  if (fxAccount && !(amountFx > 0)) throw new Error("Вкажіть суму у валюті");
+
+  await prisma.salonCheckoutPayment.update({
+    where: { id: row.id },
+    data: {
+      accountId,
+      accountTitle: account.title,
+      amount: amountUah,
+      amountFx: fxAccount ? amountFx : null,
+      currencyCode: fxAccount ? (isUsdCashAccountTitle(account.title) ? "USD" : "EUR") : null,
+      fxRate: fxAccount && amountFx > 0 ? toMoney(amountUah / amountFx) : null,
+    },
+  });
+  await refreshCheckoutPaidAmount(row.checkoutId);
+  console.log(`[finance/visit-payments] Оновлено платіж ${row.id}: рахунок ${accountId}, ${amountUah} грн`);
+}
+
+export async function deleteVisitPayment(id: string) {
+  const row = await assertPaymentEditable(id);
+  await prisma.salonCheckoutPayment.delete({ where: { id: row.id } });
+  await refreshCheckoutPaidAmount(row.checkoutId);
+  console.log(`[finance/visit-payments] Видалено платіж ${row.id} з чека ${row.checkoutId}`);
 }
 
 export async function listVisitPaymentFilterAccounts() {

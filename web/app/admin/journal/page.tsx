@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { JournalAppointmentForm, type JournalAppointmentDraft, type JournalMaster, type JournalService } from "./_components/JournalAppointmentForm";
 import { JournalCheckoutModal } from "./_components/JournalCheckoutModal";
 import { JournalDayGrid, clientLabelOf, type JournalGridAppointment } from "./_components/JournalDayGrid";
@@ -27,7 +27,7 @@ function kyivParts(iso: string) {
 }
 
 export default function JournalDayPage() {
-  const { day, viewMode, setSidebarActions } = useJournalDay();
+  const { day, setDay, viewMode, setSidebarActions } = useJournalDay();
   const [appointments, setAppointments] = useState<JournalGridAppointment[]>([]);
   const [masters, setMasters] = useState<JournalMaster[]>([]);
   const [staff, setStaff] = useState<JournalMaster[]>([]);
@@ -39,6 +39,7 @@ export default function JournalDayPage() {
   const [draft, setDraft] = useState<JournalAppointmentDraft | null>(null);
   const [formOpen, setFormOpen] = useState(false);
   const [checkoutId, setCheckoutId] = useState<string | null>(null);
+  const openedFromUrl = useRef(false);
 
   const load = useCallback(async (ymd: string) => {
     setLoading(true);
@@ -292,6 +293,51 @@ export default function JournalDayPage() {
       console.warn("[journal] Не вдалося дотягнути повну картку:", err);
     }
   };
+
+  useEffect(() => {
+    if (openedFromUrl.current) return;
+    const params = new URLSearchParams(window.location.search);
+    const appointmentId = params.get("appointment");
+    const ymd = params.get("day");
+    if (ymd && /^\d{4}-\d{2}-\d{2}$/.test(ymd)) setDay(ymd);
+    if (!appointmentId) return;
+    openedFromUrl.current = true;
+    void (async () => {
+      const res = await fetch(`/api/admin/journal/appointments/${appointmentId}`, { credentials: "include" });
+      const json = await res.json().catch(() => null);
+      const appointment = json?.appointment;
+      if (!res.ok || !json?.ok || !appointment) return;
+      if (appointment.kyivDay) setDay(appointment.kyivDay);
+      await openExisting({
+        id: appointment.id,
+        datetime: appointment.datetime,
+        seanceLength: appointment.seanceLength || 3600,
+        attendance: appointment.attendance ?? null,
+        comment: appointment.comment || "",
+        status: appointment.status || "pending",
+        syncError: appointment.syncError || null,
+        masterId: appointment.masterId || null,
+        altegioStaffId: appointment.altegioStaffId ?? null,
+        altegioRecordId: appointment.altegioRecordId ?? null,
+        staffName: appointment.staffName || null,
+        clientName: appointment.clientName || null,
+        clientPhone: appointment.clientPhone || null,
+        lines: (appointment.lines || []).map((line: { serviceId?: string | null; title?: string; cost?: number }) => ({
+          serviceId: line.serviceId || null,
+          title: line.title || "",
+          cost: line.cost ?? null,
+        })),
+        checkout: appointment.checkout
+          ? {
+              status: appointment.checkout.status,
+              paidAmount: appointment.checkout.paidAmount,
+              totalServices: appointment.checkout.totalServices,
+            }
+          : null,
+        directClient: appointment.directClient || null,
+      });
+    })();
+  }, [setDay]);
 
   return (
     <>

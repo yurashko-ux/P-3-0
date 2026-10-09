@@ -5,6 +5,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { requireBankSection } from "@/app/api/bank/require-bank-auth";
 import { fetchStatement, fetchClientInfo } from "@/lib/bank/monobank";
+import { isBankPaymentNumberConflict, nextBankPaymentNumber } from "@/lib/bank/payment-number";
 import { kvRead, kvWrite } from "@/lib/kv";
 
 export const dynamic = "force-dynamic";
@@ -98,35 +99,42 @@ export async function POST(req: NextRequest) {
       }
       for (const it of items) {
         const time = new Date((it.time || 0) * 1000);
-        await prisma.bankStatementItem.upsert({
-          where: {
-            accountId_externalId: { accountId: account.id, externalId: String(it.id) },
-          },
-          create: {
-            accountId: account.id,
-            externalId: String(it.id),
-            time,
-            description: it.description ?? "",
-            comment: (it as { comment?: string }).comment?.trim() || null,
-            counterName: (it as { counterName?: string }).counterName?.trim() || null,
-            amount: BigInt(it.amount ?? 0),
-            balance: it.balance != null ? BigInt(it.balance) : null,
-            hold: it.hold ?? false,
-            mcc: it.mcc ?? null,
-            operationAmount: it.operationAmount ? (it.operationAmount as object) : null,
-          },
-          update: {
-            time,
-            description: it.description ?? "",
-            comment: (it as { comment?: string }).comment?.trim() || null,
-            counterName: (it as { counterName?: string }).counterName?.trim() || null,
-            amount: BigInt(it.amount ?? 0),
-            balance: it.balance != null ? BigInt(it.balance) : null,
-            hold: it.hold ?? false,
-            mcc: it.mcc ?? null,
-            operationAmount: it.operationAmount ? (it.operationAmount as object) : null,
-          },
+        const externalId = String(it.id);
+        const existing = await prisma.bankStatementItem.findUnique({
+          where: { accountId_externalId: { accountId: account.id, externalId } },
+          select: { id: true },
         });
+        const fields = {
+          time,
+          description: it.description ?? "",
+          comment: (it as { comment?: string }).comment?.trim() || null,
+          counterName: (it as { counterName?: string }).counterName?.trim() || null,
+          amount: BigInt(it.amount ?? 0),
+          balance: it.balance != null ? BigInt(it.balance) : null,
+          hold: it.hold ?? false,
+          mcc: it.mcc ?? null,
+          operationAmount: it.operationAmount ? (it.operationAmount as object) : null,
+        };
+        if (existing) {
+          await prisma.bankStatementItem.update({ where: { id: existing.id }, data: fields });
+        } else {
+          let saved = false;
+          for (let attempt = 0; attempt < 5 && !saved; attempt += 1) {
+            try {
+              await prisma.bankStatementItem.create({
+                data: {
+                  accountId: account.id,
+                  externalId,
+                  paymentNumber: await nextBankPaymentNumber(),
+                  ...fields,
+                },
+              });
+              saved = true;
+            } catch (err) {
+              if (!isBankPaymentNumberConflict(err) || attempt === 4) throw err;
+            }
+          }
+        }
         totalSaved++;
       }
       if (items.length < 500) break;

@@ -25,6 +25,8 @@ type PayRow = {
   altegioRecordId: number | null;
   altegioTransactionId: number | null;
   paidAmount: number;
+  reconciled: boolean;
+  bank: { label: string; href: string } | null;
 };
 
 function money(n: number) {
@@ -80,6 +82,11 @@ function FinanceVisitPaymentsInner() {
   const [paymentKind, setPaymentKind] = useState("all");
   const [q, setQ] = useState("");
   const [sort, setSort] = useState("date_desc");
+  const [busyId, setBusyId] = useState<string | null>(null);
+  const [editId, setEditId] = useState<string | null>(null);
+  const [editAccountId, setEditAccountId] = useState("");
+  const [editAmount, setEditAmount] = useState("");
+  const [editAmountFx, setEditAmountFx] = useState("");
 
   useEffect(() => {
     const fromUrl = searchParams.get("accountId");
@@ -114,6 +121,58 @@ function FinanceVisitPaymentsInner() {
     const t = setTimeout(() => void load(), 200);
     return () => clearTimeout(t);
   }, [load]);
+
+  function startEdit(row: PayRow) {
+    setEditId(row.id);
+    setEditAccountId(String(row.accountId));
+    setEditAmount(String(row.amount));
+    setEditAmountFx(row.amountFx != null ? String(row.amountFx) : "");
+    setError(null);
+  }
+
+  async function saveEdit(row: PayRow) {
+    setBusyId(row.id);
+    setError(null);
+    try {
+      const res = await fetch(`/api/admin/finance/visit-payments/${row.id}`, {
+        method: "PATCH",
+        credentials: "include",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          accountId: Number(editAccountId),
+          amountUah: Number(String(editAmount).replace(",", ".")),
+          amountFx: editAmountFx.trim() ? Number(String(editAmountFx).replace(",", ".")) : null,
+        }),
+      });
+      const json = await res.json();
+      if (!res.ok || !json.ok) throw new Error(json.error || "Не збережено");
+      setEditId(null);
+      await load();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Помилка збереження");
+    } finally {
+      setBusyId(null);
+    }
+  }
+
+  async function removePayment(row: PayRow) {
+    if (!window.confirm("Видалити цей платіж?")) return;
+    setBusyId(row.id);
+    setError(null);
+    try {
+      const res = await fetch(`/api/admin/finance/visit-payments/${row.id}`, {
+        method: "DELETE",
+        credentials: "include",
+      });
+      const json = await res.json();
+      if (!res.ok || !json.ok) throw new Error(json.error || "Не видалено");
+      await load();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Помилка видалення");
+    } finally {
+      setBusyId(null);
+    }
+  }
 
   return (
     <main className="px-3 pb-6 pt-2 space-y-3">
@@ -201,13 +260,16 @@ function FinanceVisitPaymentsInner() {
           <thead className="sticky top-0 z-10 bg-[#eef1f6] [&_th]:bg-[#eef1f6]">
             <tr>
               <th>Дата</th>
+              <th>Запис</th>
               <th>Клієнт</th>
               <th>Майстер</th>
               <th>Рахунок</th>
               <th>Тип</th>
+              <th>Вид</th>
               <th className="text-right">Сума</th>
+              <th>Зведення</th>
               <th>Статус</th>
-              <th>Запис</th>
+              <th />
             </tr>
           </thead>
           <tbody>
@@ -216,14 +278,76 @@ function FinanceVisitPaymentsInner() {
               return (
               <tr key={p.id}>
                 <td className="tabular-nums whitespace-nowrap">{p.kyivDay}</td>
+                <td className="tabular-nums whitespace-nowrap">
+                  {p.appointmentId ? (
+                    <Link
+                      href={`/admin/journal?day=${p.kyivDay}&appointment=${p.appointmentId}`}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="link link-hover"
+                    >
+                      {p.altegioRecordId || "запис"}
+                    </Link>
+                  ) : (
+                    "—"
+                  )}
+                </td>
                 <td>{p.client}</td>
                 <td>{p.master}</td>
                 <td>
-                  {p.accountTitle || `#${p.accountId}`}
-                  {fxLabel ? <span className="text-gray-600"> {fxLabel}</span> : null}
+                  {editId === p.id ? (
+                    <select
+                      className="select select-bordered select-xs max-w-[10rem]"
+                      value={editAccountId}
+                      onChange={(e) => setEditAccountId(e.target.value)}
+                    >
+                      {accounts.map((account) => (
+                        <option key={account.id} value={account.id}>
+                          {account.title}
+                        </option>
+                      ))}
+                    </select>
+                  ) : (
+                    <>
+                      {p.accountTitle || `#${p.accountId}`}
+                      {fxLabel ? <span className="text-gray-600"> {fxLabel}</span> : null}
+                    </>
+                  )}
+                </td>
+                <td>
+                  <span className="font-bold text-green-600" title="Вхідний платіж">
+                    ↓
+                  </span>
                 </td>
                 <td>{p.paymentKind === "deposit" ? "Завдаток" : "Каса"}</td>
-                <td className="text-right tabular-nums font-medium">{money(p.amount)} грн</td>
+                <td className="text-right tabular-nums font-medium whitespace-nowrap">
+                  {editId === p.id ? (
+                    <div className="flex flex-col items-end gap-1">
+                      <input
+                        className="input input-bordered input-xs w-24 text-right"
+                        value={editAmount}
+                        onChange={(e) => setEditAmount(e.target.value)}
+                        inputMode="decimal"
+                      />
+                      <input
+                        className="input input-bordered input-xs w-24 text-right"
+                        value={editAmountFx}
+                        onChange={(e) => setEditAmountFx(e.target.value)}
+                        inputMode="decimal"
+                        placeholder="валюта"
+                      />
+                    </div>
+                  ) : (
+                    `${money(p.amount)} грн`
+                  )}
+                </td>
+                <td className="whitespace-nowrap text-xs">
+                  {p.bank ? (
+                    <a href={p.bank.href} target="_blank" rel="noopener noreferrer" className="link link-hover">
+                      {p.bank.label}
+                    </a>
+                  ) : null}
+                </td>
                 <td>
                   <span
                     className={
@@ -237,17 +361,43 @@ function FinanceVisitPaymentsInner() {
                     {p.checkoutStatus}
                   </span>
                 </td>
-                <td className="tabular-nums">
-                  {p.appointmentId ? (
-                    <Link
-                      href={`/admin/journal?highlight=${p.appointmentId}`}
-                      className="link link-hover"
-                    >
-                      {p.altegioRecordId || "→"}
-                    </Link>
-                  ) : (
-                    p.altegioRecordId || "—"
-                  )}
+                <td className="whitespace-nowrap">
+                  {!p.reconciled && editId === p.id ? (
+                    <div className="flex gap-1">
+                      <button
+                        type="button"
+                        className="btn btn-xs btn-primary"
+                        disabled={busyId === p.id}
+                        onClick={() => void saveEdit(p)}
+                      >
+                        Ок
+                      </button>
+                      <button type="button" className="btn btn-xs btn-ghost" onClick={() => setEditId(null)}>
+                        Ні
+                      </button>
+                    </div>
+                  ) : !p.reconciled ? (
+                    <div className="flex gap-1">
+                      <button
+                        type="button"
+                        className="btn btn-ghost btn-xs"
+                        disabled={busyId === p.id}
+                        onClick={() => startEdit(p)}
+                        title="Редагувати"
+                      >
+                        ✎
+                      </button>
+                      <button
+                        type="button"
+                        className="btn btn-ghost btn-xs text-error"
+                        disabled={busyId === p.id}
+                        onClick={() => void removePayment(p)}
+                        title="Видалити"
+                      >
+                        🗑
+                      </button>
+                    </div>
+                  ) : null}
                 </td>
               </tr>
               );

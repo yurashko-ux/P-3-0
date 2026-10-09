@@ -1107,6 +1107,8 @@ model BankStatementItem {
   altegioAccountTitleSnapshot String?
   altegioSyncErrorSnapshot    String?
   altegioBalanceCapturedAt    DateTime?
+  /// Внутрішній номер платежу Kresco: 00001 і далі за часом операції.
+  paymentNumber               Int       @unique
   createdAt                   DateTime  @default(now())
 
   account               BankAccount                @relation(fields: [accountId], references: [id], onDelete: Cascade)

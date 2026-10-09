@@ -1,6 +1,7 @@
 import { prisma } from "@/lib/prisma";
 import { kvRead, kvWrite } from "@/lib/kv";
 import { fetchStatement } from "@/lib/bank/monobank";
+import { isBankPaymentNumberConflict, nextBankPaymentNumber } from "@/lib/bank/payment-number";
 import { ALTEGIO_FINANCE_SYNC_START_DATE } from "@/lib/altegio/finance-transactions-sync";
 
 const MONOBANK_STATEMENT_RATE_LIMIT_SEC = 60;
@@ -241,36 +242,43 @@ export async function syncBankOutgoingStatementsForReconciliation(params: {
         });
         const nextHold = item.hold ?? false;
 
-        const upserted = await prisma.bankStatementItem.upsert({
-          where: {
-            accountId_externalId: { accountId: account.id, externalId },
-          },
-          create: {
-            accountId: account.id,
-            externalId,
-            time: new Date((item.time || 0) * 1000),
-            description: item.description ?? "",
-            comment: item.comment?.trim() || null,
-            counterName: item.counterName?.trim() || null,
-            amount,
-            balance: item.balance != null ? BigInt(item.balance) : null,
-            hold: nextHold,
-            mcc: item.mcc ?? null,
-            operationAmount: item.operationAmount ? (item.operationAmount as object) : null,
-          },
-          update: {
-            time: new Date((item.time || 0) * 1000),
-            description: item.description ?? "",
-            comment: item.comment?.trim() || null,
-            counterName: item.counterName?.trim() || null,
-            amount,
-            balance: item.balance != null ? BigInt(item.balance) : null,
-            hold: nextHold,
-            mcc: item.mcc ?? null,
-            operationAmount: item.operationAmount ? (item.operationAmount as object) : null,
-          },
-          select: { id: true },
-        });
+        const statementFields = {
+          time: new Date((item.time || 0) * 1000),
+          description: item.description ?? "",
+          comment: item.comment?.trim() || null,
+          counterName: item.counterName?.trim() || null,
+          amount,
+          balance: item.balance != null ? BigInt(item.balance) : null,
+          hold: nextHold,
+          mcc: item.mcc ?? null,
+          operationAmount: item.operationAmount ? (item.operationAmount as object) : null,
+        };
+        let upserted: { id: string };
+        if (existing) {
+          upserted = await prisma.bankStatementItem.update({
+            where: { id: existing.id },
+            data: statementFields,
+            select: { id: true },
+          });
+        } else {
+          let created: { id: string } | null = null;
+          for (let attempt = 0; attempt < 5 && !created; attempt += 1) {
+            try {
+              created = await prisma.bankStatementItem.create({
+                data: {
+                  accountId: account.id,
+                  externalId,
+                  paymentNumber: await nextBankPaymentNumber(),
+                  ...statementFields,
+                },
+                select: { id: true },
+              });
+            } catch (err) {
+              if (!isBankPaymentNumberConflict(err) || attempt === 4) throw err;
+            }
+          }
+          upserted = created!;
+        }
 
         if (existing?.hold === true && nextHold === false) {
           holdFinalizedIds.push(upserted.id);

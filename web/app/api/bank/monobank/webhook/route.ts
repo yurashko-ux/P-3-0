@@ -5,6 +5,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { kvRead, kvWrite } from "@/lib/kv";
 import { shouldSyncAltegioForBankAccount, syncAltegioBalanceForBankAccount } from "@/lib/altegio";
+import { isBankPaymentNumberConflict, nextBankPaymentNumber } from "@/lib/bank/payment-number";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
@@ -91,35 +92,43 @@ export async function POST(req: NextRequest) {
     const nextHold = item.hold ?? false;
     const holdFinalized = existingStatement?.hold === true && nextHold === false;
 
-    const statement = await prisma.bankStatementItem.upsert({
-      where: {
-        accountId_externalId: { accountId: bankAccount.id, externalId },
-      },
-      create: {
-        accountId: bankAccount.id,
-        externalId,
-        time,
-        description: item.description ?? "",
-        comment: item.comment?.trim() || null,
-        counterName: item.counterName?.trim() || null,
-        amount,
-        balance,
-        hold: nextHold,
-        mcc: item.mcc ?? null,
-        operationAmount: item.operationAmount ? (item.operationAmount as object) : null,
-      },
-      update: {
-        time,
-        description: item.description ?? "",
-        comment: item.comment?.trim() || null,
-        counterName: item.counterName?.trim() || null,
-        amount,
-        balance,
-        hold: nextHold,
-        mcc: item.mcc ?? null,
-        operationAmount: item.operationAmount ? (item.operationAmount as object) : null,
-      },
-    });
+    const statementFields = {
+      time,
+      description: item.description ?? "",
+      comment: item.comment?.trim() || null,
+      counterName: item.counterName?.trim() || null,
+      amount,
+      balance,
+      hold: nextHold,
+      mcc: item.mcc ?? null,
+      operationAmount: item.operationAmount ? (item.operationAmount as object) : null,
+    };
+    let statement: { id: string };
+    if (existingStatement) {
+      statement = await prisma.bankStatementItem.update({
+        where: { id: existingStatement.id },
+        data: statementFields,
+        select: { id: true },
+      });
+    } else {
+      let created: { id: string } | null = null;
+      for (let attempt = 0; attempt < 5 && !created; attempt += 1) {
+        try {
+          created = await prisma.bankStatementItem.create({
+            data: {
+              accountId: bankAccount.id,
+              externalId,
+              paymentNumber: await nextBankPaymentNumber(),
+              ...statementFields,
+            },
+            select: { id: true },
+          });
+        } catch (err) {
+          if (!isBankPaymentNumberConflict(err) || attempt === 4) throw err;
+        }
+      }
+      statement = created!;
+    }
 
     if (balance != null) {
       await prisma.bankAccount.update({
@@ -185,9 +194,9 @@ export async function POST(req: NextRequest) {
       try {
         const { isTerminalRkoBankPayment } = await import("@/lib/bank/bank-outgoing-classify");
         const isTerminalRko = isTerminalRkoBankPayment({
-          description: statement.description,
-          comment: statement.comment,
-          counterName: statement.counterName,
+          description: statementFields.description,
+          comment: statementFields.comment,
+          counterName: statementFields.counterName,
           amount,
         });
 

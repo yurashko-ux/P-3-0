@@ -178,6 +178,7 @@ export async function GET(req: NextRequest) {
         take: limit + 1,
         select: {
           id: true,
+          paymentNumber: true,
           time: true,
           amount: true,
           balance: true,
@@ -254,6 +255,7 @@ export async function GET(req: NextRequest) {
         take: limit + 1,
         select: {
           id: true,
+          paymentNumber: true,
           time: true,
           amount: true,
           balance: true,
@@ -778,6 +780,7 @@ export async function GET(req: NextRequest) {
         ?? resolveBankPaymentExpenseArticle(i.altegioPaymentMatch ?? null);
       return {
         id: i.id,
+        paymentNumber: i.paymentNumber,
         time: i.time.toISOString(),
         amount: i.amount.toString(),
         paymentReconciled: reconcileMeta.paymentReconciled,

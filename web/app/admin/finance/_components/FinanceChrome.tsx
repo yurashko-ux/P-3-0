@@ -24,13 +24,13 @@ export function FinanceChrome({ children }: { children: React.ReactNode }) {
           href="/admin/finance/payments"
           className={`btn btn-sm min-h-0 h-8 ${onPayments ? "btn-neutral" : "btn-ghost"}`}
         >
-          Оплати візитів
+          Фінансові операції
         </Link>
         <Link
           href="/admin/finance/operations"
           className={`btn btn-sm min-h-0 h-8 ${onOperations ? "btn-neutral" : "btn-ghost"}`}
         >
-          Фінансові операції
+          Операції лідів
         </Link>
         <Link
           href="/admin/finance/archive"
