@@ -321,7 +321,10 @@ export async function listCashLedger(): Promise<CashLedgerRow[]> {
   const [movements, postings, altegioRows] = await Promise.all([
     loadCashBookMovements(cashAccounts),
     prisma.cashTillPosting.findMany({
-      where: { accountId: { in: cashAccounts.map((account) => account.id) } },
+      where: {
+        accountId: { in: cashAccounts.map((account) => account.id) },
+        kyivDay: { gte: CASH_RECONCILE_FROM_KYIV_DAY },
+      },
       include: {
         count: {
           select: {
@@ -336,7 +339,7 @@ export async function listCashLedger(): Promise<CashLedgerRow[]> {
         },
       },
     }),
-    // Лише готівкові рахунки і два поля з rawData. Повний JSON не тягнемо: відповідь > 5 МБ.
+    // Готівка у вкладці — лише з 09.10.2026. Раніше вже в початковому залишку.
     cashAccountIds.length === 0
       ? Promise.resolve([] as AltegioCashLedgerSource[])
       : prisma.$queryRaw<AltegioCashLedgerSource[]>`
@@ -353,6 +356,7 @@ export async function listCashLedger(): Promise<CashLedgerRow[]> {
             NULLIF("rawData"->>'record_id', '') AS "recordIdText"
           FROM "altegio_finance_transactions"
           WHERE "deletedInAltegio" = false
+            AND "kyivDay" >= ${CASH_RECONCILE_FROM_KYIV_DAY}
             AND "accountId" IN (${Prisma.join(cashAccountIds)})
         `,
   ]);
