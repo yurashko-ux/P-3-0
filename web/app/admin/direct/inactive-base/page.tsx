@@ -1209,33 +1209,18 @@ function InactiveBasePageContent() {
                         {isCollapsedGroupLeader ? (
                           <span className="text-base-content/40">—</span>
                         ) : (
-                          <div className="flex items-center gap-1 min-w-0">
-                            {client.phone ? (
-                              <button
-                                type="button"
-                                className="link link-hover font-mono truncate max-w-[120px] text-left"
-                                title={`${client.phone} — історія дзвінків`}
-                                onClick={() => openBinotelHistory(client)}
-                              >
-                                {client.phone}
-                              </button>
-                            ) : (
-                              <span className="text-base-content/40">—</span>
-                            )}
-                            {client.phone ? (
-                              <button
-                                type="button"
-                                className="inline-flex h-5 shrink-0 items-center justify-center rounded-md px-0.5 text-sm leading-none hover:bg-black/5"
-                                title="Надіслати телефон клієнта в Telegram адміністратора"
-                                onClick={(e) => {
-                                  e.stopPropagation();
-                                  void sendPhoneToTelegram(client.id);
-                                }}
-                              >
-                                📞
-                              </button>
-                            ) : null}
-                          </div>
+                          client.phone ? (
+                            <button
+                              type="button"
+                              className="link link-hover font-mono truncate max-w-[120px] text-left"
+                              title={`${client.phone} — історія дзвінків`}
+                              onClick={() => openBinotelHistory(client)}
+                            >
+                              {client.phone}
+                            </button>
+                          ) : (
+                            <span className="text-base-content/40">—</span>
+                          )
                         )}
                       </td>
                       <td className="text-xs align-top">
