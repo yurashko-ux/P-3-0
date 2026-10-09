@@ -260,6 +260,7 @@ export default function PaymentReconciliationPage() {
   const [incomingControls, setIncomingControls] = useState<IncomingSplitControls | null>(null);
   const [cashCounts, setCashCounts] = useState({ all: 0, open: 0, linked: 0 });
   const [cashReload, setCashReload] = useState(0);
+  const [pullingCash, setPullingCash] = useState(false);
   const rows = useMemo(() => filterRows(data.rows, status), [data.rows, status]);
   const statusCounts = useMemo(() => {
     const linked = data.rows.filter(isLinked).length;
@@ -302,6 +303,31 @@ export default function PaymentReconciliationPage() {
   useEffect(() => {
     void loadOutgoingData();
   }, [loadOutgoingData]);
+
+  async function pullCashFromAltegio() {
+    setPullingCash(true);
+    setActionMessage(null);
+    try {
+      const response = await fetch("/api/admin/finance/cash/pull-today", { method: "POST" });
+      const payload = (await response.json().catch(() => ({}))) as {
+        ok?: boolean;
+        day?: string;
+        upserted?: number;
+        error?: string;
+      };
+      if (!response.ok || payload.ok === false) {
+        throw new Error(payload.error || "Не вдалося підтягнути рахунки з Altegio");
+      }
+      const [year, month, date] = String(payload.day || "").split("-");
+      const dayLabel = year && month && date ? `${date}.${month}.${year}` : "сьогодні";
+      setActionMessage(`Підтягнуто рахунки за ${dayLabel}: ${payload.upserted ?? 0} операцій`);
+      setCashReload((value) => value + 1);
+    } catch (error) {
+      setActionMessage(error instanceof Error ? error.message : "Не вдалося підтягнути рахунки з Altegio");
+    } finally {
+      setPullingCash(false);
+    }
+  }
 
   function handleDirectionStatusSelect(nextDirection: PaymentDirection, nextStatus: PaymentStatus) {
     setDirection(nextDirection);
@@ -448,10 +474,21 @@ export default function PaymentReconciliationPage() {
                   {incomingControls?.reconciling ? "Зводжу..." : "Звести"}
                 </button>
               ) : null}
+              {showCash ? (
+                <button
+                  type="button"
+                  className="btn btn-outline btn-xs h-6 min-h-0 px-2 text-[10px]"
+                  disabled={pullingCash}
+                  onClick={() => void pullCashFromAltegio()}
+                  title="Підтягнути з Altegio лише рахунки за поточний день"
+                >
+                  {pullingCash ? "Підтягую..." : "Підтягнути з Альтеджіо"}
+                </button>
+              ) : null}
               <button
                 type="button"
                 className="btn btn-primary btn-xs h-6 min-h-0 px-2 text-[10px]"
-                disabled={loading || Boolean(incomingControls?.loading) || Boolean(incomingControls?.reconciling)}
+                disabled={loading || pullingCash || Boolean(incomingControls?.loading) || Boolean(incomingControls?.reconciling)}
                 onClick={() => {
                   if (showCash) {
                     setCashReload((value) => value + 1);
