@@ -916,7 +916,7 @@ function InactiveBasePageContent() {
         )}
 
         <div className="bg-base-100 rounded-lg border border-base-300 overflow-x-auto">
-          <table className="table table-sm table-zebra">
+          <table className="table table-sm table-zebra [&_td]:py-1 [&_th]:py-1">
             <thead>
               <tr className="text-[10px]">
                 <th className="w-8">
@@ -1180,6 +1180,7 @@ function InactiveBasePageContent() {
                             inactiveSinceKyivDay={client.inactiveSinceKyivDay}
                             restoredAtKyivDay={client.restoredAtKyivDay}
                             status={client.inactiveLifecycleStatus}
+                            showInactiveBadge={false}
                             onOpenHistory={() => setLifecycleHistoryClient(client)}
                           />
                         )}

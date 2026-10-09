@@ -14,6 +14,8 @@ export type ExitDaysCellProps = {
   align?: "left" | "right";
   /** Дата останнього візиту — для tooltip */
   lastVisitAt?: string | null;
+  /** У неактивній базі бейдж «Н/А» зайвий: він розтягує кожен рядок. */
+  showInactiveBadge?: boolean;
 };
 
 function pillClass(days: number | null, restored: boolean, inactive: boolean): string {
@@ -51,6 +53,7 @@ export function ExitDaysCell({
   onOpenHistory,
   align = "right",
   lastVisitAt,
+  showInactiveBadge = true,
 }: ExitDaysCellProps) {
   const restored = status === "restored";
   const inactive = status === "inactive";
@@ -109,7 +112,7 @@ export function ExitDaysCell({
           </span>
         ) : null}
       </span>
-      {inactive && !restored ? <InactiveExitBadge /> : null}
+      {showInactiveBadge && inactive && !restored ? <InactiveExitBadge /> : null}
       {subDate ? (
         <span className="text-[9px] tabular-nums text-base-content/55 leading-none">
           {formatDateDDMMYY(subDate)}
