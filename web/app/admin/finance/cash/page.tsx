@@ -13,6 +13,8 @@ type CashTile = {
   openingPending: boolean;
   hasBank: boolean;
   countedUah: number | null;
+  openPaymentsNet: number;
+  openPaymentsCount: number;
 };
 
 function money(n: number, digits = 0) {
@@ -28,8 +30,25 @@ function fxSymbol(currency: CashTile["currency"]) {
   return currency;
 }
 
-function isUahTill(tile: CashTile): boolean {
-  return tile.cash && tile.currency === "UAH" && !tile.openingPending;
+function isCashTill(tile: CashTile): boolean {
+  return tile.cash && !tile.openingPending;
+}
+
+function bookAmount(tile: CashTile): number | null {
+  if (tile.currency === "UAH") return tile.balanceUah;
+  return tile.balanceFx;
+}
+
+function OpenPaymentsLine({ tile }: { tile: CashTile }) {
+  if (!tile.openPaymentsCount) return null;
+  const net = tile.openPaymentsNet || 0;
+  const unit = tile.currency === "UAH" ? "грн" : fxSymbol(tile.currency);
+  return (
+    <span className="text-[11px] font-medium tabular-nums text-gray-700" title="Ще не проведені платежі">
+      {net > 0 ? "+" : ""}
+      {money(net)} {unit} · {tile.openPaymentsCount}
+    </span>
+  );
 }
 
 export default function CashBalancesPage() {
@@ -80,13 +99,14 @@ export default function CashBalancesPage() {
 
       <div className="grid grid-cols-2 sm:grid-cols-3 gap-2 max-w-3xl">
         {tiles.map((tile) => {
-          const book = tile.balanceUah;
+          const book = bookAmount(tile);
           const counted = tile.countedUah;
           const diff = counted != null && book != null ? Math.round((counted - book) * 100) / 100 : null;
+          const unit = tile.currency === "UAH" ? "грн" : fxSymbol(tile.currency);
           return (
             <div
               key={tile.id}
-              className={`relative flex flex-col items-center justify-center min-h-[6.5rem] rounded-lg border-2 border-gray-200 bg-white px-3 py-3 text-center ${isUahTill(tile) ? "pb-7" : ""}`}
+              className={`relative flex flex-col items-center justify-center min-h-[6.5rem] rounded-lg border-2 border-gray-200 bg-white px-3 py-3 text-center ${isCashTill(tile) ? "pb-7" : ""}`}
             >
               <span className="text-[11px] font-medium text-gray-800 leading-tight">{tile.title}</span>
               {tile.openingPending ? (
@@ -101,6 +121,16 @@ export default function CashBalancesPage() {
                   {tile.balanceUah != null && (
                     <span className="text-[11px] tabular-nums text-gray-500">{money(tile.balanceUah)} грн</span>
                   )}
+                  {counted != null && (
+                    <span className="text-[11px] tabular-nums text-gray-500">({money(counted)} {unit})</span>
+                  )}
+                  {diff != null && diff !== 0 && (
+                    <span className={`text-[11px] font-medium tabular-nums ${diff > 0 ? "text-green-600" : "text-red-600"}`}>
+                      {diff > 0 ? "+" : ""}
+                      {money(diff)} {unit}
+                    </span>
+                  )}
+                  <OpenPaymentsLine tile={tile} />
                 </>
               ) : (
                 <>
@@ -116,9 +146,10 @@ export default function CashBalancesPage() {
                       {money(diff)} грн
                     </span>
                   )}
+                  <OpenPaymentsLine tile={tile} />
                 </>
               )}
-              {isUahTill(tile) && (
+              {isCashTill(tile) && (
                 <button
                   type="button"
                   className="btn btn-ghost btn-xs absolute bottom-1 right-1 min-h-0 h-6 px-1.5 text-[10px]"
@@ -135,6 +166,7 @@ export default function CashBalancesPage() {
         <CashCountModal
           accountId={countTile.id}
           accountTitle={countTile.title}
+          currency={countTile.currency}
           onClose={() => setCountTile(null)}
           onSaved={() => {
             setCountTile(null);

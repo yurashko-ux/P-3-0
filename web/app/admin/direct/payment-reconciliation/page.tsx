@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import { IncomingSplitView, type IncomingSplitControls } from "@/app/admin/direct/payment-reconciliation/_components/IncomingSplitView";
+import { CashKindSwitch, CashLedgerPanel, type CashKindFilter } from "@/app/admin/direct/payment-reconciliation/_components/CashLedgerPanel";
 
 type ReconciliationRow = {
   bank: {
@@ -255,6 +256,7 @@ export default function PaymentReconciliationPage() {
   const [loading, setLoading] = useState(false);
   const [actionMessage, setActionMessage] = useState<string | null>(null);
   const [incomingControls, setIncomingControls] = useState<IncomingSplitControls | null>(null);
+  const [outgoingCashFilter, setOutgoingCashFilter] = useState<CashKindFilter>("non_cash");
   const rows = useMemo(() => filterRows(data.rows, status), [data.rows, status]);
   const statusCounts = useMemo(() => {
     const linked = data.rows.filter(isLinked).length;
@@ -368,9 +370,9 @@ export default function PaymentReconciliationPage() {
   }
 
   const showOutgoingTable = direction === "out";
-  const showIncomingSplit = direction === "in" && (status === "open" || status === "linked" || status === "deposits");
+  const showIncomingSplit = direction === "in" && (status === "open" || status === "linked" || status === "deposits" || status === "all");
   const incomingStatusCounts = incomingControls?.statusCounts ?? { all: 0, open: 0, linked: 0, deposits: 0 };
-  const showIncomingPlaceholder = direction === "in" && status === "all";
+  const outgoingLedgerStatus = status === "linked" ? "linked" : status === "all" ? "all" : "open";
 
   return (
     <main
@@ -458,19 +460,21 @@ export default function PaymentReconciliationPage() {
         <IncomingSplitView
           onControlsReady={setIncomingControls}
           reconciliationStatus={
-            status === "linked" ? "linked" : status === "deposits" ? "deposits" : "open"
+            status === "linked" ? "linked" : status === "deposits" ? "deposits" : status === "all" ? "all" : "open"
           }
         />
       </div>
 
-      {showIncomingPlaceholder ? (
-        <div className="mx-2 mt-2 rounded-xl border border-dashed border-emerald-300 bg-emerald-50/40 px-4 py-10 text-center text-sm text-emerald-900">
-          Розділ «Вхідні → Усі» показує і зведені, і незведені платежі разом. Для роботи використовуйте «Не зведені» або «Зведені».
-        </div>
-      ) : null}
-
       {showOutgoingTable ? (
-      <div className="p-2">
+      <div className="p-2 space-y-2">
+        <div className="flex items-center gap-1 px-1">
+          <span className="shrink-0 text-[10px] font-semibold text-emerald-900">Каса</span>
+          <CashKindSwitch value={outgoingCashFilter} onChange={setOutgoingCashFilter} />
+        </div>
+        {outgoingCashFilter !== "non_cash" ? (
+          <CashLedgerPanel direction="out" status={outgoingLedgerStatus} />
+        ) : null}
+        {outgoingCashFilter === "cash" ? null : (
         <div className="overflow-x-auto rounded-xl border border-gray-200 bg-white shadow-sm">
           <table
             className={`w-full table-fixed text-left text-xs ${
@@ -688,6 +692,7 @@ export default function PaymentReconciliationPage() {
             </tbody>
           </table>
         </div>
+        )}
       </div>
       ) : null}
     </main>

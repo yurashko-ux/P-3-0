@@ -6,9 +6,12 @@ import { kyivCalendarTodayYmd, kyivCalendarYesterdayYmd } from "@/lib/direct-kyi
 import { listCashBalances, type CashBalanceTile } from "@/lib/finance/cash-balances";
 import {
   cashCountTotal,
+  noteDenoms,
   parseCashCountLines,
+  type CashCountCurrency,
   type CashCountLine,
 } from "@/lib/finance/cash-denominations";
+import { postCashMovementsIfMatched } from "@/lib/finance/cash-posting";
 
 export type CashSnapshotLine = {
   accountId: number;
@@ -28,8 +31,13 @@ export type CashDaySnapshotView = {
   lines: CashSnapshotLine[];
 };
 
-function isUahCashTile(tile: CashBalanceTile): boolean {
-  return tile.cash && tile.currency === "UAH" && !tile.openingPending;
+function isCountableCashTile(tile: CashBalanceTile): boolean {
+  return tile.cash && !tile.openingPending;
+}
+
+function bookAmount(tile: CashBalanceTile): number | null {
+  if (tile.currency === "UAH") return tile.balanceUah;
+  return tile.balanceFx;
 }
 
 export async function latestUahCountsForDay(
@@ -56,24 +64,36 @@ export async function saveCashTillCount(input: {
 }): Promise<{ countedUah: number; kyivDay: string }> {
   const accountId = Number(input.accountId) || 0;
   if (!(accountId > 0)) throw new Error("Немає id каси");
-  const lines = parseCashCountLines(input.lines);
   const tiles = await listCashBalances();
   const tile = tiles.find((item) => item.id === accountId);
-  if (!tile || !isUahCashTile(tile)) throw new Error("Касовка лише для гривневої каси");
+  if (!tile || !isCountableCashTile(tile)) throw new Error("Касовка лише для готівкової каси з початковим залишком");
+  const currency = tile.currency as CashCountCurrency;
+  const lines = parseCashCountLines(input.lines, noteDenoms(currency));
   const countedUah = cashCountTotal(lines);
+  const book = bookAmount(tile);
+  if (book == null) throw new Error("Немає балансу каси");
   const kyivDay = kyivCalendarTodayYmd();
-  await prisma.cashTillCount.create({
+  const saved = await prisma.cashTillCount.create({
     data: {
       kyivDay,
       accountId,
       accountTitle: tile.title,
       countedUah,
+      currency,
       lines: lines as CashCountLine[],
       createdBy: input.createdBy || null,
     },
   });
+  const posting = await postCashMovementsIfMatched({
+    countId: saved.id,
+    accountId,
+    accountTitle: tile.title,
+    currency: tile.currency,
+    counted: countedUah,
+    book,
+  });
   console.log(
-    `[finance/cash-count] ${kyivDay} каса ${accountId} «${tile.title}»: ${countedUah} грн (розрахунок ${tile.balanceUah} грн)`,
+    `[finance/cash-count] ${kyivDay} каса ${accountId} «${tile.title}»: факт ${countedUah} ${currency}, документи ${book}${posting.matched ? `, проведено ${posting.posted}` : ""}`,
   );
   return { countedUah, kyivDay };
 }
@@ -88,7 +108,7 @@ function snapshotLine(tile: CashBalanceTile, countedUah: number | null): CashSna
     balanceFx: tile.balanceFx,
     openingPending: tile.openingPending,
     hasBank: tile.hasBank,
-    countedUah: isUahCashTile(tile) ? countedUah : null,
+    countedUah: isCountableCashTile(tile) ? countedUah : null,
   };
 }
 
@@ -100,8 +120,8 @@ export async function captureCashDaySnapshot(kyivDay?: string): Promise<{ kyivDa
     return { kyivDay: day, created: false };
   }
   const tiles = await listCashBalances();
-  const uahIds = tiles.filter(isUahCashTile).map((tile) => tile.id);
-  const counts = await latestUahCountsForDay(day, uahIds);
+  const cashIds = tiles.filter(isCountableCashTile).map((tile) => tile.id);
+  const counts = await latestUahCountsForDay(day, cashIds);
   const lines = tiles.map((tile) => snapshotLine(tile, counts.get(tile.id) ?? null));
   await prisma.cashDaySnapshot.create({
     data: { kyivDay: day, lines },

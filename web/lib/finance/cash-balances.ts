@@ -14,6 +14,7 @@ import {
 } from "@/lib/finance/cash-openings";
 import { hiddenFinanceAccountIds } from "@/lib/finance/account-archive";
 import { kyivCalendarTodayYmd } from "@/lib/direct-kyiv-today";
+import { openCashNetsForAccounts } from "@/lib/finance/cash-posting";
 
 export type CashCurrency = "UAH" | "USD" | "EUR";
 
@@ -30,8 +31,12 @@ export type CashBalanceTile = {
   openingPending: boolean;
   /** Безготівковий рахунок прив’язаний до monobank. */
   hasBank: boolean;
-  /** Остання касовка гривневої каси за сьогодні (Київ). null — сьогодні не рахували. */
+  /** Остання касовка цієї каси за сьогодні (Київ), у валюті каси. null — сьогодні не рахували. */
   countedUah: number | null;
+  /** Сума ще не проведених платежів після останньої збіжної касовки. */
+  openPaymentsNet: number;
+  /** Кількість ще не проведених платежів. */
+  openPaymentsCount: number;
 };
 
 function money(n: number): number {
@@ -164,6 +169,8 @@ export async function listCashBalances(): Promise<CashBalanceTile[]> {
           openingPending: false,
           hasBank: bank != null,
           countedUah: null,
+          openPaymentsNet: 0,
+          openPaymentsCount: 0,
         };
       }
       const opening = openingOf(account.currency);
@@ -178,6 +185,8 @@ export async function listCashBalances(): Promise<CashBalanceTile[]> {
           openingPending: true,
           hasBank: false,
           countedUah: null,
+          openPaymentsNet: 0,
+          openPaymentsCount: 0,
         };
       }
       const fxDelta = fxExtra.get(account.id) || 0;
@@ -193,6 +202,8 @@ export async function listCashBalances(): Promise<CashBalanceTile[]> {
           openingPending: false,
           hasBank: false,
           countedUah: null,
+          openPaymentsNet: 0,
+          openPaymentsCount: 0,
         };
       }
       return {
@@ -205,24 +216,37 @@ export async function listCashBalances(): Promise<CashBalanceTile[]> {
         openingPending: false,
         hasBank: false,
         countedUah: null,
+        openPaymentsNet: 0,
+        openPaymentsCount: 0,
       };
     })
     .sort(sortTiles);
 
   const today = kyivCalendarTodayYmd();
-  const uahIds = tiles.filter((tile) => tile.cash && tile.currency === "UAH" && !tile.openingPending).map((tile) => tile.id);
-  if (uahIds.length > 0) {
-    const counts = await prisma.cashTillCount.findMany({
-      where: { kyivDay: today, accountId: { in: uahIds } },
-      orderBy: { createdAt: "desc" },
-      select: { accountId: true, countedUah: true },
-    });
+  const cashTiles = tiles.filter((tile) => tile.cash && !tile.openingPending);
+  const countableIds = cashTiles.map((tile) => tile.id);
+  if (countableIds.length > 0) {
+    const [counts, openNets] = await Promise.all([
+      prisma.cashTillCount.findMany({
+        where: { kyivDay: today, accountId: { in: countableIds } },
+        orderBy: { createdAt: "desc" },
+        select: { accountId: true, countedUah: true },
+      }),
+      openCashNetsForAccounts(
+        cashTiles.map((tile) => ({ id: tile.id, title: tile.title, currency: tile.currency })),
+      ),
+    ]);
     const latest = new Map<number, number>();
     for (const row of counts) {
       if (!latest.has(row.accountId)) latest.set(row.accountId, row.countedUah);
     }
     for (const tile of tiles) {
       if (latest.has(tile.id)) tile.countedUah = latest.get(tile.id) ?? null;
+      const open = openNets.get(tile.id);
+      if (open) {
+        tile.openPaymentsNet = open.net;
+        tile.openPaymentsCount = open.count;
+      }
     }
   }
 

@@ -36,6 +36,7 @@ import {
   type DepositRealizationMeta,
   type DepositRealizationStatus,
 } from "@/lib/bank/deposit-realization";
+import { CashKindSwitch, CashLedgerPanel, type CashKindFilter } from "./CashLedgerPanel";
 
 type AltegioIncomingItem = {
   altegioId: number;
@@ -1072,12 +1073,6 @@ function sumAltegioDaysKop(days: AltegioDayGroup[]): string {
   const total = days.reduce((sum, day) => sum + BigInt(day.totalKop), 0n);
   return total.toString();
 }
-
-const ALTEGIO_CASH_FILTER_OPTIONS: Array<{ value: AltegioCashFilter; label: string }> = [
-  { value: "all", label: "Всі" },
-  { value: "cash", label: "Готівкові" },
-  { value: "non_cash", label: "БезГотівкові" },
-];
 
 function groupAltegioPayersByDay(byPayer: AltegioPayerAggregate[]): AltegioDayGroup[] {
   const dayMap = new Map<string, AltegioDayPayerRow[]>();
@@ -3339,7 +3334,7 @@ export function IncomingSplitView({
   const [reconciling, setReconciling] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [expandedAccounts, setExpandedAccounts] = useState<Set<string>>(() => new Set());
-  const [altegioCashFilter, setAltegioCashFilter] = useState<AltegioCashFilter>("non_cash");
+  const [altegioCashFilter, setAltegioCashFilter] = useState<CashKindFilter>("non_cash");
   const depositTabFetchSeqRef = useRef(0);
   const depositTabClientIdsRef = useRef<number[]>([]);
   const depositTabPayerNamesRef = useRef<string[]>([]);
@@ -3571,7 +3566,7 @@ export function IncomingSplitView({
   );
 
   const altegioDays = allAltegioDays;
-  const filteredAltegioDays = filterAltegioDaysByCash(altegioDays, altegioCashFilter);
+  const filteredAltegioDays = filterAltegioDaysByCash(altegioDays, "non_cash");
   const filteredAltegioTotalKop = sumAltegioDaysKop(filteredAltegioDays);
   const bankPeriodTotals = sumBankDaysTotals(bankDays);
   const periodDiffKop = BigInt(bankPeriodTotals.fullTotalKop) - BigInt(filteredAltegioTotalKop);
@@ -3900,16 +3895,27 @@ export function IncomingSplitView({
     ? depositSplit.activeDays.length > 0 || depositSplit.realizedDays.length > 0
     : visibleAlignedDays.length > 0;
 
+  const ledgerStatus = reconciliationStatus === "linked" ? "linked" : reconciliationStatus === "all" ? "all" : "open";
+
   return (
     <div className={`flex min-h-0 flex-1 flex-col px-1 py-2 ${className}`.trim()}>
       {error ? (
         <div className="rounded border border-red-200 bg-red-50 px-3 py-2 text-xs text-red-800">{error}</div>
       ) : null}
 
+      {!isDepositsView ? (
+        <div className="mb-1 flex items-center gap-1 px-1">
+          <span className="shrink-0 text-[10px] font-semibold text-emerald-900">Altegio</span>
+          <CashKindSwitch value={altegioCashFilter} onChange={setAltegioCashFilter} />
+        </div>
+      ) : null}
+
       {showPageLoading ? (
         <div className="rounded-xl border border-gray-200 bg-white px-4 py-10 text-center text-sm text-gray-500">
           Завантаження...
         </div>
+      ) : !isDepositsView && altegioCashFilter === "cash" ? (
+        <CashLedgerPanel direction="in" status={ledgerStatus} />
       ) : !hasAnyData ? (
         <div className="rounded-xl border border-gray-200 bg-white px-4 py-10 text-center text-sm text-gray-500">
           {isDepositsView
@@ -3952,20 +3958,6 @@ export function IncomingSplitView({
                   <td colSpan={altegioHeaderColSpan} className="px-1 py-1">
                     <div className="flex min-w-0 flex-wrap items-center gap-1">
                       <h2 className="shrink-0 font-semibold text-emerald-900">Altegio</h2>
-                      {ALTEGIO_CASH_FILTER_OPTIONS.map((option) => (
-                        <button
-                          key={option.value}
-                          type="button"
-                          className={`rounded px-1.5 py-0.5 text-[9px] font-medium transition-colors ${
-                            altegioCashFilter === option.value
-                              ? "bg-emerald-700 text-white"
-                              : "bg-white text-emerald-900 ring-1 ring-emerald-200 hover:bg-emerald-100"
-                          }`}
-                          onClick={() => setAltegioCashFilter(option.value)}
-                        >
-                          {option.label}
-                        </button>
-                      ))}
                     </div>
                   </td>
                   <td className="whitespace-nowrap px-1 py-1 text-right font-semibold tabular-nums text-emerald-900">
@@ -4372,6 +4364,12 @@ export function IncomingSplitView({
           </div>
         </div>
       )}
+
+      {!showPageLoading && !isDepositsView && altegioCashFilter === "all" ? (
+        <div className="mt-2 min-h-0 flex-1">
+          <CashLedgerPanel direction="in" status={ledgerStatus} />
+        </div>
+      ) : null}
     </div>
   );
 }

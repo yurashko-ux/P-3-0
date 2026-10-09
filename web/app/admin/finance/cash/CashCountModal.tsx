@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import { UAH_NOTE_DENOMS } from "@/lib/finance/cash-denominations";
+import { cashCountUnit, noteDenoms, type CashCountCurrency } from "@/lib/finance/cash-denominations";
 
 function money(n: number) {
   return n.toLocaleString("uk-UA", {
@@ -13,13 +13,16 @@ function money(n: number) {
 type Props = {
   accountId: number;
   accountTitle: string;
+  currency: CashCountCurrency;
   onClose: () => void;
   onSaved: () => void;
 };
 
-export function CashCountModal({ accountId, accountTitle, onClose, onSaved }: Props) {
-  const [qty, setQty] = useState<string[]>(() => UAH_NOTE_DENOMS.map(() => ""));
-  const [confirmed, setConfirmed] = useState<boolean[]>(() => UAH_NOTE_DENOMS.map(() => false));
+export function CashCountModal({ accountId, accountTitle, currency, onClose, onSaved }: Props) {
+  const denoms = noteDenoms(currency);
+  const unit = cashCountUnit(currency);
+  const [qty, setQty] = useState<string[]>(() => denoms.map(() => ""));
+  const [confirmed, setConfirmed] = useState<boolean[]>(() => denoms.map(() => false));
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const inputs = useRef<(HTMLInputElement | null)[]>([]);
@@ -50,7 +53,7 @@ export function CashCountModal({ accountId, accountTitle, onClose, onSaved }: Pr
     setBusy(true);
     setError(null);
     try {
-      const lines = UAH_NOTE_DENOMS.map((denomination, index) => ({
+      const lines = denoms.map((denomination, index) => ({
         denomination,
         qty: lineQty(index),
       }));
@@ -86,13 +89,13 @@ export function CashCountModal({ accountId, accountTitle, onClose, onSaved }: Pr
           </button>
         </div>
         <div className="space-y-2">
-          {UAH_NOTE_DENOMS.map((denomination, index) => {
+          {denoms.map((denomination, index) => {
             const pieces = lineQty(index);
             const sum = pieces * denomination;
             return (
               <div key={denomination} className="flex items-center gap-2">
                 <div className="flex h-10 w-24 shrink-0 items-center justify-center rounded-lg border-2 border-gray-200 text-sm font-medium">
-                  {denomination} грн
+                  {denomination} {unit}
                 </div>
                 {confirmed[index] ? (
                   <button
@@ -100,7 +103,7 @@ export function CashCountModal({ accountId, accountTitle, onClose, onSaved }: Pr
                     className="h-10 flex-1 rounded-md border border-gray-300 px-2 text-left text-sm tabular-nums"
                     onClick={() => editAgain(index)}
                   >
-                    {money(sum)} грн
+                    {money(sum)} {unit}
                   </button>
                 ) : (
                   <input

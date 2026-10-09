@@ -227,27 +227,29 @@ export default function FinanceDocumentsPage() {
       <div className="bg-white border rounded-xl p-3 space-y-2 max-w-xl">
         <div className="font-semibold text-sm">Знімки каси</div>
         <p className="text-xs text-gray-500">
-          Опівночі за Києвом. Гривнева каса — розрахунок і перерахунок, різниця якщо не збігаються.
+          Опівночі за Києвом. Готівкова каса — розрахунок і перерахунок, різниця якщо не збігаються.
         </p>
         {!loading && snapshots.length === 0 && <p className="text-xs text-gray-500">Знімків ще немає.</p>}
         {snapshots.map((snapshot) => (
           <div key={snapshot.kyivDay} className="pt-2 border-t space-y-1">
             <div className="text-xs font-medium">{snapshot.kyivDay}</div>
             {snapshot.lines.map((line) => {
-              const uahCount = line.cash && line.currency === "UAH" && line.countedUah != null && line.balanceUah != null;
-              const diff = uahCount ? Math.round((line.countedUah! - line.balanceUah!) * 100) / 100 : null;
+              const book = line.currency === "UAH" ? line.balanceUah : line.balanceFx;
+              const unit = line.currency === "USD" ? "$" : line.currency === "EUR" ? "€" : "грн";
+              const counted = line.cash && line.countedUah != null && book != null;
+              const diff = counted ? Math.round((line.countedUah! - book!) * 100) / 100 : null;
               return (
                 <div key={line.accountId} className="flex items-baseline justify-between gap-2 text-xs">
                   <span>{line.title}</span>
                   <span className="tabular-nums text-right">
-                    {uahCount ? (
+                    {counted ? (
                       <>
-                        {money(line.balanceUah || 0)} грн ({money(line.countedUah || 0)} грн)
+                        {money(book || 0)} {unit} ({money(line.countedUah || 0)} {unit})
                         {diff != null && diff !== 0 && (
                           <span className={diff > 0 ? "text-green-600" : "text-red-600"}>
                             {" "}
                             {diff > 0 ? "+" : ""}
-                            {money(diff)} грн
+                            {money(diff)} {unit}
                           </span>
                         )}
                       </>
