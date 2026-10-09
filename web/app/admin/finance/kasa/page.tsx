@@ -49,6 +49,7 @@ export default function FinanceKasaPage() {
   const [counts, setCounts] = useState<CashCountRow[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
+  const [busyId, setBusyId] = useState<string | null>(null);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -68,6 +69,31 @@ export default function FinanceKasaPage() {
   useEffect(() => {
     void load();
   }, [load]);
+
+  async function removeCount(row: CashCountRow) {
+    const stamp = kyivStamp(row.savedAt);
+    const ok = window.confirm(
+      `Видалити касовку ${row.accountTitle} на ${money(row.counted)} ${unitOf(row.currency)} від ${stamp.date} ${stamp.time}?\n\nПлатежі, які вона провела, знову стануть незведеними.`,
+    );
+    if (!ok) return;
+    setBusyId(row.id);
+    setError(null);
+    try {
+      const res = await fetch(`/api/admin/finance/kasa?id=${encodeURIComponent(row.id)}`, {
+        method: "DELETE",
+        credentials: "include",
+      });
+      const json = await res.json().catch(() => ({}));
+      if (!res.ok || json?.ok === false) {
+        throw new Error(typeof json?.error === "string" ? json.error : "Не вдалося видалити касовку");
+      }
+      setCounts((prev) => prev.filter((item) => item.id !== row.id));
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Помилка видалення");
+    } finally {
+      setBusyId(null);
+    }
+  }
 
   return (
     <main className="px-3 pb-6 pt-2 space-y-3">
@@ -89,6 +115,7 @@ export default function FinanceKasaPage() {
               <th>Користувач</th>
               <th>Каса</th>
               <th className="text-right">Сума</th>
+              <th className="w-10" />
             </tr>
           </thead>
           <tbody>
@@ -102,6 +129,17 @@ export default function FinanceKasaPage() {
                   <td>{row.accountTitle}</td>
                   <td className="text-right tabular-nums whitespace-nowrap">
                     {money(row.counted)} {unitOf(row.currency)}
+                  </td>
+                  <td className="text-right">
+                    <button
+                      type="button"
+                      className="btn btn-ghost btn-xs text-error"
+                      disabled={busyId === row.id}
+                      title="Видалити касовку"
+                      onClick={() => void removeCount(row)}
+                    >
+                      {busyId === row.id ? "…" : "🗑"}
+                    </button>
                   </td>
                 </tr>
               );

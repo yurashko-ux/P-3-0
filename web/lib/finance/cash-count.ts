@@ -144,6 +144,21 @@ export async function listSavedCashCounts(limit = 200): Promise<SavedCashCountRo
   }));
 }
 
+/** Видаляє касовку і її проводки. Платежі знову стають незведеними. */
+export async function deleteCashTillCount(id: string): Promise<void> {
+  const countId = id.trim();
+  if (!countId) throw new Error("Немає id касовки");
+  const existing = await prisma.cashTillCount.findUnique({
+    where: { id: countId },
+    select: { id: true, kyivDay: true, accountTitle: true, countedUah: true, currency: true },
+  });
+  if (!existing) throw new Error("Касовку не знайдено");
+  await prisma.cashTillCount.delete({ where: { id: countId } });
+  console.log(
+    `[finance/cash-count] Видалено касовку ${countId}: ${existing.kyivDay} «${existing.accountTitle}» ${existing.countedUah} ${existing.currency}`,
+  );
+}
+
 function snapshotLine(tile: CashBalanceTile, countedUah: number | null): CashSnapshotLine {
   return {
     accountId: tile.id,
