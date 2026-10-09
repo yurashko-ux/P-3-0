@@ -7,6 +7,7 @@ export function FinanceChrome({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
   const onDocs = pathname === "/admin/finance" || pathname === "/admin/finance/";
   const onPayments = pathname?.startsWith("/admin/finance/payments");
+  const onRecords = pathname?.startsWith("/admin/finance/records");
   const onOperations = pathname?.startsWith("/admin/finance/operations");
   const onArchive = pathname?.startsWith("/admin/finance/archive");
 
@@ -25,6 +26,12 @@ export function FinanceChrome({ children }: { children: React.ReactNode }) {
           className={`btn btn-sm min-h-0 h-8 ${onPayments ? "btn-neutral" : "btn-ghost"}`}
         >
           Фінансові операції
+        </Link>
+        <Link
+          href="/admin/finance/records"
+          className={`btn btn-sm min-h-0 h-8 ${onRecords ? "btn-neutral" : "btn-ghost"}`}
+        >
+          Записи
         </Link>
         <Link
           href="/admin/finance/operations"

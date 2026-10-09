@@ -493,6 +493,8 @@ model SalonAppointment {
   syncError       String?
   /// kresco | altegio
   source          String    @default("altegio")
+  /// Номер запису, створеного в Kresco: 00001 і далі за часом створення.
+  krescoRecordNumber Int?   @unique
   kyivDay         String
   createdAt       DateTime  @default(now())
   updatedAt       DateTime  @updatedAt

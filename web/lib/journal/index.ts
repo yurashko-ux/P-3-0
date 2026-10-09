@@ -18,6 +18,7 @@ import { appendAppointmentChangeLog } from "./change-log";
 import { replaceAppointmentGoods, replaceAppointmentParticipants } from "./participants";
 import { linePayable, serializeStaffIds } from "./line-staff";
 import { isJournalAltegioWriteSkipped } from "./altegio-write-gate";
+import { isKrescoRecordNumberConflict, nextKrescoRecordNumber } from "./kresco-record-number";
 
 function formatKyivDateTime(date: Date): string {
   const parts = new Intl.DateTimeFormat("sv-SE", {
@@ -648,27 +649,36 @@ export async function createAppointmentFromKresco(input: KrescoAppointmentInput)
   const built = await buildServiceLineRows("pending", ctx.services, input, defaultStaffIds);
   const lineRows = built.map(({ appointmentId: _a, ...rest }) => rest);
 
-  const pending = await prisma.salonAppointment.create({
-    data: {
-      directClientId: ctx.client.id,
-      altegioClientId: ctx.client.altegioClientId,
-      masterId: ctx.directMasterId,
-      altegioStaffId: ctx.altegioStaffId,
-      staffName: ctx.staffName,
-      clientName: snap.clientName,
-      clientPhone: snap.clientPhone,
-      datetime: ctx.datetime,
-      seanceLength: ctx.seanceLength,
-      attendance: input.attendance ?? 0,
-      comment: input.comment || null,
-      status: "pending",
-      source: "kresco",
-      kyivDay,
-      lines: {
-        create: lineRows,
-      },
+  const pendingData = {
+    directClientId: ctx.client.id,
+    altegioClientId: ctx.client.altegioClientId,
+    masterId: ctx.directMasterId,
+    altegioStaffId: ctx.altegioStaffId,
+    staffName: ctx.staffName,
+    clientName: snap.clientName,
+    clientPhone: snap.clientPhone,
+    datetime: ctx.datetime,
+    seanceLength: ctx.seanceLength,
+    attendance: input.attendance ?? 0,
+    comment: input.comment || null,
+    status: "pending" as const,
+    source: "kresco",
+    kyivDay,
+    lines: {
+      create: lineRows,
     },
-  });
+  };
+  let pending: Awaited<ReturnType<typeof prisma.salonAppointment.create>> | null = null;
+  for (let attempt = 0; attempt < 5 && !pending; attempt += 1) {
+    try {
+      pending = await prisma.salonAppointment.create({
+        data: { ...pendingData, krescoRecordNumber: await nextKrescoRecordNumber() },
+      });
+    } catch (err) {
+      if (!isKrescoRecordNumberConflict(err) || attempt === 4) throw err;
+    }
+  }
+  if (!pending) throw new Error("Не вдалося пронумерувати запис Kresco");
 
   let created: { id: number; visitId: number | null };
 
@@ -747,6 +757,7 @@ export async function createAppointmentFromKresco(input: KrescoAppointmentInput)
         source: "kresco",
         kyivDay,
         altegioVisitId: created.visitId,
+        krescoRecordNumber: pending.krescoRecordNumber,
       },
       include: appointmentWriteInclude,
     });
@@ -786,6 +797,7 @@ export async function createAppointmentFromKresco(input: KrescoAppointmentInput)
           source: "kresco",
           directClientId: ctx.client.id,
           masterId: ctx.directMasterId,
+          krescoRecordNumber: pending.krescoRecordNumber,
         },
         include: appointmentWriteInclude,
       });
