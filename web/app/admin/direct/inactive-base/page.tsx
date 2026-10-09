@@ -916,7 +916,7 @@ function InactiveBasePageContent() {
         )}
 
         <div className="bg-base-100 rounded-lg border border-base-300 overflow-x-auto">
-          <table className="table table-xs table-zebra table-direct-manager [&_td]:!py-0.5 [&_th]:!py-0.5">
+          <table className="table table-xs table-zebra table-direct-manager [&_td]:!py-[5px] [&_th]:!py-[5px]">
             <thead>
               <tr className="text-[10px]">
                 <th className="w-8">
