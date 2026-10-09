@@ -148,7 +148,7 @@ export default function CashBalancesPage() {
     <main className="px-3 pb-6 pt-2 space-y-3">
       <div className="flex items-center gap-2">
         <p className="text-xs text-gray-600">
-          Готівка — залишок на кінець 8 жовтня плюс рухи Kresco з 9 жовтня. Безготівка — фактичний баланс банку.
+          Готівка — залишок на кінець 8 жовтня плюс платежі з 9 жовтня. Безготівка — фактичний баланс банку.
         </p>
         <button type="button" className="btn btn-sm ml-auto" onClick={() => void load()} disabled={loading}>
           {loading ? "…" : "Оновити"}

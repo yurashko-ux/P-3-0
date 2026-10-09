@@ -1,5 +1,6 @@
 // Залишки рахунків для розділу Каса.
-// Готівка: ручний старт на кінець дня + оплати і документи Kresco з наступного дня.
+// Готівка: ручний старт на кінець дня + платежі Altegio і рухи Kresco з наступного дня.
+// Плюс і мінус лягають на залишок одразу, без очікування касовки.
 // Безготівка: фактичний баланс monobank. Зведення платежів тут не рахуємо.
 
 import { prisma } from "@/lib/prisma";
@@ -14,7 +15,7 @@ import {
 } from "@/lib/finance/cash-openings";
 import { hiddenFinanceAccountIds } from "@/lib/finance/account-archive";
 import { kyivCalendarTodayYmd } from "@/lib/direct-kyiv-today";
-import { openCashNetsForAccounts } from "@/lib/finance/cash-posting";
+import { openCashNetsForAccounts, sumUnmirroredAltegioCashByAccount } from "@/lib/finance/cash-posting";
 
 export type CashCurrency = "UAH" | "USD" | "EUR";
 
@@ -106,7 +107,7 @@ export async function listCashBalances(): Promise<CashBalanceTile[]> {
           accountId: { in: cashIds },
           checkout: { kyivDay: { gt: CASH_OPENING_KYIV_DAY } },
         },
-        select: { accountId: true, amount: true, amountFx: true, currencyCode: true },
+        select: { accountId: true, amount: true, amountFx: true, currencyCode: true, altegioTransactionId: true },
       }),
       prisma.financeDocument.findMany({
         where: {
@@ -120,12 +121,19 @@ export async function listCashBalances(): Promise<CashBalanceTile[]> {
           amountUah: true,
           accountId: true,
           counterAccountId: true,
+          altegioTransactionId: true,
         },
       }),
     ]);
 
     const currencyById = new Map(cashAccounts.map((account) => [account.id, account.currency]));
+    const mirroredAltegioIds = new Set<number>();
+    const rememberMirror = (altegioId: number | null | undefined) => {
+      const id = Number(altegioId) || 0;
+      if (id > 0) mirroredAltegioIds.add(id);
+    };
     for (const payment of payments) {
+      rememberMirror(payment.altegioTransactionId);
       const currency = currencyById.get(payment.accountId) || "UAH";
       const code = String(payment.currencyCode || "").toUpperCase();
       const fx = payment.amountFx != null && payment.amountFx > 0 ? payment.amountFx : 0;
@@ -142,6 +150,7 @@ export async function listCashBalances(): Promise<CashBalanceTile[]> {
       uahExtra.set(id, money((uahExtra.get(id) || 0) + delta));
     };
     for (const doc of documents) {
+      rememberMirror(doc.altegioTransactionId);
       const amount = money(doc.amountUah);
       if (!(amount > 0)) continue;
       if (doc.type === "income") addUah(doc.accountId, amount);
@@ -149,6 +158,16 @@ export async function listCashBalances(): Promise<CashBalanceTile[]> {
       else if (doc.type === "transfer") {
         addUah(doc.accountId, -amount);
         addUah(doc.counterAccountId, amount);
+      }
+    }
+
+    const altegioNets = await sumUnmirroredAltegioCashByAccount(cashAccounts, mirroredAltegioIds);
+    for (const [accountId, net] of altegioNets) {
+      const currency = currencyById.get(accountId) || "UAH";
+      if (currency === "UAH") {
+        uahExtra.set(accountId, money((uahExtra.get(accountId) || 0) + net));
+      } else {
+        fxExtra.set(accountId, money((fxExtra.get(accountId) || 0) + net));
       }
     }
   }

@@ -1,6 +1,6 @@
 // Готівкові рухи каси і проводка збіжною касовкою.
-// У баланс після початкового залишку входять лише оплати Kresco і документи Kresco.
-// Старі рядки Altegio до цього дня в проводку не беремо: вони вже в початковому залишку.
+// Баланс плитки: початковий залишок плюс рухи Kresco і готівкові платежі Altegio з наступного дня.
+// Старі рядки Altegio до цього дня в баланс не беремо: вони вже в початковому залишку.
 
 import { Prisma } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
@@ -271,6 +271,56 @@ export async function postCashMovementsIfMatched(input: {
     `[finance/cash-posting] Касовка ${input.countId} провела ${fresh.length} платежів каси ${input.accountId} «${input.accountTitle}» (${input.counted} ${input.currency})`,
   );
   return { matched: true, posted: fresh.length };
+}
+
+/** Сума готівкових платежів Altegio з 09.10 по касах. Знак суми — напрямок. Дзеркала Kresco не додаємо вдруге. */
+export async function sumUnmirroredAltegioCashByAccount(
+  accounts: Array<{ id: number; title: string; currency: CashCurrency }>,
+  mirroredAltegioIds: ReadonlySet<number>,
+): Promise<Map<number, number>> {
+  const out = new Map<number, number>();
+  const byId = new Map(accounts.map((account) => [account.id, account]));
+  const cashAccountIds = accounts.map((account) => String(account.id));
+  if (cashAccountIds.length === 0) return out;
+
+  const rows = await prisma.$queryRaw<
+    Array<{
+      altegioId: number;
+      accountId: string | null;
+      accountTitle: string | null;
+      amountKopiykas: bigint;
+      paymentPurpose: string | null;
+    }>
+  >`
+    SELECT "altegioId", "accountId", "accountTitle", "amountKopiykas", "paymentPurpose"
+    FROM "altegio_finance_transactions"
+    WHERE "deletedInAltegio" = false
+      AND "kyivDay" >= ${CASH_RECONCILE_FROM_KYIV_DAY}
+      AND "accountId" IN (${Prisma.join(cashAccountIds)})
+  `;
+
+  for (const tx of rows) {
+    const accountId = Number(tx.accountId) || 0;
+    const account = byId.get(accountId);
+    if (!account) continue;
+    const title = tx.accountTitle?.trim() || account.title;
+    if (!isCashAltegioAccount(title)) continue;
+    if (isDepositTopUpPaymentPurpose(tx.paymentPurpose || "")) continue;
+    const altegioId = Number(tx.altegioId) || 0;
+    if (altegioId > 0 && mirroredAltegioIds.has(altegioId)) continue;
+    const signedAmount = kopToAmount(
+      typeof tx.amountKopiykas === "bigint" ? tx.amountKopiykas : BigInt(tx.amountKopiykas),
+    );
+    if (signedAmount === 0) continue;
+    out.set(accountId, money((out.get(accountId) || 0) + signedAmount));
+  }
+
+  console.log(
+    `[finance/cash-posting] Платежі Altegio в залишок каси: ${[...out.entries()]
+      .map(([id, net]) => `${byId.get(id)?.title || id}=${net}`)
+      .join("; ") || "немає"}`,
+  );
+  return out;
 }
 
 function kopToAmount(value: bigint): number {
