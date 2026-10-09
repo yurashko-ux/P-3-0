@@ -916,7 +916,7 @@ function InactiveBasePageContent() {
         )}
 
         <div className="bg-base-100 rounded-lg border border-base-300 overflow-x-auto">
-          <table className="table table-sm table-zebra [&_td]:py-1 [&_th]:py-1">
+          <table className="table table-xs table-zebra table-direct-manager [&_td]:py-1 [&_th]:py-0">
             <thead>
               <tr className="text-[10px]">
                 <th className="w-8">
@@ -1181,6 +1181,7 @@ function InactiveBasePageContent() {
                             restoredAtKyivDay={client.restoredAtKyivDay}
                             status={client.inactiveLifecycleStatus}
                             showInactiveBadge={false}
+                            dateBeside
                             onOpenHistory={() => setLifecycleHistoryClient(client)}
                           />
                         )}
@@ -1196,6 +1197,7 @@ function InactiveBasePageContent() {
                               client.statusSetAt && kyivDayFromISO(String(client.statusSetAt)) === todayKyiv
                             )}
                             dotTitle="Тригер: змінився/встановлений статус"
+                            dateBeside
                             onStatusChange={handleStatusChange}
                             onMenuOpen={handleStatusMenuOpen}
                           />
@@ -1221,7 +1223,7 @@ function InactiveBasePageContent() {
                             {client.phone ? (
                               <button
                                 type="button"
-                                className="inline-flex h-6 shrink-0 items-center justify-center rounded-md px-0.5 text-base hover:bg-black/5"
+                                className="inline-flex h-5 shrink-0 items-center justify-center rounded-md px-0.5 text-sm leading-none hover:bg-black/5"
                                 title="Надіслати телефон клієнта в Telegram адміністратора"
                                 onClick={(e) => {
                                   e.stopPropagation();

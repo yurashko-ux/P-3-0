@@ -236,7 +236,7 @@ export function InactiveBaseChatCell({
 
   return (
     <>
-      <span className="flex flex-col items-start gap-0.5">
+      <span className="flex flex-row items-center gap-1">
         <div className="flex items-center justify-start gap-1.5 min-w-0">
           {hideInstMessageCount ? (
             <span
