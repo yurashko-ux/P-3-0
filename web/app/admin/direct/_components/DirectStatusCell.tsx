@@ -43,11 +43,9 @@ interface DirectStatusCellProps {
   /** Показувати червону крапочку (тригер: зміна/встановлення статусу) */
   showDot?: boolean;
   dotTitle?: string;
-  /** Дата поруч із бейджем, в один рядок. */
-  dateBeside?: boolean;
 }
 
-export function DirectStatusCell({ client, statuses, onStatusChange, onMenuOpen, showDot, dotTitle, dateBeside }: DirectStatusCellProps) {
+export function DirectStatusCell({ client, statuses, onStatusChange, onMenuOpen, showDot, dotTitle }: DirectStatusCellProps) {
   const [isOpen, setIsOpen] = useState(false);
   const [loading, setLoading] = useState(false);
   const [panelPosition, setPanelPosition] = useState<{ top: number; left: number } | null>(null);
@@ -172,7 +170,7 @@ export function DirectStatusCell({ client, statuses, onStatusChange, onMenuOpen,
   const statusButton = (
     <button
       type="button"
-      className={`inline-flex items-center justify-center rounded-md px-1.5 text-[10px] font-normal min-w-[52px] hover:opacity-80 transition-opacity ${dateBeside ? "h-4 py-0" : "py-0.5 h-5"}`}
+      className="inline-flex items-center justify-center rounded-md px-1.5 py-0.5 text-[10px] font-normal min-w-[52px] h-5 hover:opacity-80 transition-opacity"
       style={{ backgroundColor: displayColor, color: fg }}
       onClick={() => {
         if (!isOpen) onMenuOpen?.(client.id);
@@ -185,7 +183,7 @@ export function DirectStatusCell({ client, statuses, onStatusChange, onMenuOpen,
   );
   return (
     <div ref={dropdownRef} className="relative">
-      <div className={dateBeside ? "flex flex-row items-center gap-1" : "flex flex-col items-center gap-0.5"}>
+      <div className="flex flex-col items-center gap-0.5">
         {showDot ? (
           <WithCornerRedDot show={true} title={title}>
             {statusButton}
