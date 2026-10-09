@@ -207,12 +207,54 @@ export async function openCashNetsForAccounts(
     }),
   ]);
   const posted = new Set(postings.map((row) => postingKey(row.sourceType, row.sourceId, row.accountId)));
+  const addOpen = (accountId: number, delta: number) => {
+    const current = out.get(accountId) || { net: 0, count: 0 };
+    current.net = money(current.net + delta);
+    current.count += 1;
+    out.set(accountId, current);
+  };
   for (const movement of movements) {
     if (posted.has(postingKey(movement.sourceType, movement.sourceId, movement.accountId))) continue;
-    const current = out.get(movement.accountId) || { net: 0, count: 0 };
-    current.net = money(current.net + signed(movement));
-    current.count += 1;
-    out.set(movement.accountId, current);
+    addOpen(movement.accountId, signed(movement));
+  }
+
+  const mirroredAltegioIds = new Set(
+    movements.map((movement) => movement.altegioTransactionId).filter((id): id is number => id != null && id > 0),
+  );
+  const byId = new Map(accounts.map((account) => [account.id, account]));
+  const cashAccountIds = accounts.map((account) => String(account.id));
+  if (cashAccountIds.length > 0) {
+    const altegioRows = await prisma.$queryRaw<
+      Array<{
+        altegioId: number;
+        accountId: string | null;
+        accountTitle: string | null;
+        amountKopiykas: bigint;
+        paymentPurpose: string | null;
+      }>
+    >`
+      SELECT "altegioId", "accountId", "accountTitle", "amountKopiykas", "paymentPurpose"
+      FROM "altegio_finance_transactions"
+      WHERE "deletedInAltegio" = false
+        AND "kyivDay" >= ${CASH_RECONCILE_FROM_KYIV_DAY}
+        AND "accountId" IN (${Prisma.join(cashAccountIds)})
+    `;
+    for (const tx of altegioRows) {
+      const accountId = Number(tx.accountId) || 0;
+      const account = byId.get(accountId);
+      if (!account) continue;
+      const title = tx.accountTitle?.trim() || account.title;
+      if (!isCashAltegioAccount(title)) continue;
+      if (isDepositTopUpPaymentPurpose(tx.paymentPurpose || "")) continue;
+      const altegioId = Number(tx.altegioId) || 0;
+      if (altegioId > 0 && mirroredAltegioIds.has(altegioId)) continue;
+      if (posted.has(postingKey("altegio", String(altegioId), accountId))) continue;
+      const signedAmount = kopToAmount(
+        typeof tx.amountKopiykas === "bigint" ? tx.amountKopiykas : BigInt(tx.amountKopiykas),
+      );
+      if (signedAmount === 0) continue;
+      addOpen(accountId, signedAmount);
+    }
   }
   return out;
 }

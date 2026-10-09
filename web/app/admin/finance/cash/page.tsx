@@ -59,10 +59,11 @@ function OpenPaymentsLine({ tile }: { tile: CashTile }) {
   if (!tile.openPaymentsCount) return null;
   const net = tile.openPaymentsNet || 0;
   const unit = tile.currency === "UAH" ? "грн" : fxSymbol(tile.currency);
+  const tone = net < 0 ? "text-red-600" : "text-emerald-700";
   return (
-    <span className="text-[11px] font-medium tabular-nums text-gray-700" title="Ще не проведені платежі">
-      {net > 0 ? "+" : ""}
-      {money(net)} {unit} · {tile.openPaymentsCount}
+    <span className={`text-[11px] font-medium tabular-nums ${tone}`} title="Баланс платежів, які ще не проведено касовкою">
+      не проведено {net > 0 ? "+" : ""}
+      {money(net)} {unit}
     </span>
   );
 }
@@ -84,6 +85,7 @@ function TileFace({ tile }: { tile: CashTile }) {
           <span className="mt-1 text-lg font-semibold tabular-nums text-gray-900">
             {money(tile.balanceFx)} {fxSymbol(tile.currency)}
           </span>
+          <OpenPaymentsLine tile={tile} />
           {tile.balanceUah != null && (
             <span className="text-[11px] tabular-nums text-gray-500">{money(tile.balanceUah)} грн</span>
           )}
@@ -98,11 +100,11 @@ function TileFace({ tile }: { tile: CashTile }) {
               {money(diff)} {unit}
             </span>
           )}
-          <OpenPaymentsLine tile={tile} />
         </>
       ) : (
         <>
           <span className="mt-1 text-lg font-semibold tabular-nums text-gray-900">{money(book || 0)} грн</span>
+          <OpenPaymentsLine tile={tile} />
           {counted != null && (
             <span className="text-[11px] tabular-nums text-gray-500">({money(counted)} грн)</span>
           )}
@@ -112,7 +114,6 @@ function TileFace({ tile }: { tile: CashTile }) {
               {money(diff)} грн
             </span>
           )}
-          <OpenPaymentsLine tile={tile} />
         </>
       )}
     </>
