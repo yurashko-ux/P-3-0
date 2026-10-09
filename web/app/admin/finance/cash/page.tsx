@@ -34,6 +34,22 @@ function isCashTill(tile: CashTile): boolean {
   return tile.cash && !tile.openingPending;
 }
 
+/** М’які відтінки в палітрі картки запису: готівка трохи сильніше, рахунки ФОП — тихіше. */
+function tileTint(tile: CashTile, index: number): string {
+  if (tile.cash) {
+    if (tile.currency === "USD") return "#e5f2e9";
+    if (tile.currency === "EUR") return "#e6eef8";
+    return "#e7eef6";
+  }
+  const bank = ["#f3f5f8", "#f6f3ee", "#f2f6f3", "#f5f3f7", "#f2f4f6"];
+  return bank[index % bank.length];
+}
+
+const tileFaceClass =
+  "relative flex w-full flex-col items-center justify-center min-h-[6.5rem] rounded-2xl border border-slate-200/80 px-3 py-3 text-center text-gray-900 shadow-[0_1px_2px_rgba(15,23,42,0.05),0_8px_18px_-8px_rgba(15,23,42,0.28)]";
+
+const tileButtonClass = `${tileFaceClass} cursor-pointer select-none transition-[transform,box-shadow,filter] duration-150 ease-out hover:-translate-y-0.5 hover:shadow-[0_2px_4px_rgba(15,23,42,0.06),0_14px_24px_-8px_rgba(15,23,42,0.32)] active:translate-y-px active:scale-[0.97] active:brightness-[0.97] active:shadow-[inset_0_2px_8px_rgba(15,23,42,0.16),0_1px_2px_rgba(15,23,42,0.06)] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-slate-400`;
+
 function bookAmount(tile: CashTile): number | null {
   if (tile.currency === "UAH") return tile.balanceUah;
   return tile.balanceFx;
@@ -48,6 +64,58 @@ function OpenPaymentsLine({ tile }: { tile: CashTile }) {
       {net > 0 ? "+" : ""}
       {money(net)} {unit} · {tile.openPaymentsCount}
     </span>
+  );
+}
+
+function TileFace({ tile }: { tile: CashTile }) {
+  const book = bookAmount(tile);
+  const counted = tile.countedUah;
+  const diff = counted != null && book != null ? Math.round((counted - book) * 100) / 100 : null;
+  const unit = tile.currency === "UAH" ? "грн" : fxSymbol(tile.currency);
+  return (
+    <>
+      <span className="text-[11px] font-medium text-gray-700 leading-tight">{tile.title}</span>
+      {tile.openingPending ? (
+        <span className="mt-1 text-[11px] text-gray-500">Початковий залишок ще не заданий</span>
+      ) : !tile.cash && !tile.hasBank ? (
+        <span className="mt-1 text-[11px] text-gray-500">Немає банківського рахунку</span>
+      ) : tile.balanceFx != null ? (
+        <>
+          <span className="mt-1 text-lg font-semibold tabular-nums text-gray-900">
+            {money(tile.balanceFx)} {fxSymbol(tile.currency)}
+          </span>
+          {tile.balanceUah != null && (
+            <span className="text-[11px] tabular-nums text-gray-500">{money(tile.balanceUah)} грн</span>
+          )}
+          {counted != null && (
+            <span className="text-[11px] tabular-nums text-gray-500">
+              ({money(counted)} {unit})
+            </span>
+          )}
+          {diff != null && diff !== 0 && (
+            <span className={`text-[11px] font-medium tabular-nums ${diff > 0 ? "text-green-600" : "text-red-600"}`}>
+              {diff > 0 ? "+" : ""}
+              {money(diff)} {unit}
+            </span>
+          )}
+          <OpenPaymentsLine tile={tile} />
+        </>
+      ) : (
+        <>
+          <span className="mt-1 text-lg font-semibold tabular-nums text-gray-900">{money(book || 0)} грн</span>
+          {counted != null && (
+            <span className="text-[11px] tabular-nums text-gray-500">({money(counted)} грн)</span>
+          )}
+          {diff != null && diff !== 0 && (
+            <span className={`text-[11px] font-medium tabular-nums ${diff > 0 ? "text-green-600" : "text-red-600"}`}>
+              {diff > 0 ? "+" : ""}
+              {money(diff)} грн
+            </span>
+          )}
+          <OpenPaymentsLine tile={tile} />
+        </>
+      )}
+    </>
   );
 }
 
@@ -97,68 +165,28 @@ export default function CashBalancesPage() {
         <p className="text-sm text-gray-500">Рахунків немає.</p>
       )}
 
-      <div className="grid grid-cols-2 sm:grid-cols-3 gap-2 max-w-3xl">
-        {tiles.map((tile) => {
-          const book = bookAmount(tile);
-          const counted = tile.countedUah;
-          const diff = counted != null && book != null ? Math.round((counted - book) * 100) / 100 : null;
-          const unit = tile.currency === "UAH" ? "грн" : fxSymbol(tile.currency);
+      <div className="grid grid-cols-2 sm:grid-cols-3 gap-3 max-w-3xl">
+        {tiles.map((tile, index) => {
+          const face = <TileFace tile={tile} />;
+          const tint = tileTint(tile, index);
+          if (!isCashTill(tile)) {
+            return (
+              <div key={tile.id} className={tileFaceClass} style={{ background: tint }}>
+                {face}
+              </div>
+            );
+          }
           return (
-            <div
+            <button
               key={tile.id}
-              className={`relative flex flex-col items-center justify-center min-h-[6.5rem] rounded-lg border-2 border-gray-200 bg-white px-3 py-3 text-center ${isCashTill(tile) ? "pb-7" : ""}`}
+              type="button"
+              className={tileButtonClass}
+              style={{ background: tint }}
+              aria-label={`Перерахунок ${tile.title}`}
+              onClick={() => setCountTile(tile)}
             >
-              <span className="text-[11px] font-medium text-gray-800 leading-tight">{tile.title}</span>
-              {tile.openingPending ? (
-                <span className="mt-1 text-[11px] text-gray-500">Початковий залишок ще не заданий</span>
-              ) : !tile.cash && !tile.hasBank ? (
-                <span className="mt-1 text-[11px] text-gray-500">Немає банківського рахунку</span>
-              ) : tile.balanceFx != null ? (
-                <>
-                  <span className="mt-1 text-lg font-semibold tabular-nums text-gray-900">
-                    {money(tile.balanceFx)} {fxSymbol(tile.currency)}
-                  </span>
-                  {tile.balanceUah != null && (
-                    <span className="text-[11px] tabular-nums text-gray-500">{money(tile.balanceUah)} грн</span>
-                  )}
-                  {counted != null && (
-                    <span className="text-[11px] tabular-nums text-gray-500">({money(counted)} {unit})</span>
-                  )}
-                  {diff != null && diff !== 0 && (
-                    <span className={`text-[11px] font-medium tabular-nums ${diff > 0 ? "text-green-600" : "text-red-600"}`}>
-                      {diff > 0 ? "+" : ""}
-                      {money(diff)} {unit}
-                    </span>
-                  )}
-                  <OpenPaymentsLine tile={tile} />
-                </>
-              ) : (
-                <>
-                  <span className="mt-1 text-lg font-semibold tabular-nums text-gray-900">
-                    {money(book || 0)} грн
-                  </span>
-                  {counted != null && (
-                    <span className="text-[11px] tabular-nums text-gray-500">({money(counted)} грн)</span>
-                  )}
-                  {diff != null && diff !== 0 && (
-                    <span className={`text-[11px] font-medium tabular-nums ${diff > 0 ? "text-green-600" : "text-red-600"}`}>
-                      {diff > 0 ? "+" : ""}
-                      {money(diff)} грн
-                    </span>
-                  )}
-                  <OpenPaymentsLine tile={tile} />
-                </>
-              )}
-              {isCashTill(tile) && (
-                <button
-                  type="button"
-                  className="btn btn-ghost btn-xs absolute bottom-1 right-1 min-h-0 h-6 px-1.5 text-[10px]"
-                  onClick={() => setCountTile(tile)}
-                >
-                  Касовка
-                </button>
-              )}
-            </div>
+              {face}
+            </button>
           );
         })}
       </div>
