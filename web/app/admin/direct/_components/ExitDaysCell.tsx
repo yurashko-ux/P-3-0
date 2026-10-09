@@ -16,8 +16,6 @@ export type ExitDaysCellProps = {
   lastVisitAt?: string | null;
   /** У неактивній базі бейдж «Н/А» зайвий: він розтягує кожен рядок. */
   showInactiveBadge?: boolean;
-  /** Дата в один рядок із числом, як висота рядка Direct. */
-  dateBeside?: boolean;
 };
 
 function pillClass(days: number | null, restored: boolean, inactive: boolean): string {
@@ -56,7 +54,6 @@ export function ExitDaysCell({
   align = "right",
   lastVisitAt,
   showInactiveBadge = true,
-  dateBeside = false,
 }: ExitDaysCellProps) {
   const restored = status === "restored";
   const inactive = status === "inactive";
@@ -85,11 +82,7 @@ export function ExitDaysCell({
 
   const content = (
     <span
-      className={`inline-flex leading-none ${
-        dateBeside
-          ? "flex-row items-center gap-1"
-          : `flex-col gap-0.5 ${align === "right" ? "items-end" : "items-start"}`
-      }`}
+      className={`inline-flex flex-col ${align === "right" ? "items-end" : "items-start"} leading-none gap-0.5`}
     >
       <span className="relative inline-flex items-center">
         <span
