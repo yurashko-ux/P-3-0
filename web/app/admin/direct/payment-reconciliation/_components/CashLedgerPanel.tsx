@@ -69,7 +69,10 @@ function aggregateDayRows(dayRows: LedgerRow[]): LedgerRow[] {
   >();
   for (const row of dayRows) {
     const client = row.clientName.trim();
-    const key = `${client}\0${row.accountTitle}\0${row.currency}`;
+    // Без клієнта кожен платіж лишається окремим рядком: переказ і комісія не одна операція.
+    const key = client
+      ? `${client}\0${row.accountTitle}\0${row.currency}`
+      : row.id;
     const signed = row.direction === "out" ? -row.amount : row.amount;
     const current = groups.get(key);
     if (!current) {
