@@ -9,6 +9,7 @@ import {
   pruneDeletedAltegioFinanceCandidates,
 } from "@/lib/bank/altegio-payment-reconcile";
 import { extractAdminReconciliationComment } from "@/lib/bank/payment-reconciliation-comment";
+import { ZASADNA_PAYMENTS_HISTORY_OR } from "@/lib/bank/zasadna-payments-window";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
@@ -77,6 +78,7 @@ export async function GET(req: NextRequest) {
       time: { gte: from, lte: to },
       amount: { lt: BigInt(0) },
       account: { includeInOperationsTable: true },
+      AND: [{ OR: ZASADNA_PAYMENTS_HISTORY_OR }],
       ...(status === "unmatched"
         ? { altegioPaymentMatch: null }
         : status === "all"

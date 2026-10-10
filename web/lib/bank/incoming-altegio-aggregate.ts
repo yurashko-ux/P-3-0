@@ -2,6 +2,7 @@ import { prisma } from "@/lib/prisma";
 import { altegioFetch } from "@/lib/altegio/client";
 import { ALTEGIO_ENV } from "@/lib/altegio/env";
 import { ALTEGIO_FINANCE_SYNC_START_DATE } from "@/lib/altegio/finance-transactions-sync";
+import { isZasadnaPaymentHiddenInPayments } from "@/lib/bank/zasadna-payments-window";
 import { resolveAltegioPaymentPurposeFromRaw } from "@/lib/altegio/payment-purpose-import";
 import { isEncashmentPaymentPurpose } from "@/lib/altegio/incoming-payments";
 import {
@@ -1394,6 +1395,19 @@ async function fetchBankIncomingByDayRange(dateFrom: string, dateTo: string): Pr
   let totalKop = 0n;
 
   for (const statement of statements) {
+    const kyivDay = kyivDayFromDate(statement.time);
+    if (
+      isZasadnaPaymentHiddenInPayments(
+        [
+          statement.account.altegioAccountTitle,
+          statement.account.connection?.clientName,
+          statement.account.connection?.name,
+        ],
+        kyivDay,
+      )
+    ) {
+      continue;
+    }
     const accountLabel = bankAccountLabel(statement.account);
     const text = `${statement.description || ""} ${statement.comment || ""}`;
     const commission = parseBankCommission(text);
@@ -1414,7 +1428,7 @@ async function fetchBankIncomingByDayRange(dateFrom: string, dateTo: string): Pr
       }),
       commissionKop: commission.kopiykas != null ? commission.kopiykas.toString() : null,
       commissionRaw: commission.raw,
-      kyivDay: kyivDayFromDate(statement.time),
+      kyivDay,
       operationTime,
       accountId: statement.account.id,
       accountTitle: accountLabel,
@@ -1452,7 +1466,8 @@ export async function buildIncomingReconciliationPreview(): Promise<IncomingReco
     excludeTransferIncomeRows(
       baseRows.filter((row) =>
         isFinancialOperationIncomeRow(row)
-        && isValidIncomeKyivDay(row.kyivDay, dateFrom, dateTo),
+        && isValidIncomeKyivDay(row.kyivDay, dateFrom, dateTo)
+        && !isZasadnaPaymentHiddenInPayments([row.accountTitle], row.kyivDay),
       ),
     ).rows,
   );

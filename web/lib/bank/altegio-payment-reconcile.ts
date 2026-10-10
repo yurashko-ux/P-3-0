@@ -6,6 +6,7 @@ import {
   normalizePaymentPurposeTitle,
 } from "@/lib/altegio/finance-transactions-sync";
 import { canonicalizeAltegioPaymentPurposeTitle } from "@/lib/altegio/payment-purpose-import";
+import { ZASADNA_PAYMENTS_HISTORY_OR } from "@/lib/bank/zasadna-payments-window";
 
 export type ReconcileBankAltegioPaymentsResult = {
   checked: number;
@@ -597,6 +598,7 @@ export async function reconcileBankAltegioPayments(params: {
         altegioAccountId: { not: null },
         includeInOperationsTable: true,
       },
+      AND: [{ OR: ZASADNA_PAYMENTS_HISTORY_OR }],
     },
     include: {
       account: { select: { id: true, altegioAccountId: true, altegioAccountTitle: true } },

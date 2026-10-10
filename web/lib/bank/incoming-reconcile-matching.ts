@@ -194,6 +194,7 @@ const ACCOUNT_FAMILY_FRAGMENTS: Array<{ family: string; fragments: string[] }> =
   { family: "жалівців", fragments: ["жалівців", "жаліцька", "жалівця", "желіхів", "желихів"] },
   { family: "колачник", fragments: ["колачник", "колічник", "копачник", "колечник"] },
   { family: "максимів", fragments: ["максимів"] },
+  { family: "засадн", fragments: ["засадн"] },
 ];
 
 function accountFamilyKey(title: string): string | null {
