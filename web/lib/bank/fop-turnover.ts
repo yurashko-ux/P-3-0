@@ -148,6 +148,7 @@ async function loadStatementChain(accountId: string, from: Date, to: Date) {
     where: {
       accountId,
       time: { gte: from, lte: to },
+      paymentsHiddenAt: null,
       account: { includeInOperationsTable: true },
     },
     orderBy: [{ time: "asc" }, { id: "asc" }],

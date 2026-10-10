@@ -16,6 +16,7 @@ export async function countBankUnmatchedForKyivDay(kyivDay: string): Promise<Ban
       where: {
         time: { gte: startUtc, lt: endUtc },
         amount: { gt: BigInt(0) },
+        paymentsHiddenAt: null,
         altegioIncomingMatch: null,
         altegioDepositMatch: null,
         account: { includeInOperationsTable: true },
@@ -25,6 +26,7 @@ export async function countBankUnmatchedForKyivDay(kyivDay: string): Promise<Ban
       where: {
         time: { gte: startUtc, lt: endUtc },
         amount: { lt: BigInt(0) },
+        paymentsHiddenAt: null,
         altegioPaymentMatch: null,
         account: { includeInOperationsTable: true },
       },

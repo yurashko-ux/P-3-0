@@ -38,6 +38,8 @@ type OperationItem = {
   description: string;
   comment: string | null;
   counterName: string | null;
+  paymentsHidden?: boolean;
+  zasadnaAccount?: boolean;
   owner: string;
   connectionId: string;
   accountId: string;
@@ -523,6 +525,8 @@ export default function BankPage() {
   const [connections, setConnections] = useState<BankConnection[]>([]);
   const [connectionsLoading, setConnectionsLoading] = useState(true);
   const [operations, setOperations] = useState<OperationItem[]>([]);
+  const [viewerCanHideZasadna, setViewerCanHideZasadna] = useState(false);
+  const [hidingOperationId, setHidingOperationId] = useState<string | null>(null);
   const [operationsLoading, setOperationsLoading] = useState(true);
   const [isLoadingMore, setIsLoadingMore] = useState(false);
   const [hasMoreOperations, setHasMoreOperations] = useState(false);
@@ -669,8 +673,9 @@ export default function BankPage() {
               "[admin/bank] Відповідь /api/bank/operations без поля fopZlAsOf — на сервері, ймовірно, застарілий деплой. Колонка «Залишок рік» може не збігатися з футером."
             );
           }
-          setOperations(data.items);
-          setHasMoreOperations(Boolean(data.hasMore));
+        setOperations(data.items);
+        setViewerCanHideZasadna(Boolean(data.viewerCanHideZasadna));
+        setHasMoreOperations(Boolean(data.hasMore));
           setNextOperationsCursor(typeof data.nextCursor === "string" ? data.nextCursor : null);
           setOperationsFetchedAt(new Date());
           setOperationsDebug({
@@ -880,6 +885,9 @@ export default function BankPage() {
           const appended = data.items.filter((item: OperationItem) => !existing.has(item.id));
           return [...prev, ...appended];
         });
+        if (typeof data.viewerCanHideZasadna === "boolean") {
+          setViewerCanHideZasadna(data.viewerCanHideZasadna);
+        }
         setHasMoreOperations(Boolean(data.hasMore));
         setNextOperationsCursor(typeof data.nextCursor === "string" ? data.nextCursor : null);
       } else {
@@ -888,6 +896,33 @@ export default function BankPage() {
       }
     } finally {
       setIsLoadingMore(false);
+    }
+  };
+
+  const toggleZasadnaPayment = async (item: OperationItem) => {
+    const nextHidden = !item.paymentsHidden;
+    const question = nextHidden
+      ? "Сховати цей платіж Засадної? У розділ Платежі він більше не потрапить."
+      : "Повернути платіж у Платежі?";
+    if (!window.confirm(question)) return;
+    setHidingOperationId(item.id);
+    try {
+      const res = await fetch("/api/bank/operations/hide", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        credentials: "include",
+        body: JSON.stringify({ id: item.id, hidden: nextHidden }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok || !data.ok) {
+        window.alert(typeof data.error === "string" ? data.error : "Не вдалося змінити видимість платежу");
+        return;
+      }
+      setOperations((prev) =>
+        prev.map((row) => (row.id === item.id ? { ...row, paymentsHidden: nextHidden } : row)),
+      );
+    } finally {
+      setHidingOperationId(null);
     }
   };
 
@@ -1235,8 +1270,11 @@ export default function BankPage() {
       <col style={{ width: 100 }} />
       <col />
       <col />
+      {viewerCanHideZasadna ? <col style={{ width: 44 }} /> : null}
     </colgroup>
   );
+
+  const bankColumnCount = viewerCanHideZasadna ? 14 : 13;
 
   const bankHeader = (
     <thead>
@@ -1434,6 +1472,9 @@ export default function BankPage() {
         </th>
         <th style={{ padding: "10px 12px" }}>Опис / призначення</th>
         <th style={{ padding: "10px 12px" }}>Контрагент</th>
+        {viewerCanHideZasadna ? (
+          <th style={{ padding: "10px 4px", width: 44 }} title="Сховати чужий платіж ФОП Засадна" />
+        ) : null}
       </tr>
     </thead>
   );
@@ -1821,7 +1862,7 @@ export default function BankPage() {
                 <tbody>
                 {filteredAndSortedOperations.length === 0 ? (
                   <tr>
-                    <td colSpan={13} style={{ padding: "16px 12px", color: "rgba(0,0,0,0.55)" }}>
+                    <td colSpan={bankColumnCount} style={{ padding: "16px 12px", color: "rgba(0,0,0,0.55)" }}>
                       Немає операцій за обраними фільтрами.
                     </td>
                   </tr>
@@ -1837,6 +1878,7 @@ export default function BankPage() {
                       ? { boxShadow: BANK_TODAY_ROW_SEPARATOR_INSET }
                       : {};
                     const isFocused = highlightItemId === it.id;
+                    const isHidden = Boolean(it.paymentsHidden);
                     return (
                       <tr
                         key={it.id}
@@ -1844,7 +1886,8 @@ export default function BankPage() {
                         style={{
                           borderBottom: "1px solid #f0f0f0",
                           transition: "background-color 120ms ease",
-                          backgroundColor: isFocused ? BANK_FOCUS_HIGHLIGHT_BG : "transparent",
+                          backgroundColor: isHidden ? "#f3f4f6" : isFocused ? BANK_FOCUS_HIGHLIGHT_BG : "transparent",
+                          opacity: isHidden ? 0.55 : 1,
                         }}
                         onMouseEnter={(e) => {
                           if (!isFocused) e.currentTarget.style.backgroundColor = "#f3f4f6";
@@ -2051,13 +2094,44 @@ export default function BankPage() {
                             {it.counterName || "—"}
                           </div>
                         </td>
+                        {viewerCanHideZasadna ? (
+                          <td style={{ padding: "6px 4px", textAlign: "center", ...todaySep }}>
+                            {it.zasadnaAccount ? (
+                              <button
+                                type="button"
+                                disabled={hidingOperationId === it.id}
+                                title={isHidden ? "Повернути платіж у Платежі" : "Сховати чужий платіж Засадної"}
+                                onClick={() => void toggleZasadnaPayment(it)}
+                                style={{
+                                  border: "none",
+                                  background: "transparent",
+                                  cursor: hidingOperationId === it.id ? "wait" : "pointer",
+                                  color: isHidden ? "#b45309" : "#6b7280",
+                                  padding: 4,
+                                  lineHeight: 0,
+                                }}
+                              >
+                                {isHidden ? (
+                                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" aria-hidden>
+                                    <path d="M3 12a9 9 0 1 0 3-6.7" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />
+                                    <path d="M3 5v5h5" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
+                                  </svg>
+                                ) : (
+                                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" aria-hidden>
+                                    <path d="M4 7h16M9 7V5h6v2M7 7l1 13h8l1-13" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
+                                  </svg>
+                                )}
+                              </button>
+                            ) : null}
+                          </td>
+                        ) : null}
                       </tr>
                     );
                   })
                 )}
                 {(hasMoreOperations || isLoadingMore) && (
                   <tr ref={loadMoreSentinelRef}>
-                    <td colSpan={13} style={{ padding: "12px", textAlign: "center", color: "rgba(0,0,0,0.55)" }}>
+                    <td colSpan={bankColumnCount} style={{ padding: "12px", textAlign: "center", color: "rgba(0,0,0,0.55)" }}>
                       {isLoadingMore ? "Завантаження ще операцій…" : "Прокрутіть вниз для завантаження ще"}
                     </td>
                   </tr>

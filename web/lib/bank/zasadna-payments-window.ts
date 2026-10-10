@@ -20,6 +20,9 @@ export function isZasadnaPaymentHiddenInPayments(
   return titles.some((title) => isZasadnaPartyTitle(title));
 }
 
+/** Платіж, який розробник сховав кошиком, у Платежі і розрахунки не входить. */
+export const PAYMENTS_VISIBLE_STATEMENT = { paymentsHiddenAt: null } as const;
+
 /** Додаткова умова вибірки банківської виписки для Платежів. */
 export const ZASADNA_PAYMENTS_HISTORY_OR = [
   { time: { gte: ZASADNA_PAYMENTS_FROM_UTC } },

@@ -1111,6 +1111,8 @@ model BankStatementItem {
   altegioBalanceCapturedAt    DateTime?
   /// Внутрішній номер платежу Kresco: 00001 і далі за часом операції.
   paymentNumber               Int       @unique
+  /// Чужі кошти на рахунку Засадної: рядок лишається в Банку, але Платежі його не бачать.
+  paymentsHiddenAt            DateTime?
   createdAt                   DateTime  @default(now())
 
   account               BankAccount                @relation(fields: [accountId], references: [id], onDelete: Cascade)

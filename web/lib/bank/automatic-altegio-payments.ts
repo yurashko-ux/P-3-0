@@ -210,6 +210,7 @@ export async function processIncomingAcquiringCommission(
   });
 
   if (!statement) return { processed: false, skipped: true, reason: "statement_not_found" };
+  if (statement.paymentsHiddenAt) return { processed: false, skipped: true, reason: "payments_hidden" };
   if (statement.amount <= 0n) return { processed: false, skipped: true, reason: "not_incoming" };
   if (!statement.account.includeInOperationsTable) return { processed: false, skipped: true, reason: "account_excluded" };
   if (!statement.account.altegioAccountId) return { processed: false, skipped: true, reason: "no_altegio_account" };
@@ -370,6 +371,7 @@ export async function processOutgoingTerminalRkoFee(
   });
 
   if (!statement) return { processed: false, skipped: true, reason: "statement_not_found" };
+  if (statement.paymentsHiddenAt) return { processed: false, skipped: true, reason: "payments_hidden" };
   if (statement.amount >= 0n) return { processed: false, skipped: true, reason: "not_outgoing" };
   if (!statement.account.includeInOperationsTable) return { processed: false, skipped: true, reason: "account_excluded" };
   if (!statement.account.altegioAccountId) return { processed: false, skipped: true, reason: "no_altegio_account" };
@@ -545,6 +547,7 @@ export async function processPendingIncomingAcquiringCommissions(params: {
     where: {
       time: { gte: from, lte: to },
       amount: { gt: 0n },
+      paymentsHiddenAt: null,
       account: { includeInOperationsTable: true },
       automaticAltegioExpense: null,
     },
@@ -594,6 +597,7 @@ export async function processPendingOutgoingTerminalRkoFees(params: {
     where: {
       time: { gte: from, lte: to },
       amount: { lt: 0n },
+      paymentsHiddenAt: null,
       account: { includeInOperationsTable: true },
       OR: [
         { automaticAltegioExpense: null },

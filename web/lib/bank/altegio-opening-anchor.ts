@@ -109,6 +109,7 @@ export async function buildAltegioBalanceAfterTxnFromOpeningAnchor(
       where: {
         accountId,
         time: { gt: anchorEndUtc, lte: requestToDate },
+        paymentsHiddenAt: null,
         account: { includeInOperationsTable: true },
       },
       orderBy: [{ time: "asc" }, { id: "asc" }],
@@ -164,6 +165,7 @@ export async function computeAltegioBalanceKopForFooter(
       where: {
         accountId: acc.id,
         time: { gt: anchorEndUtc, lte: asOf },
+        paymentsHiddenAt: null,
         account: { includeInOperationsTable: true },
       },
       _sum: { amount: true },

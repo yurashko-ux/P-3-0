@@ -23,6 +23,8 @@ import {
   resolveIncomingBankExpenseArticle,
 } from "@/lib/bank/reconciliation-number";
 import { persistMissingIncomingMatchesForBankItems } from "@/lib/bank/incoming-payment-reconcile";
+import { isZasadnaPartyTitle } from "@/lib/bank/zasadna-payments-window";
+import { canRevokeEncashmentConfirmation } from "@/lib/finance/encashment-confirmation";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
@@ -185,6 +187,7 @@ export async function GET(req: NextRequest) {
           description: true,
           comment: true,
           counterName: true,
+          paymentsHiddenAt: true,
           altegioPaymentMatch: {
             select: {
               status: true,
@@ -262,6 +265,7 @@ export async function GET(req: NextRequest) {
           description: true,
           comment: true,
           counterName: true,
+          paymentsHiddenAt: true,
           altegioPaymentMatch: {
             select: {
               status: true,
@@ -424,14 +428,16 @@ export async function GET(req: NextRequest) {
     // У вкладці «Зведені» частина пар лише live-оцінка без запису в БД — дописуємо зведення.
     try {
       await persistMissingIncomingMatchesForBankItems(
-        pageItems.map((row) => ({
-          id: row.id,
-          time: row.time,
-          amount: BigInt(row.amount),
-          description: row.description ?? "",
-          comment: row.comment ?? null,
-          counterName: row.counterName ?? null,
-        })),
+        pageItems
+          .filter((row) => !row.paymentsHiddenAt)
+          .map((row) => ({
+            id: row.id,
+            time: row.time,
+            amount: BigInt(row.amount),
+            description: row.description ?? "",
+            comment: row.comment ?? null,
+            counterName: row.counterName ?? null,
+          })),
       );
       const pageIds = pageItems.map((row) => row.id);
       const refreshedIncoming = await (prisma as any).bankAltegioIncomingMatch.findMany({
@@ -761,6 +767,11 @@ export async function GET(req: NextRequest) {
       const acc = i.account;
       const conn = acc.connection;
       const owner = conn.clientName ?? conn.name ?? "—";
+      const snapshotTitle =
+        "altegioAccountTitleSnapshot" in i && typeof i.altegioAccountTitleSnapshot === "string"
+          ? i.altegioAccountTitleSnapshot
+          : null;
+      const zasadnaAccount = [owner, conn.name, snapshotTitle].some((title) => isZasadnaPartyTitle(title));
       const accountLast4 =
         last4(acc.maskedPan ?? null) !== "—"
           ? last4(acc.maskedPan ?? null)
@@ -791,6 +802,8 @@ export async function GET(req: NextRequest) {
         description: i.description,
         comment: i.comment ?? null,
         counterName: i.counterName ?? null,
+        paymentsHidden: Boolean(i.paymentsHiddenAt),
+        zasadnaAccount,
         owner,
         connectionId: conn.id,
         accountId: acc.id,
@@ -839,6 +852,7 @@ export async function GET(req: NextRequest) {
         /** Мітка для перевірки деплою: ЗЛ у items = ліміт − YTD на цей момент (як футер), не на час операції. */
         fopZlAsOf: fopZlAsOf.toISOString(),
         items: list,
+        viewerCanHideZasadna: await canRevokeEncashmentConfirmation(auth),
         hasMore,
         nextCursor,
       },

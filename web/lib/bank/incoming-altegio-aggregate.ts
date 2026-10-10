@@ -2,7 +2,7 @@ import { prisma } from "@/lib/prisma";
 import { altegioFetch } from "@/lib/altegio/client";
 import { ALTEGIO_ENV } from "@/lib/altegio/env";
 import { ALTEGIO_FINANCE_SYNC_START_DATE } from "@/lib/altegio/finance-transactions-sync";
-import { isZasadnaPaymentHiddenInPayments } from "@/lib/bank/zasadna-payments-window";
+import { isZasadnaPaymentHiddenInPayments, PAYMENTS_VISIBLE_STATEMENT } from "@/lib/bank/zasadna-payments-window";
 import { resolveAltegioPaymentPurposeFromRaw } from "@/lib/altegio/payment-purpose-import";
 import { isEncashmentPaymentPurpose } from "@/lib/altegio/incoming-payments";
 import {
@@ -1375,6 +1375,7 @@ async function fetchBankIncomingByDayRange(dateFrom: string, dateTo: string): Pr
     where: {
       time: { gte: from, lte: to },
       amount: { gt: 0n },
+      ...PAYMENTS_VISIBLE_STATEMENT,
       account: { includeInOperationsTable: true },
     },
     include: {

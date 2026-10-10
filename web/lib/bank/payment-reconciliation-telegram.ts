@@ -1815,6 +1815,7 @@ export async function notifyUnmatchedBankPayments(limit = 10) {
       altegioFinanceTransactionId: null,
       bankStatementItem: {
         amount: { lt: 0 },
+        paymentsHiddenAt: null,
         account: { includeInOperationsTable: true },
       },
     },
@@ -1834,6 +1835,7 @@ export async function notifyUnmatchedBankPayments(limit = 10) {
     const statementsWithoutMatch = await prisma.bankStatementItem.findMany({
       where: {
         amount: { lt: 0 },
+        paymentsHiddenAt: null,
         account: { includeInOperationsTable: true },
         altegioPaymentMatch: null,
       },
