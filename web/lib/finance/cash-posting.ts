@@ -5,6 +5,7 @@
 import { Prisma } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
 import { isCashAltegioAccount } from "@/lib/bank/incoming-reconcile-matching";
+import { extractCurrencyAmountFromComment } from "@/lib/finance/encashment-account-bucket";
 import { isDepositTopUpPaymentPurpose } from "@/lib/altegio/payment-purpose-labels";
 import { isEurCashAccountTitle, isUsdCashAccountTitle } from "@/lib/journal/checkout";
 import { CASH_OPENING_KYIV_DAY, CASH_RECONCILE_FROM_KYIV_DAY } from "@/lib/finance/cash-openings";
@@ -65,6 +66,30 @@ function currencyOfTitle(title: string): CashCurrency {
   if (isUsdCashAccountTitle(title)) return "USD";
   if (isEurCashAccountTitle(title)) return "EUR";
   return "UAH";
+}
+
+/**
+ * Готівкова каса в гривні бере суму платежу.
+ * Долар і євро — кількість валюти з коментаря Altegio (200$, 520Є), не гривневий еквівалент.
+ */
+function signedCashAmountFromAltegio(
+  currency: CashCurrency,
+  comment: string | null,
+  amountKopiykas: bigint,
+  altegioId: number,
+  accountTitle: string,
+): number | null {
+  const hryvnia = kopToAmount(amountKopiykas);
+  if (currency === "UAH") return hryvnia === 0 ? null : hryvnia;
+  const foreign = extractCurrencyAmountFromComment(comment || "", currency === "USD" ? "usd" : "eur");
+  if (!(foreign > 0)) {
+    console.warn(
+      `[finance/cash-posting] Валютна каса «${accountTitle}»: у коментарі платежу ${altegioId} немає суми ${currency} («${comment || ""}»), гривню ${hryvnia} не підставляємо`,
+    );
+    return null;
+  }
+  const sign = hryvnia < 0 ? -1 : 1;
+  return money(sign * foreign);
 }
 
 export function cashAmountsEqual(a: number, b: number): boolean {
@@ -231,9 +256,10 @@ export async function openCashNetsForAccounts(
         accountTitle: string | null;
         amountKopiykas: bigint;
         paymentPurpose: string | null;
+        comment: string | null;
       }>
     >`
-      SELECT "altegioId", "accountId", "accountTitle", "amountKopiykas", "paymentPurpose"
+      SELECT "altegioId", "accountId", "accountTitle", "amountKopiykas", "paymentPurpose", "comment"
       FROM "altegio_finance_transactions"
       WHERE "deletedInAltegio" = false
         AND "kyivDay" >= ${CASH_RECONCILE_FROM_KYIV_DAY}
@@ -249,10 +275,14 @@ export async function openCashNetsForAccounts(
       const altegioId = Number(tx.altegioId) || 0;
       if (altegioId > 0 && mirroredAltegioIds.has(altegioId)) continue;
       if (posted.has(postingKey("altegio", String(altegioId), accountId))) continue;
-      const signedAmount = kopToAmount(
+      const signedAmount = signedCashAmountFromAltegio(
+        account.currency,
+        tx.comment,
         typeof tx.amountKopiykas === "bigint" ? tx.amountKopiykas : BigInt(tx.amountKopiykas),
+        altegioId,
+        title,
       );
-      if (signedAmount === 0) continue;
+      if (signedAmount == null || signedAmount === 0) continue;
       addOpen(accountId, signedAmount);
     }
   }
@@ -353,9 +383,10 @@ async function loadUnpostedAltegioCash(
       amountKopiykas: bigint;
       kyivDay: string;
       paymentPurpose: string | null;
+      comment: string | null;
     }>
   >`
-    SELECT "altegioId", "accountTitle", "amountKopiykas", "kyivDay", "paymentPurpose"
+    SELECT "altegioId", "accountTitle", "amountKopiykas", "kyivDay", "paymentPurpose", "comment"
     FROM "altegio_finance_transactions"
     WHERE "deletedInAltegio" = false
       AND "kyivDay" >= ${CASH_RECONCILE_FROM_KYIV_DAY}
@@ -369,9 +400,14 @@ async function loadUnpostedAltegioCash(
     const altegioId = Number(tx.altegioId) || 0;
     if (!(altegioId > 0) || mirroredAltegioIds.has(altegioId)) continue;
     if (postedKeys.has(postingKey("altegio", String(altegioId), accountId))) continue;
-    const signedAmount = kopToAmount(
+    const signedAmount = signedCashAmountFromAltegio(
+      currencyOfTitle(title),
+      tx.comment,
       typeof tx.amountKopiykas === "bigint" ? tx.amountKopiykas : BigInt(tx.amountKopiykas),
+      altegioId,
+      title,
     );
+    if (signedAmount == null) continue;
     const amount = money(Math.abs(signedAmount));
     if (!(amount > 0)) continue;
     out.push({
@@ -522,9 +558,15 @@ export async function listCashLedger(): Promise<CashLedgerRow[]> {
     if (mirroredAltegioIds.has(tx.altegioId)) continue;
     const accountId = Number(tx.accountId) || 0;
     if (hiddenIds.has(accountId)) continue;
-    const signedAmount = kopToAmount(
+    const currency = currencyOfTitle(title);
+    const signedAmount = signedCashAmountFromAltegio(
+      currency,
+      tx.comment,
       typeof tx.amountKopiykas === "bigint" ? tx.amountKopiykas : BigInt(tx.amountKopiykas),
+      tx.altegioId,
+      title,
     );
+    if (signedAmount == null) continue;
     const amount = money(Math.abs(signedAmount));
     if (!(amount > 0)) continue;
     // Знак суми — реальний рух каси. direction у базі хибний: стаття «Надання послуг» записана як витрата.
@@ -540,7 +582,7 @@ export async function listCashLedger(): Promise<CashLedgerRow[]> {
       sourceId: String(tx.altegioId),
       accountId,
       accountTitle: title,
-      currency: "UAH",
+      currency,
       direction,
       amount,
       kyivDay: tx.kyivDay,
