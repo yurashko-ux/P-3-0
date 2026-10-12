@@ -142,6 +142,10 @@ type IncomingPreview = {
   };
   depositRealization?: DepositRealizationIndex;
   depositBalances?: DepositBalancesPayload | null;
+  pagination?: {
+    historyStartDate: string;
+    hasEarlier: boolean;
+  };
 };
 
 type DepositTabDataPayload = {
@@ -251,6 +255,16 @@ function kyivDayFromOperationTime(operationTime: string): string {
 
 function getKyivTodayYmd(): string {
   return kyivDayFromOperationTime(new Date().toISOString());
+}
+
+const LINKED_HISTORY_PAGE_DAYS = 20;
+
+function linkedHistoryFrom(days: number): string {
+  const today = getKyivTodayYmd();
+  const [year, month, day] = today.split("-").map(Number);
+  const date = new Date(Date.UTC(year, month - 1, day));
+  date.setUTCDate(date.getUTCDate() - Math.max(0, days - 1));
+  return date.toISOString().slice(0, 10);
 }
 
 /** Незведені: не показувати платежі раніше цієї дати (Europe/Kyiv). */
@@ -3331,6 +3345,7 @@ export function IncomingSplitView({
   const [loading, setLoading] = useState(false);
   const [depositTabLoading, setDepositTabLoading] = useState(false);
   const [reconciling, setReconciling] = useState(false);
+  const [linkedHistoryDays, setLinkedHistoryDays] = useState(LINKED_HISTORY_PAGE_DAYS);
   const [error, setError] = useState<string | null>(null);
   const [expandedAccounts, setExpandedAccounts] = useState<Set<string>>(() => new Set());
   const depositTabFetchSeqRef = useRef(0);
@@ -3393,7 +3408,12 @@ export function IncomingSplitView({
     setLoading(true);
     setError(null);
     try {
-      const res = await fetch("/api/admin/bank/payment-reconciliation/incoming", {
+      const params = new URLSearchParams();
+      if (reconciliationStatus === "linked") {
+        params.set("from", linkedHistoryFrom(linkedHistoryDays));
+      }
+      const query = params.toString();
+      const res = await fetch(`/api/admin/bank/payment-reconciliation/incoming${query ? `?${query}` : ""}`, {
         cache: "no-store",
         credentials: "include",
         signal: AbortSignal.timeout(90_000),
@@ -3419,7 +3439,7 @@ export function IncomingSplitView({
     } finally {
       setLoading(false);
     }
-  }, [loadDepositTabData]);
+  }, [linkedHistoryDays, loadDepositTabData, reconciliationStatus]);
 
   const refreshAll = useCallback(async () => {
     await loadData();
@@ -3934,6 +3954,18 @@ export function IncomingSplitView({
             bankReviewNotesByItemId={bankReviewNotesByItemId}
             depositRealizationIndex={depositRealizationIndex}
           />
+          {data?.pagination?.hasEarlier ? (
+            <div className="shrink-0 border-t border-gray-200 bg-white py-2 text-center">
+              <button
+                type="button"
+                className="btn btn-sm btn-ghost"
+                disabled={loading}
+                onClick={() => setLinkedHistoryDays((days) => days + LINKED_HISTORY_PAGE_DAYS)}
+              >
+                {loading ? "Завантаження..." : "Завантажити ще"}
+              </button>
+            </div>
+          ) : null}
         </div>
       ) : (
         <div className="flex min-h-0 flex-1 flex-col overflow-hidden rounded-xl border border-gray-200 bg-white shadow-sm">

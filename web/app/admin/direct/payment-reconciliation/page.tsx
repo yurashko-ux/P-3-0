@@ -73,6 +73,10 @@ type ReconciliationRow = {
 type ApiState = {
   rows: ReconciliationRow[];
   summary: Record<string, number>;
+  pagination?: {
+    historyStartDate: string;
+    hasEarlier: boolean;
+  };
 };
 
 const STATUS_OPTIONS = [
@@ -86,6 +90,20 @@ type BasePaymentStatus = (typeof STATUS_OPTIONS)[number]["value"];
 type PaymentStatus = BasePaymentStatus | "deposits";
 
 const ALTEGIO_COMPANY_ID = process.env.NEXT_PUBLIC_ALTEGIO_COMPANY_ID || "1169323";
+const LINKED_HISTORY_PAGE_DAYS = 20;
+
+function linkedHistoryFrom(days: number): string {
+  const today = new Intl.DateTimeFormat("en-CA", {
+    timeZone: "Europe/Kyiv",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  }).format(new Date());
+  const [year, month, day] = today.split("-").map(Number);
+  const date = new Date(Date.UTC(year, month - 1, day));
+  date.setUTCDate(date.getUTCDate() - Math.max(0, days - 1));
+  return date.toISOString().slice(0, 10);
+}
 
 function formatMoney(kopiykas: string | null | undefined): string {
   const value = Number(kopiykas || 0) / 100;
@@ -255,6 +273,7 @@ export default function PaymentReconciliationPage() {
   const [direction, setDirection] = useState<PaymentDirection>("in");
   const [status, setStatus] = useState<PaymentStatus>("open");
   const [data, setData] = useState<ApiState>({ rows: [], summary: {} });
+  const [linkedHistoryDays, setLinkedHistoryDays] = useState(LINKED_HISTORY_PAGE_DAYS);
   const [loading, setLoading] = useState(false);
   const [actionMessage, setActionMessage] = useState<string | null>(null);
   const [incomingControls, setIncomingControls] = useState<IncomingSplitControls | null>(null);
@@ -271,15 +290,15 @@ export default function PaymentReconciliationPage() {
     };
   }, [data.rows]);
 
-  const query = useMemo(() => new URLSearchParams({ limit: "300" }).toString(), []);
-  const hasOutgoingRowsRef = useRef(false);
-  hasOutgoingRowsRef.current = data.rows.length > 0;
-
   const loadOutgoingData = useCallback(async () => {
-    const showBlockingLoader = !hasOutgoingRowsRef.current;
-    if (showBlockingLoader) setLoading(true);
+    setLoading(true);
     try {
-      const res = await fetch(`/api/admin/bank/payment-reconciliation?${query}`, {
+      const params = new URLSearchParams({ limit: status === "linked" ? "1000" : "300" });
+      if (status === "linked") {
+        params.set("linkedOnly", "1");
+        params.set("from", linkedHistoryFrom(linkedHistoryDays));
+      }
+      const res = await fetch(`/api/admin/bank/payment-reconciliation?${params.toString()}`, {
         cache: "no-store",
         credentials: "include",
         signal: AbortSignal.timeout(120_000),
@@ -288,7 +307,11 @@ export default function PaymentReconciliationPage() {
       if (!res.ok || !payload.ok) {
         throw new Error(payload.error || "Не вдалося завантажити зведення");
       }
-      setData({ rows: payload.rows || [], summary: payload.summary || {} });
+      setData({
+        rows: payload.rows || [],
+        summary: payload.summary || {},
+        pagination: payload.pagination,
+      });
     } catch (error) {
       if (error instanceof Error && error.name === "TimeoutError") {
         setActionMessage("Завантаження вихідних платежів перевищило час очікування. Спробуйте «Оновити».");
@@ -298,11 +321,11 @@ export default function PaymentReconciliationPage() {
     } finally {
       setLoading(false);
     }
-  }, [query]);
+  }, [linkedHistoryDays, status]);
 
   useEffect(() => {
-    void loadOutgoingData();
-  }, [loadOutgoingData]);
+    if (direction === "out") void loadOutgoingData();
+  }, [direction, loadOutgoingData]);
 
   async function pullCashFromAltegio() {
     setPullingCash(true);
@@ -751,6 +774,18 @@ export default function PaymentReconciliationPage() {
             </tbody>
           </table>
         </div>
+        {status === "linked" && data.pagination?.hasEarlier ? (
+          <div className="py-2 text-center">
+            <button
+              type="button"
+              className="btn btn-sm btn-ghost"
+              disabled={loading}
+              onClick={() => setLinkedHistoryDays((days) => days + LINKED_HISTORY_PAGE_DAYS)}
+            >
+              {loading ? "Завантаження..." : "Завантажити ще"}
+            </button>
+          </div>
+        ) : null}
       </div>
       ) : null}
     </main>

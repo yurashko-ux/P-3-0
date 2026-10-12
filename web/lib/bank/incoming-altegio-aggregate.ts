@@ -1450,9 +1450,13 @@ function mergeIncomeRows(liveRows: NormalizedAltegioIncomeRow[], dbRows: Normali
   return Array.from(byId.values());
 }
 
-export async function buildIncomingReconciliationPreview(): Promise<IncomingReconciliationPreview> {
-  const dateFrom = INCOMING_RANGE_START_DATE;
-  const dateTo = getKyivTodayYmd();
+export async function buildIncomingReconciliationPreview(params: {
+  dateFrom?: string;
+  dateTo?: string;
+} = {}): Promise<IncomingReconciliationPreview> {
+  const requestedFrom = params.dateFrom?.trim() || INCOMING_RANGE_START_DATE;
+  const dateFrom = requestedFrom < INCOMING_RANGE_START_DATE ? INCOMING_RANGE_START_DATE : requestedFrom;
+  const dateTo = params.dateTo?.trim() || getKyivTodayYmd();
 
   const [liveFetch, dbRows, bankAgg] = await Promise.all([
     fetchLiveIncomeRowsRange(dateFrom, dateTo),

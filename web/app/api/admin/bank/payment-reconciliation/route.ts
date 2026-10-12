@@ -70,6 +70,7 @@ export async function GET(req: NextRequest) {
   const from = parseDate(req.nextUrl.searchParams.get("from"), `${ALTEGIO_FINANCE_SYNC_START_DATE}T00:00:00.000Z`, "from");
   const to = parseDate(req.nextUrl.searchParams.get("to"), new Date().toISOString(), "to");
   const status = req.nextUrl.searchParams.get("status") || "all";
+  const linkedOnly = req.nextUrl.searchParams.get("linkedOnly") === "1";
   const limit = Math.max(1, Math.min(Number(req.nextUrl.searchParams.get("limit") || 300), 1000));
 
   const matchWhere = status === "all" ? {} : { status };
@@ -80,7 +81,9 @@ export async function GET(req: NextRequest) {
       ...PAYMENTS_VISIBLE_STATEMENT,
       account: { includeInOperationsTable: true },
       AND: [{ OR: ZASADNA_PAYMENTS_HISTORY_OR }],
-      ...(status === "unmatched"
+      ...(linkedOnly
+        ? { altegioPaymentMatch: { is: { altegioFinanceTransactionId: { not: null } } } }
+        : status === "unmatched"
         ? { altegioPaymentMatch: null }
         : status === "all"
           ? {}
@@ -254,6 +257,10 @@ export async function GET(req: NextRequest) {
     ok: true,
     rows,
     purposes,
+    pagination: {
+      historyStartDate: ALTEGIO_FINANCE_SYNC_START_DATE,
+      hasEarlier: linkedOnly && from > new Date(`${ALTEGIO_FINANCE_SYNC_START_DATE}T00:00:00.000Z`),
+    },
     summary: summaryRows.reduce((acc: Record<string, number>, row: any) => {
       acc[row.status] = row._count?._all ?? 0;
       return acc;

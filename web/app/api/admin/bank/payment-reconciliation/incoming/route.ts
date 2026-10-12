@@ -1,6 +1,9 @@
 import { NextRequest, NextResponse } from "next/server";
 import { requireBankSection } from "@/app/api/bank/require-bank-auth";
-import { buildIncomingReconciliationPreview } from "@/lib/bank/incoming-altegio-aggregate";
+import {
+  buildIncomingReconciliationPreview,
+  INCOMING_RANGE_START_DATE,
+} from "@/lib/bank/incoming-altegio-aggregate";
 import {
   loadDepositIncomingMatches,
   syncDepositIncomingMatches,
@@ -19,10 +22,15 @@ export async function GET(req: NextRequest) {
   if (auth instanceof NextResponse) return auth;
 
   try {
-    const preview = await buildIncomingReconciliationPreview();
+    const requestedFrom = req.nextUrl.searchParams.get("from")?.trim() || INCOMING_RANGE_START_DATE;
+    const dateFrom = /^\d{4}-\d{2}-\d{2}$/.test(requestedFrom)
+      ? requestedFrom
+      : INCOMING_RANGE_START_DATE;
+    const preview = await buildIncomingReconciliationPreview({ dateFrom });
 
     const [incomingMatches, depositMatches] = await Promise.all([
       (prisma as any).bankAltegioIncomingMatch.findMany({
+        where: { kyivDay: { gte: preview.dateFrom, lte: preview.dateTo } },
         select: {
           id: true,
           bankStatementItemId: true,
@@ -57,6 +65,10 @@ export async function GET(req: NextRequest) {
         depositMatches,
         depositAltegioIds,
         depositBankItemIds,
+      },
+      pagination: {
+        historyStartDate: INCOMING_RANGE_START_DATE,
+        hasEarlier: preview.dateFrom > INCOMING_RANGE_START_DATE,
       },
     });
   } catch (error) {
