@@ -366,6 +366,8 @@ async function fetchDocumentVerifiedIncomeRows(
 
 /** Початок періоду вхідних у розділі «Платежі». */
 export const INCOMING_RANGE_START_DATE = "2026-06-10";
+/** Живий API Altegio опитуємо лише за останні 30 календарних днів; старі дані читаємо з БД. */
+const ALTEGIO_LIVE_INCOME_WINDOW_DAYS = 30;
 
 function getKyivTodayYmd(): string {
   return new Intl.DateTimeFormat("en-CA", {
@@ -374,6 +376,13 @@ function getKyivTodayYmd(): string {
     month: "2-digit",
     day: "2-digit",
   }).format(new Date());
+}
+
+function shiftYmd(ymd: string, days: number): string {
+  const [year, month, day] = ymd.split("-").map(Number);
+  const date = new Date(Date.UTC(year, month - 1, day));
+  date.setUTCDate(date.getUTCDate() + days);
+  return date.toISOString().slice(0, 10);
 }
 
 function kyivDayFromDate(date: Date): string {
@@ -1457,15 +1466,21 @@ export async function buildIncomingReconciliationPreview(params: {
   const requestedFrom = params.dateFrom?.trim() || INCOMING_RANGE_START_DATE;
   const dateFrom = requestedFrom < INCOMING_RANGE_START_DATE ? INCOMING_RANGE_START_DATE : requestedFrom;
   const dateTo = params.dateTo?.trim() || getKyivTodayYmd();
+  const altegioLiveWindowFrom = shiftYmd(getKyivTodayYmd(), -(ALTEGIO_LIVE_INCOME_WINDOW_DAYS - 1));
+  const liveDateFrom = dateFrom > altegioLiveWindowFrom ? dateFrom : altegioLiveWindowFrom;
+  const shouldFetchLive = liveDateFrom <= dateTo;
 
   const [liveFetch, dbRows, bankAgg] = await Promise.all([
-    fetchLiveIncomeRowsRange(dateFrom, dateTo),
+    shouldFetchLive
+      ? fetchLiveIncomeRowsRange(liveDateFrom, dateTo)
+      : Promise.resolve({ rows: [], droppedMirrors: 0 }),
     fetchDbIncomeRowsRange(dateFrom, dateTo),
     fetchBankIncomingByDayRange(dateFrom, dateTo),
   ]);
   const liveRows = liveFetch.rows.filter(isFinancialOperationIncomeRow);
   const financialDbRows = dbRows.filter(isFinancialOperationIncomeRow);
-  const baseRows = liveRows.length > 0 ? liveRows : mergeIncomeRows(liveRows, financialDbRows);
+  // Свіжі 30 днів оновлюємо даними API, старіший запит доповнюємо вже збереженою історією з БД.
+  const baseRows = mergeIncomeRows(liveRows, financialDbRows);
 
   const incomeRows = enrichPlaceholderAccounts(
     excludeTransferIncomeRows(
@@ -1487,6 +1502,7 @@ export async function buildIncomingReconciliationPreview(params: {
   console.log("[incoming-altegio-aggregate] Preview", {
     dateFrom,
     dateTo,
+    altegioLiveFrom: shouldFetchLive ? liveDateFrom : null,
     liveRows: liveRows.length,
     dbRows: dbRows.length,
     mergedRows: incomeRows.length,
