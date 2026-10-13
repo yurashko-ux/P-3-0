@@ -34,11 +34,9 @@ type LedgerApiRow = {
   accountTitle: string;
 };
 
-function money(n: number, digits = 0) {
-  return n.toLocaleString("uk-UA", {
-    minimumFractionDigits: digits,
-    maximumFractionDigits: digits === 0 && Number.isInteger(n) ? 0 : 2,
-  });
+/** На плитках показуємо до 1 грн / 1 од. валюти, без копійок. */
+function money(n: number) {
+  return Math.round(n).toLocaleString("uk-UA");
 }
 
 function fxSymbol(currency: CashTile["currency"]) {
