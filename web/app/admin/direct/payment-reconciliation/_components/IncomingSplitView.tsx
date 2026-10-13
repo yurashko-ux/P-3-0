@@ -269,12 +269,17 @@ function linkedHistoryFrom(days: number): string {
 
 /**
  * Початок робочої черги незведених (Europe/Kyiv).
- * Період до 11.09.2026 був закритий ще до введення повної історії match-записів.
+ * Усі платежі до цієї дати вже зведені; старий закритий період повторно не відкриваємо.
  */
-const OPEN_INCOMING_MIN_KYIV_DAY = "2026-09-11";
+const OPEN_INCOMING_MIN_KYIV_DAY = "2026-10-11";
 
 function filterOpenIncomingDaysByMinDate(days: VisibleAlignedDayRow[]): VisibleAlignedDayRow[] {
   return days.filter((day) => day.kyivDay >= OPEN_INCOMING_MIN_KYIV_DAY);
+}
+
+function initialIncomingDataFrom(): string {
+  const linkedFrom = linkedHistoryFrom(LINKED_HISTORY_PAGE_DAYS);
+  return linkedFrom < OPEN_INCOMING_MIN_KYIV_DAY ? linkedFrom : OPEN_INCOMING_MIN_KYIV_DAY;
 }
 
 function addDaysYmd(ymd: string, days: number): string {
@@ -3356,7 +3361,7 @@ export function IncomingSplitView({
   const depositTabClientIdsRef = useRef<number[]>([]);
   const depositTabPayerNamesRef = useRef<string[]>([]);
   const loadingMoreLinkedRef = useRef(false);
-  const loadedFromRef = useRef(OPEN_INCOMING_MIN_KYIV_DAY);
+  const loadedFromRef = useRef(initialIncomingDataFrom());
 
   const toggleAccount = useCallback((key: string) => {
     setExpandedAccounts((prev) => {
