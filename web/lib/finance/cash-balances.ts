@@ -37,6 +37,8 @@ export type CashBalanceTile = {
   openPaymentsNet: number;
   /** Кількість ще не проведених платежів. */
   openPaymentsCount: number;
+  /** Найстаріший день серед непроведених платежів (Europe/Kyiv). */
+  openPaymentsFromKyivDay: string | null;
 };
 
 function money(n: number): number {
@@ -112,6 +114,7 @@ export async function listCashBalances(): Promise<CashBalanceTile[]> {
           countedUah: null,
           openPaymentsNet: 0,
           openPaymentsCount: 0,
+          openPaymentsFromKyivDay: null,
         };
       }
       const opening = openingOf(account.currency);
@@ -128,6 +131,7 @@ export async function listCashBalances(): Promise<CashBalanceTile[]> {
           countedUah: null,
           openPaymentsNet: 0,
           openPaymentsCount: 0,
+          openPaymentsFromKyivDay: null,
         };
       }
       if (account.currency === "UAH") {
@@ -143,6 +147,7 @@ export async function listCashBalances(): Promise<CashBalanceTile[]> {
           countedUah: null,
           openPaymentsNet: 0,
           openPaymentsCount: 0,
+          openPaymentsFromKyivDay: null,
         };
       }
       return {
@@ -157,6 +162,7 @@ export async function listCashBalances(): Promise<CashBalanceTile[]> {
         countedUah: null,
         openPaymentsNet: 0,
         openPaymentsCount: 0,
+        openPaymentsFromKyivDay: null,
       };
     })
     .sort(sortTiles);
@@ -189,6 +195,7 @@ export async function listCashBalances(): Promise<CashBalanceTile[]> {
       if (open) {
         tile.openPaymentsNet = open.net;
         tile.openPaymentsCount = open.count;
+        tile.openPaymentsFromKyivDay = open.fromKyivDay;
       }
     }
   }

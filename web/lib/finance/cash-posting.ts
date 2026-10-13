@@ -219,10 +219,17 @@ function signed(movement: Pick<CashBookMovement, "direction" | "amount">): numbe
   return movement.direction === "out" ? -movement.amount : movement.amount;
 }
 
+export type OpenCashNet = {
+  net: number;
+  count: number;
+  /** Найстаріший київський день серед непроведених платежів. */
+  fromKyivDay: string | null;
+};
+
 export async function openCashNetsForAccounts(
   accounts: Array<{ id: number; title: string; currency: CashCurrency }>,
-): Promise<Map<number, { net: number; count: number }>> {
-  const out = new Map<number, { net: number; count: number }>();
+): Promise<Map<number, OpenCashNet>> {
+  const out = new Map<number, OpenCashNet>();
   if (accounts.length === 0) return out;
   const [movements, postings] = await Promise.all([
     loadCashBookMovements(accounts),
@@ -232,15 +239,18 @@ export async function openCashNetsForAccounts(
     }),
   ]);
   const posted = new Set(postings.map((row) => postingKey(row.sourceType, row.sourceId, row.accountId)));
-  const addOpen = (accountId: number, delta: number) => {
-    const current = out.get(accountId) || { net: 0, count: 0 };
+  const addOpen = (accountId: number, delta: number, kyivDay: string | null) => {
+    const current = out.get(accountId) || { net: 0, count: 0, fromKyivDay: null as string | null };
     current.net = money(current.net + delta);
     current.count += 1;
+    if (kyivDay && (!current.fromKyivDay || kyivDay < current.fromKyivDay)) {
+      current.fromKyivDay = kyivDay;
+    }
     out.set(accountId, current);
   };
   for (const movement of movements) {
     if (posted.has(postingKey(movement.sourceType, movement.sourceId, movement.accountId))) continue;
-    addOpen(movement.accountId, signed(movement));
+    addOpen(movement.accountId, signed(movement), movement.kyivDay);
   }
 
   const mirroredAltegioIds = new Set(
@@ -257,9 +267,10 @@ export async function openCashNetsForAccounts(
         amountKopiykas: bigint;
         paymentPurpose: string | null;
         comment: string | null;
+        kyivDay: string | null;
       }>
     >`
-      SELECT "altegioId", "accountId", "accountTitle", "amountKopiykas", "paymentPurpose", "comment"
+      SELECT "altegioId", "accountId", "accountTitle", "amountKopiykas", "paymentPurpose", "comment", "kyivDay"
       FROM "altegio_finance_transactions"
       WHERE "deletedInAltegio" = false
         AND "kyivDay" >= ${CASH_RECONCILE_FROM_KYIV_DAY}
@@ -283,7 +294,7 @@ export async function openCashNetsForAccounts(
         title,
       );
       if (signedAmount == null || signedAmount === 0) continue;
-      addOpen(accountId, signedAmount);
+      addOpen(accountId, signedAmount, tx.kyivDay);
     }
   }
   return out;

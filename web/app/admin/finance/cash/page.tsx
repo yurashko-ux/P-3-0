@@ -15,6 +15,7 @@ type CashTile = {
   countedUah: number | null;
   openPaymentsNet: number;
   openPaymentsCount: number;
+  openPaymentsFromKyivDay: string | null;
 };
 
 function money(n: number, digits = 0) {
@@ -28,6 +29,21 @@ function fxSymbol(currency: CashTile["currency"]) {
   if (currency === "USD") return "$";
   if (currency === "EUR") return "€";
   return currency;
+}
+
+function paymentsWord(count: number): string {
+  const n = Math.abs(count) % 100;
+  const last = n % 10;
+  if (n >= 11 && n <= 14) return "платежів";
+  if (last === 1) return "платіж";
+  if (last >= 2 && last <= 4) return "платежі";
+  return "платежів";
+}
+
+function formatKyivDayShort(ymd: string | null | undefined): string | null {
+  if (!ymd || !/^\d{4}-\d{2}-\d{2}$/.test(ymd)) return null;
+  const [, month, day] = ymd.split("-");
+  return `${day}.${month}.${ymd.slice(2, 4)}`;
 }
 
 function isCashTill(tile: CashTile): boolean {
@@ -56,13 +72,20 @@ function bookAmount(tile: CashTile): number | null {
 }
 
 function OpenPaymentsLine({ tile }: { tile: CashTile }) {
-  if (!tile.openPaymentsCount) return null;
+  if (!tile.cash || !tile.openPaymentsCount) return null;
+  const count = tile.openPaymentsCount;
   const net = tile.openPaymentsNet || 0;
   const unit = tile.currency === "UAH" ? "грн" : fxSymbol(tile.currency);
+  const from = formatKyivDayShort(tile.openPaymentsFromKyivDay);
   const tone = net < 0 ? "text-red-600" : "text-emerald-700";
   return (
-    <span className={`text-[11px] font-medium tabular-nums ${tone}`} title="Баланс платежів, які ще не проведено касовкою">
-      не проведено {net > 0 ? "+" : ""}
+    <span
+      className={`mt-0.5 text-[11px] font-medium leading-tight tabular-nums ${tone}`}
+      title="Непроведені платежі після останньої збіжної касовки"
+    >
+      {count} {paymentsWord(count)}
+      {from ? ` з ${from}` : ""}{" "}
+      {net > 0 ? "+" : ""}
       {money(net)} {unit}
     </span>
   );
