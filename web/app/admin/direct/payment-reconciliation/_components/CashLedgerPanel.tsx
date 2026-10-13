@@ -3,7 +3,10 @@
 import { useEffect, useMemo, useState } from "react";
 import { cashCountUnit, type CashCountCurrency } from "@/lib/finance/cash-denominations";
 import { CASH_RECONCILE_FROM_KYIV_DAY } from "@/lib/finance/cash-openings";
-import { aggregateCashLedgerDayRows } from "@/lib/finance/cash-ledger-aggregate";
+import {
+  aggregateCashLedgerDayRows,
+  aggregateOpenCashLedgerRows,
+} from "@/lib/finance/cash-ledger-aggregate";
 
 type LedgerCount = {
   id: string;
@@ -62,10 +65,6 @@ function timeLabel(iso: string): string {
   return date.toLocaleTimeString("uk-UA", { timeZone: "Europe/Kyiv", hour: "2-digit", minute: "2-digit" });
 }
 
-function aggregateDayRows(dayRows: LedgerRow[]): LedgerRow[] {
-  return aggregateCashLedgerDayRows(dayRows);
-}
-
 export function CashLedgerPanel({
   direction = "both",
   status,
@@ -105,21 +104,10 @@ export function CashLedgerPanel({
 
   useEffect(() => {
     const scoped = rows.filter((row) => direction === "both" || row.direction === direction);
-    const countGroups = (list: LedgerRow[]) => {
-      const byDay = new Map<string, LedgerRow[]>();
-      for (const row of list) {
-        const bucket = byDay.get(row.kyivDay) || [];
-        bucket.push(row);
-        byDay.set(row.kyivDay, bucket);
-      }
-      let total = 0;
-      for (const dayRows of byDay.values()) total += aggregateDayRows(dayRows).length;
-      return total;
-    };
     onCounts?.({
-      all: countGroups(scoped),
-      open: countGroups(scoped.filter((row) => !row.posted)),
-      linked: countGroups(scoped.filter((row) => row.posted)),
+      all: aggregateOpenCashLedgerRows(scoped).length,
+      open: aggregateOpenCashLedgerRows(scoped.filter((row) => !row.posted)).length,
+      linked: aggregateOpenCashLedgerRows(scoped.filter((row) => row.posted)).length,
     });
   }, [rows, direction, onCounts]);
 
@@ -146,7 +134,7 @@ export function CashLedgerPanel({
             counts.set(row.count.id, { ...row.count, accountTitle: row.accountTitle });
           }
         }
-        return { kyivDay, rows: aggregateDayRows(dayRows), counts: [...counts.values()] };
+        return { kyivDay, rows: aggregateCashLedgerDayRows(dayRows), counts: [...counts.values()] };
       });
   }, [rows, direction, status]);
 

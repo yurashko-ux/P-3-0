@@ -9,10 +9,7 @@ import { extractCurrencyAmountFromComment } from "@/lib/finance/encashment-accou
 import { isDepositTopUpPaymentPurpose } from "@/lib/altegio/payment-purpose-labels";
 import { isEurCashAccountTitle, isUsdCashAccountTitle } from "@/lib/journal/checkout";
 import { CASH_OPENING_KYIV_DAY, CASH_RECONCILE_FROM_KYIV_DAY } from "@/lib/finance/cash-openings";
-import {
-  aggregateOpenCashLedgerRows,
-  summarizeAggregatedCashRows,
-} from "@/lib/finance/cash-ledger-aggregate";
+import { summarizeOpenCashForAccount } from "@/lib/finance/cash-ledger-aggregate";
 
 type CashCurrency = "UAH" | "USD" | "EUR";
 
@@ -236,21 +233,10 @@ export async function openCashNetsForAccounts(
   const out = new Map<number, OpenCashNet>();
   if (accounts.length === 0) return out;
 
-  // Той самий журнал і та сама агрегація, що у вкладці «Готівка → Не зведені».
+  // Ті самі дані, що вкладка «Готівка» (/api/admin/finance/cash/ledger).
   const ledger = await listCashLedger();
-  const wanted = new Map(accounts.map((account) => [account.id, account.currency]));
-  const openByAccount = new Map<number, typeof ledger>();
-  for (const row of ledger) {
-    const currency = wanted.get(row.accountId);
-    if (!currency || row.currency !== currency || row.posted) continue;
-    const bucket = openByAccount.get(row.accountId) || [];
-    bucket.push(row);
-    openByAccount.set(row.accountId, bucket);
-  }
-
-  for (const [accountId, rows] of openByAccount) {
-    const aggregated = aggregateOpenCashLedgerRows(rows);
-    out.set(accountId, summarizeAggregatedCashRows(aggregated));
+  for (const account of accounts) {
+    out.set(account.id, summarizeOpenCashForAccount(ledger, account.id, account.currency));
   }
   return out;
 }

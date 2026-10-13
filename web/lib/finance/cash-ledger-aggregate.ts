@@ -107,3 +107,17 @@ export function summarizeAggregatedCashRows(
     fromKyivDay,
   };
 }
+
+/** Непроведені рядки однієї каси — як «Не зведені» у вкладці Готівка, відфільтровані по рахунку. */
+export function summarizeOpenCashForAccount<
+  T extends CashLedgerAggregateSource & { accountId: number; posted: boolean },
+>(
+  ledger: T[],
+  accountId: number,
+  currency: string,
+): { net: number; count: number; fromKyivDay: string | null } {
+  const open = ledger.filter(
+    (row) => row.accountId === accountId && row.currency === currency && !row.posted,
+  );
+  return summarizeAggregatedCashRows(aggregateOpenCashLedgerRows(open));
+}

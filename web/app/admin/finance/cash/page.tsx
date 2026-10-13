@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
+import { summarizeOpenCashForAccount } from "@/lib/finance/cash-ledger-aggregate";
 import { CashCountModal } from "./CashCountModal";
 
 type CashTile = {
@@ -17,6 +18,20 @@ type CashTile = {
   openPaymentsCount: number;
   openPaymentsFromKyivDay: string | null;
   lastBundledAmount: number | null;
+};
+
+type LedgerApiRow = {
+  accountId: number;
+  currency: string;
+  direction: "in" | "out";
+  amount: number;
+  kyivDay: string;
+  occurredAt: string;
+  title: string;
+  clientName: string;
+  recordId: number | null;
+  posted: boolean;
+  accountTitle: string;
 };
 
 function money(n: number, digits = 0) {
@@ -128,13 +143,39 @@ export default function CashBalancesPage() {
     setLoading(true);
     setError(null);
     try {
-      const res = await fetch("/api/admin/finance/cash", {
-        credentials: "include",
-        cache: "no-store",
-      });
-      const json = await res.json();
-      if (!res.ok || !json.ok) throw new Error(json.error || "Помилка завантаження");
-      setTiles(json.tiles || []);
+      // Баланс з /cash, непроведені — з того самого ledger, що вкладка «Готівка».
+      const [cashRes, ledgerRes] = await Promise.all([
+        fetch("/api/admin/finance/cash", { credentials: "include", cache: "no-store" }),
+        fetch("/api/admin/finance/cash/ledger", { credentials: "include", cache: "no-store" }),
+      ]);
+      const cashJson = await cashRes.json();
+      if (!cashRes.ok || !cashJson.ok) throw new Error(cashJson.error || "Помилка завантаження");
+      const tilesRaw = (cashJson.tiles || []) as CashTile[];
+
+      let ledger: LedgerApiRow[] = [];
+      if (ledgerRes.ok) {
+        const ledgerJson = await ledgerRes.json();
+        if (ledgerJson.ok && Array.isArray(ledgerJson.rows)) {
+          ledger = ledgerJson.rows as LedgerApiRow[];
+        } else {
+          console.warn("[finance/cash] Ledger для непроведених не завантажився, лишаємо дані з /cash");
+        }
+      } else {
+        console.warn("[finance/cash] Ledger HTTP", ledgerRes.status);
+      }
+
+      setTiles(
+        tilesRaw.map((tile) => {
+          if (!tile.cash || tile.openingPending || ledger.length === 0) return tile;
+          const open = summarizeOpenCashForAccount(ledger, tile.id, tile.currency);
+          return {
+            ...tile,
+            openPaymentsNet: open.net,
+            openPaymentsCount: open.count,
+            openPaymentsFromKyivDay: open.fromKyivDay,
+          };
+        }),
+      );
     } catch (err) {
       setError(err instanceof Error ? err.message : "Помилка");
     } finally {
