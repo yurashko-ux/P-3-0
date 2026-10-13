@@ -5,6 +5,8 @@ export const TELEGRAM_ENV = {
   // Окремий бот для зведення ФОП-платежів (@Platezi_FOP_bot)
   PAYMENTS_BOT_TOKEN: process.env.TELEGRAM_PAYMENTS_BOT_TOKEN?.trim() || "",
   REPORTS_BOT_TOKEN: process.env.TELEGRAM_REPORTS_BOT_TOKEN?.trim() || "",
+  // Окремий бот для журналу майстрів (Mini App «Мій журнал»)
+  MASTER_BOT_TOKEN: process.env.TELEGRAM_MASTER_BOT_TOKEN?.trim() || "",
   /** ID business-зʼєднання салону (Telegram Business + HOB_client_bot); альтернатива — KV inactive-base:telegram:business_connection_id */
   BUSINESS_CONNECTION_ID: process.env.TELEGRAM_BUSINESS_CONNECTION_ID?.trim() || "",
   /** Telegram user id акаунта салону (для direction вихідних); альтернатива — KV inactive-base:telegram:business_user_id */
@@ -73,6 +75,12 @@ export function assertPaymentsBotToken() {
 export function assertReportsBotToken() {
   if (!TELEGRAM_ENV.REPORTS_BOT_TOKEN) {
     throw new Error("Missing TELEGRAM_REPORTS_BOT_TOKEN env variable");
+  }
+}
+
+export function assertMasterBotToken() {
+  if (!TELEGRAM_ENV.MASTER_BOT_TOKEN) {
+    throw new Error("Missing TELEGRAM_MASTER_BOT_TOKEN env variable");
   }
 }
 

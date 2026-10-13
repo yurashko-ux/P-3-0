@@ -1,0 +1,125 @@
+// Бот «Журнал майстра»: /start прив'язує Telegram-акаунт до TeamMember
+// (за збігом username) і надсилає кнопку відкриття Mini App /master.
+
+import { NextRequest, NextResponse } from "next/server";
+import type { TelegramUpdate } from "@/lib/telegram/types";
+import { sendMessage } from "@/lib/telegram/api";
+import { TELEGRAM_ENV, assertMasterBotToken } from "@/lib/telegram/env";
+import { prisma } from "@/lib/prisma";
+import { kvWrite } from "@/lib/kv";
+
+export const dynamic = "force-dynamic";
+export const runtime = "nodejs";
+
+function appBaseUrl(): string {
+  return (process.env.NEXT_PUBLIC_APP_URL || "https://p-3-0.vercel.app").replace(/\/$/, "");
+}
+
+async function logUpdate(payload: object) {
+  try {
+    await kvWrite.lpush(
+      "master-journal:telegram:webhook",
+      JSON.stringify({ at: new Date().toISOString(), ...payload }),
+    );
+    await kvWrite.ltrim("master-journal:telegram:webhook", 0, 199);
+  } catch (error) {
+    console.warn("[master-bot-webhook] Не вдалося записати KV лог:", error);
+  }
+}
+
+/** Шукає TeamMember за Telegram username (без урахування регістру і «@»). */
+async function findTeamMemberByUsername(username: string | null | undefined) {
+  const normalized = (username || "").trim().replace(/^@/, "").toLowerCase();
+  if (!normalized) return null;
+  const candidates = await prisma.teamMember.findMany({
+    where: { isActive: true, telegramUsername: { not: null } },
+    select: { id: true, name: true, telegramUsername: true, altegioStaffId: true },
+  });
+  return (
+    candidates.find((m) => (m.telegramUsername || "").trim().replace(/^@/, "").toLowerCase() === normalized) || null
+  );
+}
+
+export async function GET() {
+  return NextResponse.json({ ok: true, bot: "master-journal" });
+}
+
+export async function POST(req: NextRequest) {
+  try {
+    assertMasterBotToken();
+    const botToken = TELEGRAM_ENV.MASTER_BOT_TOKEN;
+    const update = (await req.json().catch(() => ({}))) as TelegramUpdate;
+
+    await logUpdate({
+      updateId: update.update_id,
+      hasMessage: Boolean(update.message),
+      fromUsername: update.message?.from?.username ?? null,
+      fromId: update.message?.from?.id ?? null,
+      messageText: update.message?.text ?? null,
+    });
+
+    const message = update.message;
+    if (!message?.text?.startsWith("/start")) {
+      return NextResponse.json({ ok: true });
+    }
+
+    const chatId = message.chat.id;
+    const fromId = message.from?.id ?? chatId;
+    const username = message.from?.username ?? null;
+
+    const member = await findTeamMemberByUsername(username);
+    if (!member) {
+      await sendMessage(
+        chatId,
+        [
+          "Акаунт не прив'язано.",
+          "",
+          "Зверніться до адміністратора, щоб у вашій картці в розділі «Команда» був вказаний цей Telegram username" +
+            (username ? ` (<code>@${username}</code>)` : "") +
+            ".",
+        ].join("\n"),
+        {},
+        botToken,
+      );
+      await logUpdate({ event: "start_not_linked", chatId, username });
+      return NextResponse.json({ ok: true, handled: "not_linked" });
+    }
+
+    if (!member.altegioStaffId) {
+      await sendMessage(
+        chatId,
+        "Ваш акаунт знайдено, але не прив'язано до майстра в Altegio. Зверніться до адміністратора.",
+        {},
+        botToken,
+      );
+      await logUpdate({ event: "start_no_staff_id", chatId, memberId: member.id });
+      return NextResponse.json({ ok: true, handled: "no_staff_id" });
+    }
+
+    await prisma.teamMember.update({
+      where: { id: member.id },
+      data: { telegramChatId: BigInt(fromId) },
+    });
+
+    await sendMessage(
+      chatId,
+      `Вітаємо, ${member.name}! Натисніть кнопку нижче, щоб відкрити свій журнал записів.`,
+      {
+        reply_markup: {
+          keyboard: [[{ text: "Мій журнал", web_app: { url: `${appBaseUrl()}/master` } }]],
+          resize_keyboard: true,
+        },
+      },
+      botToken,
+    );
+
+    await logUpdate({ event: "start_linked", chatId, memberId: member.id, name: member.name });
+    return NextResponse.json({ ok: true, handled: "linked" });
+  } catch (error) {
+    console.error("[master-bot-webhook] Помилка:", error);
+    return NextResponse.json(
+      { ok: false, error: error instanceof Error ? error.message : "Unknown error" },
+      { status: 500 },
+    );
+  }
+}
