@@ -10,24 +10,44 @@ function money(n: number) {
   });
 }
 
+function parseAmountInput(raw: string): number {
+  const text = raw.trim().replace(/\s+/g, "").replace(",", ".");
+  if (!text) return 0;
+  const value = Number(text);
+  return Number.isFinite(value) && value >= 0 ? Math.round(value * 100) / 100 : 0;
+}
+
 type Props = {
   accountId: number;
   accountTitle: string;
   currency: CashCountCurrency;
+  /** Останнє збережене «Пораховані» — підставляємо, щоб не вводити скріплену пачку знову. */
+  initialBundledAmount?: number | null;
   onClose: () => void;
   onSaved: () => void;
 };
 
-export function CashCountModal({ accountId, accountTitle, currency, onClose, onSaved }: Props) {
+export function CashCountModal({
+  accountId,
+  accountTitle,
+  currency,
+  initialBundledAmount = null,
+  onClose,
+  onSaved,
+}: Props) {
   const denoms = noteDenoms(currency);
   const unit = cashCountUnit(currency);
+  const [bundled, setBundled] = useState(() =>
+    initialBundledAmount != null && initialBundledAmount > 0 ? String(initialBundledAmount) : "",
+  );
   const [qty, setQty] = useState<string[]>(() => denoms.map(() => ""));
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const bundledRef = useRef<HTMLInputElement | null>(null);
   const inputs = useRef<(HTMLInputElement | null)[]>([]);
 
   useEffect(() => {
-    inputs.current[0]?.focus();
+    bundledRef.current?.focus();
   }, []);
 
   function lineQty(index: number): number {
@@ -42,7 +62,9 @@ export function CashCountModal({ accountId, accountTitle, currency, onClose, onS
     if (next) next.focus();
   }
 
-  const total = denoms.reduce((sum, denomination, index) => sum + lineQty(index) * denomination, 0);
+  const bundledAmount = parseAmountInput(bundled);
+  const looseTotal = denoms.reduce((sum, denomination, index) => sum + lineQty(index) * denomination, 0);
+  const total = Math.round((bundledAmount + looseTotal) * 100) / 100;
 
   async function submit() {
     setBusy(true);
@@ -56,7 +78,7 @@ export function CashCountModal({ accountId, accountTitle, currency, onClose, onS
         method: "POST",
         credentials: "include",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ accountId, lines }),
+        body: JSON.stringify({ accountId, lines, bundledAmount }),
       });
       const json = await res.json();
       if (!res.ok || !json.ok) throw new Error(json.error || "Не пораховано");
@@ -95,9 +117,43 @@ export function CashCountModal({ accountId, accountTitle, currency, onClose, onS
             <div className="text-xl font-semibold tabular-nums text-gray-900">
               {money(total)} {unit}
             </div>
+            <div className="mt-0.5 text-[10px] text-gray-400">
+              пораховані {money(bundledAmount)} + купюри {money(looseTotal)}
+            </div>
           </div>
 
           <div className="rounded-2xl border border-slate-200/80 bg-white p-2.5 shadow-[0_1px_2px_rgba(15,23,42,0.04),0_8px_18px_-12px_rgba(15,23,42,0.2)]">
+            <label className="mb-1.5 block text-[10px] font-medium uppercase tracking-wide text-gray-400">
+              Пораховані
+            </label>
+            <div className="flex items-center gap-2">
+              <input
+                ref={bundledRef}
+                className="h-11 min-w-0 flex-1 rounded-xl border border-slate-200 bg-white px-3 text-center text-base font-semibold tabular-nums shadow-[inset_0_1px_2px_rgba(15,23,42,0.04)] focus:border-slate-300 focus:outline-none focus:ring-2 focus:ring-slate-200"
+                inputMode="decimal"
+                value={bundled}
+                placeholder="0"
+                disabled={busy}
+                aria-label={`Пораховані, ${unit}`}
+                title="Скріплена / вже порахована готівка, яку щодня не перераховують"
+                onChange={(event) => {
+                  const next = event.target.value.replace(/[^\d.,]/g, "");
+                  setBundled(next);
+                }}
+                onKeyDown={(event) => {
+                  if (event.key !== "Enter") return;
+                  event.preventDefault();
+                  inputs.current[0]?.focus();
+                }}
+              />
+              <span className="shrink-0 text-sm font-medium text-gray-600">{unit}</span>
+            </div>
+          </div>
+
+          <div className="rounded-2xl border border-slate-200/80 bg-white p-2.5 shadow-[0_1px_2px_rgba(15,23,42,0.04),0_8px_18px_-12px_rgba(15,23,42,0.2)]">
+            <div className="mb-1.5 text-[10px] font-medium uppercase tracking-wide text-gray-400">
+              Не пораховані
+            </div>
             <div className="mb-1.5 grid grid-cols-[6rem_minmax(0,1fr)_minmax(0,1fr)] items-center gap-2 px-0.5 text-[10px] font-medium uppercase tracking-wide text-gray-400">
               <span />
               <span className="text-center">шт</span>

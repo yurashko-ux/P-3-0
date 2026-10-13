@@ -39,6 +39,8 @@ export type CashBalanceTile = {
   openPaymentsCount: number;
   /** Найстаріший день серед непроведених платежів (Europe/Kyiv). */
   openPaymentsFromKyivDay: string | null;
+  /** Останнє значення «Пораховані» з касовки цієї каси. */
+  lastBundledAmount: number | null;
 };
 
 function money(n: number): number {
@@ -115,6 +117,7 @@ export async function listCashBalances(): Promise<CashBalanceTile[]> {
           openPaymentsNet: 0,
           openPaymentsCount: 0,
           openPaymentsFromKyivDay: null,
+          lastBundledAmount: null,
         };
       }
       const opening = openingOf(account.currency);
@@ -132,6 +135,7 @@ export async function listCashBalances(): Promise<CashBalanceTile[]> {
           openPaymentsNet: 0,
           openPaymentsCount: 0,
           openPaymentsFromKyivDay: null,
+          lastBundledAmount: null,
         };
       }
       if (account.currency === "UAH") {
@@ -148,6 +152,7 @@ export async function listCashBalances(): Promise<CashBalanceTile[]> {
           openPaymentsNet: 0,
           openPaymentsCount: 0,
           openPaymentsFromKyivDay: null,
+          lastBundledAmount: null,
         };
       }
       return {
@@ -163,6 +168,7 @@ export async function listCashBalances(): Promise<CashBalanceTile[]> {
         openPaymentsNet: 0,
         openPaymentsCount: 0,
         openPaymentsFromKyivDay: null,
+        lastBundledAmount: null,
       };
     })
     .sort(sortTiles);
@@ -170,11 +176,16 @@ export async function listCashBalances(): Promise<CashBalanceTile[]> {
   const cashTiles = tiles.filter((tile) => tile.cash && !tile.openingPending);
   const countableIds = cashTiles.map((tile) => tile.id);
   if (countableIds.length > 0) {
-    const [counts, openNets] = await Promise.all([
+    const [counts, allCounts, openNets] = await Promise.all([
       prisma.cashTillCount.findMany({
         where: { accountId: { in: countableIds }, matchedBook: true },
         orderBy: { createdAt: "desc" },
         select: { accountId: true, countedUah: true },
+      }),
+      prisma.cashTillCount.findMany({
+        where: { accountId: { in: countableIds } },
+        orderBy: { createdAt: "desc" },
+        select: { accountId: true, bundledAmount: true },
       }),
       openCashNetsForAccounts(
         cashTiles.map((tile) => ({ id: tile.id, title: tile.title, currency: tile.currency })),
@@ -184,6 +195,12 @@ export async function listCashBalances(): Promise<CashBalanceTile[]> {
     for (const row of counts) {
       if (!latest.has(row.accountId)) latest.set(row.accountId, row.countedUah);
     }
+    const latestBundled = new Map<number, number>();
+    for (const row of allCounts) {
+      if (!latestBundled.has(row.accountId)) {
+        latestBundled.set(row.accountId, money(row.bundledAmount || 0));
+      }
+    }
     for (const tile of tiles) {
       const counted = latest.get(tile.id);
       if (counted != null) {
@@ -191,6 +208,8 @@ export async function listCashBalances(): Promise<CashBalanceTile[]> {
         else tile.balanceFx = money(counted);
         tile.countedUah = money(counted);
       }
+      const bundled = latestBundled.get(tile.id);
+      if (bundled != null) tile.lastBundledAmount = bundled;
       const open = openNets.get(tile.id);
       if (open) {
         tile.openPaymentsNet = open.net;

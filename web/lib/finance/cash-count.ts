@@ -57,11 +57,23 @@ export async function latestUahCountsForDay(
   return latest;
 }
 
+function parseBundledAmount(raw: unknown): number {
+  if (raw == null || raw === "") return 0;
+  const text = String(raw).trim().replace(/\s+/g, "").replace(",", ".");
+  if (!text) return 0;
+  const value = Number(text);
+  if (!Number.isFinite(value) || value < 0) {
+    throw new Error("Пораховані мають бути числом від 0");
+  }
+  return Math.round(value * 100) / 100;
+}
+
 export async function saveCashTillCount(input: {
   accountId: number;
   lines: unknown;
+  bundledAmount?: unknown;
   createdBy?: string | null;
-}): Promise<{ countedUah: number; kyivDay: string }> {
+}): Promise<{ countedUah: number; bundledAmount: number; kyivDay: string }> {
   const accountId = Number(input.accountId) || 0;
   if (!(accountId > 0)) throw new Error("Немає id каси");
   const tiles = await listCashBalances();
@@ -69,7 +81,9 @@ export async function saveCashTillCount(input: {
   if (!tile || !isCountableCashTile(tile)) throw new Error("Касовка лише для готівкової каси з початковим залишком");
   const currency = tile.currency as CashCountCurrency;
   const lines = parseCashCountLines(input.lines, noteDenoms(currency));
-  const countedUah = cashCountTotal(lines);
+  const bundledAmount = parseBundledAmount(input.bundledAmount);
+  const looseTotal = cashCountTotal(lines);
+  const countedUah = Math.round((bundledAmount + looseTotal) * 100) / 100;
   const previous = bookAmount(tile);
   if (previous == null) throw new Error("Немає балансу каси");
   const openNet = tile.openPaymentsNet || 0;
@@ -81,6 +95,7 @@ export async function saveCashTillCount(input: {
       accountId,
       accountTitle: tile.title,
       countedUah,
+      bundledAmount,
       currency,
       lines: lines as CashCountLine[],
       createdBy: input.createdBy || null,
@@ -95,9 +110,9 @@ export async function saveCashTillCount(input: {
     book: expected,
   });
   console.log(
-    `[finance/cash-count] ${kyivDay} каса ${accountId} «${tile.title}»: попередня ${previous}, не проведено ${openNet}, очікувано ${expected}, факт ${countedUah} ${currency}${posting.matched ? `, проведено ${posting.posted}` : ", проведення немає"}`,
+    `[finance/cash-count] ${kyivDay} каса ${accountId} «${tile.title}»: попередня ${previous}, не проведено ${openNet}, очікувано ${expected}, пораховані ${bundledAmount}, купюри ${looseTotal}, факт ${countedUah} ${currency}${posting.matched ? `, проведено ${posting.posted}` : ", проведення немає"}`,
   );
-  return { countedUah, kyivDay };
+  return { countedUah, bundledAmount, kyivDay };
 }
 
 export type SavedCashCountRow = {

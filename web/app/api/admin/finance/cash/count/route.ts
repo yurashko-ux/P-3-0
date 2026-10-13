@@ -12,13 +12,14 @@ export async function POST(req: NextRequest) {
     const saved = await saveCashTillCount({
       accountId: Number(body.accountId) || 0,
       lines: body.lines,
+      bundledAmount: body.bundledAmount,
       createdBy: auth.type === "user" ? auth.userId : auth.type,
     });
     return NextResponse.json({ ok: true, ...saved });
   } catch (err) {
     console.error("[api/admin/finance/cash/count] POST error:", err);
     const message = err instanceof Error ? err.message : "Помилка касовки";
-    const status = /немає id|номінал|кількість|лише для|немає балансу/i.test(message) ? 400 : 500;
+    const status = /немає id|номінал|кількість|лише для|немає балансу|пораховані/i.test(message) ? 400 : 500;
     return NextResponse.json({ ok: false, error: message }, { status });
   }
 }

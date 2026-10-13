@@ -16,6 +16,7 @@ type CashTile = {
   openPaymentsNet: number;
   openPaymentsCount: number;
   openPaymentsFromKyivDay: string | null;
+  lastBundledAmount: number | null;
 };
 
 function money(n: number, digits = 0) {
@@ -193,6 +194,7 @@ export default function CashBalancesPage() {
           accountId={countTile.id}
           accountTitle={countTile.title}
           currency={countTile.currency}
+          initialBundledAmount={countTile.lastBundledAmount}
           onClose={() => setCountTile(null)}
           onSaved={() => {
             setCountTile(null);

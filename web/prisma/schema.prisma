@@ -1829,6 +1829,8 @@ model CashTillCount {
   accountTitle String
   /// Сума перерахунку у валюті каси (для долара і євро це не гривні).
   countedUah   Float
+  /// Уже порахована і скріплена готівка; не перераховують щодня до інкасації.
+  bundledAmount Float    @default(0)
   /// UAH | USD | EUR
   currency     String   @default("UAH")
   /// Факт збігся з балансом за документами — ця касовка є проводкою.
