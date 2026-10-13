@@ -9,7 +9,15 @@ export async function GET(req: NextRequest) {
   if (auth instanceof NextResponse) return auth;
   try {
     const tiles = await listCashBalances();
-    return NextResponse.json({ ok: true, tiles });
+    return NextResponse.json(
+      { ok: true, tiles },
+      {
+        headers: {
+          "Cache-Control": "no-store, no-cache, must-revalidate, max-age=0",
+          Pragma: "no-cache",
+        },
+      },
+    );
   } catch (err) {
     console.error("[api/admin/finance/cash] GET error:", err);
     return NextResponse.json(

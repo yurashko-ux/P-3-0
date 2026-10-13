@@ -355,6 +355,9 @@ export default function BankConnectionsPage() {
         if (data.ok) {
           totalSaved += data.saved ?? 0;
           markStatementSyncForBankPage();
+          if (typeof data.balanceRefreshError === "string" && data.balanceRefreshError) {
+            errors.push(`${acc.label}: баланс — ${data.balanceRefreshError}`);
+          }
           if (selectedAccountId === acc.id && Array.isArray(data.items)) {
             setStatement(data.items);
           }
@@ -871,13 +874,21 @@ export default function BankConnectionsPage() {
                             if (data.ok) {
                               const saved = data.saved ?? 0;
                               markStatementSyncForBankPage();
-                              setSyncMessage(`Рахунок ${a.maskedPan || a.externalId}: збережено ${saved} транзакцій`);
+                              const balanceText =
+                                data.balance != null ? `, поточний баланс ${formatMoney(String(data.balance))}` : "";
+                              setSyncMessage(
+                                `Рахунок ${a.maskedPan || a.externalId}: збережено ${saved} транзакцій${balanceText}`,
+                              );
                               await loadConnections(3);
                               if (Array.isArray(data.items)) {
                                 setSelectedAccountId(a.id);
                                 setStatement(data.items);
                               }
-                              if (saved === 0) {
+                              if (typeof data.balanceRefreshError === "string" && data.balanceRefreshError) {
+                                alert(
+                                  `Виписку синхронізовано, але поточний баланс не оновлено: ${data.balanceRefreshError}`,
+                                );
+                              } else if (saved === 0) {
                                 alert("Збережено 0 нових транзакцій. Баланс оновлено з Monobank. Якщо очікували операції — перевірте період (З/По) внизу або зачекайте 60 с і спробуйте знову (ліміт API).");
                               }
                             } else {

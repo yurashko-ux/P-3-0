@@ -104,7 +104,10 @@ export default function CashBalancesPage() {
     setLoading(true);
     setError(null);
     try {
-      const res = await fetch("/api/admin/finance/cash", { credentials: "include" });
+      const res = await fetch("/api/admin/finance/cash", {
+        credentials: "include",
+        cache: "no-store",
+      });
       const json = await res.json();
       if (!res.ok || !json.ok) throw new Error(json.error || "Помилка завантаження");
       setTiles(json.tiles || []);

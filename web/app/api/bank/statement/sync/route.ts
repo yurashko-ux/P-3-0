@@ -77,6 +77,8 @@ export async function POST(req: NextRequest) {
     let toUnix = Math.floor(toDate.getTime() / 1000);
     const token = account.connection.token;
     let totalSaved = 0;
+    let latestFetchedBalance: bigint | null = null;
+    let latestFetchedTime = 0;
 
     // Пагінація по 500 транзакцій
     for (;;) {
@@ -98,6 +100,10 @@ export async function POST(req: NextRequest) {
         throw statementErr;
       }
       for (const it of items) {
+        if (it.balance != null && (it.time || 0) > latestFetchedTime) {
+          latestFetchedTime = it.time || 0;
+          latestFetchedBalance = BigInt(it.balance);
+        }
         const time = new Date((it.time || 0) * 1000);
         const externalId = String(it.id);
         const existing = await prisma.bankStatementItem.findUnique({
@@ -143,33 +149,52 @@ export async function POST(req: NextRequest) {
 
     await kvWrite.setRaw(rateLimitKey, String(nowSec));
 
-    // Оновлюємо баланс рахунку: з останньої транзакції або з client-info, якщо нових транзакцій не було
-    const latestItem = await prisma.bankStatementItem.findFirst({
-      where: { accountId },
-      orderBy: { time: "desc" },
-      select: { balance: true },
-    });
-    if (latestItem?.balance != null) {
-      await prisma.bankAccount.update({
-        where: { id: accountId },
-        data: { balance: latestItem.balance },
-        select: { id: true },
+    // Поточний баланс беремо з client-info, а не з останнього рядка виписки:
+    // після нього могли бути зміни, які ще не потрапили до локальної виписки/вебхука.
+    let balanceSource: "client_info" | "statement" | "unchanged" = "unchanged";
+    let balanceRefreshError: string | null = null;
+    try {
+      const clientInfo = await fetchClientInfo(token);
+      const liveAccounts = clientInfo.accounts ?? [];
+      if (!liveAccounts.some((liveAccount) => String(liveAccount.id) === account.externalId)) {
+        throw new Error("Monobank client-info не повернув вибраний рахунок");
+      }
+      await prisma.$transaction(
+        liveAccounts.map((liveAccount) =>
+          prisma.bankAccount.updateMany({
+            where: {
+              connectionId: account.connectionId,
+              externalId: String(liveAccount.id),
+            },
+            data: { balance: BigInt(liveAccount.balance ?? 0) },
+          }),
+        ),
+      );
+      balanceSource = "client_info";
+      console.log("[bank/statement/sync] Поточні баланси оновлено з Monobank client-info", {
+        connectionId: account.connectionId,
+        accounts: liveAccounts.length,
       });
-    } else if (totalSaved === 0) {
-      // Немає транзакцій у БД — підтягуємо баланси з client-info (ліміт 1 раз / 60 с)
-      try {
-        const clientInfo = await fetchClientInfo(token);
-        const accounts = clientInfo.accounts ?? [];
-        for (const acc of accounts) {
-          await prisma.bankAccount.updateMany({
-            where: { connectionId: account.connectionId, externalId: String(acc.id) },
-            data: { balance: BigInt(acc.balance ?? 0) },
-          });
-        }
-      } catch (e) {
-        console.warn("[bank/statement/sync] fetchClientInfo для оновлення балансу:", e);
+    } catch (balanceError) {
+      balanceRefreshError =
+        balanceError instanceof Error ? balanceError.message : "Не вдалося отримати поточний баланс Monobank";
+      console.warn("[bank/statement/sync] Не вдалося оновити поточний баланс з client-info:", balanceRefreshError);
+
+      // Fallback лише на баланс із щойно отриманої виписки, не на давній рядок із БД.
+      if (latestFetchedBalance != null) {
+        await prisma.bankAccount.update({
+          where: { id: accountId },
+          data: { balance: latestFetchedBalance },
+          select: { id: true },
+        });
+        balanceSource = "statement";
       }
     }
+
+    const refreshedAccount = await prisma.bankAccount.findUnique({
+      where: { id: accountId },
+      select: { balance: true },
+    });
 
     // Повертаємо збережені транзакції з БД, щоб клієнт одразу їх відобразив без окремого GET
     const items = await prisma.bankStatementItem.findMany({
@@ -185,6 +210,9 @@ export async function POST(req: NextRequest) {
       ok: true,
       accountId,
       saved: totalSaved,
+      balance: refreshedAccount?.balance.toString() ?? null,
+      balanceSource,
+      balanceRefreshError,
       items: items.map((i) => ({
         id: i.id,
         externalId: i.externalId,

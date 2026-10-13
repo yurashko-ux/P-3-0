@@ -757,8 +757,14 @@ export default function BankPage() {
           });
           syncData = await syncRes.json().catch(() => ({}));
         }
-        if (syncData.ok) totalSaved += typeof syncData.saved === "number" ? syncData.saved : 0;
-        else errors.push(typeof syncData.error === "string" ? syncData.error : `рахунок ${i + 1}`);
+        if (syncData.ok) {
+          totalSaved += typeof syncData.saved === "number" ? syncData.saved : 0;
+          if (typeof syncData.balanceRefreshError === "string" && syncData.balanceRefreshError) {
+            errors.push(`баланс рахунку ${i + 1}: ${syncData.balanceRefreshError}`);
+          }
+        } else {
+          errors.push(typeof syncData.error === "string" ? syncData.error : `рахунок ${i + 1}`);
+        }
       }
       refreshBankDataFromServer({ silent: false });
       if (errors.length > 0) {
