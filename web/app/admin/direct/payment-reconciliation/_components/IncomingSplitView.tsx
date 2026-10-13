@@ -267,8 +267,11 @@ function linkedHistoryFrom(days: number): string {
   return date.toISOString().slice(0, 10);
 }
 
-/** Незведені: не показувати платежі раніше цієї дати (Europe/Kyiv). */
-const OPEN_INCOMING_MIN_KYIV_DAY = "2026-07-01";
+/**
+ * Початок робочої черги незведених (Europe/Kyiv).
+ * Період до 11.09.2026 був закритий ще до введення повної історії match-записів.
+ */
+const OPEN_INCOMING_MIN_KYIV_DAY = "2026-09-11";
 
 function filterOpenIncomingDaysByMinDate(days: VisibleAlignedDayRow[]): VisibleAlignedDayRow[] {
   return days.filter((day) => day.kyivDay >= OPEN_INCOMING_MIN_KYIV_DAY);
@@ -3411,6 +3414,8 @@ export function IncomingSplitView({
       const params = new URLSearchParams();
       if (reconciliationStatus === "linked") {
         params.set("from", linkedHistoryFrom(linkedHistoryDays));
+      } else if (reconciliationStatus === "open") {
+        params.set("from", OPEN_INCOMING_MIN_KYIV_DAY);
       }
       const query = params.toString();
       const res = await fetch(`/api/admin/bank/payment-reconciliation/incoming${query ? `?${query}` : ""}`, {
