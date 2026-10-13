@@ -9,6 +9,10 @@ import { extractCurrencyAmountFromComment } from "@/lib/finance/encashment-accou
 import { isDepositTopUpPaymentPurpose } from "@/lib/altegio/payment-purpose-labels";
 import { isEurCashAccountTitle, isUsdCashAccountTitle } from "@/lib/journal/checkout";
 import { CASH_OPENING_KYIV_DAY, CASH_RECONCILE_FROM_KYIV_DAY } from "@/lib/finance/cash-openings";
+import {
+  aggregateOpenCashLedgerRows,
+  summarizeAggregatedCashRows,
+} from "@/lib/finance/cash-ledger-aggregate";
 
 type CashCurrency = "UAH" | "USD" | "EUR";
 
@@ -231,71 +235,22 @@ export async function openCashNetsForAccounts(
 ): Promise<Map<number, OpenCashNet>> {
   const out = new Map<number, OpenCashNet>();
   if (accounts.length === 0) return out;
-  const [movements, postings] = await Promise.all([
-    loadCashBookMovements(accounts),
-    prisma.cashTillPosting.findMany({
-      where: { accountId: { in: accounts.map((account) => account.id) } },
-      select: { sourceType: true, sourceId: true, accountId: true },
-    }),
-  ]);
-  const posted = new Set(postings.map((row) => postingKey(row.sourceType, row.sourceId, row.accountId)));
-  const addOpen = (accountId: number, delta: number, kyivDay: string | null) => {
-    const current = out.get(accountId) || { net: 0, count: 0, fromKyivDay: null as string | null };
-    current.net = money(current.net + delta);
-    current.count += 1;
-    if (kyivDay && (!current.fromKyivDay || kyivDay < current.fromKyivDay)) {
-      current.fromKyivDay = kyivDay;
-    }
-    out.set(accountId, current);
-  };
-  for (const movement of movements) {
-    if (posted.has(postingKey(movement.sourceType, movement.sourceId, movement.accountId))) continue;
-    addOpen(movement.accountId, signed(movement), movement.kyivDay);
+
+  // Той самий журнал і та сама агрегація, що у вкладці «Готівка → Не зведені».
+  const ledger = await listCashLedger();
+  const wanted = new Map(accounts.map((account) => [account.id, account.currency]));
+  const openByAccount = new Map<number, typeof ledger>();
+  for (const row of ledger) {
+    const currency = wanted.get(row.accountId);
+    if (!currency || row.currency !== currency || row.posted) continue;
+    const bucket = openByAccount.get(row.accountId) || [];
+    bucket.push(row);
+    openByAccount.set(row.accountId, bucket);
   }
 
-  const mirroredAltegioIds = new Set(
-    movements.map((movement) => movement.altegioTransactionId).filter((id): id is number => id != null && id > 0),
-  );
-  const byId = new Map(accounts.map((account) => [account.id, account]));
-  const cashAccountIds = accounts.map((account) => String(account.id));
-  if (cashAccountIds.length > 0) {
-    const altegioRows = await prisma.$queryRaw<
-      Array<{
-        altegioId: number;
-        accountId: string | null;
-        accountTitle: string | null;
-        amountKopiykas: bigint;
-        paymentPurpose: string | null;
-        comment: string | null;
-        kyivDay: string | null;
-      }>
-    >`
-      SELECT "altegioId", "accountId", "accountTitle", "amountKopiykas", "paymentPurpose", "comment", "kyivDay"
-      FROM "altegio_finance_transactions"
-      WHERE "deletedInAltegio" = false
-        AND "kyivDay" >= ${CASH_RECONCILE_FROM_KYIV_DAY}
-        AND "accountId" IN (${Prisma.join(cashAccountIds)})
-    `;
-    for (const tx of altegioRows) {
-      const accountId = Number(tx.accountId) || 0;
-      const account = byId.get(accountId);
-      if (!account) continue;
-      const title = tx.accountTitle?.trim() || account.title;
-      if (!isCashAltegioAccount(title)) continue;
-      if (isDepositTopUpPaymentPurpose(tx.paymentPurpose || "")) continue;
-      const altegioId = Number(tx.altegioId) || 0;
-      if (altegioId > 0 && mirroredAltegioIds.has(altegioId)) continue;
-      if (posted.has(postingKey("altegio", String(altegioId), accountId))) continue;
-      const signedAmount = signedCashAmountFromAltegio(
-        account.currency,
-        tx.comment,
-        typeof tx.amountKopiykas === "bigint" ? tx.amountKopiykas : BigInt(tx.amountKopiykas),
-        altegioId,
-        title,
-      );
-      if (signedAmount == null || signedAmount === 0) continue;
-      addOpen(accountId, signedAmount, tx.kyivDay);
-    }
+  for (const [accountId, rows] of openByAccount) {
+    const aggregated = aggregateOpenCashLedgerRows(rows);
+    out.set(accountId, summarizeAggregatedCashRows(aggregated));
   }
   return out;
 }

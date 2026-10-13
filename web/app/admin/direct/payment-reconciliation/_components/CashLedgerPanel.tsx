@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { cashCountUnit, type CashCountCurrency } from "@/lib/finance/cash-denominations";
 import { CASH_RECONCILE_FROM_KYIV_DAY } from "@/lib/finance/cash-openings";
+import { aggregateCashLedgerDayRows } from "@/lib/finance/cash-ledger-aggregate";
 
 type LedgerCount = {
   id: string;
@@ -61,54 +62,8 @@ function timeLabel(iso: string): string {
   return date.toLocaleTimeString("uk-UA", { timeZone: "Europe/Kyiv", hour: "2-digit", minute: "2-digit" });
 }
 
-/**
- * Один клієнт, один рахунок, одне призначення і один напрямок за день — один рядок.
- * Вхідний переказ і вихідна комісія не зливаються, навіть якщо клієнт порожній.
- */
 function aggregateDayRows(dayRows: LedgerRow[]): LedgerRow[] {
-  const groups = new Map<
-    string,
-    LedgerRow & { signed: number; times: Set<string>; records: Set<number>; titles: Set<string> }
-  >();
-  for (const row of dayRows) {
-    const client = row.clientName.trim();
-    const purpose = row.title.trim();
-    const key = `${client}\0${row.accountTitle}\0${row.currency}\0${row.direction}\0${purpose}`;
-    const signed = row.direction === "out" ? -row.amount : row.amount;
-    const current = groups.get(key);
-    if (!current) {
-      groups.set(key, {
-        ...row,
-        clientName: client,
-        signed,
-        times: new Set([timeLabel(row.occurredAt)]),
-        records: new Set(row.recordId ? [row.recordId] : []),
-        titles: new Set(row.title ? [row.title] : []),
-      });
-      continue;
-    }
-    current.signed += signed;
-    current.posted = current.posted && row.posted;
-    current.times.add(timeLabel(row.occurredAt));
-    if (row.recordId) current.records.add(row.recordId);
-    if (row.title) current.titles.add(row.title);
-    if (row.occurredAt > current.occurredAt) current.occurredAt = row.occurredAt;
-  }
-  return [...groups.values()]
-    .sort((a, b) => b.occurredAt.localeCompare(a.occurredAt))
-    .map((group) => {
-      const signed = Math.round(group.signed * 100) / 100;
-      const incoming = signed >= 0;
-      const times = [...group.times].filter(Boolean);
-      return {
-        ...group,
-        direction: incoming ? "in" : "out",
-        amount: Math.abs(signed),
-        title: [...group.titles].join(", ") || "—",
-        recordId: group.records.size === 1 ? [...group.records][0] : null,
-        occurredAt: times.length === 1 ? group.occurredAt : "",
-      } as LedgerRow;
-    });
+  return aggregateCashLedgerDayRows(dayRows);
 }
 
 export function CashLedgerPanel({
