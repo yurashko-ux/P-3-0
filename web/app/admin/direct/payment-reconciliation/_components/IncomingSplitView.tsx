@@ -2295,7 +2295,7 @@ function reconciledAltegioPayerKeysFromLinkedDays(
   return map;
 }
 
-/** Що приховувати з «Не зведених» — лише пари, які реально є у вкладці «Зведені». */
+/** Пари, які зараз вдалося повністю відбудувати для вкладки «Зведені». */
 function buildOpenHiddenFromLinkedDays(
   linkedDays: VisibleAlignedDayRow[],
 ): {
@@ -3595,14 +3595,29 @@ export function IncomingSplitView({
     () => buildOpenHiddenFromLinkedDays(fullyLinkedDays),
     [fullyLinkedDays],
   );
+  const persistedReconciledBankIds = useMemo(
+    () => new Set(data?.reconciled?.bankItemIds ?? []),
+    [data?.reconciled?.bankItemIds],
+  );
+  const openReconciledBankIds = useMemo(
+    () => new Set([...openHiddenFromLinked.bankIds, ...persistedReconciledBankIds]),
+    [openHiddenFromLinked.bankIds, persistedReconciledBankIds],
+  );
   const completeReconciledBankIds = useMemo(() => {
     if (reconciliationStatus === "open") {
-      return openHiddenFromLinked.bankIds;
+      // Збережене зведення є джерелом істини: не повертаємо банк у «Не зведені»,
+      // навіть якщо Altegio тимчасово не віддало стару половину пари.
+      return openReconciledBankIds;
     }
     const ids = completeReconciledBankIdsFromLinkedDays(fullyLinkedDays);
     for (const bankId of depositBankIdsClaimed) ids.add(bankId);
     return ids;
-  }, [reconciliationStatus, openHiddenFromLinked.bankIds, fullyLinkedDays, depositBankIdsClaimed]);
+  }, [
+    reconciliationStatus,
+    openReconciledBankIds,
+    fullyLinkedDays,
+    depositBankIdsClaimed,
+  ]);
   const bankReviewNotesByItemId = useMemo(() => {
     const map = new Map<string, string>();
     for (const match of data?.reconciled?.matches ?? []) {
@@ -3739,12 +3754,12 @@ export function IncomingSplitView({
     () => filterOpenIncomingDaysByMinDate(
       buildOpenVisibleAlignedDays(
         alignedDays,
-        openHiddenFromLinked.bankIds,
+        openReconciledBankIds,
         openHiddenFromLinked.altegioPayersByDay,
         depositMatchByAltegioId,
       ),
     ),
-    [alignedDays, openHiddenFromLinked, depositMatchByAltegioId],
+    [alignedDays, openReconciledBankIds, openHiddenFromLinked.altegioPayersByDay, depositMatchByAltegioId],
   );
 
   const clientIdByAltegioId = useMemo(() => {
