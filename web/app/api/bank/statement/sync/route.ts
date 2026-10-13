@@ -4,7 +4,8 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { requireBankSection } from "@/app/api/bank/require-bank-auth";
-import { fetchStatement, fetchClientInfo } from "@/lib/bank/monobank";
+import { fetchStatement } from "@/lib/bank/monobank";
+import { refreshMonobankBalancesForConnection } from "@/lib/bank/refresh-monobank-balances";
 import { isBankPaymentNumberConflict, nextBankPaymentNumber } from "@/lib/bank/payment-number";
 import { kvRead, kvWrite } from "@/lib/kv";
 
@@ -154,27 +155,12 @@ export async function POST(req: NextRequest) {
     let balanceSource: "client_info" | "statement" | "unchanged" = "unchanged";
     let balanceRefreshError: string | null = null;
     try {
-      const clientInfo = await fetchClientInfo(token);
-      const liveAccounts = clientInfo.accounts ?? [];
-      if (!liveAccounts.some((liveAccount) => String(liveAccount.id) === account.externalId)) {
-        throw new Error("Monobank client-info не повернув вибраний рахунок");
-      }
-      await prisma.$transaction(
-        liveAccounts.map((liveAccount) =>
-          prisma.bankAccount.updateMany({
-            where: {
-              connectionId: account.connectionId,
-              externalId: String(liveAccount.id),
-            },
-            data: { balance: BigInt(liveAccount.balance ?? 0) },
-          }),
-        ),
-      );
-      balanceSource = "client_info";
-      console.log("[bank/statement/sync] Поточні баланси оновлено з Monobank client-info", {
+      await refreshMonobankBalancesForConnection({
         connectionId: account.connectionId,
-        accounts: liveAccounts.length,
+        token,
+        expectedExternalId: account.externalId,
       });
+      balanceSource = "client_info";
     } catch (balanceError) {
       balanceRefreshError =
         balanceError instanceof Error ? balanceError.message : "Не вдалося отримати поточний баланс Monobank";
