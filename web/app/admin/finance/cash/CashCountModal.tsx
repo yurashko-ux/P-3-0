@@ -10,11 +10,40 @@ function money(n: number) {
   });
 }
 
+/** Пробіл між кожними 3 знаками, як у «Загальна сума». */
+function groupDigits(digits: string): string {
+  if (!digits) return "";
+  return digits.replace(/\B(?=(\d{3})+(?!\d))/g, " ");
+}
+
+function formatQtyInput(raw: string): string {
+  return groupDigits(raw.replace(/\D/g, ""));
+}
+
+function formatAmountInput(raw: string): string {
+  const cleaned = raw.replace(/[^\d.,]/g, "");
+  if (!cleaned) return "";
+  const hasSep = /[.,]/.test(cleaned);
+  const sepChar = cleaned.includes(",") ? "," : ".";
+  const [intRaw, ...rest] = cleaned.split(/[.,]/);
+  const intPart = groupDigits((intRaw || "").replace(/\D/g, ""));
+  if (!hasSep) return intPart;
+  const frac = rest.join("").replace(/\D/g, "").slice(0, 2);
+  return `${intPart}${sepChar}${frac}`;
+}
+
 function parseAmountInput(raw: string): number {
   const text = raw.trim().replace(/\s+/g, "").replace(",", ".");
   if (!text) return 0;
   const value = Number(text);
   return Number.isFinite(value) && value >= 0 ? Math.round(value * 100) / 100 : 0;
+}
+
+function parseQtyInput(raw: string): number {
+  const text = raw.trim().replace(/\s+/g, "");
+  if (!text) return 0;
+  const n = Number(text);
+  return Number.isInteger(n) && n >= 0 ? n : 0;
 }
 
 type Props = {
@@ -38,7 +67,9 @@ export function CashCountModal({
   const denoms = noteDenoms(currency);
   const unit = cashCountUnit(currency);
   const [bundled, setBundled] = useState(() =>
-    initialBundledAmount != null && initialBundledAmount > 0 ? String(initialBundledAmount) : "",
+    initialBundledAmount != null && initialBundledAmount > 0
+      ? formatAmountInput(String(initialBundledAmount))
+      : "",
   );
   const [qty, setQty] = useState<string[]>(() => denoms.map(() => ""));
   const [busy, setBusy] = useState(false);
@@ -51,10 +82,7 @@ export function CashCountModal({
   }, []);
 
   function lineQty(index: number): number {
-    const raw = qty[index].trim();
-    if (!raw) return 0;
-    const n = Number(raw);
-    return Number.isInteger(n) && n >= 0 ? n : 0;
+    return parseQtyInput(qty[index]);
   }
 
   function focusNext(index: number) {
@@ -137,8 +165,7 @@ export function CashCountModal({
                 aria-label={`Пораховані, ${unit}`}
                 title="Скріплена / вже порахована готівка, яку щодня не перераховують"
                 onChange={(event) => {
-                  const next = event.target.value.replace(/[^\d.,]/g, "");
-                  setBundled(next);
+                  setBundled(formatAmountInput(event.target.value));
                 }}
                 onKeyDown={(event) => {
                   if (event.key !== "Enter") return;
@@ -169,8 +196,8 @@ export function CashCountModal({
                     key={denomination}
                     className="grid grid-cols-[6rem_minmax(0,1fr)_minmax(0,1fr)] items-center gap-2"
                   >
-                    <div className="flex h-10 items-center justify-center rounded-xl bg-[#ebedf2] text-sm font-medium text-gray-800">
-                      {denomination} {unit}
+                    <div className="flex h-10 items-center justify-center rounded-xl bg-[#ebedf2] text-sm font-medium tabular-nums text-gray-800">
+                      {money(denomination)} {unit}
                     </div>
                     <input
                       ref={(node) => {
@@ -183,7 +210,7 @@ export function CashCountModal({
                       disabled={busy}
                       aria-label={`${denomination} ${unit}, штук`}
                       onChange={(event) => {
-                        const next = event.target.value.replace(/[^\d]/g, "");
+                        const next = formatQtyInput(event.target.value);
                         setQty((prev) => prev.map((value, i) => (i === index ? next : value)));
                       }}
                       onKeyDown={(event) => {
