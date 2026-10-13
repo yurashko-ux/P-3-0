@@ -170,7 +170,7 @@ export async function POST(req: NextRequest) {
       if (latestFetchedBalance != null) {
         await prisma.bankAccount.update({
           where: { id: accountId },
-          data: { balance: latestFetchedBalance },
+          data: { balance: latestFetchedBalance, balanceUpdatedAt: new Date() },
           select: { id: true },
         });
         balanceSource = "statement";

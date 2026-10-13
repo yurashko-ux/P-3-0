@@ -29,7 +29,8 @@ function isMissingOptionalColumns(err: unknown): boolean {
     m.includes("altegioMonthlyTurnoverManual") ||
     m.includes("fopAnnualTurnoverLimitKop") ||
     m.includes("ytdIncomingManualKop") ||
-    m.includes("ytdIncomingManualThroughDate")
+    m.includes("ytdIncomingManualThroughDate") ||
+    m.includes("balanceUpdatedAt")
   );
 }
 
@@ -55,6 +56,7 @@ export async function GET(req: Request) {
   type AccSelect = {
     id: string;
     balance: bigint;
+    balanceUpdatedAt: Date | null;
     currencyCode: number;
     maskedPan: string | null;
     iban: string | null;
@@ -76,6 +78,7 @@ export async function GET(req: Request) {
       select: {
         id: true,
         balance: true,
+        balanceUpdatedAt: true,
         currencyCode: true,
         maskedPan: true,
         iban: true,
@@ -115,6 +118,7 @@ export async function GET(req: Request) {
       });
       accounts = rows.map((a) => ({
         ...a,
+        balanceUpdatedAt: null,
         ytdIncomingManualKop: null,
         ytdIncomingManualThroughDate: null,
       }));
@@ -140,6 +144,7 @@ export async function GET(req: Request) {
       });
       accounts = basic.map((a) => ({
         ...a,
+        balanceUpdatedAt: null,
         altegioOpeningBalanceManual: null,
         altegioOpeningBalanceDate: null,
         fopAnnualTurnoverLimitKop: null,
@@ -280,8 +285,19 @@ export async function GET(req: Request) {
     })
   );
 
+  const bankBalancesUpdatedAt = accounts
+    .map((account) => account.balanceUpdatedAt)
+    .filter((value): value is Date => value instanceof Date)
+    .sort((a, b) => b.getTime() - a.getTime())[0]
+    ?.toISOString() ?? null;
+
   return NextResponse.json(
-    { ok: true, computedAt: asOf.toISOString(), accounts: rows },
+    {
+      ok: true,
+      computedAt: asOf.toISOString(),
+      bankBalancesUpdatedAt,
+      accounts: rows,
+    },
     {
       headers: {
         "Cache-Control": "no-store, no-cache, must-revalidate, max-age=0",

@@ -23,6 +23,7 @@ export async function refreshMonobankBalancesForConnection(params: {
     throw new Error("Monobank client-info не повернув вибраний рахунок");
   }
 
+  const refreshedAt = new Date();
   const updates = await prisma.$transaction(
     liveAccounts.map((account) =>
       prisma.bankAccount.updateMany({
@@ -30,7 +31,10 @@ export async function refreshMonobankBalancesForConnection(params: {
           connectionId: params.connectionId,
           externalId: String(account.id),
         },
-        data: { balance: BigInt(account.balance ?? 0) },
+        data: {
+          balance: BigInt(account.balance ?? 0),
+          balanceUpdatedAt: refreshedAt,
+        },
       }),
     ),
   );

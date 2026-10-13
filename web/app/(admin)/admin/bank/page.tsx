@@ -550,6 +550,7 @@ export default function BankPage() {
   const [footerStripAccounts, setFooterStripAccounts] = useState<BankFooterStripAccount[]>([]);
   const [footerStripLoading, setFooterStripLoading] = useState(true);
   const [footerStripError, setFooterStripError] = useState<string | null>(null);
+  const [bankBalancesUpdatedAt, setBankBalancesUpdatedAt] = useState<string | null>(null);
 
   const [dateFrom, setDateFrom] = useState(() => initialFocus.from ?? initialRange.from);
   const [dateTo, setDateTo] = useState(() => initialFocus.to ?? initialRange.to);
@@ -628,12 +629,17 @@ export default function BankPage() {
       const data = await res.json().catch(() => ({}));
       if (res.status === 401 || res.status === 403) {
         setFooterStripAccounts([]);
+        setBankBalancesUpdatedAt(null);
         return;
       }
       if (data.ok && Array.isArray(data.accounts)) {
         setFooterStripAccounts(data.accounts as BankFooterStripAccount[]);
+        setBankBalancesUpdatedAt(
+          typeof data.bankBalancesUpdatedAt === "string" ? data.bankBalancesUpdatedAt : null,
+        );
       } else {
         setFooterStripAccounts([]);
+        setBankBalancesUpdatedAt(null);
         setFooterStripError(typeof data.error === "string" ? data.error : "Футер: помилка завантаження");
       }
     } catch (e) {
@@ -1726,6 +1732,23 @@ export default function BankPage() {
                 })}
               </span>
             ) : null}
+            <span
+              title="Час останнього оновлення поточного балансу Monobank (вебхук, «Підтягнути з API» або нічний cron)"
+              style={{ color: bankBalancesUpdatedAt ? "#6b7280" : "#b45309", fontWeight: 400 }}
+            >
+              · останнє оновлення рахунків:{" "}
+              <strong style={{ color: bankBalancesUpdatedAt ? "#111827" : "#b45309" }}>
+                {bankBalancesUpdatedAt
+                  ? new Date(bankBalancesUpdatedAt).toLocaleString("uk-UA", {
+                      day: "2-digit",
+                      month: "2-digit",
+                      year: "numeric",
+                      hour: "2-digit",
+                      minute: "2-digit",
+                    })
+                  : "ще не було"}
+              </strong>
+            </span>
             {operationsDebug ? (
               <span style={{ color: "#6b7280", fontWeight: 400 }}>
                 {" "}

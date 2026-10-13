@@ -1057,6 +1057,8 @@ model BankAccount {
   connectionId                   String
   externalId                     String // id рахунку в monobank
   balance                        BigInt    @default(0) // Баланс в мінімальних одиницях (копійки)
+  /// Коли востаннє оновлено поточний баланс Monobank (client-info / webhook / sync).
+  balanceUpdatedAt               DateTime?
   altegioAccountId               String?
   altegioAccountTitle            String?
   altegioBalance                 BigInt?
