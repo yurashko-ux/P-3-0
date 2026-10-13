@@ -3356,8 +3356,7 @@ export function IncomingSplitView({
   const depositTabClientIdsRef = useRef<number[]>([]);
   const depositTabPayerNamesRef = useRef<string[]>([]);
   const loadingMoreLinkedRef = useRef(false);
-  const reconciliationStatusRef = useRef(reconciliationStatus);
-  reconciliationStatusRef.current = reconciliationStatus;
+  const loadedFromRef = useRef(OPEN_INCOMING_MIN_KYIV_DAY);
 
   const toggleAccount = useCallback((key: string) => {
     setExpandedAccounts((prev) => {
@@ -3409,16 +3408,17 @@ export function IncomingSplitView({
     }
   }, []);
 
-  const loadData = useCallback(async () => {
+  const loadData = useCallback(async (options: {
+    dateFrom?: string;
+    withoutAltegio?: boolean;
+  } = {}) => {
     setLoading(true);
     setError(null);
     try {
-      const params = new URLSearchParams();
-      if (reconciliationStatus === "linked") {
-        params.set("from", linkedHistoryFrom(linkedHistoryDays));
-      } else if (reconciliationStatus === "open") {
-        params.set("from", OPEN_INCOMING_MIN_KYIV_DAY);
-      }
+      const params = new URLSearchParams({
+        from: options.dateFrom ?? loadedFromRef.current,
+      });
+      if (options.withoutAltegio) params.set("live", "0");
       const query = params.toString();
       const res = await fetch(`/api/admin/bank/payment-reconciliation/incoming${query ? `?${query}` : ""}`, {
         cache: "no-store",
@@ -3430,12 +3430,7 @@ export function IncomingSplitView({
         throw new Error(payload.error || "Не вдалося завантажити вхідні платежі");
       }
       setData(payload);
-      if (reconciliationStatusRef.current === "deposits") {
-        void loadDepositTabData(
-          depositTabClientIdsRef.current,
-          depositTabPayerNamesRef.current,
-        );
-      }
+      loadedFromRef.current = payload.dateFrom;
     } catch (loadError) {
       if (loadError instanceof Error && loadError.name === "TimeoutError") {
         setError("Завантаження перевищило час очікування. Спробуйте «Оновити».");
@@ -3450,9 +3445,10 @@ export function IncomingSplitView({
         setLoadingMoreLinked(false);
       }
     }
-  }, [linkedHistoryDays, loadDepositTabData, reconciliationStatus]);
+  }, []);
 
   const refreshAll = useCallback(async () => {
+    setDepositTabData(null);
     await loadData();
   }, [loadData]);
 
@@ -3746,7 +3742,8 @@ export function IncomingSplitView({
       return regularDays;
     }
 
-    return fullyLinkedDays;
+    const linkedFrom = linkedHistoryFrom(linkedHistoryDays);
+    return fullyLinkedDays.filter((day) => day.kyivDay >= linkedFrom);
   }, [
     alignedDays,
     reconciliationStatus,
@@ -3759,6 +3756,7 @@ export function IncomingSplitView({
     depositMatchByAltegioId,
     reconciledAltegioPayersByDay,
     mismatchDepositMatchIds,
+    linkedHistoryDays,
   ]);
 
   const openVisibleAlignedDays = useMemo(
@@ -3850,16 +3848,13 @@ export function IncomingSplitView({
   const incomingDataReady = Boolean(data?.ok);
 
   useEffect(() => {
-    if (reconciliationStatus !== "deposits") {
-      setDepositTabData(null);
-      return;
-    }
-    if (!incomingDataReady) return;
+    if (!incomingDataReady || depositTabData != null || depositTabLoading) return;
     void loadDepositTabData(depositTabClientIdsRef.current, depositTabPayerNamesRef.current);
   }, [
-    reconciliationStatus,
     depositTabFetchKey,
     incomingDataReady,
+    depositTabData,
+    depositTabLoading,
     loadDepositTabData,
   ]);
 
@@ -3987,9 +3982,14 @@ export function IncomingSplitView({
                 className="btn btn-sm btn-ghost"
                 disabled={loadingMoreLinked}
                 onClick={() => {
+                  const nextDays = linkedHistoryDays + LINKED_HISTORY_PAGE_DAYS;
                   loadingMoreLinkedRef.current = true;
                   setLoadingMoreLinked(true);
-                  setLinkedHistoryDays((days) => days + LINKED_HISTORY_PAGE_DAYS);
+                  setLinkedHistoryDays(nextDays);
+                  void loadData({
+                    dateFrom: linkedHistoryFrom(nextDays),
+                    withoutAltegio: true,
+                  });
                 }}
               >
                 {loadingMoreLinked ? "Завантаження..." : "Завантажити ще"}

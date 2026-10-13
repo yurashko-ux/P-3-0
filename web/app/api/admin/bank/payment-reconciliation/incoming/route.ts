@@ -26,7 +26,10 @@ export async function GET(req: NextRequest) {
     const dateFrom = /^\d{4}-\d{2}-\d{2}$/.test(requestedFrom)
       ? requestedFrom
       : INCOMING_RANGE_START_DATE;
-    const preview = await buildIncomingReconciliationPreview({ dateFrom });
+    const preview = await buildIncomingReconciliationPreview({
+      dateFrom,
+      fetchLive: req.nextUrl.searchParams.get("live") !== "0",
+    });
 
     const [incomingMatches, depositMatches] = await Promise.all([
       (prisma as any).bankAltegioIncomingMatch.findMany({
