@@ -3349,11 +3349,13 @@ export function IncomingSplitView({
   const [depositTabLoading, setDepositTabLoading] = useState(false);
   const [reconciling, setReconciling] = useState(false);
   const [linkedHistoryDays, setLinkedHistoryDays] = useState(LINKED_HISTORY_PAGE_DAYS);
+  const [loadingMoreLinked, setLoadingMoreLinked] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [expandedAccounts, setExpandedAccounts] = useState<Set<string>>(() => new Set());
   const depositTabFetchSeqRef = useRef(0);
   const depositTabClientIdsRef = useRef<number[]>([]);
   const depositTabPayerNamesRef = useRef<string[]>([]);
+  const loadingMoreLinkedRef = useRef(false);
   const reconciliationStatusRef = useRef(reconciliationStatus);
   reconciliationStatusRef.current = reconciliationStatus;
 
@@ -3440,9 +3442,13 @@ export function IncomingSplitView({
       } else {
         setError(loadError instanceof Error ? loadError.message : "Помилка завантаження");
       }
-      setData(null);
+      if (!loadingMoreLinkedRef.current) setData(null);
     } finally {
       setLoading(false);
+      if (loadingMoreLinkedRef.current) {
+        loadingMoreLinkedRef.current = false;
+        setLoadingMoreLinked(false);
+      }
     }
   }, [linkedHistoryDays, loadDepositTabData, reconciliationStatus]);
 
@@ -3890,7 +3896,7 @@ export function IncomingSplitView({
   }, [reconciliationStatus, data, depositTabSourceDays, depositRealizationIndex, depositMatches, depositBalanceLookup, clientIdByAltegioId]);
 
   const isDepositsView = reconciliationStatus === "deposits";
-  const showPageLoading = loading;
+  const showPageLoading = loading && !loadingMoreLinked;
 
   useEffect(() => {
     onControlsReady?.({
@@ -3979,10 +3985,14 @@ export function IncomingSplitView({
               <button
                 type="button"
                 className="btn btn-sm btn-ghost"
-                disabled={loading}
-                onClick={() => setLinkedHistoryDays((days) => days + LINKED_HISTORY_PAGE_DAYS)}
+                disabled={loadingMoreLinked}
+                onClick={() => {
+                  loadingMoreLinkedRef.current = true;
+                  setLoadingMoreLinked(true);
+                  setLinkedHistoryDays((days) => days + LINKED_HISTORY_PAGE_DAYS);
+                }}
               >
-                {loading ? "Завантаження..." : "Завантажити ще"}
+                {loadingMoreLinked ? "Завантаження..." : "Завантажити ще"}
               </button>
             </div>
           ) : null}
