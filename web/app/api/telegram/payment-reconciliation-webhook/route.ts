@@ -10,6 +10,7 @@ import {
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
+export const maxDuration = 60;
 
 function getPaymentsBotToken(): string {
   const token = TELEGRAM_ENV.PAYMENTS_BOT_TOKEN;

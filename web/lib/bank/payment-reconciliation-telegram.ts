@@ -2352,6 +2352,40 @@ export async function handleBankPaymentTelegramCallback(callback: {
           reviewNote: `Очікуємо документ Altegio для призначення: ${purpose.title}`,
         },
       });
+
+      const claim = await (prisma as any).bankAltegioPaymentMatch.updateMany({
+        where: {
+          bankStatementItemId: payload.bankStatementItemId,
+          altegioFinanceTransactionId: null,
+          status: { notIn: ["auto_matched", "manual_matched", "creating"] },
+        },
+        data: {
+          status: "creating",
+          matchType: "telegram",
+          reviewNote: `Створюємо платіж Altegio: ${purpose.title}`,
+        },
+      });
+      if (claim.count === 0) {
+        await answerCallbackQuery(callback.id, { text: "Платіж уже створюється або зведено" }, botToken);
+        return true;
+      }
+
+      console.log("[payment-reconciliation-telegram] Кнопка статті: створюємо платіж в Altegio", {
+        bankStatementItemId: payload.bankStatementItemId,
+        purposeTitle: purpose.title,
+      });
+      await answerCallbackQuery(callback.id, { text: "Створюємо платіж в Altegio" }, botToken).catch((error) => {
+        console.warn("[payment-reconciliation-telegram] Не вдалося відповісти на кнопку, платіж все одно створюємо:", error instanceof Error ? error.message : String(error));
+      });
+      await createExpenseAndNotifyTelegram({
+        bankStatementItemId: payload.bankStatementItemId,
+        chatId,
+        comment: null,
+        createdAt: new Date(),
+        createdBy: callback.from?.username || callback.from?.id?.toString() || "telegram",
+        interactionMessageId: messageId,
+      });
+      return true;
     }
 
     await answerCallbackQuery(callback.id, { text: "Призначення збережено" }, botToken);
@@ -2361,15 +2395,9 @@ export async function handleBankPaymentTelegramCallback(callback: {
       [
         `Обрано: <b>${escapeHtml(purpose.title)}</b>`,
         "",
-        useLinkedEditFlow
-          ? "Змінити коментар в Altegio або залишити поточний?"
-          : "Додати коментар до платежу в Altegio або зберегти без коментаря?",
+        "Змінити коментар в Altegio або залишити поточний?",
       ].join("\n"),
-      {
-        reply_markup: useLinkedEditFlow
-          ? buildCommentOfferKeyboardForEdit(token)
-          : buildCommentOfferKeyboard(token),
-      },
+      { reply_markup: buildCommentOfferKeyboardForEdit(token) },
       botToken,
     );
     return true;
