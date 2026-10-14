@@ -96,6 +96,23 @@ export function editMessageText(
   return telegramFetch("editMessageText", payload, botToken);
 }
 
+export function editMessageReplyMarkup(
+  chatId: number,
+  messageId: number,
+  replyMarkup: TelegramRequestPayload,
+  botToken?: string
+) {
+  return telegramFetch(
+    "editMessageReplyMarkup",
+    {
+      chat_id: chatId,
+      message_id: messageId,
+      reply_markup: replyMarkup,
+    },
+    botToken,
+  );
+}
+
 export function deleteMessage(
   chatId: number,
   messageId: number,
