@@ -1,6 +1,6 @@
 import { prisma } from "@/lib/prisma";
 import { kvRead, kvWrite } from "@/lib/kv";
-import { sendMessage, answerCallbackQuery, editMessageText, editMessageReplyMarkup, deleteMessage } from "@/lib/telegram/api";
+import { sendMessage, answerCallbackQuery, editMessageText, deleteMessage } from "@/lib/telegram/api";
 import { TELEGRAM_ENV } from "@/lib/telegram/env";
 import {
   ignoreBankAltegioPayment,
@@ -575,48 +575,22 @@ async function getTelegramPaymentPurposes(): Promise<Array<{ id: string; title: 
   return Array.from(byTitle.values()).sort((a, b) => a.title.localeCompare(b.title, "uk"));
 }
 
-/** Скільки статей на одній сторінці. Повна клавіатура вища за екран телефону, і Telegram тоді не приймає натискання. */
-const PURPOSE_PAGE_SIZE = 6;
-
-function purposePageCount(total: number): number {
-  return Math.max(1, Math.ceil(total / PURPOSE_PAGE_SIZE));
-}
-
-function buildPurposePageKeyboard(
-  purposes: Array<{ title: string }>,
-  token: string,
-  page: number,
-  footer: "review" | "edit",
-) {
-  const pages = purposePageCount(purposes.length);
-  const safePage = Math.min(Math.max(page, 0), pages - 1);
-  const start = safePage * PURPOSE_PAGE_SIZE;
-  const purposeButtons = purposes.slice(start, start + PURPOSE_PAGE_SIZE).map((purpose, offset) => ({
+function buildPaymentPurposeKeyboard(purposes: Array<{ title: string }>, token: string) {
+  const purposeButtons = purposes.map((purpose, index: number) => ({
     text: purpose.title.slice(0, 48),
-    callback_data: `bank_payment:${token}:p${start + offset}`,
+    callback_data: `bank_payment:${token}:p${index}`,
   }));
-  const rows = chunkKeyboardButtons(purposeButtons, 2);
-  if (pages > 1) {
-    const nav: Array<{ text: string; callback_data: string }> = [];
-    if (safePage > 0) nav.push({ text: "‹", callback_data: `bank_payment:${token}:g${safePage - 1}` });
-    nav.push({ text: `${safePage + 1}/${pages}`, callback_data: `bank_payment:${token}:g${safePage}` });
-    if (safePage < pages - 1) nav.push({ text: "›", callback_data: `bank_payment:${token}:g${safePage + 1}` });
-    rows.push(nav);
-  }
-  if (footer === "review") {
-    rows.push([{ text: "Переміщення", callback_data: `bank_payment:${token}:transfer` }]);
-    rows.push([
-      { text: "Відкласти", callback_data: `bank_payment:${token}:later` },
-      { text: "Ігнорувати", callback_data: `bank_payment:${token}:ignore` },
-    ]);
-  } else {
-    rows.push([{ text: "Скасувати", callback_data: `bank_payment:${token}:cancel_edit` }]);
-  }
-  return { inline_keyboard: rows };
-}
 
-function buildPaymentPurposeKeyboard(purposes: Array<{ title: string }>, token: string, page = 0) {
-  return buildPurposePageKeyboard(purposes, token, page, "review");
+  return {
+    inline_keyboard: [
+      ...chunkKeyboardButtons(purposeButtons, 2),
+      [{ text: "Переміщення", callback_data: `bank_payment:${token}:transfer` }],
+      [
+        { text: "Відкласти", callback_data: `bank_payment:${token}:later` },
+        { text: "Ігнорувати", callback_data: `bank_payment:${token}:ignore` },
+      ],
+    ],
+  };
 }
 
 function buildCommentOfferKeyboard(token: string) {
@@ -641,20 +615,18 @@ function buildCommentOfferKeyboardForEdit(token: string) {
   };
 }
 
-function buildLinkedEditPurposeKeyboard(purposes: Array<{ title: string }>, token: string, page = 0) {
-  return buildPurposePageKeyboard(purposes, token, page, "edit");
-}
+function buildLinkedEditPurposeKeyboard(purposes: Array<{ title: string }>, token: string) {
+  const purposeButtons = purposes.map((purpose, index: number) => ({
+    text: purpose.title.slice(0, 48),
+    callback_data: `bank_payment:${token}:p${index}`,
+  }));
 
-async function purposesInTokenOrder(purposeIds: string[]): Promise<Array<{ title: string }>> {
-  if (purposeIds.length === 0) return [];
-  const rows = await (prisma as any).altegioPaymentPurpose.findMany({
-    where: { id: { in: purposeIds } },
-    select: { id: true, title: true },
-  });
-  const byId = new Map<string, string>(
-    (rows as Array<{ id: string; title: string }>).map((row) => [row.id, String(row.title || "").trim()]),
-  );
-  return purposeIds.map((id) => ({ title: byId.get(id) || "Стаття" }));
+  return {
+    inline_keyboard: [
+      ...chunkKeyboardButtons(purposeButtons, 2),
+      [{ text: "Скасувати", callback_data: `bank_payment:${token}:cancel_edit` }],
+    ],
+  };
 }
 
 function isEditLinkedToken(payload: TelegramTokenPayload): boolean {
@@ -2313,26 +2285,7 @@ export async function handleBankPaymentTelegramCallback(callback: {
     return true;
   }
 
-  if (/^g\d+$/.test(action || "")) {
-    const purposes = await purposesInTokenOrder(payload.purposeIds);
-    const pages = purposePageCount(purposes.length);
-    const page = Math.min(Math.max(Number(action.slice(1)) || 0, 0), pages - 1);
-    await answerCallbackQuery(callback.id, { text: `Сторінка ${page + 1} з ${pages}` }, botToken);
-    const keyboard = isEditLinkedToken(payload)
-      ? buildLinkedEditPurposeKeyboard(purposes, token, page)
-      : buildPaymentPurposeKeyboard(purposes, token, page);
-    try {
-      await editMessageReplyMarkup(chatId, messageId, keyboard, botToken);
-    } catch (error) {
-      const message = error instanceof Error ? error.message : String(error);
-      if (!message.includes("message is not modified")) {
-        console.warn("[payment-reconciliation-telegram] Не вдалося перемкнути сторінку статей:", message);
-      }
-    }
-    return true;
-  }
-
-  if (action?.startsWith("p") && /^p\d+$/.test(action)) {
+  if (action?.startsWith("p")) {
     const index = Number(action.slice(1));
     const purposeId = payload.purposeIds[index];
     const purpose = purposeId
