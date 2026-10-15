@@ -408,6 +408,7 @@ export async function POST(req: NextRequest) {
         status = "вже забрано раніше";
       } else {
         const same = existing.find((row) => {
+          if (row.source === "instagram_graph") return false;
           if (row.clientId !== client.id || row.direction !== item.direction) return false;
           if (Math.abs(row.receivedAt.getTime() - item.at.getTime()) > DEDUP_WINDOW_MS) return false;
           const left = normText(row.text || "");

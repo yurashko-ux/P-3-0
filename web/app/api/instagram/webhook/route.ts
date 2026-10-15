@@ -238,7 +238,10 @@ async function saveIfNew(
     select: { text: true, source: true },
     take: 20,
   });
-  const duplicate = nearby.find((row) => normText(row.text || "") === normText(text));
+  const duplicate = nearby.find((row) => {
+    if (row.source === "instagram_graph") return false;
+    return normText(row.text || "") === normText(text);
+  });
   if (duplicate) return duplicate.source === "manychat" ? "вже є з ManyChat" : "вже є в історії";
 
   await prisma.directMessage.create({
