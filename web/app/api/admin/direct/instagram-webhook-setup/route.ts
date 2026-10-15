@@ -67,33 +67,59 @@ export async function POST(req: NextRequest) {
     });
   }
 
-  const subscribed = await graphCall(
-    `${pageId}/subscribed_apps`,
-    loaded.pageToken,
-    { subscribed_fields: "messages,message_echoes" },
-    "POST",
-  );
-  if (graphCallFailed(subscribed)) {
-    console.warn("[instagram-webhook-setup] Підписка не вдалась", subscribed.code, subscribed.message);
+  if (!loaded.igId) {
     return NextResponse.json({
       ok: false,
       ...base,
-      error: `Адреса: ${INSTAGRAM_WEBHOOK_URL}\nКод перевірки: ${verifyToken}\n\n${subscribed.message}`,
-      metaCode: subscribed.code,
+      error: `Адреса: ${INSTAGRAM_WEBHOOK_URL}\nКод перевірки: ${verifyToken}\n\nСторінку видно, але id Instagram Meta не віддала.`,
     });
   }
 
-  const current = await graphCall(`${pageId}/subscribed_apps`, loaded.pageToken, {});
-  let subscribedFields: string[] = [];
-  if (!graphCallFailed(current) && Array.isArray(current.data.data)) {
-    const apps = current.data.data as Array<{ subscribed_fields?: string[] }>;
-    subscribedFields = apps.flatMap((app) => app.subscribed_fields || []);
+  const fieldSets = ["messages,message_echoes", "messages"];
+  let subscribedMessage = "";
+  let usedFields = "";
+  for (const fields of fieldSets) {
+    const subscribed = await graphCall(
+      `${loaded.igId}/subscribed_apps`,
+      loaded.pageToken,
+      { subscribed_fields: fields },
+      "POST",
+    );
+    if (graphCallFailed(subscribed)) {
+      subscribedMessage = subscribed.message;
+      console.warn("[instagram-webhook-setup] Підписка Instagram не вдалась", fields, subscribed.code, subscribed.message);
+      continue;
+    }
+    usedFields = fields;
+    subscribedMessage = "";
+    break;
+  }
+  if (!usedFields) {
+    return NextResponse.json({
+      ok: false,
+      ...base,
+      instagramUsername: loaded.igUsername || null,
+      error: `Адреса: ${INSTAGRAM_WEBHOOK_URL}\nКод перевірки: ${verifyToken}\n\n${subscribedMessage}`,
+    });
   }
 
-  console.log("[instagram-webhook-setup] Сторінку підписано", { fields: subscribedFields });
+  const current = await graphCall(`${loaded.igId}/subscribed_apps`, loaded.pageToken, {});
+  let subscribedFields: string[] = usedFields.split(",");
+  if (!graphCallFailed(current) && Array.isArray(current.data.data)) {
+    const apps = current.data.data as Array<{ subscribed_fields?: string[] }>;
+    const fromMeta = apps.flatMap((app) => app.subscribed_fields || []);
+    if (fromMeta.length) subscribedFields = fromMeta;
+  }
+
+  console.log("[instagram-webhook-setup] Instagram підписано", {
+    username: loaded.igUsername || null,
+    fields: subscribedFields,
+  });
   return NextResponse.json({
     ok: true,
     ...base,
+    fields: usedFields.split(","),
+    instagramUsername: loaded.igUsername || null,
     subscribedFields,
   });
 }

@@ -983,6 +983,7 @@ export function AdminToolsModal({
               `Код перевірки:\n${data?.verifyToken || ""}\n\n` +
               `Поля: messages, message_echoes\n` +
               `Сторінка підписана на: ${fields}\n` +
+              `Instagram: ${data?.instagramUsername ? `@${data.instagramUsername}` : "—"}\n` +
               `Перевірка підпису: ${data?.signatureCheck ? "увімкнена" : "ще немає INSTAGRAM_APP_SECRET"}`
             );
           },

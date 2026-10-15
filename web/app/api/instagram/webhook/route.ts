@@ -68,10 +68,24 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ ok: false }, { status: 403 });
   }
 
-  let body: { object?: string; entry?: Array<{ id?: string; messaging?: MessagingItem[] }> } = {};
+  let body: {
+    object?: string;
+    entry?: Array<{ id?: string; messaging?: MessagingItem[]; changes?: Array<{ field?: string; value?: MessagingItem }> }>;
+  } = {};
   try {
     body = raw ? JSON.parse(raw) : {};
   } catch {
+    await rememberInstagramWebhook({
+      receivedAt: new Date().toISOString(),
+      direction: "incoming",
+      text: raw.slice(0, 300),
+      messageId: null,
+      senderId: null,
+      recipientId: null,
+      username: null,
+      name: null,
+      status: "прийшло, але це не JSON",
+    }).catch(() => undefined);
     return NextResponse.json({ ok: true });
   }
 
@@ -88,11 +102,19 @@ export async function POST(req: NextRequest) {
   }
 
   const entries = Array.isArray(body.entry) ? body.entry : [];
+  let recognized = 0;
   for (const entry of entries) {
     const entryId = entry.id ? String(entry.id) : "";
-    const items = Array.isArray(entry.messaging) ? entry.messaging : [];
-    for (const item of items) {
+    const messaging = Array.isArray(entry.messaging) ? entry.messaging : [];
+    const fromChanges = Array.isArray(entry.changes)
+      ? entry.changes
+          .filter((change) => change.field === "messages" || change.field === "message_echoes")
+          .map((change) => change.value)
+          .filter((value): value is MessagingItem => Boolean(value))
+      : [];
+    for (const item of [...messaging, ...fromChanges]) {
       if (!item.message) continue;
+      recognized += 1;
       try {
         await acceptMessage({
           item,
@@ -104,6 +126,23 @@ export async function POST(req: NextRequest) {
         console.error("[instagram/webhook] Повідомлення не збереглось", sanitizeMeta(error instanceof Error ? error.message : String(error)));
       }
     }
+  }
+
+  if (recognized === 0) {
+    const fields = entries.flatMap((entry) => (entry.changes || []).map((change) => change.field).filter(Boolean));
+    await rememberInstagramWebhook({
+      receivedAt: new Date().toISOString(),
+      direction: "incoming",
+      text: `object=${body.object || "—"}, записів=${entries.length}, поля=${fields.join(", ") || "немає"}`,
+      messageId: null,
+      senderId: null,
+      recipientId: null,
+      username: null,
+      name: null,
+      status: "запит прийшов, повідомлення в ньому не розпізнано",
+    }).catch((error) => {
+      console.warn("[instagram/webhook] Журнал не записався", sanitizeMeta(error instanceof Error ? error.message : String(error)));
+    });
   }
 
   return NextResponse.json({ ok: true });
