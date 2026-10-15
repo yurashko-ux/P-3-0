@@ -8,7 +8,8 @@ export const INSTAGRAM_WEBHOOK_PATH = "/api/instagram/webhook";
 export const INSTAGRAM_WEBHOOK_URL = `https://p-3-0.vercel.app${INSTAGRAM_WEBHOOK_PATH}`;
 export const INSTAGRAM_WEBHOOK_LOG_KEY = "instagram:webhook:log";
 const LOG_LIMIT = 30;
-const GRAPH = "https://graph.facebook.com/v21.0";
+export const GRAPH = "https://graph.facebook.com/v21.0";
+export const INSTAGRAM_GRAPH = "https://graph.instagram.com/v21.0";
 
 export type InstagramWebhookEvent = {
   receivedAt: string;
@@ -87,8 +88,9 @@ export async function graphCall(
   token: string,
   params: Record<string, string>,
   method: "GET" | "POST" = "GET",
+  graphBase = GRAPH,
 ): Promise<GraphCall> {
-  const url = new URL(`${GRAPH}/${path}`);
+  const url = new URL(`${graphBase}/${path}`);
   const body = new URLSearchParams();
   if (method === "GET") {
     for (const [key, value] of Object.entries(params)) url.searchParams.set(key, value);

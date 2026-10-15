@@ -5,6 +5,8 @@ import { NextRequest, NextResponse } from "next/server";
 import { getAuthContext } from "@/lib/auth-rbac";
 import { isPreviewDeploymentHost } from "@/lib/auth-preview";
 import {
+  GRAPH,
+  INSTAGRAM_GRAPH,
   INSTAGRAM_WEBHOOK_URL,
   graphCall,
   graphCallFailed,
@@ -75,23 +77,27 @@ export async function POST(req: NextRequest) {
     });
   }
 
-  const fieldSets = ["messages,message_echoes", "messages"];
-  let subscribedMessage = "";
+  const attempts: string[] = [];
+  const targets = [
+    { base: INSTAGRAM_GRAPH, label: "instagram.com" },
+    { base: GRAPH, label: "facebook.com" },
+  ];
   let usedFields = "";
-  for (const fields of fieldSets) {
+  for (const target of targets) {
     const subscribed = await graphCall(
       `${loaded.igId}/subscribed_apps`,
       loaded.pageToken,
-      { subscribed_fields: fields },
+      { subscribed_fields: "messages" },
       "POST",
+      target.base,
     );
     if (graphCallFailed(subscribed)) {
-      subscribedMessage = subscribed.message;
-      console.warn("[instagram-webhook-setup] Підписка Instagram не вдалась", fields, subscribed.code, subscribed.message);
+      attempts.push(`${target.label}: ${subscribed.message}`);
+      console.warn("[instagram-webhook-setup] Підписка не вдалась", target.label, subscribed.code, subscribed.message);
       continue;
     }
-    usedFields = fields;
-    subscribedMessage = "";
+    usedFields = "messages";
+    attempts.length = 0;
     break;
   }
   if (!usedFields) {
@@ -99,11 +105,11 @@ export async function POST(req: NextRequest) {
       ok: false,
       ...base,
       instagramUsername: loaded.igUsername || null,
-      error: `Адреса: ${INSTAGRAM_WEBHOOK_URL}\nКод перевірки: ${verifyToken}\n\n${subscribedMessage}`,
+      error: `Адреса: ${INSTAGRAM_WEBHOOK_URL}\nКод перевірки: ${verifyToken}\n\n${attempts.join("\n")}`,
     });
   }
 
-  const current = await graphCall(`${loaded.igId}/subscribed_apps`, loaded.pageToken, {});
+  const current = await graphCall(`${loaded.igId}/subscribed_apps`, loaded.pageToken, {}, "GET", INSTAGRAM_GRAPH);
   let subscribedFields: string[] = usedFields.split(",");
   if (!graphCallFailed(current) && Array.isArray(current.data.data)) {
     const apps = current.data.data as Array<{ subscribed_fields?: string[] }>;
