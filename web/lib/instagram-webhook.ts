@@ -61,16 +61,65 @@ export async function rememberInstagramWebhook(event: InstagramWebhookEvent): Pr
   await kvWrite.ltrim(INSTAGRAM_WEBHOOK_LOG_KEY, 0, LOG_LIMIT - 1);
 }
 
+function asWebhookEvent(value: unknown): InstagramWebhookEvent | null {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return null;
+  const row = value as Partial<InstagramWebhookEvent>;
+  const hasPayload =
+    typeof row.receivedAt === "string" || typeof row.text === "string" || typeof row.status === "string";
+  if (!hasPayload) return null;
+  return {
+    receivedAt: typeof row.receivedAt === "string" ? row.receivedAt : "",
+    direction: row.direction === "outgoing" ? "outgoing" : "incoming",
+    text: typeof row.text === "string" ? row.text : "",
+    messageId: typeof row.messageId === "string" ? row.messageId : null,
+    senderId: typeof row.senderId === "string" ? row.senderId : null,
+    recipientId: typeof row.recipientId === "string" ? row.recipientId : null,
+    username: typeof row.username === "string" ? row.username : null,
+    name: typeof row.name === "string" ? row.name : null,
+    status: typeof row.status === "string" ? row.status : "",
+  };
+}
+
+// KV іноді віддає рядок як {"value":"<json>"}, інколи ще й вкладений рядок.
+function unwrapLogValue(value: unknown, depth = 0): InstagramWebhookEvent | null {
+  if (depth > 4 || value == null) return null;
+  if (typeof value === "string") {
+    const trimmed = value.trim();
+    if (!trimmed) return null;
+    try {
+      return unwrapLogValue(JSON.parse(trimmed), depth + 1);
+    } catch {
+      return null;
+    }
+  }
+  if (typeof value === "object" && !Array.isArray(value) && "value" in value) {
+    const nested = unwrapLogValue((value as { value: unknown }).value, depth + 1);
+    if (nested) return nested;
+  }
+  return asWebhookEvent(value);
+}
+
 export async function readInstagramWebhooks(): Promise<InstagramWebhookEvent[]> {
   const rows = await kvRead.lrange(INSTAGRAM_WEBHOOK_LOG_KEY, 0, LOG_LIMIT - 1);
   const events: InstagramWebhookEvent[] = [];
   for (const row of rows) {
     if (typeof row !== "string" || !row.trim()) continue;
-    try {
-      events.push(JSON.parse(row) as InstagramWebhookEvent);
-    } catch {
-      // пошкоджений рядок журналу пропускаємо
+    const parsed = unwrapLogValue(row);
+    if (parsed) {
+      events.push(parsed);
+      continue;
     }
+    events.push({
+      receivedAt: "",
+      direction: "incoming",
+      text: sanitizeMeta(row).slice(0, 700),
+      messageId: null,
+      senderId: null,
+      recipientId: null,
+      username: null,
+      name: null,
+      status: "сирий запис журналу",
+    });
   }
   return events;
 }
