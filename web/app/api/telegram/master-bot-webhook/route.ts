@@ -3,10 +3,10 @@
 
 import { NextRequest, NextResponse } from "next/server";
 import type { TelegramUpdate } from "@/lib/telegram/types";
-import { sendMessage } from "@/lib/telegram/api";
+import { deleteMessage, sendMessage } from "@/lib/telegram/api";
 import { TELEGRAM_ENV, assertMasterBotToken } from "@/lib/telegram/env";
 import { prisma } from "@/lib/prisma";
-import { kvWrite } from "@/lib/kv";
+import { kvRead, kvWrite } from "@/lib/kv";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
@@ -100,6 +100,21 @@ export async function POST(req: NextRequest) {
       where: { id: member.id },
       data: { telegramChatId: BigInt(fromId) },
     });
+
+    // Одноразове прибирання старої reply-клавіатури (її надсилав попередній код до фіксу
+    // inline_keyboard) — щоб під полем вводу не лишався дублікат кнопки "Мій журнал".
+    const keyboardClearedKey = `master-journal:keyboard-cleared:${chatId}`;
+    const alreadyCleared = await kvRead.getRaw(keyboardClearedKey);
+    if (!alreadyCleared) {
+      try {
+        const cleanup = await sendMessage(chatId, "🧹", { reply_markup: { remove_keyboard: true } }, botToken);
+        const cleanupMessageId = (cleanup as { message_id?: number })?.message_id;
+        if (cleanupMessageId) await deleteMessage(chatId, cleanupMessageId, botToken);
+      } catch (cleanupErr) {
+        console.warn("[master-bot-webhook] Не вдалося прибрати стару клавіатуру:", cleanupErr);
+      }
+      await kvWrite.setRaw(keyboardClearedKey, "1");
+    }
 
     // ВАЖЛИВО: саме inline_keyboard (не keyboard) — лише такі web_app-кнопки отримують
     // повний initData з підписаними даними користувача. KeyboardButton.web_app дає
