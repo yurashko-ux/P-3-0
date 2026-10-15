@@ -940,7 +940,7 @@ export function AdminToolsModal({
           endpoint: "/api/admin/direct/instagram-recent-messages",
           method: "POST" as const,
           confirm:
-            "Забрати недавні Direct з Instagram?\n\nПокаже вхідні і вихідні. У історію клієнта допише лише ті, яких ще немає з ManyChat. Нічого в Instagram не надсилається.",
+            "Забрати Direct з Instagram за останні 3 дні?\n\nПокаже вхідні і вихідні. У історію клієнта допише лише ті, яких ще немає з ManyChat. Нічого в Instagram не надсилається.",
           successMessage: (data: any) => {
             const lines = (data?.preview || [])
               .map((item: {
@@ -957,7 +957,7 @@ export function AdminToolsModal({
               })
               .join("\n\n");
             return (
-              `Недавні Direct${data?.instagramUsername ? ` @${data.instagramUsername}` : ""}\n\n` +
+              `Direct за ${data?.lookbackDays ?? 3} дні${data?.instagramUsername ? ` @${data.instagramUsername}` : ""}\n\n` +
               `Діалогів: ${data?.conversations ?? 0}\n` +
               `Повідомлень: ${data?.messages ?? 0}\n` +
               `Вхідні: ${data?.incoming ?? 0}\n` +

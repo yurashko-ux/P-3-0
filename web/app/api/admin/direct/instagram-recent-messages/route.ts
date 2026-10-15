@@ -13,9 +13,11 @@ export const runtime = "nodejs";
 export const maxDuration = 60;
 
 const GRAPH = "https://graph.facebook.com/v21.0";
-const CONVERSATION_LIMIT = 6;
-const MESSAGE_LIMIT = 12;
+const CONVERSATION_LIMIT = 20;
+const MESSAGE_LIMIT = 25;
 const PREVIEW_LIMIT = 25;
+const LOOKBACK_DAYS = 3;
+const LOOKBACK_MS = LOOKBACK_DAYS * 24 * 60 * 60 * 1000;
 const DEDUP_WINDOW_MS = 30 * 60 * 1000;
 
 type Person = { id?: string; username?: string; name?: string };
@@ -29,9 +31,11 @@ type GraphMessage = {
 };
 type Conversation = {
   id?: string;
+  updated_time?: string;
   participants?: { data?: Person[] };
   messages?: { data?: GraphMessage[] };
 };
+type Attempt = { step: string; code: number | null; message: string };
 
 function isAuthorized(
   req: NextRequest,
@@ -132,8 +136,10 @@ export async function POST(req: NextRequest) {
   }
 
   try {
+    const since = new Date(Date.now() - LOOKBACK_MS);
+    const attempts: Attempt[] = [];
     const accounts = await graphGet("me/accounts", userToken, {
-      fields: "id,name,access_token,instagram_business_account{id,username}",
+      fields: "id,name,instagram_business_account{id,username}",
       limit: "25",
     });
     if (graphFailed(accounts)) {
@@ -144,10 +150,8 @@ export async function POST(req: NextRequest) {
     const pages = Array.isArray(accounts.data.data) ? (accounts.data.data as Array<Record<string, unknown>>) : [];
     const page = pages.find((item) => String(item.id) === pageId) || null;
     const ig = (page?.instagram_business_account || null) as { id?: string; username?: string } | null;
-    const pageToken = typeof page?.access_token === "string" ? page.access_token : "";
     const igId = ig?.id ? String(ig.id) : "";
     const igUsername = normalizeInstagram(ig?.username) || "";
-    if (page) delete page.access_token;
 
     if (!page || !igId) {
       return NextResponse.json({
@@ -158,29 +162,134 @@ export async function POST(req: NextRequest) {
       });
     }
 
-    const readToken = pageToken || userToken;
-    const fields = `participants,messages.limit(${MESSAGE_LIMIT}){id,created_time,from,to,message}`;
-    let conversations = await graphGet(`${pageId}/conversations`, readToken, {
+    const listParams = {
       platform: "instagram",
-      fields,
+      fields: "id,updated_time,participants",
       limit: String(CONVERSATION_LIMIT),
-    });
-    if (graphFailed(conversations)) {
-      console.warn("[instagram-recent] Діалоги сторінки не вдалися, пробуємо id Instagram", conversations.message);
-      conversations = await graphGet(`${igId}/conversations`, readToken, {
-        platform: "instagram",
-        fields,
-        limit: String(CONVERSATION_LIMIT),
-      });
-    }
-    if (graphFailed(conversations)) {
-      console.warn("[instagram-recent] Діалоги не вдалися", conversations.message);
-      return NextResponse.json({ ok: false, error: conversations.message, metaCode: conversations.code });
+    };
+    const listAttempts: Array<{ step: string; path: string; token: string }> = [
+      { step: "діалоги сторінки", path: `${pageId}/conversations`, token: userToken },
+      { step: "діалоги Instagram", path: `${igId}/conversations`, token: userToken },
+    ];
+
+    let threads: Conversation[] | null = null;
+    let sawEmptyList = false;
+    let readToken = userToken;
+    for (const attempt of listAttempts) {
+      const listed = await graphGet(attempt.path, attempt.token, listParams);
+      if (graphFailed(listed)) {
+        attempts.push({ step: attempt.step, code: listed.code, message: listed.message });
+        console.warn("[instagram-recent] Список діалогів не вдався", attempt.step, listed.code, listed.message);
+        continue;
+      }
+      const rows = Array.isArray(listed.data.data) ? (listed.data.data as Conversation[]) : [];
+      if (rows.length === 0) {
+        sawEmptyList = true;
+        continue;
+      }
+      threads = rows;
+      readToken = attempt.token;
+      break;
     }
 
-    const threads = Array.isArray(conversations.data.data)
-      ? (conversations.data.data as Conversation[])
-      : [];
+    if (!threads) {
+      const pageTokenResult = await graphGet("me/accounts", userToken, {
+        fields: "id,access_token",
+        limit: "25",
+      });
+      let pageToken = "";
+      if (graphFailed(pageTokenResult)) {
+        attempts.push({
+          step: "токен сторінки",
+          code: pageTokenResult.code,
+          message: pageTokenResult.message,
+        });
+      } else {
+        const tokenPages = Array.isArray(pageTokenResult.data.data)
+          ? (pageTokenResult.data.data as Array<Record<string, unknown>>)
+          : [];
+        const tokenPage = tokenPages.find((item) => String(item.id) === pageId);
+        pageToken = typeof tokenPage?.access_token === "string" ? tokenPage.access_token : "";
+        if (tokenPage) delete tokenPage.access_token;
+      }
+      if (pageToken) {
+        const listed = await graphGet(`${pageId}/conversations`, pageToken, listParams);
+        if (graphFailed(listed)) {
+          attempts.push({ step: "діалоги токеном сторінки", code: listed.code, message: listed.message });
+        } else {
+          const rows = Array.isArray(listed.data.data) ? (listed.data.data as Conversation[]) : [];
+          if (rows.length === 0) sawEmptyList = true;
+          else {
+            threads = rows;
+            readToken = pageToken;
+          }
+        }
+      }
+    }
+
+    if (!threads && sawEmptyList) threads = [];
+
+    if (!threads) {
+      const detail = attempts
+        .map((attempt) => `${attempt.step}: ${attempt.message}`)
+        .join("\n");
+      return NextResponse.json({
+        ok: false,
+        error: `Meta не дала прочитати діалоги за ${LOOKBACK_DAYS} дні.\n${detail}`,
+        attempts,
+        metaCode: attempts[0]?.code ?? null,
+      });
+    }
+
+    const recentThreads = threads
+      .filter((thread) => {
+        if (!thread.updated_time) return true;
+        const updated = new Date(thread.updated_time);
+        return !Number.isNaN(updated.getTime()) && updated.getTime() >= since.getTime();
+      })
+      .slice(0, 15);
+
+    let messageFailures = 0;
+    let messageTargets = 0;
+    for (const thread of recentThreads) {
+      if (!thread.id) continue;
+      messageTargets += 1;
+      const listedMessages = await graphGet(`${thread.id}/messages`, readToken, {
+        fields: "id,created_time,from,to,message",
+        limit: String(MESSAGE_LIMIT),
+      });
+      if (graphFailed(listedMessages)) {
+        messageFailures += 1;
+        if (messageFailures === 1) {
+          attempts.push({
+            step: "повідомлення діалогу",
+            code: listedMessages.code,
+            message: listedMessages.message,
+          });
+          console.warn("[instagram-recent] Повідомлення діалогу не вдалися", listedMessages.code, listedMessages.message);
+        }
+        thread.messages = { data: [] };
+        continue;
+      }
+      const rows = Array.isArray(listedMessages.data.data) ? (listedMessages.data.data as GraphMessage[]) : [];
+      thread.messages = {
+        data: rows.filter((message) => {
+          if (!message.created_time) return false;
+          const at = new Date(message.created_time);
+          return !Number.isNaN(at.getTime()) && at.getTime() >= since.getTime();
+        }),
+      };
+    }
+
+    if (messageTargets > 0 && messageFailures === messageTargets) {
+      const detail = attempts.map((attempt) => `${attempt.step}: ${attempt.message}`).join("\n");
+      return NextResponse.json({
+        ok: false,
+        error: `Діалоги є, але повідомлення за ${LOOKBACK_DAYS} дні Meta не віддала.\n${detail}`,
+        attempts,
+        metaCode: attempts[attempts.length - 1]?.code ?? null,
+      });
+    }
 
     type Pulled = {
       graphId: string;
@@ -193,7 +302,7 @@ export async function POST(req: NextRequest) {
     };
     const pulled: Pulled[] = [];
 
-    for (const thread of threads) {
+    for (const thread of recentThreads) {
       const people = (thread.participants?.data || []).map((person) => asPerson(person)).filter(Boolean) as Person[];
       const messages = thread.messages?.data || [];
       for (const message of messages) {
@@ -212,7 +321,7 @@ export async function POST(req: NextRequest) {
           others.find((person) => normalizeInstagram(person.username)) || others[0] || null;
         const text = (message.message || "").trim() || (message.attachments?.data?.length ? "📷 медіа" : "(без тексту)");
         const at = message.created_time ? new Date(message.created_time) : null;
-        if (!message.id || !at || Number.isNaN(at.getTime())) continue;
+        if (!message.id || !at || Number.isNaN(at.getTime()) || at.getTime() < since.getTime()) continue;
         pulled.push({
           graphId: String(message.id),
           conversationId: thread.id ? String(thread.id) : "",
@@ -338,7 +447,7 @@ export async function POST(req: NextRequest) {
     }
 
     console.log("[instagram-recent] Готово", {
-      threads: threads.length,
+      threads: recentThreads.length,
       messages: pulled.length,
       incoming,
       outgoing,
@@ -350,8 +459,9 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({
       ok: true,
       instagramUsername: igUsername || null,
-      conversations: threads.length,
+      conversations: recentThreads.length,
       messages: pulled.length,
+      lookbackDays: LOOKBACK_DAYS,
       incoming,
       outgoing,
       saved,
