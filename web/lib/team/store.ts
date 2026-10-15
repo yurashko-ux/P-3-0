@@ -250,6 +250,32 @@ export async function deleteTeamMember(id: string) {
   console.log(`[team] Видалено людину ${id}`);
 }
 
+/** Швидке редагування Telegram username/chat id без повного payload форми (окрема картка в таблиці «Команда»). */
+export async function setTeamMemberTelegram(
+  id: string,
+  input: { telegramUsername?: string | null; telegramChatId?: string | number | null },
+) {
+  const existing = await prisma.teamMember.findUnique({ where: { id }, select: { id: true, name: true } });
+  if (!existing) throw new Error("Людину не знайдено");
+  const telegramUsername =
+    input.telegramUsername != null ? String(input.telegramUsername).replace(/^@/, "").trim() || null : null;
+  let telegramChatId: bigint | null = null;
+  if (input.telegramChatId != null && String(input.telegramChatId).trim() !== "") {
+    try {
+      telegramChatId = BigInt(String(input.telegramChatId).trim());
+    } catch {
+      throw new Error("Некоректний Telegram chat ID");
+    }
+  }
+  const updated = await prisma.teamMember.update({
+    where: { id },
+    data: { telegramUsername, telegramChatId },
+    include: memberInclude,
+  });
+  console.log(`[team] Telegram оновлено для «${existing.name}» (${id}): username=${telegramUsername || "—"}`);
+  return serializeMember(updated);
+}
+
 /**
  * Налаштування видимості журналу бота для конкретної людини (viewer):
  * повністю замінює список «кого вона бачить» на переданий — ручний список, без ролей/автоматики.

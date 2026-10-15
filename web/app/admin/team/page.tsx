@@ -172,6 +172,117 @@ function JournalVisibilityCell({
   );
 }
 
+/**
+ * Колонка «Telegram»: username + chat id для прив'язки до бота /master.
+ * Швидке редагування прямо в таблиці — без відкриття повної форми.
+ */
+function TelegramCell({
+  member,
+  onSaved,
+}: {
+  member: MemberRow;
+  onSaved: (memberId: string, telegramUsername: string | null, telegramChatId: string | null) => void;
+}) {
+  const [open, setOpen] = useState(false);
+  const [username, setUsername] = useState(member.telegramUsername || "");
+  const [chatId, setChatId] = useState(member.telegramChatId != null ? String(member.telegramChatId) : "");
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const containerRef = useRef<HTMLDivElement | null>(null);
+
+  useEffect(() => {
+    if (!open) return;
+    setUsername(member.telegramUsername || "");
+    setChatId(member.telegramChatId != null ? String(member.telegramChatId) : "");
+  }, [open, member.telegramUsername, member.telegramChatId]);
+
+  useEffect(() => {
+    if (!open) return;
+    function onDocClick(e: MouseEvent) {
+      if (containerRef.current && !containerRef.current.contains(e.target as Node)) {
+        setOpen(false);
+      }
+    }
+    document.addEventListener("mousedown", onDocClick);
+    return () => document.removeEventListener("mousedown", onDocClick);
+  }, [open]);
+
+  async function save() {
+    setSaving(true);
+    setError(null);
+    try {
+      const res = await fetch(`/api/admin/team/members/${member.id}/telegram`, {
+        method: "PUT",
+        credentials: "include",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          telegramUsername: username.trim() || null,
+          telegramChatId: chatId.trim() || null,
+        }),
+      });
+      const json = await res.json();
+      if (!res.ok || !json.ok) throw new Error(json.error || "Не збережено");
+      onSaved(member.id, json.member.telegramUsername, json.member.telegramChatId);
+      setOpen(false);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Помилка");
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  const linked = Boolean(member.telegramChatId);
+
+  return (
+    <div ref={containerRef} className="relative inline-block">
+      <button
+        type="button"
+        className={`btn btn-xs ${member.telegramUsername ? "btn-outline" : "btn-ghost text-gray-400"}`}
+        onClick={() => setOpen((v) => !v)}
+        title={linked ? "Прив'язано до бота" : "Username задано, але бот ще не прив'язав chat id"}
+      >
+        {member.telegramUsername ? `@${member.telegramUsername}` : "Додати"}
+        {member.telegramUsername && <span className="ml-1">{linked ? "✅" : "⏳"}</span>}
+      </button>
+      {open && (
+        <div className="absolute left-0 top-full z-50 mt-1 w-56 rounded-lg border border-gray-200 bg-white p-2 shadow-xl space-y-1.5">
+          <label className="form-control">
+            <span className="label py-0 min-h-0">
+              <span className="label-text text-[10px] text-gray-500">Telegram username</span>
+            </span>
+            <input
+              className="input input-bordered input-xs h-7"
+              placeholder="username"
+              value={username}
+              onChange={(e) => setUsername(e.target.value)}
+            />
+          </label>
+          <label className="form-control">
+            <span className="label py-0 min-h-0">
+              <span className="label-text text-[10px] text-gray-500">Telegram chat id</span>
+            </span>
+            <input
+              className="input input-bordered input-xs h-7"
+              placeholder="заповнюється ботом автоматично"
+              value={chatId}
+              onChange={(e) => setChatId(e.target.value)}
+            />
+          </label>
+          {error && <p className="px-0.5 text-[10px] text-red-600">{error}</p>}
+          <div className="flex justify-end gap-1 pt-0.5">
+            <button className="btn btn-ghost btn-xs" disabled={saving} onClick={() => setOpen(false)}>
+              Скасувати
+            </button>
+            <button className="btn btn-primary btn-xs" disabled={saving} onClick={() => void save()}>
+              {saving ? "…" : "Зберегти"}
+            </button>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
 export default function TeamPeoplePage() {
   const [members, setMembers] = useState<MemberRow[]>([]);
   const [masters, setMasters] = useState<MasterOpt[]>([]);
@@ -578,6 +689,7 @@ export default function TeamPeoplePage() {
               <th>Altegio</th>
               <th>Direct</th>
               <th>Логін</th>
+              <th>Telegram</th>
               <th>Журнал</th>
               <th></th>
               <th></th>
@@ -623,6 +735,18 @@ export default function TeamPeoplePage() {
                 <td className="tabular-nums text-gray-500">{m.altegioStaffId ?? "—"}</td>
                 <td>{m.directMaster?.name || "—"}</td>
                 <td>{m.appUser ? `${m.appUser.login}` : "—"}</td>
+                <td>
+                  <TelegramCell
+                    member={m}
+                    onSaved={(memberId, telegramUsername, telegramChatId) =>
+                      setMembers((prev) =>
+                        prev.map((row) =>
+                          row.id === memberId ? { ...row, telegramUsername, telegramChatId } : row,
+                        ),
+                      )
+                    }
+                  />
+                </td>
                 <td>
                   <JournalVisibilityCell
                     member={m}
