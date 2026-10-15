@@ -59,6 +59,11 @@ export function MasterAppointmentCard({
         </span>
         <span className="mt-0.5 block truncate text-sm font-semibold text-gray-900">{name}</span>
         <span className="mt-0.5 block truncate text-xs text-gray-500">{serviceTitles(row)}</span>
+        {row.staffName && (
+          <span className="mt-0.5 inline-block truncate rounded-full bg-slate-100 px-1.5 py-0.5 text-[10px] font-medium text-slate-600">
+            {row.staffName}
+          </span>
+        )}
       </span>
       <span
         className="shrink-0 rounded-full px-2 py-0.5 text-[10px] font-medium"

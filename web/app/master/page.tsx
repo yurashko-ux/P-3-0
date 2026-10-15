@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { MasterAppointmentCard } from "./_components/MasterAppointmentCard";
 import { MasterAppointmentDetail } from "./_components/MasterAppointmentDetail";
+import { WeekDayStrip } from "./_components/WeekDayStrip";
 import type { MasterAppointment } from "./_components/types";
 import { formatKyivDayLabel, kyivTodayYmd, shiftKyivDay } from "./_lib/kyiv-day";
 
@@ -77,7 +78,9 @@ export default function MasterJournalPage() {
   const [debug, setDebug] = useState<InitDataDebug | null>(null);
   const [day, setDay] = useState(() => kyivTodayYmd());
   const [masterName, setMasterName] = useState<string | null>(null);
+  const [isAdmin, setIsAdmin] = useState(false);
   const [appointments, setAppointments] = useState<MasterAppointment[]>([]);
+  const [weekCounts, setWeekCounts] = useState<Record<string, number>>({});
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [selected, setSelected] = useState<MasterAppointment | null>(null);
@@ -99,7 +102,7 @@ export default function MasterJournalPage() {
     let cancelled = false;
     setLoading(true);
     setError(null);
-    void fetch(`/api/master/appointments?day=${encodeURIComponent(day)}`, {
+    void fetch(`/api/master/appointments?day=${encodeURIComponent(day)}&week=1`, {
       headers: { "x-telegram-init-data": initData },
       cache: "no-store",
     })
@@ -108,7 +111,11 @@ export default function MasterJournalPage() {
         if (!res.ok || !json.ok) throw new Error(json.error || "Не вдалося завантажити журнал");
         if (cancelled) return;
         setMasterName(json.masterName || null);
+        setIsAdmin(Boolean(json.isAdmin));
         setAppointments(json.appointments || []);
+        const counts: Record<string, number> = {};
+        for (const row of json.weekDays || []) counts[row.day] = row.count;
+        setWeekCounts(counts);
       })
       .catch((err: unknown) => {
         if (!cancelled) setError(err instanceof Error ? err.message : "Помилка завантаження");
@@ -141,27 +148,23 @@ export default function MasterJournalPage() {
 
   return (
     <main className="min-h-screen px-3 pb-6 pt-4">
-      <header className="mb-3 flex items-center justify-between">
-        <button
-          type="button"
-          onClick={() => setDay((d) => shiftKyivDay(d, -1))}
-          className="rounded-full px-3 py-1.5 text-sm text-slate-600 active:scale-95"
-          aria-label="Попередній день"
-        >
-          ←
-        </button>
-        <div className="text-center">
+      <header className="mb-3">
+        <WeekDayStrip
+          anchorDay={day}
+          selectedDay={day}
+          dayCounts={weekCounts}
+          onSelectDay={(d) => setDay(d)}
+          onShiftWeek={(delta) => setDay((d) => shiftKyivDay(d, delta))}
+        />
+        <div className="mt-2 text-center">
           <div className="text-sm font-semibold text-gray-900">{isToday ? "Сьогодні" : dayLabel}</div>
-          {masterName && <div className="text-[11px] text-gray-500">{masterName}</div>}
+          {masterName && (
+            <div className="text-[11px] text-gray-500">
+              {masterName}
+              {isAdmin && " · усі майстри"}
+            </div>
+          )}
         </div>
-        <button
-          type="button"
-          onClick={() => setDay((d) => shiftKyivDay(d, 1))}
-          className="rounded-full px-3 py-1.5 text-sm text-slate-600 active:scale-95"
-          aria-label="Наступний день"
-        >
-          →
-        </button>
       </header>
 
       {loading && <p className="py-10 text-center text-sm text-gray-500">Завантаження…</p>}

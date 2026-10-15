@@ -33,7 +33,7 @@ async function findTeamMemberByUsername(username: string | null | undefined) {
   if (!normalized) return null;
   const candidates = await prisma.teamMember.findMany({
     where: { isActive: true, telegramUsername: { not: null } },
-    select: { id: true, name: true, telegramUsername: true, altegioStaffId: true },
+    select: { id: true, name: true, telegramUsername: true, altegioStaffId: true, salonRole: true },
   });
   return (
     candidates.find((m) => (m.telegramUsername || "").trim().replace(/^@/, "").toLowerCase() === normalized) || null
@@ -85,7 +85,7 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ ok: true, handled: "not_linked" });
     }
 
-    if (!member.altegioStaffId) {
+    if (!member.altegioStaffId && member.salonRole !== "admin") {
       await sendMessage(
         chatId,
         "Ваш акаунт знайдено, але не прив'язано до майстра в Altegio. Зверніться до адміністратора.",

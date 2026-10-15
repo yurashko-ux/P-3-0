@@ -20,11 +20,35 @@ export function kyivTodayYmd(): string {
   return kyivYmdFromDate(new Date());
 }
 
-/** Крок на +1/-1 календарний день у Kyiv (стійко до переходу через північ/DST). */
-export function shiftKyivDay(ymd: string, deltaDays: 1 | -1): string {
+/** Крок на +N/-N календарних днів у Kyiv (стійко до переходу через північ/DST). */
+export function shiftKyivDay(ymd: string, deltaDays: number): string {
   const anchor = new Date(`${ymd}T12:00:00Z`);
   anchor.setUTCDate(anchor.getUTCDate() + deltaDays);
   return kyivYmdFromDate(anchor);
+}
+
+const WEEKDAY_ORDER = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
+const WEEKDAY_SHORT_UA = ["Пн", "Вт", "Ср", "Чт", "Пт", "Сб", "Нд"];
+
+function kyivWeekdayIndex(ymd: string): number {
+  const anchor = new Date(`${ymd}T12:00:00Z`);
+  const label = new Intl.DateTimeFormat("en-US", { timeZone: KYIV_TZ, weekday: "short" }).format(anchor);
+  return Math.max(0, WEEKDAY_ORDER.indexOf(label));
+}
+
+/** Пн..Нд (7 днів) того тижня, що містить ymd. */
+export function kyivWeekDays(ymd: string): string[] {
+  const monday = shiftKyivDay(ymd, -kyivWeekdayIndex(ymd));
+  return Array.from({ length: 7 }, (_, i) => shiftKyivDay(monday, i));
+}
+
+export function weekdayShortLabel(ymd: string): string {
+  return WEEKDAY_SHORT_UA[kyivWeekdayIndex(ymd)] ?? "";
+}
+
+export function dayOfMonth(ymd: string): string {
+  const [, , d] = ymd.split("-");
+  return d ? String(Number(d)) : ymd;
 }
 
 export function formatKyivDayLabel(ymd: string): string {
