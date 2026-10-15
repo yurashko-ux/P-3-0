@@ -13,8 +13,8 @@ export const runtime = "nodejs";
 export const maxDuration = 60;
 
 const GRAPH = "https://graph.facebook.com/v21.0";
-const CONVERSATION_LIMIT = 20;
-const MESSAGE_LIMIT = 25;
+const CONVERSATION_LIMIT = 5;
+const MESSAGE_LIMIT = 8;
 const PREVIEW_LIMIT = 25;
 const LOOKBACK_DAYS = 3;
 const LOOKBACK_MS = LOOKBACK_DAYS * 24 * 60 * 60 * 1000;
@@ -162,72 +162,51 @@ export async function POST(req: NextRequest) {
       });
     }
 
-    const listParams = {
-      platform: "instagram",
-      fields: "id,updated_time,participants",
-      limit: String(CONVERSATION_LIMIT),
-    };
-    const listAttempts: Array<{ step: string; path: string; token: string }> = [
-      { step: "діалоги сторінки", path: `${pageId}/conversations`, token: userToken },
-      { step: "діалоги Instagram", path: `${igId}/conversations`, token: userToken },
-    ];
+    const pageTokenResult = await graphGet("me/accounts", userToken, {
+      fields: "id,access_token",
+      limit: "5",
+    });
+    let pageToken = "";
+    if (graphFailed(pageTokenResult)) {
+      attempts.push({
+        step: "токен сторінки",
+        code: pageTokenResult.code,
+        message: pageTokenResult.message,
+      });
+    } else {
+      const tokenPages = Array.isArray(pageTokenResult.data.data)
+        ? (pageTokenResult.data.data as Array<Record<string, unknown>>)
+        : [];
+      const tokenPage = tokenPages.find((item) => String(item.id) === pageId);
+      pageToken = typeof tokenPage?.access_token === "string" ? tokenPage.access_token : "";
+      if (tokenPage) delete tokenPage.access_token;
+    }
+    if (!pageToken) {
+      const detail = attempts.map((attempt) => `${attempt.step}: ${attempt.message}`).join("\n");
+      return NextResponse.json({
+        ok: false,
+        error: `Не вдалося взяти токен сторінки для читання Direct.\n${detail || "Meta не повернула access_token сторінки."}`,
+        attempts,
+        metaCode: attempts[0]?.code ?? null,
+      });
+    }
 
+    const listFieldSets = ["id,updated_time", "id"];
     let threads: Conversation[] | null = null;
-    let sawEmptyList = false;
-    let readToken = userToken;
-    for (const attempt of listAttempts) {
-      const listed = await graphGet(attempt.path, attempt.token, listParams);
+    for (const fields of listFieldSets) {
+      const listed = await graphGet(`${pageId}/conversations`, pageToken, {
+        platform: "instagram",
+        fields,
+        limit: String(CONVERSATION_LIMIT),
+      });
       if (graphFailed(listed)) {
-        attempts.push({ step: attempt.step, code: listed.code, message: listed.message });
-        console.warn("[instagram-recent] Список діалогів не вдався", attempt.step, listed.code, listed.message);
+        attempts.push({ step: `діалоги (${fields})`, code: listed.code, message: listed.message });
+        console.warn("[instagram-recent] Список діалогів не вдався", fields, listed.code, listed.message);
         continue;
       }
-      const rows = Array.isArray(listed.data.data) ? (listed.data.data as Conversation[]) : [];
-      if (rows.length === 0) {
-        sawEmptyList = true;
-        continue;
-      }
-      threads = rows;
-      readToken = attempt.token;
+      threads = Array.isArray(listed.data.data) ? (listed.data.data as Conversation[]) : [];
       break;
     }
-
-    if (!threads) {
-      const pageTokenResult = await graphGet("me/accounts", userToken, {
-        fields: "id,access_token",
-        limit: "25",
-      });
-      let pageToken = "";
-      if (graphFailed(pageTokenResult)) {
-        attempts.push({
-          step: "токен сторінки",
-          code: pageTokenResult.code,
-          message: pageTokenResult.message,
-        });
-      } else {
-        const tokenPages = Array.isArray(pageTokenResult.data.data)
-          ? (pageTokenResult.data.data as Array<Record<string, unknown>>)
-          : [];
-        const tokenPage = tokenPages.find((item) => String(item.id) === pageId);
-        pageToken = typeof tokenPage?.access_token === "string" ? tokenPage.access_token : "";
-        if (tokenPage) delete tokenPage.access_token;
-      }
-      if (pageToken) {
-        const listed = await graphGet(`${pageId}/conversations`, pageToken, listParams);
-        if (graphFailed(listed)) {
-          attempts.push({ step: "діалоги токеном сторінки", code: listed.code, message: listed.message });
-        } else {
-          const rows = Array.isArray(listed.data.data) ? (listed.data.data as Conversation[]) : [];
-          if (rows.length === 0) sawEmptyList = true;
-          else {
-            threads = rows;
-            readToken = pageToken;
-          }
-        }
-      }
-    }
-
-    if (!threads && sawEmptyList) threads = [];
 
     if (!threads) {
       const detail = attempts
@@ -254,13 +233,23 @@ export async function POST(req: NextRequest) {
     for (const thread of recentThreads) {
       if (!thread.id) continue;
       messageTargets += 1;
-      const listedMessages = await graphGet(`${thread.id}/messages`, readToken, {
-        fields: "id,created_time,from,to,message",
-        limit: String(MESSAGE_LIMIT),
-      });
-      if (graphFailed(listedMessages)) {
+      const messageFieldSets = ["id,created_time,from,message", "id,created_time,message"];
+      let listedMessages: GraphResult | null = null;
+      for (const fields of messageFieldSets) {
+        const fetched = await graphGet(`${thread.id}/messages`, pageToken, {
+          fields,
+          limit: String(MESSAGE_LIMIT),
+        });
+        if (graphFailed(fetched)) {
+          listedMessages = fetched;
+          continue;
+        }
+        listedMessages = fetched;
+        break;
+      }
+      if (!listedMessages || graphFailed(listedMessages)) {
         messageFailures += 1;
-        if (messageFailures === 1) {
+        if (messageFailures === 1 && listedMessages && graphFailed(listedMessages)) {
           attempts.push({
             step: "повідомлення діалогу",
             code: listedMessages.code,
