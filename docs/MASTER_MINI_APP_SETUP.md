@@ -15,10 +15,11 @@
 Додайте змінну середовища (Production + Preview, якщо потрібно):
 
 ```
-TELEGRAM_MASTER_BOT_TOKEN=<токен з BotFather>
+TELEGRAM_Zurnal_zapysiv_bot_TOKEN=<токен з BotFather>
 ```
 
-Задеплойте проєкт, щоб змінна підхопилась.
+Задеплойте проєкт, щоб змінна підхопилась. (У коді `web/lib/telegram/env.ts` ця назва —
+основна; `TELEGRAM_MASTER_BOT_TOKEN` лишається як запасний варіант, якщо колись перейменуєте.)
 
 ## 3. Прив'язати вебхук бота
 
