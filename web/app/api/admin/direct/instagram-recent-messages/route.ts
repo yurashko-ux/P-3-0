@@ -79,11 +79,19 @@ function asPerson(value: unknown): Person | null {
   };
 }
 
+type GraphOk = { ok: true; data: Record<string, unknown> };
+type GraphFail = { ok: false; message: string; code: number | null };
+type GraphResult = GraphOk | GraphFail;
+
+function graphFailed(result: GraphResult): result is GraphFail {
+  return result.ok === false;
+}
+
 async function graphGet(
   path: string,
   token: string,
   params: Record<string, string>,
-): Promise<{ ok: true; data: Record<string, unknown> } | { ok: false; message: string; code: number | null }> {
+): Promise<GraphResult> {
   const url = new URL(`${GRAPH}/${path}`);
   for (const [key, value] of Object.entries(params)) url.searchParams.set(key, value);
   url.searchParams.set("access_token", token);
@@ -128,7 +136,7 @@ export async function POST(req: NextRequest) {
       fields: "id,name,access_token,instagram_business_account{id,username}",
       limit: "25",
     });
-    if (!accounts.ok) {
+    if (graphFailed(accounts)) {
       console.warn("[instagram-recent] Список сторінок не вдався", accounts.message);
       return NextResponse.json({ ok: false, error: accounts.message, metaCode: accounts.code });
     }
@@ -157,7 +165,7 @@ export async function POST(req: NextRequest) {
       fields,
       limit: String(CONVERSATION_LIMIT),
     });
-    if (!conversations.ok) {
+    if (graphFailed(conversations)) {
       console.warn("[instagram-recent] Діалоги сторінки не вдалися, пробуємо id Instagram", conversations.message);
       conversations = await graphGet(`${igId}/conversations`, readToken, {
         platform: "instagram",
@@ -165,7 +173,7 @@ export async function POST(req: NextRequest) {
         limit: String(CONVERSATION_LIMIT),
       });
     }
-    if (!conversations.ok) {
+    if (graphFailed(conversations)) {
       console.warn("[instagram-recent] Діалоги не вдалися", conversations.message);
       return NextResponse.json({ ok: false, error: conversations.message, metaCode: conversations.code });
     }
