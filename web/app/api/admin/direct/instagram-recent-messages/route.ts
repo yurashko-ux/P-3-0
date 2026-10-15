@@ -258,7 +258,7 @@ export async function POST(req: NextRequest) {
     for (const thread of recentThreads) {
       if (!thread.id) continue;
       messageTargets += 1;
-      const messageFieldSets = ["id,created_time,from,message", "id,created_time,message"];
+      const messageFieldSets = ["id,created_time,from,to,message", "id,created_time,from,message", "id,created_time,message"];
       let listedMessages: GraphResult | null = null;
       for (const fields of messageFieldSets) {
         const fetched = await graphGet(`${thread.id}/messages`, pageToken, {
@@ -349,6 +349,17 @@ export async function POST(req: NextRequest) {
     }
 
     pulled.sort((a, b) => b.at.getTime() - a.at.getTime());
+
+    const usernameByConversation = new Map<string, string>();
+    for (const item of pulled) {
+      if (item.username && item.conversationId) usernameByConversation.set(item.conversationId, item.username);
+    }
+    for (const item of pulled) {
+      if (!item.username && item.conversationId) {
+        const known = usernameByConversation.get(item.conversationId);
+        if (known) item.username = known;
+      }
+    }
 
     const usernames = [...new Set(pulled.map((item) => item.username).filter(Boolean))] as string[];
     const clients = usernames.length
