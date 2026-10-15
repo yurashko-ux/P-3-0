@@ -13,8 +13,8 @@ export const runtime = "nodejs";
 export const maxDuration = 60;
 
 const GRAPH = "https://graph.facebook.com/v21.0";
-const CONVERSATION_LIMIT = 5;
-const MESSAGE_LIMIT = 8;
+const CONVERSATION_LIMIT = 4;
+const MESSAGE_LIMIT = 5;
 const PREVIEW_LIMIT = 25;
 const LOOKBACK_DAYS = 3;
 const LOOKBACK_MS = LOOKBACK_DAYS * 24 * 60 * 60 * 1000;
@@ -99,7 +99,20 @@ async function graphGet(
   const url = new URL(`${GRAPH}/${path}`);
   for (const [key, value] of Object.entries(params)) url.searchParams.set(key, value);
   url.searchParams.set("access_token", token);
-  const response = await fetch(url.toString(), { cache: "no-store" });
+  let response: Response;
+  try {
+    response = await fetch(url.toString(), {
+      cache: "no-store",
+      signal: AbortSignal.timeout(12_000),
+    });
+  } catch (error) {
+    const aborted = error instanceof Error && error.name === "TimeoutError";
+    return {
+      ok: false,
+      message: aborted ? "Timeout" : sanitize(error instanceof Error ? error.message : String(error)),
+      code: aborted ? -2 : null,
+    };
+  }
   const raw = await response.text();
   let data: Record<string, unknown> = {};
   try {
@@ -191,42 +204,54 @@ export async function POST(req: NextRequest) {
       });
     }
 
-    const listFieldSets = ["id,updated_time", "id"];
-    let threads: Conversation[] | null = null;
-    for (const fields of listFieldSets) {
-      const listed = await graphGet(`${pageId}/conversations`, pageToken, {
-        platform: "instagram",
-        fields,
-        limit: String(CONVERSATION_LIMIT),
-      });
+    const listModes: Array<Record<string, string>> = [
+      { platform: "instagram", fields: "id", limit: "1" },
+      { platform: "instagram", limit: "1" },
+    ];
+    let listParams: Record<string, string> | null = null;
+    let firstPage: GraphResult | null = null;
+    for (const params of listModes) {
+      const listed = await graphGet(`${pageId}/conversations`, pageToken, params);
       if (graphFailed(listed)) {
-        attempts.push({ step: `діалоги (${fields})`, code: listed.code, message: listed.message });
-        console.warn("[instagram-recent] Список діалогів не вдався", fields, listed.code, listed.message);
+        const step = params.fields ? "один діалог (id)" : "один діалог";
+        attempts.push({ step, code: listed.code, message: listed.message });
+        console.warn("[instagram-recent] Один діалог не вдався", step, listed.code, listed.message);
         continue;
       }
-      threads = Array.isArray(listed.data.data) ? (listed.data.data as Conversation[]) : [];
+      listParams = params;
+      firstPage = listed;
       break;
     }
 
-    if (!threads) {
-      const detail = attempts
-        .map((attempt) => `${attempt.step}: ${attempt.message}`)
-        .join("\n");
+    if (!listParams || !firstPage || graphFailed(firstPage)) {
+      const detail = attempts.map((attempt) => `${attempt.step}: ${attempt.message}`).join("\n");
       return NextResponse.json({
         ok: false,
-        error: `Meta не дала прочитати діалоги за ${LOOKBACK_DAYS} дні.\n${detail}`,
+        error: `Meta не дала прочитати навіть один діалог.\n${detail}`,
         attempts,
         metaCode: attempts[0]?.code ?? null,
       });
     }
 
-    const recentThreads = threads
-      .filter((thread) => {
-        if (!thread.updated_time) return true;
-        const updated = new Date(thread.updated_time);
-        return !Number.isNaN(updated.getTime()) && updated.getTime() >= since.getTime();
-      })
-      .slice(0, 15);
+    const threads: Conversation[] = [];
+    let pageResult: GraphResult = firstPage;
+    for (let i = 0; i < CONVERSATION_LIMIT; i += 1) {
+      if (graphFailed(pageResult)) break;
+      const rows = Array.isArray(pageResult.data.data) ? (pageResult.data.data as Conversation[]) : [];
+      const row = rows[0];
+      if (!row?.id) break;
+      threads.push({ id: String(row.id) });
+      const paging = pageResult.data.paging as { cursors?: { after?: string } } | undefined;
+      const after = paging?.cursors?.after || "";
+      if (!after || i + 1 >= CONVERSATION_LIMIT) break;
+      pageResult = await graphGet(`${pageId}/conversations`, pageToken, { ...listParams, after });
+      if (graphFailed(pageResult)) {
+        attempts.push({ step: `діалог ${i + 2}`, code: pageResult.code, message: pageResult.message });
+        break;
+      }
+    }
+
+    const recentThreads = threads;
 
     let messageFailures = 0;
     let messageTargets = 0;
