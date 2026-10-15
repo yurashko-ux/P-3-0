@@ -771,7 +771,7 @@ export function AdminToolsModal({
     }
   };
 
-  // Кількість кнопок: 103. При додаванні нової кнопки завжди додавати її в кінець відповідної категорії та оновлювати цю кількість у коментарі.
+  // Кількість кнопок: 100. При додаванні нової кнопки завжди додавати її в кінець відповідної категорії та оновлювати цю кількість у коментарі.
   const tools = [
     {
       category: "Тести",
@@ -2430,6 +2430,31 @@ export function AdminToolsModal({
             `Не прийшли: ${data?.consultationsNoShow ?? 0}\n` +
             `Платні записи створені: ${data?.paidRecordsCreated ?? 0}\n\n` +
             `${data?.text ?? ""}`,
+        },
+      ],
+    },
+    {
+      category: "Instagram Direct",
+      items: [
+        {
+          icon: "🔎",
+          label: "Перевірити, чи токен бачить Instagram салону",
+          endpoint: "/api/admin/direct/instagram-token-check",
+          method: "GET" as const,
+          successMessage: (data: any) => {
+            if (data?.seesInstagram) {
+              const username = data.instagramUsername ? `@${data.instagramUsername}` : "без ніка";
+              const match = data.matchesSalon ? "Це акаунт салону." : "Це не @homebeauty.lviv.";
+              return (
+                `Токен бачить сторінку${data.pageName ? ` «${data.pageName}»` : ""}.\n` +
+                `Instagram: ${username}. ${match}`
+              );
+            }
+            if (data?.seesPage) {
+              return `Токен бачить сторінку${data.pageName ? ` «${data.pageName}»` : ""}, але Instagram не віддала.\n${data.error || ""}`;
+            }
+            return `Токен не бачить сторінку.\n${data.error || "Невідома відповідь Meta."}`;
+          },
         },
       ],
     },
