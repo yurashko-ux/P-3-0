@@ -39,22 +39,26 @@ const memberInclude = {
   },
   directMaster: { select: { id: true, name: true, role: true, altegioStaffId: true } },
   appUser: { select: { id: true, name: true, login: true } },
+  journalVisibilityAsViewer: { select: { targetId: true } },
 } as const;
 
 type MemberWithSchemes = {
   telegramChatId?: bigint | null;
   payScheme?: { id: string; title: string; kind: string; params: unknown } | null;
   schemeLinks?: Array<{ scheme: { id: string; title: string; kind: string; params: unknown } }>;
+  journalVisibilityAsViewer?: Array<{ targetId: string }>;
 };
 
 /** BigInt telegramChatId → string. paySchemes — усі схеми людини (зв’язки, інакше стара одна). */
 function serializeMember<T extends MemberWithSchemes>(m: T) {
   const fromLinks = (m.schemeLinks || []).map((link) => link.scheme).filter(Boolean);
   const paySchemes = fromLinks.length > 0 ? fromLinks : m.payScheme ? [m.payScheme] : [];
+  const journalVisibleIds = (m.journalVisibilityAsViewer || []).map((v) => v.targetId);
   return {
     ...m,
     telegramChatId: m.telegramChatId != null ? m.telegramChatId.toString() : null,
     paySchemes,
+    journalVisibleIds,
   };
 }
 
@@ -244,6 +248,27 @@ export async function updateTeamMember(id: string, input: TeamMemberInput) {
 export async function deleteTeamMember(id: string) {
   await prisma.teamMember.delete({ where: { id } });
   console.log(`[team] Видалено людину ${id}`);
+}
+
+/**
+ * Налаштування видимості журналу бота для конкретної людини (viewer):
+ * повністю замінює список «кого вона бачить» на переданий — ручний список, без ролей/автоматики.
+ */
+export async function setTeamMemberJournalVisibility(viewerId: string, targetIds: string[]) {
+  const existing = await prisma.teamMember.findUnique({ where: { id: viewerId }, select: { id: true, name: true } });
+  if (!existing) throw new Error("Людину не знайдено");
+  const uniqueTargetIds = [...new Set(targetIds.map((id) => String(id).trim()).filter(Boolean))];
+  await prisma.$transaction(async (tx) => {
+    await tx.teamMemberJournalVisibility.deleteMany({ where: { viewerId } });
+    if (uniqueTargetIds.length === 0) return;
+    await tx.teamMemberJournalVisibility.createMany({
+      data: uniqueTargetIds.map((targetId) => ({ viewerId, targetId })),
+      skipDuplicates: true,
+    });
+  });
+  console.log(`[team] Видимість журналу «${existing.name}» (${viewerId}): ${uniqueTargetIds.length} ціль(ей)`);
+  const row = await prisma.teamMember.findUniqueOrThrow({ where: { id: viewerId }, include: memberInclude });
+  return serializeMember(row);
 }
 
 export type TeamSchemeInput = {

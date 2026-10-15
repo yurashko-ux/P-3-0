@@ -984,6 +984,10 @@ model TeamMember {
   hiddenByUser AppUser?       @relation("TeamMemberHiddenBy", fields: [hiddenByUserId], references: [id], onDelete: SetNull)
   payScheme    TeamPayScheme? @relation(fields: [paySchemeId], references: [id], onDelete: SetNull)
   schemeLinks  TeamMemberScheme[]
+  /// Кого ця людина бачить у журналі бота (вона — переглядач)
+  journalVisibilityAsViewer TeamMemberJournalVisibility[] @relation("JournalVisibilityViewer")
+  /// Хто бачить цю людину у своєму журналі бота (вона — ціль)
+  journalVisibilityAsTarget TeamMemberJournalVisibility[] @relation("JournalVisibilityTarget")
 
   @@index([salonRole])
   @@index([isActive])
@@ -992,6 +996,23 @@ model TeamMember {
   @@index([paySchemeId])
   @@index([instagramUsername])
   @@map("team_members")
+}
+
+/// Налаштування видимості журналу в Telegram-боті /master: viewer бачить записи target.
+/// Ручний список (не роль, не автоматика) — заповнюється чекбоксами в адмінці «Команда».
+model TeamMemberJournalVisibility {
+  id        String   @id @default(uuid())
+  viewerId  String
+  targetId  String
+  createdAt DateTime @default(now())
+
+  viewer TeamMember @relation("JournalVisibilityViewer", fields: [viewerId], references: [id], onDelete: Cascade)
+  target TeamMember @relation("JournalVisibilityTarget", fields: [targetId], references: [id], onDelete: Cascade)
+
+  @@unique([viewerId, targetId])
+  @@index([viewerId])
+  @@index([targetId])
+  @@map("team_member_journal_visibility")
 }
 
 // Історія змін по клієнту (audit log)

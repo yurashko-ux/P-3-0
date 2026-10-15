@@ -78,7 +78,7 @@ export default function MasterJournalPage() {
   const [debug, setDebug] = useState<InitDataDebug | null>(null);
   const [day, setDay] = useState(() => kyivTodayYmd());
   const [masterName, setMasterName] = useState<string | null>(null);
-  const [isAdmin, setIsAdmin] = useState(false);
+  const [multiView, setMultiView] = useState(false);
   const [appointments, setAppointments] = useState<MasterAppointment[]>([]);
   const [weekCounts, setWeekCounts] = useState<Record<string, number>>({});
   const [loading, setLoading] = useState(true);
@@ -111,7 +111,7 @@ export default function MasterJournalPage() {
         if (!res.ok || !json.ok) throw new Error(json.error || "Не вдалося завантажити журнал");
         if (cancelled) return;
         setMasterName(json.masterName || null);
-        setIsAdmin(Boolean(json.isAdmin));
+        setMultiView(Boolean(json.multiView));
         setAppointments(json.appointments || []);
         const counts: Record<string, number> = {};
         for (const row of json.weekDays || []) counts[row.day] = row.count;
@@ -161,7 +161,7 @@ export default function MasterJournalPage() {
           {masterName && (
             <div className="text-[11px] text-gray-500">
               {masterName}
-              {isAdmin && " · усі майстри"}
+              {multiView && " · розширений журнал"}
             </div>
           )}
         </div>

@@ -33,7 +33,13 @@ async function findTeamMemberByUsername(username: string | null | undefined) {
   if (!normalized) return null;
   const candidates = await prisma.teamMember.findMany({
     where: { isActive: true, telegramUsername: { not: null } },
-    select: { id: true, name: true, telegramUsername: true, altegioStaffId: true, salonRole: true },
+    select: {
+      id: true,
+      name: true,
+      telegramUsername: true,
+      altegioStaffId: true,
+      journalVisibilityAsViewer: { select: { target: { select: { altegioStaffId: true } } } },
+    },
   });
   return (
     candidates.find((m) => (m.telegramUsername || "").trim().replace(/^@/, "").toLowerCase() === normalized) || null
@@ -85,10 +91,14 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ ok: true, handled: "not_linked" });
     }
 
-    if (!member.altegioStaffId && member.salonRole !== "admin") {
+    // Доступ є, якщо є власний altegioStaffId АБО налаштована видимість чужого журналу
+    // (колонка «Журнал» у «Команді») — незалежно від ролі.
+    const hasOwnStaffId = Boolean(member.altegioStaffId);
+    const hasVisibilityTargets = member.journalVisibilityAsViewer.some((v) => v.target.altegioStaffId != null);
+    if (!hasOwnStaffId && !hasVisibilityTargets) {
       await sendMessage(
         chatId,
-        "Ваш акаунт знайдено, але не прив'язано до майстра в Altegio. Зверніться до адміністратора.",
+        "Ваш акаунт знайдено, але не налаштовано видимість журналу. Зверніться до адміністратора (розділ «Команда» → колонка «Журнал»).",
         {},
         botToken,
       );

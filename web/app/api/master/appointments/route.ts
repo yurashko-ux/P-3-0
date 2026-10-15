@@ -63,11 +63,23 @@ export async function GET(req: NextRequest) {
         isActive: true,
         hiddenAt: null,
       },
-      select: { id: true, name: true, altegioStaffId: true, salonRole: true },
+      select: {
+        id: true,
+        name: true,
+        altegioStaffId: true,
+        journalVisibilityAsViewer: { select: { target: { select: { altegioStaffId: true } } } },
+      },
     });
-    const isAdmin = member?.salonRole === "admin";
-    // Адмін бачить усіх майстрів — не потребує власного altegioStaffId.
-    if (!member || (!isAdmin && !member.altegioStaffId)) {
+
+    // Видимість журналу — ручний список «кого я бачу» (адмінка «Команда»), не роль.
+    // Себе бачимо завжди за замовчуванням, навіть якщо список видимості порожній.
+    const visibleStaffIds = new Set<number>();
+    if (member?.altegioStaffId) visibleStaffIds.add(member.altegioStaffId);
+    for (const v of member?.journalVisibilityAsViewer || []) {
+      if (v.target.altegioStaffId) visibleStaffIds.add(v.target.altegioStaffId);
+    }
+
+    if (!member || visibleStaffIds.size === 0) {
       return NextResponse.json(
         { ok: false, error: "Акаунт не прив'язано. Зверніться до адміністратора." },
         { status: 403 },
@@ -83,11 +95,10 @@ export async function GET(req: NextRequest) {
     // Altegio-синк пише майстра лише в altegioStaffId на самому записі (dual-write);
     // participants заповнюються лише для записів, створених вручну через Kresco.
     // Перевіряємо обидва джерела, щоб не втратити звичайні Altegio-записи.
-    // Адмін (salonRole === "admin") бачить усі записи без фільтра по майстру.
+    // Бачимо запис, якщо хтось із задіяних у ньому людей є в нашому списку видимості.
     const isMine = (a: { altegioStaffId: number | null; participants: Array<{ altegioStaffId: number }> }) =>
-      isAdmin ||
-      a.altegioStaffId === member.altegioStaffId ||
-      a.participants.some((p) => p.altegioStaffId === member.altegioStaffId);
+      (a.altegioStaffId != null && visibleStaffIds.has(a.altegioStaffId)) ||
+      a.participants.some((p) => visibleStaffIds.has(p.altegioStaffId));
 
     const appointments = await listAppointmentsForDay(day);
     const mine = appointments.filter(isMine);
@@ -104,31 +115,42 @@ export async function GET(req: NextRequest) {
       );
     }
 
-    const rows = mine.map((a) => ({
-      id: a.id,
-      datetime: a.datetime.toISOString(),
-      seanceLength: a.seanceLength,
-      attendance: normalizeAttendance(a.attendance),
-      clientName: a.clientName || a.directClient?.firstName || null,
-      clientPhone: a.clientPhone || a.directClient?.phone || null,
-      staffName: isAdmin ? a.staffName || a.master?.name || null : null,
-      lines: a.lines.map((l) => ({ title: l.title })),
-      directClient: a.directClient
-        ? {
-            id: a.directClient.id,
-            firstName: a.directClient.firstName,
-            lastName: a.directClient.lastName,
-            visits: a.directClient.visits,
-            lastVisitAt: a.directClient.lastVisitAt,
-          }
-        : null,
-    }));
+    const rows = mine.map((a) => {
+      // Хто фактично долучений саме до цього запису (майстер + асистент у парі) —
+      // показуємо завжди, якщо людей більше однієї, незалежно від списку видимості.
+      const involved = new Set<string>();
+      const primaryName = a.staffName || a.master?.name || null;
+      if (primaryName) involved.add(primaryName);
+      for (const p of a.participants) {
+        if (p.staffName) involved.add(p.staffName);
+      }
+      return {
+        id: a.id,
+        datetime: a.datetime.toISOString(),
+        seanceLength: a.seanceLength,
+        attendance: normalizeAttendance(a.attendance),
+        clientName: a.clientName || a.directClient?.firstName || null,
+        clientPhone: a.clientPhone || a.directClient?.phone || null,
+        staffName: involved.size > 1 ? [...involved].join(", ") : null,
+        lines: a.lines.map((l) => ({ title: l.title })),
+        directClient: a.directClient
+          ? {
+              id: a.directClient.id,
+              firstName: a.directClient.firstName,
+              lastName: a.directClient.lastName,
+              visits: a.directClient.visits,
+              lastVisitAt: a.directClient.lastVisitAt,
+            }
+          : null,
+      };
+    });
 
     return NextResponse.json({
       ok: true,
       day,
       masterName: member.name,
-      isAdmin,
+      // true, якщо людина бачить ще когось крім себе (список видимості містить >1 altegioStaffId).
+      multiView: visibleStaffIds.size > 1,
       appointments: rows,
       ...(weekDays ? { weekDays } : {}),
     });

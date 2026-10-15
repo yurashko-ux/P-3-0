@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { TEAM_SALON_ROLES } from "@/lib/team/constants";
 import { collisionWarningText, findSchemeCollisions, type SchemeRef } from "@/lib/team/scheme-stack";
 
@@ -26,6 +26,8 @@ type MemberRow = {
   paySchemes?: SchemeBrief[];
   directMaster: { id: string; name: string; role: string; altegioStaffId: number | null } | null;
   appUser: { id: string; name: string; login: string } | null;
+  /** Кого ця людина бачить у журналі бота — id інших TeamMember (ручний список, не роль). */
+  journalVisibleIds: string[];
 };
 
 const ROLE_LABEL: Record<string, string> = {
@@ -69,6 +71,104 @@ function TeamIgAvatar({ username }: { username: string }) {
       className="w-8 h-8 rounded-lg object-cover border border-gray-200 shrink-0 bg-gray-50"
       onError={() => setBroken(true)}
     />
+  );
+}
+
+/**
+ * Колонка «Журнал»: кого ця людина бачить у журналі бота (/master).
+ * Ручний список чекбоксів — зберігається одразу при зміні, без ролей/автоматики.
+ */
+function JournalVisibilityCell({
+  member,
+  allMembers,
+  onSaved,
+}: {
+  member: MemberRow;
+  allMembers: MemberRow[];
+  onSaved: (memberId: string, journalVisibleIds: string[]) => void;
+}) {
+  const [open, setOpen] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const containerRef = useRef<HTMLDivElement | null>(null);
+
+  useEffect(() => {
+    if (!open) return;
+    function onDocClick(e: MouseEvent) {
+      if (containerRef.current && !containerRef.current.contains(e.target as Node)) {
+        setOpen(false);
+      }
+    }
+    document.addEventListener("mousedown", onDocClick);
+    return () => document.removeEventListener("mousedown", onDocClick);
+  }, [open, containerRef]);
+
+  async function toggle(targetId: string) {
+    const checked = member.journalVisibleIds.includes(targetId);
+    const next = checked
+      ? member.journalVisibleIds.filter((id) => id !== targetId)
+      : [...member.journalVisibleIds, targetId];
+    setSaving(true);
+    setError(null);
+    try {
+      const res = await fetch(`/api/admin/team/members/${member.id}/journal-visibility`, {
+        method: "PUT",
+        credentials: "include",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ targetIds: next }),
+      });
+      const json = await res.json();
+      if (!res.ok || !json.ok) throw new Error(json.error || "Не збережено");
+      onSaved(member.id, next);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Помилка");
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  const count = member.journalVisibleIds.length;
+
+  return (
+    <div ref={containerRef} className="relative inline-block">
+      <button
+        type="button"
+        className={`btn btn-xs ${count > 0 ? "btn-outline" : "btn-ghost text-gray-400"}`}
+        onClick={() => setOpen((v) => !v)}
+      >
+        {count > 0 ? `${count} обрано` : "—"}
+      </button>
+      {open && (
+        <div className="absolute left-0 top-full z-50 mt-1 w-56 rounded-lg border border-gray-200 bg-white p-2 shadow-xl">
+          <p className="mb-1 px-1 text-[10px] text-gray-400">Кого бачить «{member.name}» у боті:</p>
+          <div className="max-h-56 overflow-y-auto space-y-0.5">
+            {allMembers.map((m) => {
+              const checked = member.journalVisibleIds.includes(m.id);
+              return (
+                <label
+                  key={m.id}
+                  className="flex items-center gap-2 rounded px-1 py-1 text-xs hover:bg-gray-50 cursor-pointer"
+                >
+                  <input
+                    type="checkbox"
+                    className="checkbox checkbox-xs"
+                    checked={checked}
+                    disabled={saving}
+                    onChange={() => void toggle(m.id)}
+                  />
+                  <span className="truncate">
+                    {m.name}
+                    {m.id === member.id && <span className="text-gray-400"> (сам)</span>}
+                  </span>
+                  <span className="ml-auto text-[10px] text-gray-400">{ROLE_LABEL[m.salonRole] || m.salonRole}</span>
+                </label>
+              );
+            })}
+          </div>
+          {error && <p className="mt-1 px-1 text-[10px] text-red-600">{error}</p>}
+        </div>
+      )}
+    </div>
   );
 }
 
@@ -478,6 +578,7 @@ export default function TeamPeoplePage() {
               <th>Altegio</th>
               <th>Direct</th>
               <th>Логін</th>
+              <th>Журнал</th>
               <th></th>
               <th></th>
             </tr>
@@ -522,6 +623,17 @@ export default function TeamPeoplePage() {
                 <td className="tabular-nums text-gray-500">{m.altegioStaffId ?? "—"}</td>
                 <td>{m.directMaster?.name || "—"}</td>
                 <td>{m.appUser ? `${m.appUser.login}` : "—"}</td>
+                <td>
+                  <JournalVisibilityCell
+                    member={m}
+                    allMembers={members}
+                    onSaved={(memberId, journalVisibleIds) =>
+                      setMembers((prev) =>
+                        prev.map((row) => (row.id === memberId ? { ...row, journalVisibleIds } : row)),
+                      )
+                    }
+                  />
+                </td>
                 <td className="whitespace-nowrap">
                   <button className="btn btn-ghost btn-xs" disabled={busy} onClick={() => void hideMember(m)}>
                     Приховати

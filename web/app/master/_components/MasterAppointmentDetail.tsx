@@ -49,7 +49,7 @@ export function MasterAppointmentDetail({
         <div className="space-y-3 p-4">
           <div>
             <div className="text-lg font-semibold text-gray-900">{name}</div>
-            {row.staffName && <div className="text-xs text-slate-500">Майстер: {row.staffName}</div>}
+            {row.staffName && <div className="text-xs text-slate-500">Майстри: {row.staffName}</div>}
             {phone && (
               <a href={`tel:${phone}`} className="mt-0.5 block text-sm text-slate-600">
                 📞 {phone}
