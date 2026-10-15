@@ -53,18 +53,24 @@ export async function GET(req: NextRequest) {
     });
   }
 
-  const url = new URL(`https://graph.facebook.com/v21.0/${encodeURIComponent(pageId)}`);
+  // Прямий запит /{page-id} вимагає pages_read_engagement.
+  // Список сторінок токена (/me/accounts) працює з уже виданим pages_show_list
+  // і одразу віддає прив’язаний Instagram. Поле access_token не просимо.
+  const url = new URL("https://graph.facebook.com/v21.0/me/accounts");
   url.searchParams.set("fields", "id,name,instagram_business_account{id,username}");
+  url.searchParams.set("limit", "25");
   url.searchParams.set("access_token", token);
 
   try {
     const response = await fetch(url.toString(), { cache: "no-store" });
     const raw = await response.text();
     let data: {
-      id?: string;
-      name?: string;
-      instagram_business_account?: { id?: string; username?: string };
-      error?: { message?: string; code?: number; error_subcode?: number };
+      data?: Array<{
+        id?: string;
+        name?: string;
+        instagram_business_account?: { id?: string; username?: string };
+      }>;
+      error?: { message?: string; code?: number };
     } = {};
     try {
       data = raw ? JSON.parse(raw) : {};
@@ -89,24 +95,47 @@ export async function GET(req: NextRequest) {
       });
     }
 
-    const username = (data.instagram_business_account?.username || "").replace(/^@/, "");
-    const seesInstagram = Boolean(data.instagram_business_account?.id);
-    console.log("[instagram-token-check] Відповідь Meta", {
-      seesPage: Boolean(data.id),
-      pageName: data.name || null,
+    const pages = Array.isArray(data.data) ? data.data : [];
+    const page = pages.find((item) => String(item.id) === pageId) || null;
+    const username = (page?.instagram_business_account?.username || "").replace(/^@/, "");
+    const seesInstagram = Boolean(page?.instagram_business_account?.id);
+    const seen = pages.map((item) => ({
+      id: item.id || null,
+      name: item.name || null,
+      instagramUsername: (item.instagram_business_account?.username || "").replace(/^@/, "") || null,
+    }));
+
+    console.log("[instagram-token-check] Список сторінок токена", {
+      count: pages.length,
+      seesPage: Boolean(page),
       seesInstagram,
       username: username || null,
       matchesSalon: username.toLowerCase() === EXPECTED_USERNAME,
     });
 
+    if (!page) {
+      const list = seen.length
+        ? seen.map((item) => `${item.name || "без назви"} (${item.id || "?"})`).join(", ")
+        : "жодної";
+      return NextResponse.json({
+        ok: false,
+        seesPage: false,
+        seesInstagram: false,
+        pageId,
+        pages: seen,
+        error: `Токен не бачить сторінку ${pageId}. У списку: ${list}.`,
+      });
+    }
+
     return NextResponse.json({
       ok: seesInstagram,
-      seesPage: Boolean(data.id),
-      pageId: data.id || pageId,
-      pageName: data.name || null,
+      seesPage: true,
+      pageId: page.id || pageId,
+      pageName: page.name || null,
       seesInstagram,
       instagramUsername: username || null,
       matchesSalon: username.toLowerCase() === EXPECTED_USERNAME,
+      pages: seen,
       error: seesInstagram ? null : "Сторінку видно, але прив’язаний Instagram Meta не віддала.",
     });
   } catch (error) {
