@@ -101,13 +101,15 @@ export async function POST(req: NextRequest) {
       data: { telegramChatId: BigInt(fromId) },
     });
 
+    // ВАЖЛИВО: саме inline_keyboard (не keyboard) — лише такі web_app-кнопки отримують
+    // повний initData з підписаними даними користувача. KeyboardButton.web_app дає
+    // лише порожній initData (можна тільки sendData назад у бота, без ідентифікації).
     await sendMessage(
       chatId,
       `Вітаємо, ${member.name}! Натисніть кнопку нижче, щоб відкрити свій журнал записів.`,
       {
         reply_markup: {
-          keyboard: [[{ text: "Мій журнал", web_app: { url: `${appBaseUrl()}/master` } }]],
-          resize_keyboard: true,
+          inline_keyboard: [[{ text: "Мій журнал", web_app: { url: `${appBaseUrl()}/master` } }]],
         },
       },
       botToken,
