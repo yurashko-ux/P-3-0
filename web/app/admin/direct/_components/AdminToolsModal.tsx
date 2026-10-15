@@ -771,7 +771,7 @@ export function AdminToolsModal({
     }
   };
 
-  // Кількість кнопок: 100. При додаванні нової кнопки завжди додавати її в кінець відповідної категорії та оновлювати цю кількість у коментарі.
+  // Кількість кнопок: 101. При додаванні нової кнопки завжди додавати її в кінець відповідної категорії та оновлювати цю кількість у коментарі.
   const tools = [
     {
       category: "Тести",
@@ -931,6 +931,41 @@ export function AdminToolsModal({
               `includeZeroBalance: ${r.includeZeroBalance ? "так" : "ні"}\n` +
               (lines ? `\nРахунки:\n${lines}\n` : "") +
               `\n${JSON.stringify(data, null, 2)}`
+            );
+          },
+        },
+        {
+          icon: "💬",
+          label: "Тест: недавні Direct з Instagram",
+          endpoint: "/api/admin/direct/instagram-recent-messages",
+          method: "POST" as const,
+          confirm:
+            "Забрати недавні Direct з Instagram?\n\nПокаже вхідні і вихідні. У історію клієнта допише лише ті, яких ще немає з ManyChat. Нічого в Instagram не надсилається.",
+          successMessage: (data: any) => {
+            const lines = (data?.preview || [])
+              .map((item: {
+                time?: string;
+                direction?: string;
+                username?: string | null;
+                name?: string | null;
+                text?: string;
+                status?: string;
+              }) => {
+                const dir = item.direction === "outgoing" ? "Вихідне" : "Вхідне";
+                const who = item.username ? `@${item.username}` : item.name || "без ніка";
+                return `${item.time || "—"} · ${dir} · ${who} · ${item.status || "—"}\n${item.text || ""}`;
+              })
+              .join("\n\n");
+            return (
+              `Недавні Direct${data?.instagramUsername ? ` @${data.instagramUsername}` : ""}\n\n` +
+              `Діалогів: ${data?.conversations ?? 0}\n` +
+              `Повідомлень: ${data?.messages ?? 0}\n` +
+              `Вхідні: ${data?.incoming ?? 0}\n` +
+              `Вихідні: ${data?.outgoing ?? 0}\n` +
+              `Записано в історію: ${data?.saved ?? 0}\n` +
+              `Вже були: ${data?.duplicates ?? 0}\n` +
+              `Без клієнта в таблиці: ${data?.unmatched ?? 0}\n\n` +
+              (lines || "Повідомлень не знайдено.")
             );
           },
         },
