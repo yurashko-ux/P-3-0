@@ -771,7 +771,7 @@ export function AdminToolsModal({
     }
   };
 
-  // Кількість кнопок: 101. При додаванні нової кнопки завжди додавати її в кінець відповідної категорії та оновлювати цю кількість у коментарі.
+  // Кількість кнопок: 103. При додаванні нової кнопки завжди додавати її в кінець відповідної категорії та оновлювати цю кількість у коментарі.
   const tools = [
     {
       category: "Тести",
@@ -967,6 +967,48 @@ export function AdminToolsModal({
               `Без клієнта в таблиці: ${data?.unmatched ?? 0}\n\n` +
               (lines || "Повідомлень не знайдено.")
             );
+          },
+        },
+        {
+          icon: "📡",
+          label: "Підключити вебхук Instagram",
+          endpoint: "/api/admin/direct/instagram-webhook-setup",
+          method: "POST" as const,
+          confirm:
+            "Підписати сторінку Home of Beauty Lviv на нові Direct?\n\nСтару переписку не читаємо. У вікні буде адреса і код, які треба вставити в застосунок Kresco.",
+          successMessage: (data: any) => {
+            const fields = (data?.subscribedFields || []).join(", ") || "ще не видно";
+            return (
+              `Адреса для Meta:\n${data?.callbackUrl || ""}\n\n` +
+              `Код перевірки:\n${data?.verifyToken || ""}\n\n` +
+              `Поля: messages, message_echoes\n` +
+              `Сторінка підписана на: ${fields}\n` +
+              `Перевірка підпису: ${data?.signatureCheck ? "увімкнена" : "ще немає INSTAGRAM_APP_SECRET"}`
+            );
+          },
+        },
+        {
+          icon: "📨",
+          label: "Останні вебхуки Instagram",
+          endpoint: "/api/admin/direct/instagram-webhook-log",
+          method: "GET" as const,
+          successMessage: (data: any) => {
+            const lines = (data?.events || [])
+              .slice(0, 20)
+              .map((event: {
+                time?: string;
+                direction?: string;
+                username?: string | null;
+                name?: string | null;
+                text?: string;
+                status?: string;
+              }) => {
+                const dir = event.direction === "outgoing" ? "Вихідне" : "Вхідне";
+                const who = event.username ? `@${event.username}` : event.name || "без ніка";
+                return `${event.time || "—"} · ${dir} · ${who} · ${event.status || "—"}\n${event.text || ""}`;
+              })
+              .join("\n\n");
+            return `Останні події: ${data?.count ?? 0}\n\n${lines || "Поки порожньо. Напиши салону з особистого Instagram і натисни ще раз."}`;
           },
         },
       ],
