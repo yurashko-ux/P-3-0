@@ -51,8 +51,13 @@ export async function GET(req: NextRequest) {
     }
 
     const appointments = await listAppointmentsForDay(day);
-    const mine = appointments.filter((a) =>
-      a.participants.some((p) => p.altegioStaffId === member.altegioStaffId),
+    // Altegio-синк пише майстра лише в altegioStaffId на самому записі (dual-write);
+    // participants заповнюються лише для записів, створених вручну через Kresco.
+    // Перевіряємо обидва джерела, щоб не втратити звичайні Altegio-записи.
+    const mine = appointments.filter(
+      (a) =>
+        a.altegioStaffId === member.altegioStaffId ||
+        a.participants.some((p) => p.altegioStaffId === member.altegioStaffId),
     );
 
     const rows = mine.map((a) => ({
