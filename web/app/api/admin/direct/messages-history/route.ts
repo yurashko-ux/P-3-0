@@ -176,6 +176,10 @@ export async function GET(req: NextRequest) {
             lastName: true,
           },
         },
+        media: {
+          select: { id: true, kind: true, mime: true, byteSize: true },
+          orderBy: { createdAt: "asc" as const },
+        },
       } as const;
 
       let dbMessages = await prisma.directMessage.findMany({
@@ -219,6 +223,12 @@ export async function GET(req: NextRequest) {
             direction: m.direction,
             id: m.id,
             source: m.source,
+            media: m.media.map((file) => ({
+              id: file.id,
+              kind: file.kind,
+              mime: file.mime,
+              byteSize: file.byteSize,
+            })),
           };
         });
         return NextResponse.json({

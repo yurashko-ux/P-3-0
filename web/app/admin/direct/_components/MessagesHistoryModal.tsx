@@ -13,6 +13,13 @@ import { resolveDisplayInstagramUsername } from '@/lib/direct-message-handle';
 import { ClientNameWithLoyalty } from '@/app/admin/_components/ClientNameWithLoyalty';
 import { getFullName } from './direct-client-table-formatters';
 
+interface MessageMedia {
+  id: string;
+  kind: string;
+  mime: string;
+  byteSize: number;
+}
+
 interface Message {
   receivedAt: string;
   text: string;
@@ -23,6 +30,7 @@ interface Message {
   type?: string;
   source?: string;
   messageKind?: 'system' | 'manual';
+  media?: MessageMedia[];
 }
 
 interface MessagesHistoryModalProps {
@@ -43,6 +51,35 @@ interface MessagesHistoryModalProps {
     lastActivityAt?: string;
     lastActivityKeys?: string[];
   }) => void;
+}
+
+function MessageMediaView({ files }: { files?: MessageMedia[] }) {
+  if (!files?.length) return null;
+  return (
+    <div className="mt-2 space-y-2">
+      {files.map((file) => {
+        const src = `/api/admin/direct/message-media?id=${encodeURIComponent(file.id)}`;
+        if (file.kind === "image") {
+          return (
+            <a key={file.id} href={src} target="_blank" rel="noreferrer">
+              <img src={src} alt="Фото з Direct" className="max-h-64 max-w-full rounded-lg object-contain" />
+            </a>
+          );
+        }
+        if (file.kind === "audio") {
+          return <audio key={file.id} controls preload="metadata" src={src} className="w-full min-w-[220px]" />;
+        }
+        if (file.kind === "video") {
+          return <video key={file.id} controls preload="metadata" src={src} className="max-h-64 max-w-full rounded-lg" />;
+        }
+        return (
+          <a key={file.id} href={src} className="underline" target="_blank" rel="noreferrer">
+            Відкрити файл
+          </a>
+        );
+      })}
+    </div>
+  );
 }
 
 export function MessagesHistoryModal({
@@ -736,6 +773,7 @@ export function MessagesHistoryModal({
                                     </div>
                                   ) : null}
                                   <div>{message.text}</div>
+                                  <MessageMediaView files={message.media} />
                                   {timeHHMM ? (
                                     <div className="mt-1 flex justify-end">
                                       <span className="text-[10px] text-gray-500">{timeHHMM}</span>

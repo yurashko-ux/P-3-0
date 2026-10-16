@@ -863,12 +863,32 @@ model DirectMessage {
 
   // Зв'язок з клієнтом
   client DirectClient @relation(fields: [clientId], references: [id], onDelete: Cascade)
+  media  DirectMessageMedia[]
 
   @@index([clientId])
   @@index([direction])
   @@index([receivedAt])
   @@index([messageId])
   @@map("direct_messages")
+}
+
+// Файл з Instagram Direct: голосове, фото або відео. Посилання Meta короткоживуче, тому байти зберігаємо тут.
+model DirectMessageMedia {
+  id        String   @id @default(uuid())
+  messageId String
+  clientId  String
+  kind      String // audio | image | video | file
+  mime      String
+  byteSize  Int
+  bytes     Bytes
+  createdAt DateTime @default(now())
+
+  message DirectMessage @relation(fields: [messageId], references: [id], onDelete: Cascade)
+
+  @@index([messageId])
+  @@index([clientId])
+  @@index([kind])
+  @@map("direct_message_media")
 }
 
 // Користувачі системи (для RBAC і аудиту)

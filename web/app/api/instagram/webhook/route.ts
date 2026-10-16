@@ -15,10 +15,18 @@ import {
   sanitizeMeta,
   type InstagramWebhookEvent,
 } from "@/lib/instagram-webhook";
+import {
+  loadGraphAttachmentUrls,
+  mediaLabel,
+  mediaKind,
+  readWebhookAttachments,
+  storeDirectMessageMedia,
+  type IncomingMedia,
+} from "@/lib/instagram-direct-media";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
-export const maxDuration = 30;
+export const maxDuration = 60;
 
 const DEDUP_WINDOW_MS = 30 * 60 * 1000;
 
@@ -65,12 +73,8 @@ function normalizeItem(raw: unknown): MessagingItem | null {
   const message = asRecord(row.message) || row;
   const text = typeof message.text === "string" ? message.text : typeof row.text === "string" ? row.text : undefined;
   const mid = message.mid || message.id || row.mid || row.id;
-  const attachments = Array.isArray(message.attachments)
-    ? message.attachments
-    : Array.isArray(row.attachments)
-      ? row.attachments
-      : undefined;
-  const hasMessage = Boolean(text || mid || attachments?.length || message.is_echo || message.is_self);
+  const attachments = attachmentList(message.attachments ?? row.attachments);
+  const hasMessage = Boolean(text || mid || attachments.length || message.is_echo || message.is_self);
   if (!hasMessage) return null;
   const sender = asRecord(row.sender) || asRecord(row.from);
   const recipient = asRecord(row.recipient) || asRecord(row.to);
@@ -119,6 +123,13 @@ function collectItems(body: unknown): Array<{ item: MessagingItem; entryId: stri
     }
   }
   return found;
+}
+
+function attachmentList(value: unknown): unknown[] {
+  if (Array.isArray(value)) return value;
+  const row = asRecord(value);
+  if (row && Array.isArray(row.data)) return row.data;
+  return [];
 }
 
 function looseTexts(value: unknown, found: string[] = [], depth = 0): string[] {
@@ -308,11 +319,16 @@ async function acceptMessage(input: {
     Boolean(input.item.message?.is_echo || input.item.message?.is_self) ||
     (Boolean(senderId) && salonIds.has(senderId));
   const otherId = outgoing ? recipientId : senderId;
-  const text =
-    (input.item.message?.text || "").trim() ||
-    (input.item.message?.attachments?.length ? "📷 медіа" : "(без тексту)");
+  const plainText = (input.item.message?.text || "").trim();
+  let files = readWebhookAttachments(input.item.message?.attachments);
   const receivedAt = messageTime(input.item.timestamp);
   const messageId = input.item.message?.mid ? String(input.item.message.mid) : "";
+  if (files.length === 0 && messageId && input.pageToken && (attachmentList(input.item.message?.attachments).length > 0 || !plainText)) {
+    files = await loadGraphAttachmentUrls(messageId, input.pageToken);
+  }
+  let text =
+    plainText ||
+    (files.length ? files.map((file) => mediaLabel(mediaKind(file.type, ""))).join("\n") : "(без тексту)");
 
   let username = normalizeInstagram(input.item.sender?.username);
   let name: string | null = null;
@@ -337,15 +353,26 @@ async function acceptMessage(input: {
     });
     if (!client) {
       status = "отримано, клієнта в таблиці немає";
-    } else if (messageId) {
-      const sameId = await prisma.directMessage.findFirst({
-        where: { messageId },
-        select: { id: true },
-      });
-      if (sameId) status = "вже було";
-      else status = await saveIfNew(client.id, client.lastMessageAt, outgoing, text, messageId, username, receivedAt);
     } else {
-      status = await saveIfNew(client.id, client.lastMessageAt, outgoing, text, messageId, username, receivedAt);
+      let dbMessageId: string | null = null;
+      if (messageId) {
+        const sameId = await prisma.directMessage.findFirst({
+          where: { messageId },
+          select: { id: true },
+        });
+        if (sameId) {
+          dbMessageId = sameId.id;
+          status = "вже було";
+        }
+      }
+      if (!dbMessageId) {
+        const saved = await saveIfNew(client.id, client.lastMessageAt, outgoing, text, messageId, username, receivedAt);
+        status = saved.status;
+        dbMessageId = saved.id;
+      }
+      if (dbMessageId && files.length > 0) {
+        text = await rememberMedia(dbMessageId, client.id, username, plainText, files, text);
+      }
     }
   }
 
@@ -365,8 +392,44 @@ async function acceptMessage(input: {
     direction: event.direction,
     username,
     status,
-    hasText: Boolean(input.item.message?.text),
+    hasText: Boolean(plainText),
+    media: files.length,
   });
+}
+
+async function rememberMedia(
+  dbMessageId: string,
+  clientId: string,
+  username: string,
+  plainText: string,
+  files: IncomingMedia[],
+  fallbackText: string,
+): Promise<string> {
+  const stored = await storeDirectMessageMedia({ dbMessageId, clientId, files });
+  if (stored.length === 0) return fallbackText;
+  const label = stored.map((file) => mediaLabel(file.kind)).join("\n");
+  const nextText = plainText ? `${plainText}\n${label}` : label;
+  const current = await prisma.directMessage.findUnique({
+    where: { id: dbMessageId },
+    select: { source: true },
+  });
+  if (current?.source !== "instagram_graph") return nextText;
+  await prisma.directMessage.update({
+    where: { id: dbMessageId },
+    data: {
+      text: nextText.slice(0, 4000),
+      rawData: JSON.stringify({
+        username,
+        media: stored.map((file) => ({
+          id: file.id,
+          kind: file.kind,
+          mime: file.mime,
+          byteSize: file.byteSize,
+        })),
+      }).slice(0, 2000),
+    },
+  });
+  return nextText;
 }
 
 async function saveIfNew(
@@ -377,7 +440,7 @@ async function saveIfNew(
   messageId: string,
   username: string,
   receivedAt: Date,
-): Promise<string> {
+): Promise<{ status: string; id: string | null }> {
   const direction = outgoing ? "outgoing" : "incoming";
   const nearby = await prisma.directMessage.findMany({
     where: {
@@ -388,16 +451,21 @@ async function saveIfNew(
         lte: new Date(receivedAt.getTime() + DEDUP_WINDOW_MS),
       },
     },
-    select: { text: true, source: true },
+    select: { id: true, text: true, source: true },
     take: 20,
   });
   const duplicate = nearby.find((row) => {
     if (row.source === "instagram_graph") return false;
     return normText(row.text || "") === normText(text);
   });
-  if (duplicate) return duplicate.source === "manychat" ? "вже є з ManyChat" : "вже є в історії";
+  if (duplicate) {
+    return {
+      status: duplicate.source === "manychat" ? "вже є з ManyChat" : "вже є в історії",
+      id: duplicate.id,
+    };
+  }
 
-  await prisma.directMessage.create({
+  const created = await prisma.directMessage.create({
     data: {
       clientId,
       direction,
@@ -407,6 +475,7 @@ async function saveIfNew(
       receivedAt,
       rawData: JSON.stringify({ username }).slice(0, 2000),
     },
+    select: { id: true },
   });
   if (!lastMessageAt || receivedAt > lastMessageAt) {
     await prisma.directClient.update({
@@ -414,5 +483,5 @@ async function saveIfNew(
       data: { lastMessageAt: receivedAt },
     });
   }
-  return "записано в історію";
+  return { status: "записано в історію", id: created.id };
 }
