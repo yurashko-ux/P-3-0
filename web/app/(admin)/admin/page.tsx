@@ -31,6 +31,7 @@ export default function AdminHome() {
   const showJournal = permissions == null || permissions.journalSection !== 'none';
   const showTeam = permissions == null || permissions.teamSection !== 'none';
   const showBank = permissions == null || permissions.bankSection !== 'none';
+  const showNotion = permissions == null || permissions.notionSection !== 'none';
 
   return (
     <main style={{ maxWidth: 1040, margin: '48px auto', padding: '0 20px' }}>
@@ -319,6 +320,26 @@ export default function AdminHome() {
           </CardBody>
           <CardFooter>
             <PrimaryLink href="/admin/bank">Відкрити модуль</PrimaryLink>
+          </CardFooter>
+        </Card>
+        )}
+
+        {showNotion && (
+        <Card>
+          <CardHeader
+            emoji="📝"
+            title="Notion"
+            subtitle="Підключення баз і сповіщення в Telegram"
+          />
+          <CardBody>
+            <ul style={{ margin: 0, paddingLeft: 18, color: 'rgba(0,0,0,0.75)' }}>
+              <li>Вебхук Notion і верифікація підписки</li>
+              <li>Кому слати нові задачі і зміни полів</li>
+              <li>Журнал подій, що вже прийшли</li>
+            </ul>
+          </CardBody>
+          <CardFooter>
+            <PrimaryLink href="/admin/notion">Відкрити модуль</PrimaryLink>
           </CardFooter>
         </Card>
         )}

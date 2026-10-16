@@ -36,7 +36,7 @@ async function telegramFetch<T = any>(
 }
 
 export function sendMessage(
-  chatId: number,
+  chatId: number | string,
   text: string,
   extra: TelegramRequestPayload = {},
   botToken?: string

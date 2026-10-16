@@ -25,6 +25,7 @@ export type PermissionKey =
   | "financeDocsSection"
   | "bankSection"
   | "bankOneSection"
+  | "notionSection"
   | "debugSection"
   | "accessSection"
   | "telegramDailyReport";
@@ -49,6 +50,7 @@ const DEFAULT_PERMISSIONS: Permissions = {
   financeDocsSection: "edit",
   bankSection: "edit",
   bankOneSection: "edit",
+  notionSection: "edit",
   debugSection: "edit",
   accessSection: "edit",
   telegramDailyReport: "none",

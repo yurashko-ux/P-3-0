@@ -1898,3 +1898,73 @@ model CashDaySnapshot {
 
   @@map("cash_day_snapshots")
 }
+
+/// Отримувач сповіщень Notion у Telegram.
+model NotificationRecipient {
+  id             String   @id @default(uuid())
+  name           String
+  telegramChatId BigInt
+  enabled        Boolean  @default(true)
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  rules NotificationRule[]
+
+  @@map("notification_recipients")
+}
+
+/// Правило: яка база, яка подія і яке поле йдуть якому отримувачу.
+model NotificationRule {
+  id          String   @id @default(uuid())
+  /// Id бази Notion або '*' для всіх відомих баз.
+  databaseId  String
+  /// page.created | page.properties_updated | page.deleted | page.undeleted | '*'
+  eventType   String
+  /// Id поля для properties_updated. Порожнє — будь-яке поле.
+  propertyId  String?
+  recipientId String
+  enabled     Boolean  @default(true)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  recipient NotificationRecipient @relation(fields: [recipientId], references: [id], onDelete: Cascade)
+
+  @@index([recipientId])
+  @@index([enabled, eventType])
+  @@map("notification_rules")
+}
+
+/// Останній відомий стан задачі Notion, щоб показати «було → стало».
+model NotionPageSnapshot {
+  pageId          String    @id
+  databaseId      String
+  title           String    @default("")
+  status          String    @default("")
+  assignee        String    @default("")
+  deadline        String    @default("")
+  /// Час події Notion, з якої зібрано цей знімок. Старіші події не перезаписують його.
+  notionUpdatedAt DateTime?
+  updatedAt       DateTime  @updatedAt
+
+  @@index([databaseId])
+  @@map("notion_page_snapshots")
+}
+
+/// Вхідна подія вебхука Notion. notionEventId унікальний — повторна доставка не шле дубль.
+model NotionWebhookEvent {
+  id            String    @id @default(uuid())
+  notionEventId String    @unique
+  eventType     String
+  pageId        String?
+  databaseId    String?
+  payload       Json
+  /// pending | processing | processed | skipped | failed
+  status        String    @default("pending")
+  error         String?
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+  processedAt   DateTime?
+
+  @@index([status, createdAt])
+  @@map("notion_webhook_events")
+}
