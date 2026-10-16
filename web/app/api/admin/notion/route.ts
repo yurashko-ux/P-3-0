@@ -16,7 +16,7 @@ export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
 export const maxDuration = 30;
 
-export async function loadNotionOverview() {
+async function loadNotionOverview() {
   const [recipients, rules, events, verificationToken] = await Promise.all([
     prisma.notificationRecipient.findMany({ orderBy: { createdAt: "asc" } }),
     prisma.notificationRule.findMany({ orderBy: { createdAt: "asc" } }),
