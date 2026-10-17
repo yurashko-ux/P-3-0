@@ -335,6 +335,9 @@ function ConsultationsPageContent() {
           ← Статистика
         </Link>
         <h1 className="text-xl font-semibold">Нові ліди та консультації</h1>
+        <Link href="/admin/direct/stats/leads" className="btn btn-outline btn-sm">
+          Ліди
+        </Link>
         <select
           className="select select-bordered select-sm"
           value={selectedMonth}

@@ -2567,9 +2567,6 @@ function DirectPageContent() {
           <Link href={statsFiltersQuery ? `/admin/direct/stats?${statsFiltersQuery}` : "/admin/direct/stats"} className="btn btn-ghost min-h-0 py-0.5 text-[10px] px-1 leading-tight" target="_blank" rel="noopener noreferrer">
             📈 Статистика
           </Link>
-          <Link href="/admin/direct/stats/leads" className="btn btn-ghost min-h-0 py-0.5 text-[10px] px-1 leading-tight" target="_blank" rel="noopener noreferrer">
-            Ліди
-          </Link>
           {showDebug && (
             <button
               type="button"
