@@ -133,31 +133,7 @@ export async function instagramReplyAvailability(clientId: string): Promise<Inst
     lastIncomingAt && Date.now() - lastIncomingAt.getTime() <= INSTAGRAM_REPLY_WINDOW_MS,
   );
 
-  let scopedId = (client.instagramScopedId || "").trim();
-  if (!scopedId && windowOpen) {
-    const userToken = (process.env.INSTAGRAM_ACCESS_TOKEN || "").trim();
-    const pageId = (process.env.INSTAGRAM_PAGE_ID || "").trim();
-    if (userToken && pageId) {
-      const loaded = await loadInstagramPageToken(userToken, pageId);
-      if (!graphCallFailed(loaded)) {
-        scopedId =
-          (await scopedIdFromRecentThreads(
-            pageId,
-            loaded.pageToken,
-            client.instagramUsername,
-            loaded.igUsername,
-          )) || "";
-        if (scopedId) {
-          await prisma.directClient.update({
-            where: { id: client.id },
-            data: { instagramScopedId: scopedId },
-          });
-        }
-      }
-    }
-  }
-
-  const hasId = Boolean(scopedId);
+  const hasId = Boolean((client.instagramScopedId || "").trim());
   return {
     canSend: hasId && windowOpen,
     hasId,
@@ -172,11 +148,8 @@ export async function sendInstagramDirectReply(clientId: string, text: string): 
   if (trimmed.length > MAX_TEXT) return { ok: false, message: `Текст довший за ${MAX_TEXT} символів.` };
 
   const availability = await instagramReplyAvailability(clientId);
-  if (!availability.canSend) {
-    const reasons: string[] = [];
-    if (!availability.hasId) reasons.push("Немає технічного id Instagram.");
-    if (!availability.windowOpen) reasons.push("Минуло більше 24 годин від останнього повідомлення клієнта.");
-    return { ok: false, message: reasons.join(" ") || "Відповісти з CRM не можна." };
+  if (!availability.windowOpen) {
+    return { ok: false, message: "Минуло більше 24 годин від останнього повідомлення клієнта." };
   }
 
   const client = await prisma.directClient.findUnique({

@@ -132,6 +132,7 @@ export function MessagesHistoryModal({
   const [editStatusName, setEditStatusName] = useState<string>('');
   const [editStatusBadgeKey, setEditStatusBadgeKey] = useState<string>('badge_1');
   const editStatusFormRef = useRef<HTMLDivElement>(null);
+  const messagesScrollRef = useRef<HTMLDivElement>(null);
 
   // Прокрутити до форми редагування статусу, щоб вона була видима після натискання олівця
   useEffect(() => {
@@ -187,6 +188,18 @@ export function MessagesHistoryModal({
     } catch {
       return '';
     }
+  }
+
+  useEffect(() => {
+    const el = messagesScrollRef.current;
+    if (!el || loading) return;
+    el.scrollTop = el.scrollHeight;
+  }, [messages, loading]);
+
+  function messagesChronological(list: Message[]): Message[] {
+    return [...list].sort(
+      (a, b) => new Date(a.receivedAt).getTime() - new Date(b.receivedAt).getTime(),
+    );
   }
 
   const groupedMessages = useMemo(() => {
@@ -339,7 +352,12 @@ export function MessagesHistoryModal({
           : { canSend: false, hasId: false, windowOpen: false },
       );
       let dbMessages: Message[] = Array.isArray(dbData.messages) ? dbData.messages : [];
-      if (dbData.ok && dbMessages.length > 0) {
+      if (!dbRes.ok || dbData.ok === false) {
+        setError(typeof dbData.error === 'string' ? dbData.error : 'Не вдалося завантажити історію');
+        return;
+      }
+      dbMessages = messagesChronological(dbMessages);
+      if (dbMessages.length > 0) {
         setMessages(dbMessages);
         setError(null);
       }
@@ -382,13 +400,13 @@ export function MessagesHistoryModal({
         const apiData = await apiResponse.json().catch(() => ({}));
         if (apiData.diagnostics) setDiagnostics(apiData.diagnostics);
         if (apiData.ok && Array.isArray(apiData.messages) && apiData.messages.length > 0) {
-          const convertedMessages: Message[] = apiData.messages.map((msg: any) => ({
+          const convertedMessages: Message[] = messagesChronological(apiData.messages.map((msg: any) => ({
             receivedAt: msg.timestamp || new Date().toISOString(),
             text: msg.text || '-',
             direction: msg.direction,
             id: msg.id,
             type: msg.type,
-          }));
+          })));
           setMessages(convertedMessages);
           setError(null);
           return;
@@ -401,7 +419,7 @@ export function MessagesHistoryModal({
         const response = await fetch(`/api/admin/direct/messages-history?${params.toString()}`);
         const data = await response.json().catch(() => ({}));
         if (data.ok) {
-          setMessages(data.messages || []);
+          setMessages(messagesChronological(data.messages || []));
           setError(null);
         } else if (dbMessages.length === 0) {
           setError(data.error || 'Помилка завантаження повідомлень');
@@ -729,7 +747,7 @@ export function MessagesHistoryModal({
           <div className="flex-1 overflow-hidden flex gap-4">
             {/* Ліва колонка: повідомлення */}
             <div className="flex-1 min-w-0 flex flex-col bg-white">
-            <div className="flex-1 min-h-0 overflow-y-auto pr-2">
+            <div ref={messagesScrollRef} className="flex-1 min-h-0 overflow-y-auto pr-2">
               {loading ? (
                 <div className="text-center p-8">
                   <div className="loading loading-spinner loading-lg"></div>
