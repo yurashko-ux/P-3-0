@@ -848,6 +848,24 @@ model FinanceDocument {
   @@map("finance_documents")
 }
 
+// Джерело ліда: знак у першому вхідному повідомленні, органіка або сайт.
+model LeadSource {
+  id        String   @id @default(uuid())
+  code      String   @unique
+  name      String
+  /// Знак у тексті першого повідомлення. Порожньо для органіки і сайту.
+  mark      String?
+  /// ads | organic | website
+  kind      String
+  enabled   Boolean  @default(true)
+  sortOrder Int      @default(0)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([kind])
+  @@map("lead_sources")
+}
+
 // Повідомлення ManyChat (вхідні та вихідні)
 model DirectMessage {
   id           String   @id @default(uuid())

@@ -23,6 +23,7 @@ import {
   storeDirectMessageMedia,
   type IncomingMedia,
 } from "@/lib/instagram-direct-media";
+import { assignLeadSourceFromFirstIncoming, ensureDirectLeadClient } from "@/lib/lead-sources";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
@@ -347,13 +348,23 @@ async function acceptMessage(input: {
 
   let status = "отримано";
   if (username) {
-    const client = await prisma.directClient.findFirst({
+    let client = await prisma.directClient.findFirst({
       where: { instagramUsername: username },
-      select: { id: true, lastMessageAt: true },
+      select: { id: true, lastMessageAt: true, leadAgency: true },
     });
+    if (!client) {
+      client = await ensureDirectLeadClient({ username, receivedAt });
+    }
     if (!client) {
       status = "отримано, клієнта в таблиці немає";
     } else {
+      if (!outgoing) {
+        await assignLeadSourceFromFirstIncoming({
+          clientId: client.id,
+          leadAgency: client.leadAgency,
+          text: plainText,
+        });
+      }
       let dbMessageId: string | null = null;
       if (messageId) {
         const sameId = await prisma.directMessage.findFirst({

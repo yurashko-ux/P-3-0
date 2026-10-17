@@ -1947,6 +1947,9 @@ function DirectStatsPageContent() {
           <h1 className="text-2xl font-bold flex items-center gap-2">
             Статистика <span className="text-base">▲</span>
           </h1>
+          <Link href="/admin/direct/stats/leads" className="btn btn-ghost btn-sm">
+            Ліди
+          </Link>
           <div className="text-sm text-gray-600">
             {selectedMonth} • клієнтів: {mastersStats.totalClients || totalClientsCount || filteredCount || 0}
           </div>

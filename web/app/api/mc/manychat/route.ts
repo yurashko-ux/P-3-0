@@ -18,6 +18,7 @@ import {
 import { moveKeycrmCard } from '@/lib/keycrm-move';
 import { normalizeCampaignShape } from '@/lib/campaign-shape';
 import { normalizeInstagram } from '@/lib/normalize';
+import { MANYCHAT_DIRECT_MESSAGES_ENABLED, MANYCHAT_LEAD_AGENCY_ENABLED } from '@/lib/manychat-direct-ingest';
 import {
   MANYCHAT_MESSAGE_KEY,
   MANYCHAT_TRACE_KEY,
@@ -1049,7 +1050,9 @@ export async function POST(req: NextRequest) {
           }
         }
 
-      const incomingLeadAgency = resolveIncomingLeadAgency(payload, message.text);
+      const incomingLeadAgency = MANYCHAT_LEAD_AGENCY_ENABLED
+        ? resolveIncomingLeadAgency(payload, message.text)
+        : null;
       const leadAgencyBefore = client?.leadAgency;
 
       if (!client || !client.id) {
@@ -1193,7 +1196,9 @@ export async function POST(req: NextRequest) {
         // Зберігаємо повідомлення в базу даних (історія переписки)
         const messageText = (message.text && message.text.trim()) || '(медіа або порожнє повідомлення)';
         const msgDirection = isLikelyOutgoingManychatMessage(payload) ? 'outgoing' : 'incoming';
-        try {
+        if (!MANYCHAT_DIRECT_MESSAGES_ENABLED) {
+          console.log('[manychat] Повідомлення в історію не пишемо: переписку бере Meta', { direction: msgDirection });
+        } else try {
           await prisma.directMessage.create({
             data: {
               clientId: client.id,
