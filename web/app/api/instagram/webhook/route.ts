@@ -17,6 +17,7 @@ import {
 } from "@/lib/instagram-webhook";
 import {
   loadGraphAttachmentUrls,
+  MEDIA_TOO_BIG_LABEL,
   mediaLabel,
   mediaKind,
   readWebhookAttachments,
@@ -428,9 +429,13 @@ async function rememberMedia(
   files: IncomingMedia[],
   fallbackText: string,
 ): Promise<string> {
-  const stored = await storeDirectMessageMedia({ dbMessageId, clientId, files });
-  if (stored.length === 0) return fallbackText;
-  const label = stored.map((file) => mediaLabel(file.kind)).join("\n");
+  const { stored, tooBig } = await storeDirectMessageMedia({ dbMessageId, clientId, files });
+  const lines = [
+    ...stored.map((file) => mediaLabel(file.kind)),
+    ...Array.from({ length: tooBig }, () => MEDIA_TOO_BIG_LABEL),
+  ];
+  if (lines.length === 0) return fallbackText;
+  const label = lines.join("\n");
   const nextText = plainText ? `${plainText}\n${label}` : label;
   const current = await prisma.directMessage.findUnique({
     where: { id: dbMessageId },

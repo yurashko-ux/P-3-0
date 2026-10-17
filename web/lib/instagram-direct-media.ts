@@ -7,6 +7,8 @@ import { graphCall, graphCallFailed, sanitizeMeta } from "@/lib/instagram-webhoo
 const MAX_BYTES = 25 * 1024 * 1024;
 const MAX_FILES = 4;
 
+export const MEDIA_TOO_BIG_LABEL = "Файл більший ніж 25 МБ";
+
 export type IncomingMedia = { type: string; url: string };
 export type StoredMedia = { id: string; kind: string; mime: string; byteSize: number };
 
@@ -62,7 +64,11 @@ export async function loadGraphAttachmentUrls(messageId: string, pageToken: stri
   return readWebhookAttachments(attachments);
 }
 
-async function downloadMedia(url: string): Promise<{ bytes: Buffer; mime: string } | null> {
+type DownloadResult =
+  | { ok: true; bytes: Buffer; mime: string }
+  | { ok: false; reason: "too_big" | "failed" };
+
+async function downloadMedia(url: string): Promise<DownloadResult> {
   let response: Response;
   try {
     response = await fetch(url, { redirect: "follow", signal: AbortSignal.timeout(20_000) });
@@ -71,21 +77,21 @@ async function downloadMedia(url: string): Promise<{ bytes: Buffer; mime: string
       "[instagram/media] Файл не завантажився",
       sanitizeMeta(error instanceof Error ? error.message : String(error)).replace(/https?:\/\/\S+/g, "https://***"),
     );
-    return null;
+    return { ok: false, reason: "failed" };
   }
   if (!response.ok || !response.body) {
     console.warn("[instagram/media] Meta віддала файл з помилкою", response.status);
-    return null;
+    return { ok: false, reason: "failed" };
   }
   const mime = (response.headers.get("content-type") || "application/octet-stream").split(";")[0].trim().toLowerCase();
   if (mime.startsWith("text/html")) {
     console.warn("[instagram/media] Замість файлу прийшла сторінка");
-    return null;
+    return { ok: false, reason: "failed" };
   }
   const declared = Number(response.headers.get("content-length") || "0");
   if (declared > MAX_BYTES) {
     console.warn("[instagram/media] Файл більший за ліміт", declared);
-    return null;
+    return { ok: false, reason: "too_big" };
   }
   const reader = response.body.getReader();
   const chunks: Uint8Array[] = [];
@@ -97,30 +103,34 @@ async function downloadMedia(url: string): Promise<{ bytes: Buffer; mime: string
     if (total > MAX_BYTES) {
       await reader.cancel().catch(() => undefined);
       console.warn("[instagram/media] Файл обірвано: більший за ліміт", total);
-      return null;
+      return { ok: false, reason: "too_big" };
     }
     chunks.push(step.value);
   }
-  if (!total) return null;
-  return { bytes: Buffer.concat(chunks), mime };
+  if (!total) return { ok: false, reason: "failed" };
+  return { ok: true, bytes: Buffer.concat(chunks), mime };
 }
 
 export async function storeDirectMessageMedia(input: {
   dbMessageId: string;
   clientId: string;
   files: IncomingMedia[];
-}): Promise<StoredMedia[]> {
+}): Promise<{ stored: StoredMedia[]; tooBig: number }> {
   const existing = await prisma.directMessageMedia.findMany({
     where: { messageId: input.dbMessageId },
     select: { id: true, kind: true, mime: true, byteSize: true },
     orderBy: { createdAt: "asc" },
   });
-  if (existing.length > 0 || input.files.length === 0) return existing;
+  if (existing.length > 0 || input.files.length === 0) return { stored: existing, tooBig: 0 };
 
   const stored: StoredMedia[] = [];
+  let tooBig = 0;
   for (const file of input.files.slice(0, MAX_FILES)) {
     const downloaded = await downloadMedia(file.url);
-    if (!downloaded) continue;
+    if (!downloaded.ok) {
+      if (downloaded.reason === "too_big") tooBig += 1;
+      continue;
+    }
     const kind = mediaKind(file.type, downloaded.mime);
     const row = await prisma.directMessageMedia.create({
       data: {
@@ -136,5 +146,5 @@ export async function storeDirectMessageMedia(input: {
     stored.push(row);
     console.log("[instagram/media] Файл збережено", { kind: row.kind, mime: row.mime, byteSize: row.byteSize });
   }
-  return stored;
+  return { stored, tooBig };
 }
