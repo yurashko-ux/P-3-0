@@ -12,6 +12,14 @@ import {
 } from "@/lib/instagram-webhook";
 
 const MAX_TEXT = 1000;
+export const INSTAGRAM_REPLY_WINDOW_MS = 24 * 60 * 60 * 1000;
+
+export type InstagramReplyAvailability = {
+  canSend: boolean;
+  hasId: boolean;
+  windowOpen: boolean;
+  lastIncomingAt: string | null;
+};
 
 export type InstagramSendResult =
   | { ok: true; messageId: string }
@@ -106,10 +114,70 @@ async function scopedIdFromRecentThreads(pageId: string, pageToken: string, user
   return null;
 }
 
+export async function instagramReplyAvailability(clientId: string): Promise<InstagramReplyAvailability> {
+  const client = await prisma.directClient.findUnique({
+    where: { id: clientId },
+    select: { id: true, instagramUsername: true, instagramScopedId: true },
+  });
+  if (!client) {
+    return { canSend: false, hasId: false, windowOpen: false, lastIncomingAt: null };
+  }
+
+  const lastIncoming = await prisma.directMessage.findFirst({
+    where: { clientId, direction: "incoming" },
+    orderBy: { receivedAt: "desc" },
+    select: { receivedAt: true },
+  });
+  const lastIncomingAt = lastIncoming?.receivedAt ?? null;
+  const windowOpen = Boolean(
+    lastIncomingAt && Date.now() - lastIncomingAt.getTime() <= INSTAGRAM_REPLY_WINDOW_MS,
+  );
+
+  let scopedId = (client.instagramScopedId || "").trim();
+  if (!scopedId && windowOpen) {
+    const userToken = (process.env.INSTAGRAM_ACCESS_TOKEN || "").trim();
+    const pageId = (process.env.INSTAGRAM_PAGE_ID || "").trim();
+    if (userToken && pageId) {
+      const loaded = await loadInstagramPageToken(userToken, pageId);
+      if (!graphCallFailed(loaded)) {
+        scopedId =
+          (await scopedIdFromRecentThreads(
+            pageId,
+            loaded.pageToken,
+            client.instagramUsername,
+            loaded.igUsername,
+          )) || "";
+        if (scopedId) {
+          await prisma.directClient.update({
+            where: { id: client.id },
+            data: { instagramScopedId: scopedId },
+          });
+        }
+      }
+    }
+  }
+
+  const hasId = Boolean(scopedId);
+  return {
+    canSend: hasId && windowOpen,
+    hasId,
+    windowOpen,
+    lastIncomingAt: lastIncomingAt ? lastIncomingAt.toISOString() : null,
+  };
+}
+
 export async function sendInstagramDirectReply(clientId: string, text: string): Promise<InstagramSendResult> {
   const trimmed = text.trim();
   if (!trimmed) return { ok: false, message: "Введіть текст." };
   if (trimmed.length > MAX_TEXT) return { ok: false, message: `Текст довший за ${MAX_TEXT} символів.` };
+
+  const availability = await instagramReplyAvailability(clientId);
+  if (!availability.canSend) {
+    const reasons: string[] = [];
+    if (!availability.hasId) reasons.push("Немає технічного id Instagram.");
+    if (!availability.windowOpen) reasons.push("Минуло більше 24 годин від останнього повідомлення клієнта.");
+    return { ok: false, message: reasons.join(" ") || "Відповісти з CRM не можна." };
+  }
 
   const client = await prisma.directClient.findUnique({
     where: { id: clientId },

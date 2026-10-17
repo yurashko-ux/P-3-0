@@ -112,6 +112,11 @@ export function MessagesHistoryModal({
   const [replyText, setReplyText] = useState('');
   const [replySending, setReplySending] = useState(false);
   const [replyError, setReplyError] = useState<string | null>(null);
+  const [replyAvailability, setReplyAvailability] = useState<{
+    canSend: boolean;
+    hasId: boolean;
+    windowOpen: boolean;
+  } | null>(null);
   const [editingStatusId, setEditingStatusId] = useState<string | null>(null);
   const [editStatusName, setEditStatusName] = useState<string>('');
   const [editStatusBadgeKey, setEditStatusBadgeKey] = useState<string>('badge_1');
@@ -243,6 +248,7 @@ export function MessagesHistoryModal({
       setDisplayIg(null);
       setReplyText('');
       setReplyError(null);
+      setReplyAvailability(null);
     }
   }, [isOpen, client?.id, channel]);
 
@@ -302,6 +308,7 @@ export function MessagesHistoryModal({
       }
 
       // 1) Завжди спочатку БД по clientId — надійніше за ManyChat і працює з __no_ig__
+      setReplyAvailability(null);
       const dbParams = new URLSearchParams();
       dbParams.set('clientId', client.id);
       dbParams.set('channel', 'instagram');
@@ -310,6 +317,16 @@ export function MessagesHistoryModal({
         cache: 'no-store',
       });
       const dbData = await dbRes.json().catch(() => ({}));
+      const reply = dbData?.instagramReply;
+      setReplyAvailability(
+        reply && typeof reply === 'object'
+          ? {
+              canSend: Boolean(reply.canSend),
+              hasId: Boolean(reply.hasId),
+              windowOpen: Boolean(reply.windowOpen),
+            }
+          : { canSend: false, hasId: false, windowOpen: false },
+      );
       let dbMessages: Message[] = Array.isArray(dbData.messages) ? dbData.messages : [];
       if (dbData.ok && dbMessages.length > 0) {
         setMessages(dbMessages);
@@ -828,26 +845,43 @@ export function MessagesHistoryModal({
                 className="mt-3 border-t pt-3"
                 onSubmit={(event) => {
                   event.preventDefault();
-                  void sendInstagramReply();
+                  if (replyAvailability?.canSend) void sendInstagramReply();
                 }}
               >
+                {!replyAvailability ? (
+                  <div className="text-xs text-gray-500">Перевіряю, чи можна відповісти з CRM…</div>
+                ) : replyAvailability.canSend ? (
+                  <div className="mb-2 text-xs text-green-700">Можна відповісти з CRM.</div>
+                ) : (
+                  <div className="mb-2 rounded-lg bg-amber-50 px-3 py-2 text-xs text-amber-900">
+                    Відповісти з CRM не можна.
+                    {!replyAvailability.hasId ? <div>Немає технічного id Instagram.</div> : null}
+                    {!replyAvailability.windowOpen ? (
+                      <div>Минуло більше 24 годин від останнього повідомлення клієнта.</div>
+                    ) : null}
+                  </div>
+                )}
                 <textarea
                   className="textarea textarea-bordered w-full text-sm min-h-[72px]"
-                  placeholder="Відповідь у Instagram Direct"
+                  placeholder={replyAvailability?.canSend ? 'Відповідь у Instagram Direct' : 'Відповідь недоступна'}
                   value={replyText}
                   maxLength={1000}
-                  disabled={replySending}
+                  disabled={replySending || !replyAvailability?.canSend}
                   onChange={(event) => setReplyText(event.target.value)}
                   onKeyDown={(event) => {
                     if (event.key === 'Enter' && !event.shiftKey) {
                       event.preventDefault();
-                      void sendInstagramReply();
+                      if (replyAvailability?.canSend) void sendInstagramReply();
                     }
                   }}
                 />
                 {replyError ? <div className="mt-1 text-xs text-red-600">{replyError}</div> : null}
                 <div className="mt-2 flex justify-end">
-                  <button className="btn btn-sm btn-primary" type="submit" disabled={replySending || !replyText.trim()}>
+                  <button
+                    className="btn btn-sm btn-primary"
+                    type="submit"
+                    disabled={replySending || !replyText.trim() || !replyAvailability?.canSend}
+                  >
                     {replySending ? 'Надсилаю…' : 'Надіслати'}
                   </button>
                 </div>

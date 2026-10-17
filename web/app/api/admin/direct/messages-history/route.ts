@@ -9,12 +9,32 @@ import { kvRead } from '@/lib/kv';
 import { type DirectChatChannel, sourcesWhereClause, isSourceForChannel } from '@/lib/direct-channel-chat';
 import { isPreviewDeploymentHost } from '@/lib/auth-preview';
 import { verifyUserToken } from '@/lib/auth-rbac';
+import { instagramReplyAvailability } from '@/lib/instagram-direct-send';
 
 export const dynamic = 'force-dynamic';
 export const runtime = 'nodejs';
+export const maxDuration = 60;
 
 const ADMIN_PASS = process.env.ADMIN_PASS || '';
 const CRON_SECRET = process.env.CRON_SECRET || '';
+
+async function replyPayload(
+  clientId: string | null,
+  channel: DirectChatChannel | null,
+): Promise<{ instagramReply?: Awaited<ReturnType<typeof instagramReplyAvailability>> }> {
+  if (!clientId || channel === 'telegram') return {};
+  try {
+    return { instagramReply: await instagramReplyAvailability(clientId) };
+  } catch (error) {
+    console.warn(
+      '[direct/messages-history] Не вдалося перевірити відповідь Instagram',
+      error instanceof Error ? error.message : String(error),
+    );
+    return {
+      instagramReply: { canSend: false, hasId: false, windowOpen: false, lastIncomingAt: null },
+    };
+  }
+}
 
 function isAuthorized(req: NextRequest): boolean {
   if (isPreviewDeploymentHost(req.headers.get('host') || '')) return true;
@@ -236,6 +256,7 @@ export async function GET(req: NextRequest) {
           total: messages.length,
           messages,
           source: 'database',
+          ...(await replyPayload(resolvedClientId, channel)),
         });
       }
     }
@@ -248,6 +269,7 @@ export async function GET(req: NextRequest) {
         total: kvMessages.length,
         messages: kvMessages,
         source: 'kv_log',
+        ...(await replyPayload(resolvedClientId, channel)),
       });
     }
 
@@ -255,6 +277,7 @@ export async function GET(req: NextRequest) {
       ok: true,
       total: 0,
       messages: [],
+      ...(await replyPayload(resolvedClientId, channel)),
     });
   } catch (error) {
     console.error('[direct/messages-history] GET error:', error);
