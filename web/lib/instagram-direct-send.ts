@@ -35,8 +35,12 @@ function humanSendError(message: string): string {
   if (/outside of allowed window|24 hour|messaging window|message sent outside/i.test(clean)) {
     return "Клієнт давно не писав. Instagram приймає відповідь лише близько 24 годин після його повідомлення.";
   }
+  if (/advanced access|does not have role|2534048/i.test(clean)) {
+    return "Читати Direct можна. Надіслати цьому клієнту Meta не дає: у додатка стандартний доступ, а цей акаунт не є тестером додатка. Новий токен це не виправить.";
+  }
   if (/permission|pages_messaging|\(#200\)|\(#10\)/i.test(clean)) {
-    return "Instagram не дозволив відправку цим токеном.";
+    const detail = clean.slice(0, 180);
+    return `Надіслати не вийшло. Новий токен це не виправить. Meta: ${detail}`;
   }
   return clean.slice(0, 300) || "Instagram не прийняв повідомлення.";
 }
