@@ -806,6 +806,7 @@ export function DirectClientTable({
   const [chatUiOverrides, setChatUiOverrides] = useState<Record<string, Partial<DirectClient>>>({});
   const [fullscreenAvatar, setFullscreenAvatar] = useState<{ src: string; username: string } | null>(null);
   const [pullingClientId, setPullingClientId] = useState<string | null>(null);
+  const [requestingInstagramId, setRequestingInstagramId] = useState<string | null>(null);
 
   // Майстрів передаємо з page (masters prop). НЕ завантажуємо історію станів для всіх клієнтів одразу - це створює зайве навантаження
   // Історія завантажується тільки при відкритті модального вікна (StateHistoryModal)
@@ -1181,6 +1182,46 @@ export function DirectClientTable({
                     <>
                       {editingClient.altegioClientId && (
                         <>
+                          <button
+                            className="btn btn-sm btn-ghost text-info"
+                            title="Надіслати в Telegram прохання вказати Instagram"
+                            disabled={requestingInstagramId === editingClient.id}
+                            onClick={async () => {
+                              if (!editingClient.altegioClientId || requestingInstagramId) return;
+                              setRequestingInstagramId(editingClient.id);
+                              try {
+                                const clientName = [editingClient.firstName, editingClient.lastName].filter(Boolean).join(' ');
+                                const res = await fetch('/api/admin/direct/request-missing-instagram', {
+                                  method: 'POST',
+                                  headers: { 'Content-Type': 'application/json' },
+                                  body: JSON.stringify({
+                                    altegioClientId: editingClient.altegioClientId,
+                                    clientName: clientName || undefined,
+                                    phone: editingClient.phone || undefined,
+                                  }),
+                                });
+                                const data = await res.json();
+                                if (data?.ok) {
+                                  showDirectToast('Прохання вказати Instagram надіслано в Telegram');
+                                } else {
+                                  showDirectToast(data?.error || 'Не вдалося надіслати прохання', 'error');
+                                }
+                              } catch (err) {
+                                showDirectToast(
+                                  `Помилка відправки: ${err instanceof Error ? err.message : String(err)}`,
+                                  'error',
+                                );
+                              } finally {
+                                setRequestingInstagramId(null);
+                              }
+                            }}
+                          >
+                            {requestingInstagramId === editingClient.id ? (
+                              <span className="loading loading-spinner loading-xs" />
+                            ) : (
+                              'Запитати IG'
+                            )}
+                          </button>
                           <button
                             className="btn btn-sm btn-ghost text-info"
                             title="підтягування даних з API,KV"
