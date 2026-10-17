@@ -330,16 +330,17 @@ function ConsultationsPageContent() {
 
   return (
     <div className="w-full max-w-full px-2 py-4 min-w-0">
-      <div className="flex flex-wrap items-center gap-3 mb-4">
+      <div className="flex items-center gap-3 mb-3">
         <Link href="/admin/direct/stats" className="btn btn-ghost btn-sm">
           ← Статистика
         </Link>
         <h1 className="text-xl font-semibold">Нові ліди та консультації</h1>
-        <Link href="/admin/direct/stats/leads" className="btn btn-outline btn-sm">
+        <Link href="/admin/direct/stats/leads" className="btn btn-outline btn-sm ml-auto">
           Ліди
         </Link>
-        <select
-          className="select select-bordered select-sm"
+      </div>
+      <select
+          className="select select-bordered select-sm mb-4"
           value={selectedMonth}
           onChange={(e) => handleMonthChange(e.target.value)}
         >
@@ -349,7 +350,6 @@ function ConsultationsPageContent() {
             </option>
           ))}
         </select>
-      </div>
 
       <p className="text-sm text-gray-500 mb-2">
         Нові ліди за {selectedMonthLabel} і консультації з записом у цьому місяці
