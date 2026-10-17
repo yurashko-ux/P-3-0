@@ -1098,25 +1098,29 @@ export function MessagesHistoryModal({
             </div>
           </div>
         </div>
-        <div className="px-4 py-3 border-t flex justify-end gap-2">
-          {channel === 'instagram' ? (
-            <button
-              className="btn btn-sm btn-primary"
-              type="submit"
-              form="instagram-reply-form"
-              disabled={replySending || !replyText.trim() || !replyAvailability?.canSend}
-            >
-              {replySending ? 'Надсилаю…' : 'Надіслати'}
+        <div className="px-6 py-3 border-t flex items-center gap-4">
+          <div className="flex-1 flex justify-end min-w-0">
+            {channel === 'instagram' ? (
+              <button
+                className="btn btn-sm btn-primary"
+                type="submit"
+                form="instagram-reply-form"
+                disabled={replySending || !replyText.trim() || !replyAvailability?.canSend}
+              >
+                {replySending ? 'Надсилаю…' : 'Надіслати'}
+              </button>
+            ) : null}
+          </div>
+          <div className="w-[320px] shrink-0 flex justify-end gap-2 pl-4">
+            {!loading && !error && (
+              <button className="btn btn-sm btn-primary" onClick={loadMessages}>
+                🔄 Оновити
+              </button>
+            )}
+            <button className="btn btn-sm" onClick={onClose}>
+              Закрити
             </button>
-          ) : null}
-          {!loading && !error && (
-            <button className="btn btn-sm btn-primary" onClick={loadMessages}>
-              🔄 Оновити
-            </button>
-          )}
-          <button className="btn btn-sm" onClick={onClose}>
-            Закрити
-          </button>
+          </div>
         </div>
       </div>
     </div>
