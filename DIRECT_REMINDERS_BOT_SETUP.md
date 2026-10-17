@@ -7,7 +7,7 @@
 Додайте нову змінну середовища в Vercel:
 
 ```
-TELEGRAM_HOB_CLIENT_BOT_TOKEN=8392325399:AAG_Emwy1efFtDCIWlWLsydvCJBopztm3zA
+TELEGRAM_HOB_CLIENT_BOT_TOKEN=<токен з @BotFather, лише в Vercel>
 ```
 
 **Примітка:** Назва змінної містить `HOB_CLIENT_BOT` для розрізнення від `TELEGRAM_BOT_TOKEN` (фото-бот).
@@ -23,7 +23,7 @@ https://your-domain.com/api/telegram/direct-reminders-webhook
 Або через Telegram Bot API:
 
 ```bash
-curl -X POST "https://api.telegram.org/bot8392325399:AAG_Emwy1efFtDCIWlWLsydvCJBopztm3zA/setWebhook" \
+curl -X POST "https://api.telegram.org/bot<TELEGRAM_HOB_CLIENT_BOT_TOKEN>/setWebhook" \
   -H "Content-Type: application/json" \
   -d '{
     "url": "https://your-domain.com/api/telegram/direct-reminders-webhook"
@@ -35,7 +35,7 @@ curl -X POST "https://api.telegram.org/bot8392325399:AAG_Emwy1efFtDCIWlWLsydvCJB
 Після деплою перевірте, що webhook працює:
 
 ```bash
-curl "https://api.telegram.org/bot8392325399:AAG_Emwy1efFtDCIWlWLsydvCJBopztm3zA/getWebhookInfo"
+curl "https://api.telegram.org/bot<TELEGRAM_HOB_CLIENT_BOT_TOKEN>/getWebhookInfo"
 ```
 
 ## Як це працює
