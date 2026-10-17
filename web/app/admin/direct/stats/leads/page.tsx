@@ -83,7 +83,7 @@ export default function LeadSourcesPage() {
   return (
     <div className="w-full max-w-3xl px-4 py-6">
       <div className="mb-4 flex items-center gap-3">
-        <h1 className="text-2xl font-bold">Ліди</h1>
+        <h1 className="text-2xl font-bold">Джерела</h1>
         <Link href="/admin/direct/stats" className="text-sm link">
           Статистика
         </Link>
