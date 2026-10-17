@@ -874,19 +874,6 @@ export function MessagesHistoryModal({
                     }
                   }}
                 />
-                <div
-                  className={`mt-1 truncate text-xs ${
-                    !replyAvailability
-                      ? 'text-gray-500'
-                      : replyAvailability.canSend
-                        ? 'text-green-700'
-                        : 'text-amber-900'
-                  }`}
-                  title={instagramReplyHint(replyAvailability)}
-                >
-                  {instagramReplyHint(replyAvailability)}
-                </div>
-                {replyError ? <div className="mt-1 truncate text-xs text-red-600">{replyError}</div> : null}
               </form>
             ) : null}
             </div>
@@ -1099,7 +1086,25 @@ export function MessagesHistoryModal({
           </div>
         </div>
         <div className="px-6 py-3 border-t flex items-center gap-4">
-          <div className="flex-1 flex justify-end min-w-0">
+          <div className="flex-1 flex items-center justify-between gap-3 min-w-0">
+            {channel === 'instagram' ? (
+              <div
+                className={`truncate text-xs ${
+                  replyError
+                    ? 'text-red-600'
+                    : !replyAvailability
+                      ? 'text-gray-500'
+                      : replyAvailability.canSend
+                        ? 'text-green-700'
+                        : 'text-amber-900'
+                }`}
+                title={replyError || instagramReplyHint(replyAvailability)}
+              >
+                {replyError || instagramReplyHint(replyAvailability)}
+              </div>
+            ) : (
+              <span />
+            )}
             {channel === 'instagram' ? (
               <button
                 className="btn btn-sm btn-primary"
