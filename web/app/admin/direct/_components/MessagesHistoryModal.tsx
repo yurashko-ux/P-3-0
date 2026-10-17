@@ -53,6 +53,17 @@ interface MessagesHistoryModalProps {
   }) => void;
 }
 
+function instagramReplyHint(
+  reply: { canSend: boolean; hasId: boolean; windowOpen: boolean } | null,
+): string {
+  if (!reply) return 'Перевіряю, чи можна відповісти з CRM…';
+  if (reply.canSend) return 'Можна відповісти з CRM.';
+  const reasons: string[] = [];
+  if (!reply.hasId) reasons.push('немає технічного id Instagram');
+  if (!reply.windowOpen) reasons.push('минуло більше 24 годин від останнього повідомлення клієнта');
+  return `Відповісти з CRM не можна: ${reasons.join(', ')}.`;
+}
+
 function MessageMediaView({ files }: { files?: MessageMedia[] }) {
   if (!files?.length) return null;
   return (
@@ -678,7 +689,7 @@ export function MessagesHistoryModal({
         className="bg-white rounded-lg shadow-xl max-w-6xl w-full mx-4 max-h-[90vh] overflow-hidden flex flex-col"
         onClick={(e) => e.stopPropagation()}
       >
-        <div className="p-6 flex-1 overflow-hidden flex flex-col">
+        <div className="px-6 pt-6 pb-2 flex-1 overflow-hidden flex flex-col">
           <div className="flex items-center justify-between mb-4">
             <div>
               <h3 className="font-bold text-lg">
@@ -842,27 +853,27 @@ export function MessagesHistoryModal({
             </div>
             {channel === 'instagram' ? (
               <form
-                className="mt-3 border-t pt-3"
+                id="instagram-reply-form"
+                className="mt-2 border-t pt-2"
                 onSubmit={(event) => {
                   event.preventDefault();
                   if (replyAvailability?.canSend) void sendInstagramReply();
                 }}
               >
-                {!replyAvailability ? (
-                  <div className="text-xs text-gray-500">Перевіряю, чи можна відповісти з CRM…</div>
-                ) : replyAvailability.canSend ? (
-                  <div className="mb-2 text-xs text-green-700">Можна відповісти з CRM.</div>
-                ) : (
-                  <div className="mb-2 rounded-lg bg-amber-50 px-3 py-2 text-xs text-amber-900">
-                    Відповісти з CRM не можна.
-                    {!replyAvailability.hasId ? <div>Немає технічного id Instagram.</div> : null}
-                    {!replyAvailability.windowOpen ? (
-                      <div>Минуло більше 24 годин від останнього повідомлення клієнта.</div>
-                    ) : null}
-                  </div>
-                )}
+                <div
+                  className={`mb-1 truncate text-xs ${
+                    !replyAvailability
+                      ? 'text-gray-500'
+                      : replyAvailability.canSend
+                        ? 'text-green-700'
+                        : 'text-amber-900'
+                  }`}
+                  title={instagramReplyHint(replyAvailability)}
+                >
+                  {instagramReplyHint(replyAvailability)}
+                </div>
                 <textarea
-                  className="textarea textarea-bordered w-full text-sm min-h-[72px]"
+                  className="textarea textarea-bordered w-full text-sm min-h-[52px]"
                   placeholder={replyAvailability?.canSend ? 'Відповідь у Instagram Direct' : 'Відповідь недоступна'}
                   value={replyText}
                   maxLength={1000}
@@ -875,16 +886,7 @@ export function MessagesHistoryModal({
                     }
                   }}
                 />
-                {replyError ? <div className="mt-1 text-xs text-red-600">{replyError}</div> : null}
-                <div className="mt-2 flex justify-end">
-                  <button
-                    className="btn btn-sm btn-primary"
-                    type="submit"
-                    disabled={replySending || !replyText.trim() || !replyAvailability?.canSend}
-                  >
-                    {replySending ? 'Надсилаю…' : 'Надіслати'}
-                  </button>
-                </div>
+                {replyError ? <div className="mt-1 truncate text-xs text-red-600">{replyError}</div> : null}
               </form>
             ) : null}
             </div>
@@ -1096,7 +1098,17 @@ export function MessagesHistoryModal({
             </div>
           </div>
         </div>
-        <div className="p-4 border-t flex justify-end gap-2">
+        <div className="px-4 py-3 border-t flex justify-end gap-2">
+          {channel === 'instagram' ? (
+            <button
+              className="btn btn-sm btn-primary"
+              type="submit"
+              form="instagram-reply-form"
+              disabled={replySending || !replyText.trim() || !replyAvailability?.canSend}
+            >
+              {replySending ? 'Надсилаю…' : 'Надіслати'}
+            </button>
+          ) : null}
           {!loading && !error && (
             <button className="btn btn-sm btn-primary" onClick={loadMessages}>
               🔄 Оновити
