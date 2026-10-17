@@ -127,7 +127,7 @@ export async function storeDirectMessageMedia(input: {
   let tooBig = 0;
   for (const file of input.files.slice(0, MAX_FILES)) {
     const downloaded = await downloadMedia(file.url);
-    if (!downloaded.ok) {
+    if (downloaded.ok === false) {
       if (downloaded.reason === "too_big") tooBig += 1;
       continue;
     }
