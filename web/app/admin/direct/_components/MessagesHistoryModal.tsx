@@ -53,17 +53,6 @@ interface MessagesHistoryModalProps {
   }) => void;
 }
 
-function instagramReplyHint(
-  reply: { canSend: boolean; hasId: boolean; windowOpen: boolean } | null,
-): string {
-  if (!reply) return 'Перевіряю, чи можна відповісти з CRM…';
-  if (reply.canSend) return 'Можна відповісти з CRM.';
-  const reasons: string[] = [];
-  if (!reply.hasId) reasons.push('немає технічного id Instagram');
-  if (!reply.windowOpen) reasons.push('минуло більше 24 годин від останнього повідомлення клієнта');
-  return `Відповісти з CRM не можна: ${reasons.join(', ')}.`;
-}
-
 function MessageMediaView({ files }: { files?: MessageMedia[] }) {
   if (!files?.length) return null;
   return (
@@ -120,19 +109,10 @@ export function MessagesHistoryModal({
   const [newStatusName, setNewStatusName] = useState('');
   const [newStatusBadgeKey, setNewStatusBadgeKey] = useState<string>('badge_1');
 
-  const [replyText, setReplyText] = useState('');
-  const [replySending, setReplySending] = useState(false);
-  const [replyError, setReplyError] = useState<string | null>(null);
-  const [replyAvailability, setReplyAvailability] = useState<{
-    canSend: boolean;
-    hasId: boolean;
-    windowOpen: boolean;
-  } | null>(null);
   const [editingStatusId, setEditingStatusId] = useState<string | null>(null);
   const [editStatusName, setEditStatusName] = useState<string>('');
   const [editStatusBadgeKey, setEditStatusBadgeKey] = useState<string>('badge_1');
   const editStatusFormRef = useRef<HTMLDivElement>(null);
-  const messagesScrollRef = useRef<HTMLDivElement>(null);
   const historyLoadSeq = useRef(0);
 
   // Прокрутити до форми редагування статусу, щоб вона була видима після натискання олівця
@@ -191,20 +171,9 @@ export function MessagesHistoryModal({
     }
   }
 
-  useEffect(() => {
-    const el = messagesScrollRef.current;
-    if (!el || loading) return;
-    const pinToNewest = () => {
-      el.scrollTop = el.scrollHeight;
-    };
-    pinToNewest();
-    const frame = requestAnimationFrame(pinToNewest);
-    return () => cancelAnimationFrame(frame);
-  }, [messages, loading]);
-
-  function messagesChronological(list: Message[]): Message[] {
+  function messagesNewestFirst(list: Message[]): Message[] {
     return [...list].sort(
-      (a, b) => new Date(a.receivedAt).getTime() - new Date(b.receivedAt).getTime(),
+      (a, b) => new Date(b.receivedAt).getTime() - new Date(a.receivedAt).getTime(),
     );
   }
 
@@ -276,9 +245,6 @@ export function MessagesHistoryModal({
       setTelegramStats(null);
       setMessages([]);
       setDisplayIg(null);
-      setReplyText('');
-      setReplyError(null);
-      setReplyAvailability(null);
     }
   }, [isOpen, client?.id, channel]);
 
@@ -339,7 +305,6 @@ export function MessagesHistoryModal({
       }
 
       // 1) Завжди спочатку БД по clientId — надійніше за ManyChat і працює з __no_ig__
-      setReplyAvailability(null);
       const dbParams = new URLSearchParams();
       dbParams.set('clientId', client.id);
       dbParams.set('channel', 'instagram');
@@ -350,22 +315,12 @@ export function MessagesHistoryModal({
       });
       if (seq !== historyLoadSeq.current) return;
       const dbData = await dbRes.json().catch(() => ({}));
-      const reply = dbData?.instagramReply;
-      setReplyAvailability(
-        reply && typeof reply === 'object'
-          ? {
-              canSend: Boolean(reply.canSend),
-              hasId: Boolean(reply.hasId),
-              windowOpen: Boolean(reply.windowOpen),
-            }
-          : { canSend: false, hasId: false, windowOpen: false },
-      );
       let dbMessages: Message[] = Array.isArray(dbData.messages) ? dbData.messages : [];
       if (!dbRes.ok || dbData.ok === false) {
         setError(typeof dbData.error === 'string' ? dbData.error : 'Не вдалося завантажити історію');
         return;
       }
-      dbMessages = messagesChronological(dbMessages);
+      dbMessages = messagesNewestFirst(dbMessages);
       if (dbMessages.length > 0) {
         setMessages(dbMessages);
         setError(null);
@@ -410,7 +365,7 @@ export function MessagesHistoryModal({
         if (seq !== historyLoadSeq.current) return;
         if (apiData.diagnostics) setDiagnostics(apiData.diagnostics);
         if (apiData.ok && Array.isArray(apiData.messages) && apiData.messages.length > 0) {
-          const convertedMessages: Message[] = messagesChronological(apiData.messages.map((msg: any) => ({
+          const convertedMessages: Message[] = messagesNewestFirst(apiData.messages.map((msg: any) => ({
             receivedAt: msg.timestamp || new Date().toISOString(),
             text: msg.text || '-',
             direction: msg.direction,
@@ -434,7 +389,7 @@ export function MessagesHistoryModal({
         const data = await response.json().catch(() => ({}));
         if (seq !== historyLoadSeq.current) return;
         if (data.ok) {
-          setMessages(messagesChronological(data.messages || []));
+          setMessages(messagesNewestFirst(data.messages || []));
           setError(null);
         } else if (dbMessages.length === 0) {
           setError(data.error || 'Помилка завантаження повідомлень');
@@ -673,33 +628,6 @@ export function MessagesHistoryModal({
     }
   }
 
-  async function sendInstagramReply() {
-    if (!client || replySending) return;
-    const text = replyText.trim();
-    if (!text) return;
-    setReplySending(true);
-    setReplyError(null);
-    try {
-      const response = await fetch('/api/admin/direct/instagram-send', {
-        method: 'POST',
-        credentials: 'include',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ clientId: client.id, text }),
-      });
-      const data = await response.json().catch(() => ({}));
-      if (!response.ok || !data.ok) {
-        setReplyError(typeof data.error === 'string' ? data.error : 'Не надіслалось');
-        return;
-      }
-      setReplyText('');
-      await loadMessages();
-    } catch {
-      setReplyError('Не надіслалось');
-    } finally {
-      setReplySending(false);
-    }
-  }
-
   if (!isOpen || !client) return null;
 
   const fullName = getFullName(client);
@@ -724,7 +652,7 @@ export function MessagesHistoryModal({
         className="bg-white rounded-lg shadow-xl max-w-6xl w-full mx-4 max-h-[90vh] overflow-hidden flex flex-col"
         onClick={(e) => e.stopPropagation()}
       >
-        <div className="px-6 pt-6 pb-2 flex-1 overflow-hidden flex flex-col">
+        <div className="p-6 flex-1 overflow-hidden flex flex-col">
           <div className="flex items-center justify-between mb-4">
             <div>
               <h3 className="font-bold text-lg">
@@ -763,8 +691,7 @@ export function MessagesHistoryModal({
 
           <div className="flex-1 overflow-hidden flex gap-4">
             {/* Ліва колонка: повідомлення */}
-            <div className="flex-1 min-w-0 flex flex-col bg-white">
-            <div ref={messagesScrollRef} className="flex-1 min-h-0 overflow-y-auto pr-2">
+            <div className="flex-1 min-w-0 overflow-y-auto pr-2 bg-white">
               {loading ? (
                 <div className="text-center p-8">
                   <div className="loading loading-spinner loading-lg"></div>
@@ -885,32 +812,6 @@ export function MessagesHistoryModal({
                   })}
                 </div>
               )}
-            </div>
-            {channel === 'instagram' ? (
-              <form
-                id="instagram-reply-form"
-                className="mt-2 border-t pt-2"
-                onSubmit={(event) => {
-                  event.preventDefault();
-                  if (replyAvailability?.canSend) void sendInstagramReply();
-                }}
-              >
-                <textarea
-                  className="textarea textarea-bordered w-full text-sm min-h-[52px]"
-                  placeholder={replyAvailability?.canSend ? 'Відповідь у Instagram Direct' : 'Відповідь недоступна'}
-                  value={replyText}
-                  maxLength={1000}
-                  disabled={replySending || !replyAvailability?.canSend}
-                  onChange={(event) => setReplyText(event.target.value)}
-                  onKeyDown={(event) => {
-                    if (event.key === 'Enter' && !event.shiftKey) {
-                      event.preventDefault();
-                      if (replyAvailability?.canSend) void sendInstagramReply();
-                    }
-                  }}
-                />
-              </form>
-            ) : null}
             </div>
 
             {/* Права колонка: статуси переписки + історія */}
@@ -1120,47 +1021,15 @@ export function MessagesHistoryModal({
             </div>
           </div>
         </div>
-        <div className="px-6 py-3 border-t flex items-center gap-4">
-          <div className="flex-1 flex items-center justify-between gap-3 min-w-0">
-            {channel === 'instagram' ? (
-              <div
-                className={`truncate text-xs ${
-                  replyError
-                    ? 'text-red-600'
-                    : !replyAvailability
-                      ? 'text-gray-500'
-                      : replyAvailability.canSend
-                        ? 'text-green-700'
-                        : 'text-amber-900'
-                }`}
-                title={replyError || instagramReplyHint(replyAvailability)}
-              >
-                {replyError || instagramReplyHint(replyAvailability)}
-              </div>
-            ) : (
-              <span />
-            )}
-            {channel === 'instagram' ? (
-              <button
-                className="btn btn-sm btn-primary"
-                type="submit"
-                form="instagram-reply-form"
-                disabled={replySending || !replyText.trim() || !replyAvailability?.canSend}
-              >
-                {replySending ? 'Надсилаю…' : 'Надіслати'}
-              </button>
-            ) : null}
-          </div>
-          <div className="w-[320px] shrink-0 flex justify-end gap-2 pl-4">
-            {!loading && !error && (
-              <button className="btn btn-sm btn-primary" onClick={loadMessages}>
-                🔄 Оновити
-              </button>
-            )}
-            <button className="btn btn-sm" onClick={onClose}>
-              Закрити
+        <div className="p-4 border-t flex justify-end gap-2">
+          {!loading && !error && (
+            <button className="btn btn-sm btn-primary" onClick={loadMessages}>
+              🔄 Оновити
             </button>
-          </div>
+          )}
+          <button className="btn btn-sm" onClick={onClose}>
+            Закрити
+          </button>
         </div>
       </div>
     </div>
