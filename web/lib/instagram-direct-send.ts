@@ -115,8 +115,9 @@ async function scopedIdFromRecentThreads(pageId: string, pageToken: string, user
 }
 
 export async function instagramReplyAvailability(clientId: string): Promise<InstagramReplyAvailability> {
-  const client = await prisma.directClient.findUnique({
-    where: { id: clientId },
+  const now = new Date();
+  const client = await prisma.directClient.findFirst({
+    where: { id: clientId, firstContactDate: { lte: now } },
     select: { id: true, instagramUsername: true, instagramScopedId: true },
   });
   if (!client) {
@@ -124,7 +125,7 @@ export async function instagramReplyAvailability(clientId: string): Promise<Inst
   }
 
   const lastIncoming = await prisma.directMessage.findFirst({
-    where: { clientId, direction: "incoming" },
+    where: { clientId, direction: "incoming", receivedAt: { lte: now } },
     orderBy: { receivedAt: "desc" },
     select: { receivedAt: true },
   });

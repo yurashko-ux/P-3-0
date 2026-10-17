@@ -3,6 +3,7 @@
 // Джерело: DirectMessage (PostgreSQL) — постійне зберігання, повідомлення не зникають
 
 import { NextRequest, NextResponse } from 'next/server';
+import { unstable_noStore as noStore } from 'next/cache';
 import { prisma } from '@/lib/prisma';
 import { normalizeInstagram } from '@/lib/normalize';
 import { kvRead } from '@/lib/kv';
@@ -17,6 +18,17 @@ export const maxDuration = 60;
 
 const ADMIN_PASS = process.env.ADMIN_PASS || '';
 const CRON_SECRET = process.env.CRON_SECRET || '';
+
+function historyJson(body: unknown, status = 200): NextResponse {
+  return NextResponse.json(body, {
+    status,
+    headers: {
+      'Cache-Control': 'private, no-store, max-age=0, must-revalidate',
+      'CDN-Cache-Control': 'no-store',
+      'Vercel-CDN-Cache-Control': 'no-store',
+    },
+  });
+}
 
 async function replyPayload(
   clientId: string | null,
@@ -155,8 +167,9 @@ async function getMessagesFromKvLog(instagramUsername: string) {
  * Пріоритет: DirectMessage (постійна БД) → fallback на KV лог
  */
 export async function GET(req: NextRequest) {
+  noStore();
   if (!isAuthorized(req)) {
-    return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+    return historyJson({ error: 'Unauthorized' }, 401);
   }
 
   try {
@@ -167,9 +180,9 @@ export async function GET(req: NextRequest) {
       channelParam === 'telegram' ? 'telegram' : channelParam === 'instagram' ? 'instagram' : null;
 
     if (!clientId && !instagramUsername) {
-      return NextResponse.json(
+      return historyJson(
         { ok: false, error: 'clientId or instagramUsername is required' },
-        { status: 400 }
+        400
       );
     }
 
@@ -202,9 +215,11 @@ export async function GET(req: NextRequest) {
         },
       } as const;
 
+      const readAt = new Date();
       let dbMessages = await prisma.directMessage.findMany({
         where: {
           clientId: resolvedClientId,
+          receivedAt: { lte: readAt },
           ...(channel ? sourcesWhereClause(channel) : {}),
         },
         orderBy,
@@ -214,7 +229,7 @@ export async function GET(req: NextRequest) {
       // Якщо фільтр по source нічого не дав, а повідомлення є — показуємо їх (legacy source / регістр)
       if (dbMessages.length === 0 && channel === 'instagram') {
         const allForClient = await prisma.directMessage.findMany({
-          where: { clientId: resolvedClientId },
+          where: { clientId: resolvedClientId, receivedAt: { lte: readAt } },
           orderBy,
           include: includeClient,
         });
@@ -251,7 +266,15 @@ export async function GET(req: NextRequest) {
             })),
           };
         });
-        return NextResponse.json({
+        const newest = messages[0];
+        console.log('[direct/messages-history] відповідь з бази', {
+          clientId: resolvedClientId,
+          total: messages.length,
+          newestAt: newest?.receivedAt ?? null,
+          newestDirection: newest?.direction ?? null,
+          newestText: (newest?.text || '').slice(0, 40),
+        });
+        return historyJson({
           ok: true,
           total: messages.length,
           messages,
@@ -264,7 +287,7 @@ export async function GET(req: NextRequest) {
     // Fallback: KV лог (для клієнтів без записів у DirectMessage) — лише Instagram
     if (instagramUsername && channel !== 'telegram') {
       const kvMessages = await getMessagesFromKvLog(instagramUsername);
-      return NextResponse.json({
+      return historyJson({
         ok: true,
         total: kvMessages.length,
         messages: kvMessages,
@@ -273,7 +296,7 @@ export async function GET(req: NextRequest) {
       });
     }
 
-    return NextResponse.json({
+    return historyJson({
       ok: true,
       total: 0,
       messages: [],
@@ -281,12 +304,12 @@ export async function GET(req: NextRequest) {
     });
   } catch (error) {
     console.error('[direct/messages-history] GET error:', error);
-    return NextResponse.json(
+    return historyJson(
       {
         ok: false,
         error: error instanceof Error ? error.message : String(error),
       },
-      { status: 500 }
+      500
     );
   }
 }

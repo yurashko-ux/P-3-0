@@ -133,6 +133,7 @@ export function MessagesHistoryModal({
   const [editStatusBadgeKey, setEditStatusBadgeKey] = useState<string>('badge_1');
   const editStatusFormRef = useRef<HTMLDivElement>(null);
   const messagesScrollRef = useRef<HTMLDivElement>(null);
+  const historyLoadSeq = useRef(0);
 
   // Прокрутити до форми редагування статусу, щоб вона була видима після натискання олівця
   useEffect(() => {
@@ -193,7 +194,12 @@ export function MessagesHistoryModal({
   useEffect(() => {
     const el = messagesScrollRef.current;
     if (!el || loading) return;
-    el.scrollTop = el.scrollHeight;
+    const pinToNewest = () => {
+      el.scrollTop = el.scrollHeight;
+    };
+    pinToNewest();
+    const frame = requestAnimationFrame(pinToNewest);
+    return () => cancelAnimationFrame(frame);
   }, [messages, loading]);
 
   function messagesChronological(list: Message[]): Message[] {
@@ -289,6 +295,7 @@ export function MessagesHistoryModal({
 
   async function loadMessages() {
     if (!client) return;
+    const seq = ++historyLoadSeq.current;
     
     try {
       setLoading(true);
@@ -336,10 +343,12 @@ export function MessagesHistoryModal({
       const dbParams = new URLSearchParams();
       dbParams.set('clientId', client.id);
       dbParams.set('channel', 'instagram');
+      dbParams.set('_', String(Date.now()));
       const dbRes = await fetch(`/api/admin/direct/messages-history?${dbParams.toString()}`, {
         credentials: 'include',
         cache: 'no-store',
       });
+      if (seq !== historyLoadSeq.current) return;
       const dbData = await dbRes.json().catch(() => ({}));
       const reply = dbData?.instagramReply;
       setReplyAvailability(
@@ -398,6 +407,7 @@ export function MessagesHistoryModal({
           `/api/admin/direct/manychat-conversation?instagramUsername=${encodeURIComponent(effectiveIg)}`,
         );
         const apiData = await apiResponse.json().catch(() => ({}));
+        if (seq !== historyLoadSeq.current) return;
         if (apiData.diagnostics) setDiagnostics(apiData.diagnostics);
         if (apiData.ok && Array.isArray(apiData.messages) && apiData.messages.length > 0) {
           const convertedMessages: Message[] = messagesChronological(apiData.messages.map((msg: any) => ({
@@ -416,8 +426,13 @@ export function MessagesHistoryModal({
         params.set('clientId', client.id);
         params.set('instagramUsername', effectiveIg);
         params.set('channel', 'instagram');
-        const response = await fetch(`/api/admin/direct/messages-history?${params.toString()}`);
+        params.set('_', String(Date.now()));
+        const response = await fetch(`/api/admin/direct/messages-history?${params.toString()}`, {
+          credentials: 'include',
+          cache: 'no-store',
+        });
         const data = await response.json().catch(() => ({}));
+        if (seq !== historyLoadSeq.current) return;
         if (data.ok) {
           setMessages(messagesChronological(data.messages || []));
           setError(null);
@@ -431,9 +446,11 @@ export function MessagesHistoryModal({
         setError(dbData.error || 'Помилка завантаження повідомлень');
       }
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Помилка завантаження повідомлень');
+      if (seq === historyLoadSeq.current) {
+        setError(err instanceof Error ? err.message : 'Помилка завантаження повідомлень');
+      }
     } finally {
-      setLoading(false);
+      if (seq === historyLoadSeq.current) setLoading(false);
     }
   }
 
