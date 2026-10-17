@@ -860,18 +860,6 @@ export function MessagesHistoryModal({
                   if (replyAvailability?.canSend) void sendInstagramReply();
                 }}
               >
-                <div
-                  className={`mb-1 truncate text-xs ${
-                    !replyAvailability
-                      ? 'text-gray-500'
-                      : replyAvailability.canSend
-                        ? 'text-green-700'
-                        : 'text-amber-900'
-                  }`}
-                  title={instagramReplyHint(replyAvailability)}
-                >
-                  {instagramReplyHint(replyAvailability)}
-                </div>
                 <textarea
                   className="textarea textarea-bordered w-full text-sm min-h-[52px]"
                   placeholder={replyAvailability?.canSend ? 'Відповідь у Instagram Direct' : 'Відповідь недоступна'}
@@ -886,6 +874,18 @@ export function MessagesHistoryModal({
                     }
                   }}
                 />
+                <div
+                  className={`mt-1 truncate text-xs ${
+                    !replyAvailability
+                      ? 'text-gray-500'
+                      : replyAvailability.canSend
+                        ? 'text-green-700'
+                        : 'text-amber-900'
+                  }`}
+                  title={instagramReplyHint(replyAvailability)}
+                >
+                  {instagramReplyHint(replyAvailability)}
+                </div>
                 {replyError ? <div className="mt-1 truncate text-xs text-red-600">{replyError}</div> : null}
               </form>
             ) : null}
