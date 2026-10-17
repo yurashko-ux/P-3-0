@@ -33,6 +33,8 @@ model DirectStatus {
 model DirectClient {
   id                                        String    @id // UUID або timestamp-based ID (зберігаємо як є з KV)
   instagramUsername                         String // Нікнейм в Instagram (унікальний)
+  /// Технічний id співрозмовника в Direct. Потрібен, щоб відповісти з CRM. Не нік і не токен.
+  instagramScopedId                         String?
   firstName                                 String? // Ім'я
   lastName                                  String? // Прізвище
   phone                                     String? // Телефон з Altegio (зберігаємо як приходить з API)

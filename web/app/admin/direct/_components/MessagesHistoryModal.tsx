@@ -109,6 +109,9 @@ export function MessagesHistoryModal({
   const [newStatusName, setNewStatusName] = useState('');
   const [newStatusBadgeKey, setNewStatusBadgeKey] = useState<string>('badge_1');
 
+  const [replyText, setReplyText] = useState('');
+  const [replySending, setReplySending] = useState(false);
+  const [replyError, setReplyError] = useState<string | null>(null);
   const [editingStatusId, setEditingStatusId] = useState<string | null>(null);
   const [editStatusName, setEditStatusName] = useState<string>('');
   const [editStatusBadgeKey, setEditStatusBadgeKey] = useState<string>('badge_1');
@@ -238,6 +241,8 @@ export function MessagesHistoryModal({
       setTelegramStats(null);
       setMessages([]);
       setDisplayIg(null);
+      setReplyText('');
+      setReplyError(null);
     }
   }, [isOpen, client?.id, channel]);
 
@@ -605,6 +610,33 @@ export function MessagesHistoryModal({
     }
   }
 
+  async function sendInstagramReply() {
+    if (!client || replySending) return;
+    const text = replyText.trim();
+    if (!text) return;
+    setReplySending(true);
+    setReplyError(null);
+    try {
+      const response = await fetch('/api/admin/direct/instagram-send', {
+        method: 'POST',
+        credentials: 'include',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ clientId: client.id, text }),
+      });
+      const data = await response.json().catch(() => ({}));
+      if (!response.ok || !data.ok) {
+        setReplyError(typeof data.error === 'string' ? data.error : 'Не надіслалось');
+        return;
+      }
+      setReplyText('');
+      await loadMessages();
+    } catch {
+      setReplyError('Не надіслалось');
+    } finally {
+      setReplySending(false);
+    }
+  }
+
   if (!isOpen || !client) return null;
 
   const fullName = getFullName(client);
@@ -668,7 +700,8 @@ export function MessagesHistoryModal({
 
           <div className="flex-1 overflow-hidden flex gap-4">
             {/* Ліва колонка: повідомлення */}
-            <div className="flex-1 min-w-0 overflow-y-auto pr-2 bg-white">
+            <div className="flex-1 min-w-0 flex flex-col bg-white">
+            <div className="flex-1 min-h-0 overflow-y-auto pr-2">
               {loading ? (
                 <div className="text-center p-8">
                   <div className="loading loading-spinner loading-lg"></div>
@@ -789,6 +822,37 @@ export function MessagesHistoryModal({
                   })}
                 </div>
               )}
+            </div>
+            {channel === 'instagram' ? (
+              <form
+                className="mt-3 border-t pt-3"
+                onSubmit={(event) => {
+                  event.preventDefault();
+                  void sendInstagramReply();
+                }}
+              >
+                <textarea
+                  className="textarea textarea-bordered w-full text-sm min-h-[72px]"
+                  placeholder="Відповідь у Instagram Direct"
+                  value={replyText}
+                  maxLength={1000}
+                  disabled={replySending}
+                  onChange={(event) => setReplyText(event.target.value)}
+                  onKeyDown={(event) => {
+                    if (event.key === 'Enter' && !event.shiftKey) {
+                      event.preventDefault();
+                      void sendInstagramReply();
+                    }
+                  }}
+                />
+                {replyError ? <div className="mt-1 text-xs text-red-600">{replyError}</div> : null}
+                <div className="mt-2 flex justify-end">
+                  <button className="btn btn-sm btn-primary" type="submit" disabled={replySending || !replyText.trim()}>
+                    {replySending ? 'Надсилаю…' : 'Надіслати'}
+                  </button>
+                </div>
+              </form>
+            ) : null}
             </div>
 
             {/* Права колонка: статуси переписки + історія */}

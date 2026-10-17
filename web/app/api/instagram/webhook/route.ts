@@ -365,6 +365,18 @@ async function acceptMessage(input: {
           text: plainText,
         });
       }
+      const scopedId = outgoing ? recipientId : senderId;
+      if (scopedId && !salonIds.has(scopedId)) {
+        await prisma.directClient.update({
+          where: { id: client.id },
+          data: { instagramScopedId: scopedId },
+        }).catch((error) => {
+          console.warn(
+            "[instagram/webhook] Не збережено id співрозмовника",
+            sanitizeMeta(error instanceof Error ? error.message : String(error)),
+          );
+        });
+      }
       let dbMessageId: string | null = null;
       if (messageId) {
         const sameId = await prisma.directMessage.findFirst({
