@@ -771,7 +771,7 @@ export function AdminToolsModal({
     }
   };
 
-  // Кількість кнопок: 103. При додаванні нової кнопки завжди додавати її в кінець відповідної категорії та оновлювати цю кількість у коментарі.
+  // Кількість кнопок: 104. При додаванні нової кнопки завжди додавати її в кінець відповідної категорії та оновлювати цю кількість у коментарі.
   const tools = [
     {
       category: "Тести",
@@ -1010,6 +1010,18 @@ export function AdminToolsModal({
               })
               .join("\n\n");
             return `Останні події: ${data?.count ?? 0}\n\n${lines || "Поки порожньо. Напиши салону з особистого Instagram і натисни ще раз."}`;
+          },
+        },
+        {
+          icon: "🧬",
+          label: "Сирий JSON вебхуків Instagram (діагностика ad_id)",
+          endpoint: "/api/admin/direct/instagram-webhook-raw-log",
+          method: "GET" as const,
+          successMessage: (data: any) => {
+            const lines = (data?.events || [])
+              .map((event: { time?: string; body?: string }) => `── ${event.time || "—"} ──\n${event.body || ""}`)
+              .join("\n\n");
+            return `Повний сирий JSON, останні: ${data?.count ?? 0}\n\n${lines || "Поки порожньо."}`;
           },
         },
       ],

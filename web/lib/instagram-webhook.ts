@@ -8,6 +8,10 @@ export const INSTAGRAM_WEBHOOK_PATH = "/api/instagram/webhook";
 export const INSTAGRAM_WEBHOOK_URL = `https://p-3-0.vercel.app${INSTAGRAM_WEBHOOK_PATH}`;
 export const INSTAGRAM_WEBHOOK_LOG_KEY = "instagram:webhook:log";
 const LOG_LIMIT = 30;
+// Тимчасовий журнал повного сирого JSON від Meta — для діагностики referral/ad_id
+// (щоб бачити геть усе, що Meta надсилає, а не лише наш розпарсений підсумок).
+export const INSTAGRAM_WEBHOOK_RAW_LOG_KEY = "instagram:webhook:raw-log";
+const RAW_LOG_LIMIT = 15;
 export const GRAPH = "https://graph.facebook.com/v21.0";
 export const INSTAGRAM_GRAPH = "https://graph.instagram.com/v21.0";
 
@@ -59,6 +63,40 @@ export function instagramSignatureOk(rawBody: string, header: string | null): bo
 export async function rememberInstagramWebhook(event: InstagramWebhookEvent): Promise<void> {
   await kvWrite.lpush(INSTAGRAM_WEBHOOK_LOG_KEY, JSON.stringify(event));
   await kvWrite.ltrim(INSTAGRAM_WEBHOOK_LOG_KEY, 0, LOG_LIMIT - 1);
+}
+
+// Зберігає повне сире тіло POST-запиту від Meta (останні RAW_LOG_LIMIT штук).
+// Діагностичний журнал для перевірки referral/ad_id — прибрати, коли питання закриється.
+export async function rememberInstagramRawWebhook(rawBody: string): Promise<void> {
+  await kvWrite.lpush(
+    INSTAGRAM_WEBHOOK_RAW_LOG_KEY,
+    JSON.stringify({ receivedAt: new Date().toISOString(), body: sanitizeMeta(rawBody).slice(0, 6000) }),
+  );
+  await kvWrite.ltrim(INSTAGRAM_WEBHOOK_RAW_LOG_KEY, 0, RAW_LOG_LIMIT - 1);
+}
+
+export async function readInstagramRawWebhooks(): Promise<Array<{ receivedAt: string; body: string }>> {
+  const rows = await kvRead.lrange(INSTAGRAM_WEBHOOK_RAW_LOG_KEY, 0, RAW_LOG_LIMIT - 1);
+  const out: Array<{ receivedAt: string; body: string }> = [];
+  for (const row of rows) {
+    if (typeof row !== "string" || !row.trim()) continue;
+    try {
+      let value: unknown = JSON.parse(row);
+      // KV іноді віддає {"value":"<json>"}.
+      if (value && typeof value === "object" && !Array.isArray(value) && "value" in (value as Record<string, unknown>)) {
+        const inner = (value as { value: unknown }).value;
+        value = typeof inner === "string" ? JSON.parse(inner) : inner;
+      }
+      const rec = value as { receivedAt?: unknown; body?: unknown };
+      out.push({
+        receivedAt: typeof rec?.receivedAt === "string" ? rec.receivedAt : "",
+        body: typeof rec?.body === "string" ? rec.body : "",
+      });
+    } catch {
+      out.push({ receivedAt: "", body: sanitizeMeta(row).slice(0, 2000) });
+    }
+  }
+  return out;
 }
 
 function asWebhookEvent(value: unknown): InstagramWebhookEvent | null {

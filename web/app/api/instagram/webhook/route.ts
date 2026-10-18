@@ -11,6 +11,7 @@ import {
   instagramSignatureOk,
   instagramWebhookVerifyToken,
   loadInstagramPageToken,
+  rememberInstagramRawWebhook,
   rememberInstagramWebhook,
   sanitizeMeta,
   type InstagramWebhookEvent,
@@ -218,6 +219,9 @@ export async function POST(req: NextRequest) {
     }).catch(() => undefined);
     return NextResponse.json({ ok: true });
   }
+
+  // Тимчасово: зберігаємо повне сире тіло запиту для діагностики referral/ad_id.
+  rememberInstagramRawWebhook(raw).catch(() => undefined);
 
   const userToken = (process.env.INSTAGRAM_ACCESS_TOKEN || "").trim();
   const pageId = (process.env.INSTAGRAM_PAGE_ID || "").trim();
