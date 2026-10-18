@@ -46,6 +46,24 @@ export function LeadAgencyHeart({ children }: { children: ReactNode }) {
   );
 }
 
+/**
+ * Жовта крапка з «?» зверху справа на хмаринці: лід прийшов з рекламного оголошення (є ad_id
+ * з referral Meta), але кабінет цьому оголошенню ще не призначено в «Джерела» → «Оголошення Meta».
+ */
+export function LeadAgencyPending({ children }: { children: ReactNode }) {
+  return (
+    <span className="relative inline-flex">
+      {children}
+      <span
+        className="pointer-events-none absolute -right-1.5 -top-1.5 flex h-3.5 w-3.5 items-center justify-center rounded-full bg-amber-400 text-[8px] font-bold leading-none text-white"
+        aria-hidden
+      >
+        ?
+      </span>
+    </span>
+  );
+}
+
 export function StateIcon({ state, size = 36 }: { state: string | null; size?: number }) {
   const s = iconStyle(size);
 

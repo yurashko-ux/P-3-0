@@ -15,7 +15,7 @@ import {
 import { getChatBadgeStyle } from "./ChatBadgeIcon";
 import { CommunicationChannelPicker } from "./CommunicationChannelPicker";
 import { ConfirmedCheckIcon } from "./CheckIcon";
-import { LeadAgencyHeart, LeadAgencyStar, StateIcon } from "./StateIcon";
+import { LeadAgencyHeart, LeadAgencyPending, LeadAgencyStar, StateIcon } from "./StateIcon";
 import { DirectStatusCell } from "./DirectStatusCell";
 import { BinotelCallTypeIcon } from "./BinotelCallTypeIcon";
 import { PlayRecordingButton } from "./PlayRecordingButton";
@@ -52,15 +52,25 @@ import { CallbackReminderCell } from "./CallbackReminderCell";
 /** Стабільний fallback, щоб не створювати новий [] на кожен рендер при відсутності lastActivityKeys */
 const EMPTY_ACTIVITY_KEYS: readonly string[] = [];
 
-function leadAgencyCloudTitle(titleBase: string, leadAgency: DirectClient["leadAgency"]): string {
+function leadAgencyCloudTitle(
+  titleBase: string,
+  leadAgency: DirectClient["leadAgency"],
+  leadAdId?: DirectClient["leadAdId"],
+): string {
   if (leadAgency === "agency_1") return `${titleBase} · Агенція 2`;
   if (leadAgency === "agency_2") return `${titleBase} · Агенція 1`;
+  if (!leadAgency && leadAdId) return `${titleBase} · Лід з реклами, кабінет ще не визначено (Джерела → Оголошення)`;
   return titleBase;
 }
 
-function wrapLeadAgencyCloud(icon: ReactNode, leadAgency: DirectClient["leadAgency"]): ReactNode {
+function wrapLeadAgencyCloud(
+  icon: ReactNode,
+  leadAgency: DirectClient["leadAgency"],
+  leadAdId?: DirectClient["leadAdId"],
+): ReactNode {
   if (leadAgency === "agency_1") return <LeadAgencyStar>{icon}</LeadAgencyStar>;
   if (leadAgency === "agency_2") return <LeadAgencyHeart>{icon}</LeadAgencyHeart>;
+  if (!leadAgency && leadAdId) return <LeadAgencyPending>{icon}</LeadAgencyPending>;
   return icon;
 }
 
@@ -1220,13 +1230,13 @@ return (
           const daysSinceFirst = Math.floor((todayStart - firstStart) / 86400000);
           if (daysSinceFirst === 0) {
             const titleBase = stateDateLead !== '-' ? `Новий лід. Дата встановлення: ${stateDateLead}` : "Новий лід (перший контакт сьогодні). Натисніть для історії станів";
-            const title = leadAgencyCloudTitle(titleBase, client.leadAgency);
+            const title = leadAgencyCloudTitle(titleBase, client.leadAgency, client.leadAdId);
             const icon = <StateIcon state="new-lead" size={28} />;
             return (
               <div className="flex flex-col items-start gap-0.5">
                 <span className="inline-flex items-center justify-center">
                   <button type="button" className="hover:opacity-70 transition-opacity p-0" title={title} onClick={() => setStateHistoryClient(client)}>
-                    {wrapLeadAgencyCloud(icon, client.leadAgency)}
+                    {wrapLeadAgencyCloud(icon, client.leadAgency, client.leadAdId)}
                   </button>
                 </span>
                 {stateDateLead !== '-' && <span className="text-[10px] leading-none opacity-60">{stateDateLead}</span>}
@@ -1234,13 +1244,13 @@ return (
             );
           }
           const titleBase = stateDateLead !== '-' ? `Повідомлення / Лід. Дата встановлення: ${stateDateLead}` : "Повідомлення / Лід (перший контакт раніше). Натисніть для історії станів";
-          const title = leadAgencyCloudTitle(titleBase, client.leadAgency);
+          const title = leadAgencyCloudTitle(titleBase, client.leadAgency, client.leadAdId);
           const icon = <StateIcon state="message" size={28} />;
           return (
             <div className="flex flex-col items-start gap-0.5">
               <span className="inline-flex items-center justify-center">
                 <button type="button" className="hover:opacity-70 transition-opacity p-0" title={title} onClick={() => setStateHistoryClient(client)}>
-                  {wrapLeadAgencyCloud(icon, client.leadAgency)}
+                  {wrapLeadAgencyCloud(icon, client.leadAgency, client.leadAdId)}
                 </button>
               </span>
               {stateDateLead !== '-' && <span className="text-[10px] leading-none opacity-60">{stateDateLead}</span>}

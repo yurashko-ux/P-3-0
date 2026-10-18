@@ -45,6 +45,8 @@ export type DirectClient = {
   includeInNewLeadsKpi?: boolean;
   /** ManyChat: agency_1 = *, agency_2 = 💙, organic = без знака. Порожнє = стара картка без мітки. */
   leadAgency?: DirectLeadAgency;
+  /** ad_id з referral Meta (перше вхідне повідомлення). Є, а leadAgency порожній = лід з реклами, кабінет ще не призначено. */
+  leadAdId?: string;
   /** Сума платного запису в момент першої додатної суми. Лише ліди зі зірочкою. */
   starredLeadCheckUah?: number;
   /** YYYY-MM-DD Kyiv дня цього запису. */

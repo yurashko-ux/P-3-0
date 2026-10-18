@@ -93,6 +93,9 @@ export function prismaClientToDirectClient(dbClient: any): DirectClient {
     leadAgency: isDirectLeadAgency((dbClient as any).leadAgency)
       ? (dbClient as any).leadAgency
       : undefined,
+    leadAdId: typeof (dbClient as any).leadAdId === 'string' && (dbClient as any).leadAdId.trim()
+      ? (dbClient as any).leadAdId
+      : undefined,
     starredLeadCheckUah:
       typeof (dbClient as any).starredLeadCheckUah === 'number'
         ? (dbClient as any).starredLeadCheckUah

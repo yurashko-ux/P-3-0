@@ -116,7 +116,15 @@ export async function assignLeadSourceFromFirstIncoming(input: {
   if (prior > 0) return null;
 
   // Пріоритет: ad_id конкретного оголошення (найнадійніше, не залежить від тексту) → знак у тексті → органіка.
-  const code = (input.adId ? await resolveLeadSourceByAdId(input.adId) : null) || (await matchLeadSourceCode(input.text));
+  // Якщо ad_id є, але ще не призначений кабінету — лишаємо leadAgency = null («не визначено», а не
+  // «органіка»), щоб таких лідів було видно в UI й не загубити їх серед справжньої органіки.
+  // Коли admin призначить кабінет цьому ad_id, setLeadAdIdSource() донарахує leadAgency автоматично.
+  let code: string | null = null;
+  if (input.adId) {
+    code = await resolveLeadSourceByAdId(input.adId);
+  } else {
+    code = await matchLeadSourceCode(input.text);
+  }
 
   await prisma.directClient.update({
     where: { id: input.clientId },
