@@ -43,7 +43,7 @@ export async function POST(req: NextRequest) {
     callbackUrl: INSTAGRAM_WEBHOOK_URL,
     verifyToken,
     signatureCheck: Boolean(instagramAppSecret()),
-    fields: ["messages", "message_echoes"],
+    fields: ["messages", "message_echoes", "messaging_referral"],
   };
 
   if (!verifyToken || !userToken || !pageId) {
@@ -82,23 +82,29 @@ export async function POST(req: NextRequest) {
     { base: INSTAGRAM_GRAPH, label: "instagram.com" },
     { base: GRAPH, label: "facebook.com" },
   ];
+  // Пробуємо підписатись одразу і на referral (дані про рекламне походження ліда,
+  // ad_id/ads_context_data), і без нього — якщо Meta для цієї сторінки/токена
+  // відхилить messaging_referral, підписка все одно пройде хоча б на messages.
+  const fieldOptions = ["messages,messaging_referral", "messages"];
   let usedFields = "";
-  for (const target of targets) {
-    const subscribed = await graphCall(
-      `${loaded.igId}/subscribed_apps`,
-      loaded.pageToken,
-      { subscribed_fields: "messages" },
-      "POST",
-      target.base,
-    );
-    if (graphCallFailed(subscribed)) {
-      attempts.push(`${target.label}: ${subscribed.message}`);
-      console.warn("[instagram-webhook-setup] Підписка не вдалась", target.label, subscribed.code, subscribed.message);
-      continue;
+  outer: for (const target of targets) {
+    for (const fields of fieldOptions) {
+      const subscribed = await graphCall(
+        `${loaded.igId}/subscribed_apps`,
+        loaded.pageToken,
+        { subscribed_fields: fields },
+        "POST",
+        target.base,
+      );
+      if (graphCallFailed(subscribed)) {
+        attempts.push(`${target.label} (${fields}): ${subscribed.message}`);
+        console.warn("[instagram-webhook-setup] Підписка не вдалась", target.label, fields, subscribed.code, subscribed.message);
+        continue;
+      }
+      usedFields = fields;
+      attempts.length = 0;
+      break outer;
     }
-    usedFields = "messages";
-    attempts.length = 0;
-    break;
   }
   if (!usedFields) {
     return NextResponse.json({
