@@ -48,6 +48,26 @@ export function countF4RecordsCreatedOnDay(clients: DirectClient[], kyivDay: str
 }
 
 /**
+ * Платні записи, створені в цей день Києва (друга дата в колонці «Запис»).
+ * Перезаписи — підмножина: ті самі записи з позначкою 🔁.
+ * Не F4: F4 лишає лише перший платний і відкидає перезапис, тому вчорашні 20 записів давали 0.
+ */
+export function countPaidRecordsCreatedOnKyivDay(
+  clients: DirectClient[],
+  kyivDay: string,
+): { recordsCreatedCount: number; rebookingsCount: number } {
+  let recordsCreatedCount = 0;
+  let rebookingsCount = 0;
+  for (const client of clients) {
+    if (toKyivDay(client.paidServiceRecordCreatedAt) !== kyivDay) continue;
+    if ((client.paidServiceTotalCost ?? 0) <= 0) continue;
+    recordsCreatedCount += 1;
+    if (client.paidServiceIsRebooking === true) rebookingsCount += 1;
+  }
+  return { recordsCreatedCount, rebookingsCount };
+}
+
+/**
  * «Нові клієнти» звіту: перший платний запис, дата візиту = день звіту.
  * Той самий критерій, що computePeriodStats (paidRecordsInHistoryCount = 0 і paidServiceDate).
  */

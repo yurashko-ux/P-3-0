@@ -13,7 +13,7 @@ import {
 } from "@/lib/altegio/records-grouping";
 import { countBankUnmatchedForKyivDay } from "@/lib/reports/bank-unmatched-counts";
 import {
-  countF4RecordsCreatedOnDay,
+  countPaidRecordsCreatedOnKyivDay,
   getActiveBaseDailyMetrics,
   getBinotelIncomingMissedOnKyivDay,
 } from "@/lib/reports/daily-ops-extras";
@@ -137,6 +137,7 @@ export async function buildDailyOpsReport(options?: {
     fetchAltegioTurnoverForKyivDay(kyivDay),
   ]);
 
+  const paidCreated = countPaidRecordsCreatedOnKyivDay(clients as DirectClient[], kyivDay);
   const newLeadsCount = today.newLeadsCount ?? 0;
   const heartRows: Array<LeadInstagramLink & { sortKey: string }> = [];
   const starRows: Array<LeadInstagramLink & { sortKey: string }> = [];
@@ -178,8 +179,8 @@ export async function buildDailyOpsReport(options?: {
     consultationRealized: today.consultationRealized ?? 0,
     newClientsCount: today.newClientsCount ?? 0,
     consultationBookedToday: today.consultationBookedToday ?? 0,
-    rebookingsCount: today.rebookingsCount ?? 0,
-    recordsCreatedCount: countF4RecordsCreatedOnDay(clients as DirectClient[], kyivDay),
+    rebookingsCount: paidCreated.rebookingsCount,
+    recordsCreatedCount: paidCreated.recordsCreatedCount,
     recordsRealizedCountToday: today.recordsRealizedCountToday ?? 0,
     turnoverToday: altegioTurnover ?? today.turnoverToday ?? 0,
     incomingUnmatched: bankUnmatched.incomingUnmatched,
