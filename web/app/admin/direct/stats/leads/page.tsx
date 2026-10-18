@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import Link from "next/link";
 
 type Kind = "ads" | "organic" | "website";
@@ -41,20 +41,54 @@ const MARK_EMOJI_OPTIONS = [
   "⭐", "🔥", "✨", "🎯", "🔵", "🟢", "🟣", "🟠", "🟡", "🔴",
 ];
 
-function MarkEmojiPicker({ value, onChange }: { value: string; onChange: (mark: string) => void }) {
+// Поле "Знак" з попапом вибору емодзі — випадає, коли курсор стає в поле, і зникає при кліку поза ним.
+function MarkField({
+  value,
+  onChange,
+  inputClassName,
+}: {
+  value: string;
+  onChange: (mark: string) => void;
+  inputClassName?: string;
+}) {
+  const [open, setOpen] = useState(false);
+  const wrapRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (!open) return;
+    function onDocMouseDown(event: MouseEvent) {
+      if (wrapRef.current && !wrapRef.current.contains(event.target as Node)) setOpen(false);
+    }
+    document.addEventListener("mousedown", onDocMouseDown);
+    return () => document.removeEventListener("mousedown", onDocMouseDown);
+  }, [open]);
+
   return (
-    <div className="flex flex-wrap gap-1 max-w-[220px]">
-      {MARK_EMOJI_OPTIONS.map((emoji) => (
-        <button
-          key={emoji}
-          type="button"
-          className={`btn btn-xs btn-square ${value === emoji ? "btn-primary" : "btn-ghost"}`}
-          onClick={() => onChange(emoji)}
-          title={emoji}
-        >
-          {emoji}
-        </button>
-      ))}
+    <div className="relative" ref={wrapRef}>
+      <input
+        className={inputClassName || "input input-bordered input-sm w-24"}
+        value={value}
+        onFocus={() => setOpen(true)}
+        onChange={(event) => onChange(event.target.value)}
+      />
+      {open ? (
+        <div className="absolute left-0 top-full z-20 mt-1 grid w-[200px] grid-cols-5 gap-1 rounded border bg-white p-2 shadow-lg">
+          {MARK_EMOJI_OPTIONS.map((emoji) => (
+            <button
+              key={emoji}
+              type="button"
+              className={`btn btn-xs btn-square ${value === emoji ? "btn-primary" : "btn-ghost"}`}
+              onClick={() => {
+                onChange(emoji);
+                setOpen(false);
+              }}
+              title={emoji}
+            >
+              {emoji}
+            </button>
+          ))}
+        </div>
+      ) : null}
     </div>
   );
 }
@@ -65,6 +99,9 @@ function AdIdsPanel({ sources }: { sources: Source[] }) {
   const [error, setError] = useState("");
   const [savingId, setSavingId] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
+  // Згорнуто за замовчуванням: список може розростись, тому ховаємо його під кнопку,
+  // щоб не розтягувати сторінку. Лічильник непризначених показуємо завжди, навіть згорнутим.
+  const [expanded, setExpanded] = useState(false);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -109,55 +146,72 @@ function AdIdsPanel({ sources }: { sources: Source[] }) {
 
   return (
     <div className="mb-6">
-      <h2 className="mb-1 text-lg font-semibold">Оголошення Meta (ad_id)</h2>
-      <p className="mb-3 text-sm text-gray-600">
-        Надійніша прив'язка за фактом конкретного оголошення (referral.ad_id), а не за знаком у тексті. Призначте
-        кабінет один раз для нового оголошення — надалі всі ліди з нього визначаються автоматично, уже отримані теж
-        донараховуються.
-      </p>
-      {error ? <div className="mb-2 text-sm text-red-600">{error}</div> : null}
-      {loading ? (
-        <p className="text-sm text-gray-500">Завантаження…</p>
-      ) : rows.length === 0 ? (
-        <p className="text-sm text-gray-500">Оголошень ще не бачили. З'являться тут після першого ліда з реклами.</p>
-      ) : (
-        <div className="overflow-x-auto rounded border">
-          <table className="table table-sm">
-            <thead>
-              <tr>
-                <th>ad_id</th>
-                <th>Назва оголошення</th>
-                <th>Лідів</th>
-                <th>Кабінет</th>
-              </tr>
-            </thead>
-            <tbody>
-              {[...unresolved, ...resolved].map((row) => (
-                <tr key={row.id} className={!row.sourceCode ? "bg-amber-50" : undefined}>
-                  <td className="font-mono text-xs">{row.adId}</td>
-                  <td className="text-sm">{row.adTitle || <span className="text-gray-400">—</span>}</td>
-                  <td>{row.leadsCount}</td>
-                  <td>
-                    <select
-                      className="select select-bordered select-xs"
-                      value={row.sourceCode || ""}
-                      disabled={savingId === row.adId}
-                      onChange={(event) => void assign(row.adId, event.target.value)}
-                    >
-                      <option value="">— не призначено —</option>
-                      {adsSources.map((s) => (
-                        <option key={s.code} value={s.code}>
-                          {s.name}
-                        </option>
-                      ))}
-                    </select>
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
+      <button
+        type="button"
+        className="flex w-full items-center justify-between rounded border px-3 py-2 text-left hover:bg-gray-50"
+        onClick={() => setExpanded((v) => !v)}
+      >
+        <span className="flex items-center gap-2">
+          <span className="text-lg font-semibold">Оголошення Meta (ad_id)</span>
+          {unresolved.length > 0 ? (
+            <span className="badge badge-warning badge-sm">{unresolved.length} нові</span>
+          ) : null}
+          {rows.length > 0 ? <span className="text-xs text-gray-400">всього {rows.length}</span> : null}
+        </span>
+        <span className="text-sm text-gray-500">{expanded ? "Згорнути ▲" : "Показати ▼"}</span>
+      </button>
+      {expanded ? (
+        <div className="mt-2">
+          <p className="mb-3 text-sm text-gray-600">
+            Надійніша прив'язка за фактом конкретного оголошення (referral.ad_id), а не за знаком у тексті.
+            Призначте кабінет один раз для нового оголошення — надалі всі ліди з нього визначаються автоматично,
+            уже отримані теж донараховуються.
+          </p>
+          {error ? <div className="mb-2 text-sm text-red-600">{error}</div> : null}
+          {loading ? (
+            <p className="text-sm text-gray-500">Завантаження…</p>
+          ) : rows.length === 0 ? (
+            <p className="text-sm text-gray-500">Оголошень ще не бачили. З'являться тут після першого ліда з реклами.</p>
+          ) : (
+            <div className="overflow-x-auto rounded border">
+              <table className="table table-sm">
+                <thead>
+                  <tr>
+                    <th>ad_id</th>
+                    <th>Назва оголошення</th>
+                    <th>Лідів</th>
+                    <th>Кабінет</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {[...unresolved, ...resolved].map((row) => (
+                    <tr key={row.id} className={!row.sourceCode ? "bg-amber-50" : undefined}>
+                      <td className="font-mono text-xs">{row.adId}</td>
+                      <td className="text-sm">{row.adTitle || <span className="text-gray-400">—</span>}</td>
+                      <td>{row.leadsCount}</td>
+                      <td>
+                        <select
+                          className="select select-bordered select-xs"
+                          value={row.sourceCode || ""}
+                          disabled={savingId === row.adId}
+                          onChange={(event) => void assign(row.adId, event.target.value)}
+                        >
+                          <option value="">— не призначено —</option>
+                          {adsSources.map((s) => (
+                            <option key={s.code} value={s.code}>
+                              {s.name}
+                            </option>
+                          ))}
+                        </select>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
         </div>
-      )}
+      ) : null}
     </div>
   );
 }
@@ -314,14 +368,7 @@ export default function LeadSourcesPage() {
                     </td>
                     <td>
                       {editKind === "ads" ? (
-                        <div className="flex flex-col gap-1">
-                          <input
-                            className="input input-bordered input-xs w-16"
-                            value={editMark}
-                            onChange={(event) => setEditMark(event.target.value)}
-                          />
-                          <MarkEmojiPicker value={editMark} onChange={setEditMark} />
-                        </div>
+                        <MarkField value={editMark} onChange={setEditMark} inputClassName="input input-bordered input-xs w-16" />
                       ) : (
                         "—"
                       )}
@@ -402,20 +449,14 @@ export default function LeadSourcesPage() {
           </label>
           {kind === "ads" ? (
             <label className="form-control">
-              <span className="label-text text-xs">Знак</span>
-              <input className="input input-bordered input-sm w-24" value={mark} onChange={(event) => setMark(event.target.value)} />
+              <span className="label-text text-xs">Знак (клацніть у поле — випаде список значків)</span>
+              <MarkField value={mark} onChange={setMark} />
             </label>
           ) : null}
           <button className="btn btn-sm btn-primary" type="button" disabled={saving || !name.trim()} onClick={() => void createSource()}>
             Додати
           </button>
         </div>
-        {kind === "ads" ? (
-          <div className="mt-2">
-            <span className="label-text text-xs mb-1 block">Або оберіть значок зі списку (лише для візуального розрізнення):</span>
-            <MarkEmojiPicker value={mark} onChange={setMark} />
-          </div>
-        ) : null}
       </div>
     </div>
   );
