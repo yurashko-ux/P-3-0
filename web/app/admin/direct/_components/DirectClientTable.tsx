@@ -443,6 +443,8 @@ export type DirectFilters = {
     createdPreset: 'past' | 'today' | 'future' | null;
     appointed: { mode: 'current_month' | 'year_month' | null; year?: string; month?: string };
     appointedPreset: 'past' | 'today' | 'future' | null;
+    /** Призначені вчора (журнал і картка) або створені вчора — один прапорець, об'єднання. */
+    yesterday?: boolean | null;
     client: 'attended' | 'no_show' | 'cancelled' | 'pending' | 'rebook' | 'unknown' | null;
     sum: 'lt_10k' | 'gt_10k' | null;
   };

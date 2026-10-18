@@ -30,7 +30,7 @@ import {
 } from '@/lib/direct-consultation-master-sync';
 import type { RecordGroup } from '@/lib/altegio/records-grouping';
 import { computePeriodStats } from '@/lib/direct-period-stats';
-import { applyMarch2026BulkImportNewLeadsAdjust, getTodayKyiv, getKyivDayUtcBounds } from '@/lib/direct-stats-config';
+import { applyMarch2026BulkImportNewLeadsAdjust, getTodayKyiv, getPreviousKyivDay, getKyivDayUtcBounds } from '@/lib/direct-stats-config';
 import { normalizePhone } from '@/lib/binotel/normalize-phone';
 import { verifyUserToken } from '@/lib/auth-rbac';
 import { isPreviewDeploymentHost } from '@/lib/auth-preview';
@@ -48,7 +48,9 @@ import { normalizeNameForComparison } from '@/lib/name-normalize';
 import { hasNormalInstagramUsername } from '@/lib/altegio/client-utils';
 import {
   computeGlobalColumnFilterAggregatesFromClients,
+  clientMatchesRecordYesterday,
   emptyGlobalColumnFilterAggregates,
+  type RecordYesterdayVisitKeys,
 } from '@/lib/direct-global-filter-counts';
 import {
   buildConsultMasterFilterPanelCounts,
@@ -289,6 +291,34 @@ function isLightweightSortSupported(sortByRaw: string): boolean {
   return Object.prototype.hasOwnProperty.call(LIGHTWEIGHT_SORT_COLUMN, sortByRaw);
 }
 
+const EMPTY_YESTERDAY_VISIT_KEYS: RecordYesterdayVisitKeys = {
+  directClientIds: new Set<string>(),
+  altegioClientIds: new Set<number>(),
+};
+
+/** Невидалені візити журналу салону за день Києва — для фільтра «Вчора» (картка тримає лише поточний запис). */
+async function loadSalonVisitKeysOnKyivDay(kyivDay: string): Promise<RecordYesterdayVisitKeys> {
+  try {
+    const rows = await prisma.salonAppointment.findMany({
+      where: { kyivDay, NOT: { status: 'deleted' } },
+      select: { directClientId: true, altegioClientId: true },
+    });
+    const directClientIds = new Set<string>();
+    const altegioClientIds = new Set<number>();
+    for (const row of rows) {
+      const id = (row.directClientId || '').trim();
+      if (id) directClientIds.add(id);
+      if (row.altegioClientId != null && Number.isFinite(row.altegioClientId)) {
+        altegioClientIds.add(row.altegioClientId);
+      }
+    }
+    return { directClientIds, altegioClientIds };
+  } catch (err) {
+    console.warn('[direct/clients] не вдалося прочитати журнал візитів для фільтра «Вчора»:', err);
+    return EMPTY_YESTERDAY_VISIT_KEYS;
+  }
+}
+
 function getLightweightOrder(sortByRaw: string, sortOrderRaw: string) {
   const col = LIGHTWEIGHT_SORT_COLUMN[sortByRaw] ?? 'updatedAt';
   const sortOrder: Prisma.SortOrder = sortOrderRaw === 'asc' ? 'asc' : 'desc';
@@ -463,6 +493,16 @@ export async function GET(req: NextRequest) {
     const recordSum = searchParams.get('recordSum');
     const recordHasRecord = searchParams.get('recordHasRecord');
     const recordNewClient = searchParams.get('recordNewClient');
+    /** Один прапорець: призначені вчора (журнал + картка) або створені вчора. */
+    const recordYesterday = searchParams.get('recordYesterday') === 'true';
+    const yesterdayKyivDay = getPreviousKyivDay(kyivDayFromISO(new Date().toISOString()));
+    let yesterdayVisitKeysPromise: Promise<RecordYesterdayVisitKeys> | null = null;
+    const loadYesterdayVisitKeysCached = () => {
+      if (!yesterdayVisitKeysPromise) {
+        yesterdayVisitKeysPromise = loadSalonVisitKeysOnKyivDay(yesterdayKyivDay);
+      }
+      return yesterdayVisitKeysPromise;
+    };
     const masterHands = searchParams.get('masterHands');
     const masterPrimary = searchParams.get('masterPrimary');
     const masterSecondary = searchParams.get('masterSecondary');
@@ -574,6 +614,7 @@ export async function GET(req: NextRequest) {
       Boolean(recordAppointedYear) ||
       Boolean(recordAppointedMonth) ||
       Boolean(recordAppointedPreset) ||
+      recordYesterday ||
       Boolean(callbackReminderPreset) ||
       Boolean(recordClient) ||
       Boolean(recordSum) ||
@@ -713,7 +754,10 @@ export async function GET(req: NextRequest) {
           try {
             const allRows = await prisma.directClient.findMany();
             const allClients = allRows.map((row) => toSerializableDirectClient(row as Record<string, any>));
-            globalFilterAgg = computeGlobalColumnFilterAggregatesFromClients(allClients);
+            globalFilterAgg = computeGlobalColumnFilterAggregatesFromClients(
+              allClients,
+              await loadYesterdayVisitKeysCached()
+            );
             let mastersList: { id: string; name: string }[] = [];
             try {
               const { getAllDirectMasters } = await import('@/lib/direct-masters/store');
@@ -971,7 +1015,10 @@ export async function GET(req: NextRequest) {
             if (sid) statusCounts[sid] = Number(r._count.id || 0);
           }
 
-          const agg = computeGlobalColumnFilterAggregatesFromClients(clientsFullForGlobalCounts);
+          const agg = computeGlobalColumnFilterAggregatesFromClients(
+            clientsFullForGlobalCounts,
+            await loadYesterdayVisitKeysCached()
+          );
           let instInstagramCountsFc = agg.instInstagramCounts;
           try {
             instInstagramCountsFc = await computeInstInstagramCountsFromDb();
@@ -1523,6 +1570,7 @@ export async function GET(req: NextRequest) {
       recordAppointedMode === 'current_month' ||
       (recordAppointedMode === 'year_month' && recordAppointedYear && recordAppointedMonth) ||
       recordAppointedPreset != null ||
+      recordYesterday ||
       recordClient != null ||
       recordSum != null ||
       (masterHands && [2, 4, 6].includes(parseInt(masterHands, 10)));
@@ -1534,6 +1582,15 @@ export async function GET(req: NextRequest) {
       hasRecordFilters ||
       hasMasterFilters ||
       hasCallbackReminderFilters;
+
+    const yesterdayVisitKeys = recordYesterday
+      ? await loadYesterdayVisitKeysCached()
+      : EMPTY_YESTERDAY_VISIT_KEYS;
+    if (recordYesterday) {
+      console.log(
+        `[direct/clients] фільтр «Вчора» ${yesterdayKyivDay}: журнал direct=${yesterdayVisitKeys.directClientIds.size}, altegio=${yesterdayVisitKeys.altegioClientIds.size}`
+      );
+    }
 
     if (hasColumnFilters) {
       const base = [...filtered];
@@ -1645,6 +1702,9 @@ export async function GET(req: NextRequest) {
           out = out.filter((c) => toKyivDay(c.paidServiceDate) === todayKyiv);
         } else if (recordAppointedPreset === 'future') {
           out = out.filter((c) => toKyivDay(c.paidServiceDate) && toKyivDay(c.paidServiceDate) > todayKyiv);
+        }
+        if (recordYesterday) {
+          out = out.filter((c) => clientMatchesRecordYesterday(c, yesterdayKyivDay, yesterdayVisitKeys));
         }
         if (recordClient === 'attended') {
           out = out.filter((c) => {
@@ -2184,7 +2244,10 @@ export async function GET(req: NextRequest) {
       onlyNew: 0,
     };
     if (!skipPanelCounts) {
-      globalColumnFilterAgg = computeGlobalColumnFilterAggregatesFromClients(clientsFullForGlobalCounts);
+      globalColumnFilterAgg = computeGlobalColumnFilterAggregatesFromClients(
+        clientsFullForGlobalCounts,
+        await loadYesterdayVisitKeysCached()
+      );
       masterFilterPanelCountsHeavy = buildGlobalMasterFilterPanelCounts(
         clientsFullForGlobalCounts,
         mastersForGlobalFilterPanel

@@ -6,6 +6,7 @@ import { getDisplayedState } from '@/lib/direct-displayed-state';
 import { hasNormalInstagramUsername } from '@/lib/altegio/client-utils';
 import type { InstInstagramPresenceCounts } from '@/lib/direct-instagram-presence-filter';
 import { kyivDayFromISO } from '@/lib/altegio/records-grouping';
+import { getPreviousKyivDay } from '@/lib/direct-stats-config';
 import {
   computePaidDaysSinceLastVisitOnKyivDay,
   isActiveBaseOnKyivDay,
@@ -45,6 +46,7 @@ export function emptyGlobalColumnFilterAggregates(): GlobalColumnFilterAggregate
       appointedPast: 0,
       appointedToday: 0,
       appointedFuture: 0,
+      yesterday: 0,
     },
     binotelCallsFilterCounts: { incoming: 0, outgoing: 0, success: 0, fail: 0, onlyNew: 0 },
   };
@@ -88,6 +90,8 @@ export type GlobalColumnFilterAggregates = {
     appointedPast: number;
     appointedToday: number;
     appointedFuture: number;
+    /** Призначені вчора (картка або журнал) або створені вчора — один клієнт один раз. */
+    yesterday: number;
   };
   binotelCallsFilterCounts: {
     incoming: number;
@@ -98,13 +102,47 @@ export type GlobalColumnFilterAggregates = {
   };
 };
 
+/** Клієнти з журналу салону за один день Києва (невидалені візити). */
+export type RecordYesterdayVisitKeys = {
+  directClientIds: ReadonlySet<string>;
+  altegioClientIds: ReadonlySet<number>;
+};
+
+function paidRecordCreatedKyivDay(client: DirectClient): string {
+  const rec = (client as { paidServiceRecordCreatedAt?: string | Date | null }).paidServiceRecordCreatedAt;
+  if (!rec) return '';
+  const iso = typeof rec === 'string' ? rec : rec.toISOString?.() || '';
+  return iso ? kyivDayFromISO(iso) : '';
+}
+
+/**
+ * «Вчора» в колонці Запис: візит призначено на цей день (поточна картка або журнал салону)
+ * або платний запис створено цього дня. Один клієнт — один збіг.
+ */
+export function clientMatchesRecordYesterday(
+  client: DirectClient,
+  yesterdayKyivDay: string,
+  visits?: RecordYesterdayVisitKeys
+): boolean {
+  const createdDay = paidRecordCreatedKyivDay(client);
+  const paidStored = (client.paidServiceKyivDay || '').trim();
+  const paidFromDate = client.paidServiceDate ? kyivDayFromISO(client.paidServiceDate) : '';
+  if (createdDay === yesterdayKyivDay || paidStored === yesterdayKyivDay || paidFromDate === yesterdayKyivDay) return true;
+  if (!visits) return false;
+  if (visits.directClientIds.has(client.id)) return true;
+  const altegioId = client.altegioClientId != null ? Number(client.altegioClientId) : NaN;
+  return Number.isFinite(altegioId) && visits.altegioClientIds.has(altegioId);
+}
+
 /**
  * Лічильники колонкових фільтрів по повній вибірці клієнтів (як у filterCountsOnly=1).
  */
 export function computeGlobalColumnFilterAggregatesFromClients(
-  clientsFull: DirectClient[]
+  clientsFull: DirectClient[],
+  yesterdayVisits?: RecordYesterdayVisitKeys
 ): GlobalColumnFilterAggregates {
   const todayKyivDay = kyivDayFromISO(new Date().toISOString());
+  const yesterdayKyivDay = getPreviousKyivDay(todayKyivDay);
   const currentMonthKyiv = todayKyivDay.slice(0, 7);
   const toYyyyMm = (iso: string | null | undefined): string => (iso ? kyivDayFromISO(iso).slice(0, 7) : '');
   const toKyivDay = (iso: string | null | undefined): string => (iso ? kyivDayFromISO(iso) : '');
@@ -137,6 +175,7 @@ export function computeGlobalColumnFilterAggregatesFromClients(
   let recordAppointedPast = 0;
   let recordAppointedToday = 0;
   let recordAppointedFuture = 0;
+  let recordYesterday = 0;
 
   for (const c of clientsFull) {
     const hasPaidServiceVisit = hasPaidServiceVisitForInactiveBase(
@@ -223,6 +262,7 @@ export function computeGlobalColumnFilterAggregatesFromClients(
         else recordAppointedFuture++;
       }
     }
+    if (clientMatchesRecordYesterday(c, yesterdayKyivDay, yesterdayVisits)) recordYesterday++;
   }
 
   const binotelCallsFilterCounts = { incoming: 0, outgoing: 0, success: 0, fail: 0, onlyNew: 0 };
@@ -261,6 +301,7 @@ export function computeGlobalColumnFilterAggregatesFromClients(
       appointedPast: recordAppointedPast,
       appointedToday: recordAppointedToday,
       appointedFuture: recordAppointedFuture,
+      yesterday: recordYesterday,
     },
     binotelCallsFilterCounts,
   };

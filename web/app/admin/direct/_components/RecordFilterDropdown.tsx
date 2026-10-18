@@ -24,6 +24,16 @@ function toKyivDay(iso: string): string {
 }
 const curMonth = toKyivYearMonth(new Date().toISOString());
 const todayKyiv = toKyivDay(new Date().toISOString());
+function shiftCalendarDay(ymd: string, deltaDays: number): string {
+  const [y, m, d] = ymd.split("-").map(Number);
+  const dt = new Date(Date.UTC(y, (m || 1) - 1, d || 1));
+  dt.setUTCDate(dt.getUTCDate() + deltaDays);
+  const yy = dt.getUTCFullYear();
+  const mm = String(dt.getUTCMonth() + 1).padStart(2, "0");
+  const dd = String(dt.getUTCDate()).padStart(2, "0");
+  return `${yy}-${mm}-${dd}`;
+}
+const yesterdayKyiv = shiftCalendarDay(todayKyiv, -1);
 
 const YEARS = ["26", "27", "28"];
 const MONTHS = [
@@ -72,6 +82,7 @@ export function RecordFilterDropdown({
   const [appointedYear, setAppointedYear] = useState(r.appointed.year || "");
   const [appointedMonth, setAppointedMonth] = useState(r.appointed.month || "");
   const [appointedPreset, setAppointedPreset] = useState<"past" | "today" | "future" | null>(r.appointedPreset);
+  const [yesterday, setYesterday] = useState<boolean | null>(r.yesterday ?? null);
   const [clientOpt, setClientOpt] = useState<RecordClientOpt | null>(r.client);
   const [sumOpt, setSumOpt] = useState<RecordSumOpt | null>(r.sum);
 
@@ -86,9 +97,10 @@ export function RecordFilterDropdown({
     setAppointedYear(r.appointed.year || "");
     setAppointedMonth(r.appointed.month || "");
     setAppointedPreset(r.appointedPreset);
+    setYesterday(r.yesterday ?? null);
     setClientOpt(r.client);
     setSumOpt(r.sum);
-  }, [r.hasRecord, r.newClient, r.created.mode, r.created.year, r.created.month, r.createdPreset, r.appointed.mode, r.appointed.year, r.appointed.month, r.appointedPreset, r.client, r.sum]);
+  }, [r.hasRecord, r.newClient, r.created.mode, r.created.year, r.created.month, r.createdPreset, r.appointed.mode, r.appointed.year, r.appointed.month, r.appointedPreset, r.yesterday, r.client, r.sum]);
 
   const countsFromClients = useMemo(() => ({
     createdCur: clients.filter((x) => toKyivYearMonth((x as any).paidServiceRecordCreatedAt) === curMonth).length,
@@ -99,6 +111,12 @@ export function RecordFilterDropdown({
     appointedFuture: clients.filter((x) => { const d = toKyivDay(x.paidServiceDate); return d && d > todayKyiv; }).length,
     hasRecord: clients.filter((x) => x.paidServiceDate != null && String(x.paidServiceDate).trim() !== "").length,
     newClient: clients.filter((x) => x.consultationAttended === true && x.paidServiceDate != null && String(x.paidServiceDate).trim() !== "").length,
+    yesterday: clients.filter((x) => {
+      const created = toKyivDay((x as { paidServiceRecordCreatedAt?: string | null }).paidServiceRecordCreatedAt || "");
+      const paidStored = (x.paidServiceKyivDay || "").trim();
+      const paidFromDate = toKyivDay(x.paidServiceDate || "");
+      return created === yesterdayKyiv || paidStored === yesterdayKyiv || paidFromDate === yesterdayKyiv;
+    }).length,
   }), [clients]);
   const createdCurCount = recordCountsFromApi?.createdCur ?? countsFromClients.createdCur;
   const createdTodayCount = recordCountsFromApi?.createdToday ?? countsFromClients.createdToday;
@@ -108,6 +126,7 @@ export function RecordFilterDropdown({
   const appointedFutureCount = recordCountsFromApi?.appointedFuture ?? countsFromClients.appointedFuture;
   const hasRecordCount = recordCountsFromApi?.hasRecord ?? countsFromClients.hasRecord;
   const newClientCount = recordCountsFromApi?.newClient ?? countsFromClients.newClient;
+  const yesterdayCount = recordCountsFromApi?.yesterday ?? countsFromClients.yesterday;
 
   useLayoutEffect(() => {
     if (isOpen && dropdownRef.current && typeof document !== "undefined") {
@@ -132,7 +151,7 @@ export function RecordFilterDropdown({
   }, [isOpen]);
 
   const hasActive =
-    r.hasRecord === true || r.newClient === true || r.created.mode !== null || r.createdPreset !== null || r.appointed.mode !== null || r.appointedPreset !== null || r.client !== null || r.sum !== null;
+    r.hasRecord === true || r.newClient === true || r.yesterday === true || r.created.mode !== null || r.createdPreset !== null || r.appointed.mode !== null || r.appointedPreset !== null || r.client !== null || r.sum !== null;
 
   const handleApply = () => {
     onFiltersChange({
@@ -146,6 +165,7 @@ export function RecordFilterDropdown({
         appointed: appointedMode === "current_month" ? { mode: "current_month" } : appointedMode === "year_month" && appointedYear && appointedMonth
           ? { mode: "year_month", year: appointedYear, month: appointedMonth } : { mode: null },
         appointedPreset: appointedPreset ?? null,
+        yesterday: yesterday === true ? true : null,
         client: clientOpt ?? null,
         sum: sumOpt ?? null,
       },
@@ -164,6 +184,7 @@ export function RecordFilterDropdown({
     setAppointedYear("");
     setAppointedMonth("");
     setAppointedPreset(null);
+    setYesterday(null);
     setClientOpt(null);
     setSumOpt(null);
     onFiltersChange({
@@ -175,6 +196,7 @@ export function RecordFilterDropdown({
         createdPreset: null,
         appointed: { mode: null },
         appointedPreset: null,
+        yesterday: null,
         client: null,
         sum: null,
       },
@@ -182,10 +204,11 @@ export function RecordFilterDropdown({
     setIsOpen(false);
   };
 
-  const opt = (key: string, label: string, sel: boolean, onClick: () => void, count?: number) => (
+  const opt = (key: string, label: string, sel: boolean, onClick: () => void, count?: number, title?: string) => (
     <button
       key={key}
       type="button"
+      title={title}
       onClick={onClick}
       className={`w-full text-left px-2 py-1.5 rounded text-xs flex items-center justify-between hover:bg-base-200 transition-colors ${sel ? "bg-blue-50 text-blue-700" : "text-gray-700"}`}
     >
@@ -226,6 +249,14 @@ export function RecordFilterDropdown({
             </div>
             {section("Запис", (
               <>
+                {opt(
+                  "rec-yesterday",
+                  "Вчора",
+                  yesterday === true,
+                  () => setYesterday(yesterday === true ? null : true),
+                  yesterdayCount,
+                  "Усі записи, призначені на вчора, і всі, створені вчора"
+                )}
                 {opt("has-record", "Є запис", hasRecord === true, () => setHasRecord(hasRecord === true ? null : true), hasRecordCount)}
                 <button
                   type="button"
