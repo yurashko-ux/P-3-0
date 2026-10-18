@@ -499,7 +499,6 @@ function DirectPageContent() {
       createdPreset: null,
       appointed: { mode: null },
       appointedPreset: null,
-      yesterday: null,
       client: null,
       sum: null,
     },
@@ -708,7 +707,6 @@ function DirectPageContent() {
       params.set("recordAppointedMonth", r.appointed.month);
     }
     if (r.appointedPreset) params.set("recordAppointedPreset", r.appointedPreset);
-    if (r.yesterday) params.set("recordYesterday", "true");
     if (f.callbackReminder?.appointedPreset) params.set("callbackReminderPreset", f.callbackReminder.appointedPreset);
     if (r.client) params.set("recordClient", r.client);
     if (r.sum) params.set("recordSum", r.sum);
@@ -1366,7 +1364,6 @@ function DirectPageContent() {
         params.set("recordAppointedMonth", r.appointed.month);
       }
       if (r.appointedPreset) params.set("recordAppointedPreset", r.appointedPreset);
-      if (r.yesterday) params.set("recordYesterday", "true");
       if (f.callbackReminder?.appointedPreset) params.set("callbackReminderPreset", f.callbackReminder.appointedPreset);
       if (r.client) params.set("recordClient", r.client);
       if (r.sum) params.set("recordSum", r.sum);

@@ -77,12 +77,11 @@ export function RecordFilterDropdown({
   const [createdMode, setCreatedMode] = useState<"current_month" | "year_month" | null>(r.created.mode);
   const [createdYear, setCreatedYear] = useState(r.created.year || "");
   const [createdMonth, setCreatedMonth] = useState(r.created.month || "");
-  const [createdPreset, setCreatedPreset] = useState<"past" | "today" | "future" | null>(r.createdPreset);
+  const [createdPreset, setCreatedPreset] = useState<"past" | "today" | "yesterday" | "future" | null>(r.createdPreset);
   const [appointedMode, setAppointedMode] = useState<"current_month" | "year_month" | null>(r.appointed.mode);
   const [appointedYear, setAppointedYear] = useState(r.appointed.year || "");
   const [appointedMonth, setAppointedMonth] = useState(r.appointed.month || "");
-  const [appointedPreset, setAppointedPreset] = useState<"past" | "today" | "future" | null>(r.appointedPreset);
-  const [yesterday, setYesterday] = useState<boolean | null>(r.yesterday ?? null);
+  const [appointedPreset, setAppointedPreset] = useState<"past" | "today" | "yesterday" | "future" | null>(r.appointedPreset);
   const [clientOpt, setClientOpt] = useState<RecordClientOpt | null>(r.client);
   const [sumOpt, setSumOpt] = useState<RecordSumOpt | null>(r.sum);
 
@@ -97,36 +96,32 @@ export function RecordFilterDropdown({
     setAppointedYear(r.appointed.year || "");
     setAppointedMonth(r.appointed.month || "");
     setAppointedPreset(r.appointedPreset);
-    setYesterday(r.yesterday ?? null);
     setClientOpt(r.client);
     setSumOpt(r.sum);
-  }, [r.hasRecord, r.newClient, r.created.mode, r.created.year, r.created.month, r.createdPreset, r.appointed.mode, r.appointed.year, r.appointed.month, r.appointedPreset, r.yesterday, r.client, r.sum]);
+  }, [r.hasRecord, r.newClient, r.created.mode, r.created.year, r.created.month, r.createdPreset, r.appointed.mode, r.appointed.year, r.appointed.month, r.appointedPreset, r.client, r.sum]);
 
   const countsFromClients = useMemo(() => ({
     createdCur: clients.filter((x) => toKyivYearMonth((x as any).paidServiceRecordCreatedAt) === curMonth).length,
     createdToday: clients.filter((x) => toKyivDay((x as any).paidServiceRecordCreatedAt) === todayKyiv).length,
+    createdYesterday: clients.filter((x) => toKyivDay((x as any).paidServiceRecordCreatedAt) === yesterdayKyiv).length,
     appointedCur: clients.filter((x) => toKyivYearMonth(x.paidServiceDate) === curMonth).length,
     appointedPast: clients.filter((x) => { const d = toKyivDay(x.paidServiceDate); return d && d < todayKyiv; }).length,
     appointedToday: clients.filter((x) => toKyivDay(x.paidServiceDate) === todayKyiv).length,
+    appointedYesterday: clients.filter((x) => toKyivDay(x.paidServiceDate) === yesterdayKyiv).length,
     appointedFuture: clients.filter((x) => { const d = toKyivDay(x.paidServiceDate); return d && d > todayKyiv; }).length,
     hasRecord: clients.filter((x) => x.paidServiceDate != null && String(x.paidServiceDate).trim() !== "").length,
     newClient: clients.filter((x) => x.consultationAttended === true && x.paidServiceDate != null && String(x.paidServiceDate).trim() !== "").length,
-    yesterday: clients.filter((x) => {
-      const created = toKyivDay((x as { paidServiceRecordCreatedAt?: string | null }).paidServiceRecordCreatedAt || "");
-      const paidStored = (x.paidServiceKyivDay || "").trim();
-      const paidFromDate = toKyivDay(x.paidServiceDate || "");
-      return created === yesterdayKyiv || paidStored === yesterdayKyiv || paidFromDate === yesterdayKyiv;
-    }).length,
   }), [clients]);
   const createdCurCount = recordCountsFromApi?.createdCur ?? countsFromClients.createdCur;
   const createdTodayCount = recordCountsFromApi?.createdToday ?? countsFromClients.createdToday;
+  const createdYesterdayCount = recordCountsFromApi?.createdYesterday ?? countsFromClients.createdYesterday;
   const appointedCurCount = recordCountsFromApi?.appointedCur ?? countsFromClients.appointedCur;
   const appointedPastCount = recordCountsFromApi?.appointedPast ?? countsFromClients.appointedPast;
   const appointedTodayCount = recordCountsFromApi?.appointedToday ?? countsFromClients.appointedToday;
+  const appointedYesterdayCount = recordCountsFromApi?.appointedYesterday ?? countsFromClients.appointedYesterday;
   const appointedFutureCount = recordCountsFromApi?.appointedFuture ?? countsFromClients.appointedFuture;
   const hasRecordCount = recordCountsFromApi?.hasRecord ?? countsFromClients.hasRecord;
   const newClientCount = recordCountsFromApi?.newClient ?? countsFromClients.newClient;
-  const yesterdayCount = recordCountsFromApi?.yesterday ?? countsFromClients.yesterday;
 
   useLayoutEffect(() => {
     if (isOpen && dropdownRef.current && typeof document !== "undefined") {
@@ -151,7 +146,7 @@ export function RecordFilterDropdown({
   }, [isOpen]);
 
   const hasActive =
-    r.hasRecord === true || r.newClient === true || r.yesterday === true || r.created.mode !== null || r.createdPreset !== null || r.appointed.mode !== null || r.appointedPreset !== null || r.client !== null || r.sum !== null;
+    r.hasRecord === true || r.newClient === true || r.created.mode !== null || r.createdPreset !== null || r.appointed.mode !== null || r.appointedPreset !== null || r.client !== null || r.sum !== null;
 
   const handleApply = () => {
     onFiltersChange({
@@ -165,7 +160,6 @@ export function RecordFilterDropdown({
         appointed: appointedMode === "current_month" ? { mode: "current_month" } : appointedMode === "year_month" && appointedYear && appointedMonth
           ? { mode: "year_month", year: appointedYear, month: appointedMonth } : { mode: null },
         appointedPreset: appointedPreset ?? null,
-        yesterday: yesterday === true ? true : null,
         client: clientOpt ?? null,
         sum: sumOpt ?? null,
       },
@@ -184,7 +178,6 @@ export function RecordFilterDropdown({
     setAppointedYear("");
     setAppointedMonth("");
     setAppointedPreset(null);
-    setYesterday(null);
     setClientOpt(null);
     setSumOpt(null);
     onFiltersChange({
@@ -196,7 +189,6 @@ export function RecordFilterDropdown({
         createdPreset: null,
         appointed: { mode: null },
         appointedPreset: null,
-        yesterday: null,
         client: null,
         sum: null,
       },
@@ -249,14 +241,6 @@ export function RecordFilterDropdown({
             </div>
             {section("Запис", (
               <>
-                {opt(
-                  "rec-yesterday",
-                  "Вчора",
-                  yesterday === true,
-                  () => setYesterday(yesterday === true ? null : true),
-                  yesterdayCount,
-                  "Усі записи, призначені на вчора, і всі, створені вчора"
-                )}
                 {opt("has-record", "Є запис", hasRecord === true, () => setHasRecord(hasRecord === true ? null : true), hasRecordCount)}
                 <button
                   type="button"
@@ -278,6 +262,7 @@ export function RecordFilterDropdown({
               <>
                 {opt("rec-created-cur", "Поточний місяць", createdMode === "current_month", () => setCreatedMode(createdMode === "current_month" ? null : "current_month"), createdCurCount)}
                 {opt("rec-created-today", "Сьогодні", createdPreset === "today", () => setCreatedPreset(createdPreset === "today" ? null : "today"), createdTodayCount)}
+                {opt("rec-created-yesterday", "Вчора", createdPreset === "yesterday", () => setCreatedPreset(createdPreset === "yesterday" ? null : "yesterday"), createdYesterdayCount, "Дата створення запису — вчора (маленька дата знизу в колонці)")}
                 <div className="flex gap-1 px-2 py-1">
                   <select value={createdYear} onChange={(e) => { setCreatedYear(e.target.value); setCreatedMode("year_month"); }} className="flex-1 px-1.5 py-1 rounded border border-gray-300 text-xs">
                     <option value="">Рік</option>
@@ -294,6 +279,7 @@ export function RecordFilterDropdown({
               <>
                 {opt("rec-appointed-cur", "Поточний місяць", appointedMode === "current_month", () => setAppointedMode(appointedMode === "current_month" ? null : "current_month"), appointedCurCount)}
                 {opt("rec-today", "Сьогодні", appointedPreset === "today", () => setAppointedPreset(appointedPreset === "today" ? null : "today"), appointedTodayCount)}
+                {opt("rec-yesterday", "Вчора", appointedPreset === "yesterday", () => setAppointedPreset(appointedPreset === "yesterday" ? null : "yesterday"), appointedYesterdayCount, "Дата, на яку клієнт записаний — вчора")}
                 <div className="flex gap-1 px-2 py-1">
                   <select value={appointedYear} onChange={(e) => { setAppointedYear(e.target.value); setAppointedMode("year_month"); }} className="flex-1 px-1.5 py-1 rounded border border-gray-300 text-xs">
                     <option value="">Рік</option>

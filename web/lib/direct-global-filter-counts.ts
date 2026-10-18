@@ -42,11 +42,12 @@ export function emptyGlobalColumnFilterAggregates(): GlobalColumnFilterAggregate
       newClient: 0,
       createdCur: 0,
       createdToday: 0,
+      createdYesterday: 0,
       appointedCur: 0,
       appointedPast: 0,
       appointedToday: 0,
+      appointedYesterday: 0,
       appointedFuture: 0,
-      yesterday: 0,
     },
     binotelCallsFilterCounts: { incoming: 0, outgoing: 0, success: 0, fail: 0, onlyNew: 0 },
   };
@@ -86,12 +87,12 @@ export type GlobalColumnFilterAggregates = {
     newClient: number;
     createdCur: number;
     createdToday: number;
+    createdYesterday: number;
     appointedCur: number;
     appointedPast: number;
     appointedToday: number;
+    appointedYesterday: number;
     appointedFuture: number;
-    /** Призначені вчора (картка або журнал) або створені вчора — один клієнт один раз. */
-    yesterday: number;
   };
   binotelCallsFilterCounts: {
     incoming: number;
@@ -102,44 +103,11 @@ export type GlobalColumnFilterAggregates = {
   };
 };
 
-/** Клієнти з журналу салону за один день Києва (невидалені візити). */
-export type RecordYesterdayVisitKeys = {
-  directClientIds: ReadonlySet<string>;
-  altegioClientIds: ReadonlySet<number>;
-};
-
-function paidRecordCreatedKyivDay(client: DirectClient): string {
-  const rec = (client as { paidServiceRecordCreatedAt?: string | Date | null }).paidServiceRecordCreatedAt;
-  if (!rec) return '';
-  const iso = typeof rec === 'string' ? rec : rec.toISOString?.() || '';
-  return iso ? kyivDayFromISO(iso) : '';
-}
-
-/**
- * «Вчора» в колонці Запис: візит призначено на цей день (поточна картка або журнал салону)
- * або платний запис створено цього дня. Один клієнт — один збіг.
- */
-export function clientMatchesRecordYesterday(
-  client: DirectClient,
-  yesterdayKyivDay: string,
-  visits?: RecordYesterdayVisitKeys
-): boolean {
-  const createdDay = paidRecordCreatedKyivDay(client);
-  const paidStored = (client.paidServiceKyivDay || '').trim();
-  const paidFromDate = client.paidServiceDate ? kyivDayFromISO(client.paidServiceDate) : '';
-  if (createdDay === yesterdayKyivDay || paidStored === yesterdayKyivDay || paidFromDate === yesterdayKyivDay) return true;
-  if (!visits) return false;
-  if (visits.directClientIds.has(client.id)) return true;
-  const altegioId = client.altegioClientId != null ? Number(client.altegioClientId) : NaN;
-  return Number.isFinite(altegioId) && visits.altegioClientIds.has(altegioId);
-}
-
 /**
  * Лічильники колонкових фільтрів по повній вибірці клієнтів (як у filterCountsOnly=1).
  */
 export function computeGlobalColumnFilterAggregatesFromClients(
-  clientsFull: DirectClient[],
-  yesterdayVisits?: RecordYesterdayVisitKeys
+  clientsFull: DirectClient[]
 ): GlobalColumnFilterAggregates {
   const todayKyivDay = kyivDayFromISO(new Date().toISOString());
   const yesterdayKyivDay = getPreviousKyivDay(todayKyivDay);
@@ -171,11 +139,12 @@ export function computeGlobalColumnFilterAggregatesFromClients(
   let recordNewClient = 0;
   let recordCreatedCur = 0;
   let recordCreatedToday = 0;
+  let recordCreatedYesterday = 0;
   let recordAppointedCur = 0;
   let recordAppointedPast = 0;
   let recordAppointedToday = 0;
+  let recordAppointedYesterday = 0;
   let recordAppointedFuture = 0;
-  let recordYesterday = 0;
 
   for (const c of clientsFull) {
     const hasPaidServiceVisit = hasPaidServiceVisitForInactiveBase(
@@ -253,6 +222,7 @@ export function computeGlobalColumnFilterAggregatesFromClients(
         const recIso = typeof recCreated === 'string' ? recCreated : (recCreated as Date)?.toISOString?.();
         if (recIso && toYyyyMm(recIso) === currentMonthKyiv) recordCreatedCur++;
         if (recIso && toKyivDay(recIso) === todayKyivDay) recordCreatedToday++;
+        if (recIso && toKyivDay(recIso) === yesterdayKyivDay) recordCreatedYesterday++;
       }
       const paidDay = toKyivDay(c.paidServiceDate);
       if (paidDay) {
@@ -260,9 +230,9 @@ export function computeGlobalColumnFilterAggregatesFromClients(
         if (paidDay < todayKyivDay) recordAppointedPast++;
         else if (paidDay === todayKyivDay) recordAppointedToday++;
         else recordAppointedFuture++;
+        if (paidDay === yesterdayKyivDay) recordAppointedYesterday++;
       }
     }
-    if (clientMatchesRecordYesterday(c, yesterdayKyivDay, yesterdayVisits)) recordYesterday++;
   }
 
   const binotelCallsFilterCounts = { incoming: 0, outgoing: 0, success: 0, fail: 0, onlyNew: 0 };
@@ -297,11 +267,12 @@ export function computeGlobalColumnFilterAggregatesFromClients(
       newClient: recordNewClient,
       createdCur: recordCreatedCur,
       createdToday: recordCreatedToday,
+      createdYesterday: recordCreatedYesterday,
       appointedCur: recordAppointedCur,
       appointedPast: recordAppointedPast,
       appointedToday: recordAppointedToday,
+      appointedYesterday: recordAppointedYesterday,
       appointedFuture: recordAppointedFuture,
-      yesterday: recordYesterday,
     },
     binotelCallsFilterCounts,
   };
