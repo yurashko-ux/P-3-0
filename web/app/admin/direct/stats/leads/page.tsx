@@ -34,6 +34,31 @@ const KIND_LABEL: Record<Kind, string> = {
   website: "Сайт",
 };
 
+// Готовий набір значків для "Знак" — лише візуально розрізняти агенції (кабінети) в таблиці.
+// Старий механізм пошуку знака в тексті першого повідомлення нічого не чіпає, просто цим не користуємось.
+const MARK_EMOJI_OPTIONS = [
+  "💙", "💚", "💛", "🧡", "💜", "🖤", "🤍", "❤️", "🩷", "🩵",
+  "⭐", "🔥", "✨", "🎯", "🔵", "🟢", "🟣", "🟠", "🟡", "🔴",
+];
+
+function MarkEmojiPicker({ value, onChange }: { value: string; onChange: (mark: string) => void }) {
+  return (
+    <div className="flex flex-wrap gap-1 max-w-[220px]">
+      {MARK_EMOJI_OPTIONS.map((emoji) => (
+        <button
+          key={emoji}
+          type="button"
+          className={`btn btn-xs btn-square ${value === emoji ? "btn-primary" : "btn-ghost"}`}
+          onClick={() => onChange(emoji)}
+          title={emoji}
+        >
+          {emoji}
+        </button>
+      ))}
+    </div>
+  );
+}
+
 /** Список ad_id оголошень Meta (referral): прив'язка один раз на оголошення, надалі ліди визначаються автоматично. */
 function AdIdsPanel({ sources }: { sources: Source[] }) {
   const [rows, setRows] = useState<AdIdRow[]>([]);
@@ -289,11 +314,14 @@ export default function LeadSourcesPage() {
                     </td>
                     <td>
                       {editKind === "ads" ? (
-                        <input
-                          className="input input-bordered input-xs w-16"
-                          value={editMark}
-                          onChange={(event) => setEditMark(event.target.value)}
-                        />
+                        <div className="flex flex-col gap-1">
+                          <input
+                            className="input input-bordered input-xs w-16"
+                            value={editMark}
+                            onChange={(event) => setEditMark(event.target.value)}
+                          />
+                          <MarkEmojiPicker value={editMark} onChange={setEditMark} />
+                        </div>
                       ) : (
                         "—"
                       )}
@@ -382,6 +410,12 @@ export default function LeadSourcesPage() {
             Додати
           </button>
         </div>
+        {kind === "ads" ? (
+          <div className="mt-2">
+            <span className="label-text text-xs mb-1 block">Або оберіть значок зі списку (лише для візуального розрізнення):</span>
+            <MarkEmojiPicker value={mark} onChange={setMark} />
+          </div>
+        ) : null}
       </div>
     </div>
   );
