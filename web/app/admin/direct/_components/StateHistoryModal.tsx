@@ -27,6 +27,88 @@ type StateHistoryModalProps = {
   onClose: () => void;
 };
 
+type LeadSourceOption = { code: string; name: string; kind: string };
+
+// Швидке призначення рекламного кабінету прямо з картки клієнта — за ad_id (referral),
+// без заходу на окрему сторінку "Джерела". Показується лише якщо лід прийшов з реклами (є leadAdId).
+function AdSourceQuickAssign({ client }: { client: DirectClient }) {
+  const leadAdId = (client as unknown as { leadAdId?: string }).leadAdId;
+  const [sources, setSources] = useState<LeadSourceOption[]>([]);
+  const [sourceCode, setSourceCode] = useState<string>("");
+  const [adTitle, setAdTitle] = useState<string | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState(false);
+
+  useEffect(() => {
+    if (!leadAdId) {
+      setLoading(false);
+      return;
+    }
+    let cancelled = false;
+    (async () => {
+      setLoading(true);
+      try {
+        const [sourcesRes, adIdsRes] = await Promise.all([
+          fetch("/api/admin/direct/lead-sources", { cache: "no-store" }),
+          fetch("/api/admin/direct/lead-sources/ad-ids", { cache: "no-store" }),
+        ]);
+        const sourcesData = await sourcesRes.json().catch(() => null);
+        const adIdsData = await adIdsRes.json().catch(() => null);
+        if (cancelled) return;
+        if (sourcesData?.ok) setSources(sourcesData.sources || []);
+        const row = ((adIdsData?.adIds || []) as Array<{ adId: string; sourceCode: string | null; adTitle: string | null }>).find(
+          (r) => r.adId === leadAdId,
+        );
+        setSourceCode(row?.sourceCode || "");
+        setAdTitle(row?.adTitle || null);
+      } finally {
+        if (!cancelled) setLoading(false);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [leadAdId]);
+
+  async function assign(code: string) {
+    if (!leadAdId) return;
+    setSaving(true);
+    try {
+      const res = await fetch("/api/admin/direct/lead-sources/ad-ids", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ adId: leadAdId, sourceCode: code || null }),
+      });
+      const data = await res.json().catch(() => null);
+      if (res.ok && data?.ok) setSourceCode(code);
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  if (!leadAdId) return null;
+  const adsSources = sources.filter((s) => s.kind === "ads");
+
+  return (
+    <div className="flex flex-col items-end gap-0.5" title={adTitle ? `Оголошення: ${adTitle}` : undefined}>
+      <select
+        className="select select-bordered select-xs"
+        value={sourceCode}
+        disabled={loading || saving}
+        onChange={(event) => void assign(event.target.value)}
+      >
+        <option value="">— не призначено —</option>
+        {adsSources.map((s) => (
+          <option key={s.code} value={s.code}>
+            {s.name}
+          </option>
+        ))}
+      </select>
+      <span className="text-[10px] text-base-content/50">Кабінет (ad_id)</span>
+    </div>
+  );
+}
+
 // Функція для отримання назви стану
 function getStateName(state: string | null): string {
   const stateNames: Record<string, string> = {
@@ -135,7 +217,7 @@ export function StateHistoryModal({ client, isOpen, onClose }: StateHistoryModal
         onClick={(e) => e.stopPropagation()}
       >
         <div className="p-6 flex-shrink-0 border-b border-base-300">
-          <div className="flex items-center justify-between">
+          <div className="flex items-center justify-between gap-3">
             <h3 className="font-bold text-lg flex flex-wrap items-center gap-x-1.5 gap-y-1">
               <span>Історія змін стану:</span>
               <ClientNameWithLoyalty
@@ -152,12 +234,15 @@ export function StateHistoryModal({ client, isOpen, onClose }: StateHistoryModal
                 nameClassName="font-bold text-lg"
               />
             </h3>
-            <button
-              className="btn btn-sm btn-circle btn-ghost"
-              onClick={onClose}
-            >
-              ✕
-            </button>
+            <div className="flex items-center gap-2 flex-shrink-0">
+              <AdSourceQuickAssign client={client} />
+              <button
+                className="btn btn-sm btn-circle btn-ghost"
+                onClick={onClose}
+              >
+                ✕
+              </button>
+            </div>
           </div>
         </div>
         
