@@ -50,6 +50,8 @@ model DirectClient {
   includeInNewLeadsKpi                      Boolean   @default(true)
   /// ManyChat: agency_1 = *, agency_2 = 💙, organic = без знака агенції. У UI зірочка = agency_1, серце = agency_2.
   leadAgency                                String?
+  /// ad_id з referral у вебхуці Instagram (перше вхідне повідомлення). Надійніше за знак у тексті — не залежить від того, чи лід стер заготовлений текст.
+  leadAdId                                  String?
   /// Сума платного запису (грн) у момент, коли вона вперше стала додатною. Лише для agency_1.
   starredLeadCheckUah                       Int?
   /// YYYY-MM-DD Europe/Kyiv дня створення цього запису. Для колонки «Загальний чек».
@@ -206,6 +208,7 @@ model DirectClient {
   @@index([telegramChatId])
   @@index([lastModifiedByUserId])
   @@index([lastModifiedAt])
+  @@index([leadAdId])
   @@map("direct_clients")
 }
 
@@ -866,6 +869,27 @@ model LeadSource {
 
   @@index([kind])
   @@map("lead_sources")
+
+  adIds LeadSourceAdId[]
+}
+
+/// ad_id конкретного оголошення Meta (referral з вебхука Instagram) → джерело.
+/// Прив'язка робиться один раз на кожне НОВЕ оголошення (не на кожну кампанію й не на кожне повідомлення) —
+/// надалі всі ліди з того самого оголошення визначаються автоматично.
+model LeadSourceAdId {
+  id          String   @id @default(uuid())
+  adId        String   @unique
+  /// Назва оголошення з ads_context_data.ad_title (якщо Meta її присилає) — для розпізнавання в UI.
+  adTitle     String?
+  /// null = ще не призначено («нерозпізнане оголошення»)
+  sourceCode  String?
+  firstSeenAt DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  source LeadSource? @relation(fields: [sourceCode], references: [code], onDelete: SetNull)
+
+  @@index([sourceCode])
+  @@map("lead_source_ad_ids")
 }
 
 // Повідомлення ManyChat (вхідні та вихідні)

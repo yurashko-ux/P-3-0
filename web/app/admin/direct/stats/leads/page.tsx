@@ -17,11 +17,124 @@ type Source = {
   paid: number;
 };
 
+type AdIdRow = {
+  id: string;
+  adId: string;
+  adTitle: string | null;
+  sourceCode: string | null;
+  sourceName: string | null;
+  firstSeenAt: string;
+  leadsCount: number;
+};
+
 const KIND_LABEL: Record<Kind, string> = {
   ads: "Реклама",
   organic: "Органіка",
   website: "Сайт",
 };
+
+/** Список ad_id оголошень Meta (referral): прив'язка один раз на оголошення, надалі ліди визначаються автоматично. */
+function AdIdsPanel({ sources }: { sources: Source[] }) {
+  const [rows, setRows] = useState<AdIdRow[]>([]);
+  const [error, setError] = useState("");
+  const [savingId, setSavingId] = useState<string | null>(null);
+  const [loading, setLoading] = useState(true);
+
+  const load = useCallback(async () => {
+    setLoading(true);
+    const response = await fetch("/api/admin/direct/lead-sources/ad-ids", { cache: "no-store" });
+    const data = await response.json().catch(() => null);
+    if (!response.ok || !data?.ok) {
+      setError(data?.error || "Не вдалося відкрити оголошення");
+      setLoading(false);
+      return;
+    }
+    setError("");
+    setRows(data.adIds || []);
+    setLoading(false);
+  }, []);
+
+  useEffect(() => {
+    void load();
+  }, [load]);
+
+  async function assign(adId: string, sourceCode: string) {
+    setSavingId(adId);
+    setError("");
+    try {
+      const response = await fetch("/api/admin/direct/lead-sources/ad-ids", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ adId, sourceCode: sourceCode || null }),
+      });
+      const data = await response.json().catch(() => null);
+      if (!response.ok || !data?.ok) throw new Error(data?.error || "Не збереглось");
+      await load();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Помилка");
+    } finally {
+      setSavingId(null);
+    }
+  }
+
+  const adsSources = sources.filter((s) => s.kind === "ads");
+  const unresolved = rows.filter((r) => !r.sourceCode);
+  const resolved = rows.filter((r) => r.sourceCode);
+
+  return (
+    <div className="mb-6">
+      <h2 className="mb-1 text-lg font-semibold">Оголошення Meta (ad_id)</h2>
+      <p className="mb-3 text-sm text-gray-600">
+        Надійніша прив'язка за фактом конкретного оголошення (referral.ad_id), а не за знаком у тексті. Призначте
+        кабінет один раз для нового оголошення — надалі всі ліди з нього визначаються автоматично, уже отримані теж
+        донараховуються.
+      </p>
+      {error ? <div className="mb-2 text-sm text-red-600">{error}</div> : null}
+      {loading ? (
+        <p className="text-sm text-gray-500">Завантаження…</p>
+      ) : rows.length === 0 ? (
+        <p className="text-sm text-gray-500">Оголошень ще не бачили. З'являться тут після першого ліда з реклами.</p>
+      ) : (
+        <div className="overflow-x-auto rounded border">
+          <table className="table table-sm">
+            <thead>
+              <tr>
+                <th>ad_id</th>
+                <th>Назва оголошення</th>
+                <th>Лідів</th>
+                <th>Кабінет</th>
+              </tr>
+            </thead>
+            <tbody>
+              {[...unresolved, ...resolved].map((row) => (
+                <tr key={row.id} className={!row.sourceCode ? "bg-amber-50" : undefined}>
+                  <td className="font-mono text-xs">{row.adId}</td>
+                  <td className="text-sm">{row.adTitle || <span className="text-gray-400">—</span>}</td>
+                  <td>{row.leadsCount}</td>
+                  <td>
+                    <select
+                      className="select select-bordered select-xs"
+                      value={row.sourceCode || ""}
+                      disabled={savingId === row.adId}
+                      onChange={(event) => void assign(row.adId, event.target.value)}
+                    >
+                      <option value="">— не призначено —</option>
+                      {adsSources.map((s) => (
+                        <option key={s.code} value={s.code}>
+                          {s.name}
+                        </option>
+                      ))}
+                    </select>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+    </div>
+  );
+}
 
 export default function LeadSourcesPage() {
   const [month, setMonth] = useState("");
@@ -109,6 +222,8 @@ export default function LeadSourcesPage() {
       </div>
 
       {error ? <div className="mb-3 text-sm text-red-600">{error}</div> : null}
+
+      <AdIdsPanel sources={sources} />
 
       <div className="mb-6 overflow-x-auto rounded border">
         <table className="table table-sm">

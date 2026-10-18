@@ -24,7 +24,7 @@ import {
   storeDirectMessageMedia,
   type IncomingMedia,
 } from "@/lib/instagram-direct-media";
-import { assignLeadSourceFromFirstIncoming, ensureDirectLeadClient } from "@/lib/lead-sources";
+import { assignLeadSourceFromFirstIncoming, ensureDirectLeadClient, recordLeadAdReferral } from "@/lib/lead-sources";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
@@ -42,6 +42,12 @@ type MessagingItem = {
     is_echo?: boolean;
     is_self?: boolean;
     attachments?: unknown[];
+  };
+  /// Контекст реклами (Click-to-Instagram-Direct): Meta присилає це автоматично, без наших налаштувань.
+  referral?: {
+    adId?: string;
+    source?: string;
+    adTitle?: string;
   };
 };
 
@@ -69,6 +75,18 @@ function messageTime(value: unknown): Date {
   return new Date();
 }
 
+/** referral приходить або поряд з message (той самий елемент), або як окремий messaging-елемент без message. */
+function extractReferral(row: Record<string, unknown>): MessagingItem["referral"] | undefined {
+  const referral = asRecord(row.referral);
+  if (!referral) return undefined;
+  const adId = referral.ad_id ?? referral.adId;
+  const source = typeof referral.source === "string" ? referral.source : undefined;
+  const adsContext = asRecord(referral.ads_context_data);
+  const adTitle = typeof adsContext?.ad_title === "string" ? adsContext.ad_title : undefined;
+  if (!adId) return source ? { source } : undefined;
+  return { adId: String(adId), source, adTitle };
+}
+
 function normalizeItem(raw: unknown): MessagingItem | null {
   const row = asRecord(raw);
   if (!row) return null;
@@ -76,7 +94,8 @@ function normalizeItem(raw: unknown): MessagingItem | null {
   const text = typeof message.text === "string" ? message.text : typeof row.text === "string" ? row.text : undefined;
   const mid = message.mid || message.id || row.mid || row.id;
   const attachments = attachmentList(message.attachments ?? row.attachments);
-  const hasMessage = Boolean(text || mid || attachments.length || message.is_echo || message.is_self);
+  const referral = extractReferral(row) || (asRecord(message)?.referral ? extractReferral(message) : undefined);
+  const hasMessage = Boolean(text || mid || attachments.length || message.is_echo || message.is_self || referral);
   if (!hasMessage) return null;
   const sender = asRecord(row.sender) || asRecord(row.from);
   const recipient = asRecord(row.recipient) || asRecord(row.to);
@@ -96,6 +115,7 @@ function normalizeItem(raw: unknown): MessagingItem | null {
       is_self: Boolean(message.is_self || row.is_self),
       attachments,
     },
+    referral,
   };
 }
 
@@ -360,10 +380,15 @@ async function acceptMessage(input: {
       status = "отримано, клієнта в таблиці немає";
     } else {
       if (!outgoing) {
+        const referralAdId = input.item.referral?.adId || null;
+        if (referralAdId) {
+          await recordLeadAdReferral(referralAdId, input.item.referral?.adTitle || null);
+        }
         await assignLeadSourceFromFirstIncoming({
           clientId: client.id,
           leadAgency: client.leadAgency,
           text: plainText,
+          adId: referralAdId,
         });
       }
       const scopedId = outgoing ? recipientId : senderId;
@@ -409,7 +434,7 @@ async function acceptMessage(input: {
     recipientId: recipientId || null,
     username,
     name,
-    status,
+    status: input.item.referral?.adId ? `${status} · referral ad_id=${input.item.referral.adId}` : status,
   };
   await rememberInstagramWebhook(event);
   console.log("[instagram/webhook] Подія", {
@@ -418,6 +443,8 @@ async function acceptMessage(input: {
     status,
     hasText: Boolean(plainText),
     media: files.length,
+    referralAdId: input.item.referral?.adId || null,
+    referralSource: input.item.referral?.source || null,
   });
 }
 

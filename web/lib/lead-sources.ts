@@ -77,23 +77,110 @@ export async function matchLeadSourceCode(text: string): Promise<string> {
   return organic?.code || "organic";
 }
 
+/**
+ * Запам'ятовує ad_id (і назву оголошення, якщо є) з referral Meta — незалежно від того,
+ * чи вже відома агенція. Робить це нерозпізнаним оголошення видимим в адмінці «Джерела»,
+ * щоб його можна було прив'язати до кабінету один раз.
+ */
+export async function recordLeadAdReferral(adId: string, adTitle: string | null): Promise<void> {
+  const clean = adId.trim();
+  if (!clean) return;
+  try {
+    await prisma.leadSourceAdId.upsert({
+      where: { adId: clean },
+      create: { adId: clean, adTitle: adTitle || null },
+      update: adTitle ? { adTitle } : {},
+    });
+  } catch (error) {
+    console.warn("[leads] Не вдалося зберегти ad_id", { adId: clean, error: error instanceof Error ? error.message : error });
+  }
+}
+
+/** Чи вже прив'язано цей ad_id до конкретного джерела (агенції). */
+async function resolveLeadSourceByAdId(adId: string): Promise<string | null> {
+  const row = await prisma.leadSourceAdId.findUnique({ where: { adId }, select: { sourceCode: true } });
+  return row?.sourceCode || null;
+}
+
 export async function assignLeadSourceFromFirstIncoming(input: {
   clientId: string;
   leadAgency: string | null;
   text: string;
+  /** ad_id з referral першого вхідного повідомлення (якщо лід прийшов з реклами). */
+  adId?: string | null;
 }): Promise<string | null> {
   if (input.leadAgency) return input.leadAgency;
   const prior = await prisma.directMessage.count({
     where: { clientId: input.clientId, direction: "incoming" },
   });
   if (prior > 0) return null;
-  const code = await matchLeadSourceCode(input.text);
+
+  // Пріоритет: ad_id конкретного оголошення (найнадійніше, не залежить від тексту) → знак у тексті → органіка.
+  const code = (input.adId ? await resolveLeadSourceByAdId(input.adId) : null) || (await matchLeadSourceCode(input.text));
+
   await prisma.directClient.update({
     where: { id: input.clientId },
-    data: { leadAgency: code },
+    data: { leadAgency: code, ...(input.adId ? { leadAdId: input.adId } : {}) },
   });
-  console.log("[leads] Джерело за першим вхідним", { clientId: input.clientId, code });
+  console.log("[leads] Джерело за першим вхідним", { clientId: input.clientId, code, adId: input.adId || null });
   return code;
+}
+
+export type LeadAdIdRow = {
+  id: string;
+  adId: string;
+  adTitle: string | null;
+  sourceCode: string | null;
+  sourceName: string | null;
+  firstSeenAt: string;
+  leadsCount: number;
+};
+
+/** Усі колись побачені ad_id — прив'язані й нерозпізнані, з кількістю лідів кожного. */
+export async function listLeadAdIds(): Promise<LeadAdIdRow[]> {
+  const [rows, sources, counts] = await Promise.all([
+    prisma.leadSourceAdId.findMany({ orderBy: { firstSeenAt: "desc" } }),
+    prisma.leadSource.findMany({ select: { code: true, name: true } }),
+    prisma.directClient.groupBy({
+      by: ["leadAdId"],
+      where: { leadAdId: { not: null } },
+      _count: { _all: true },
+    }),
+  ]);
+  const nameByCode = new Map(sources.map((s) => [s.code, s.name]));
+  const countByAdId = new Map(counts.map((c) => [c.leadAdId as string, c._count._all]));
+  return rows.map((row) => ({
+    id: row.id,
+    adId: row.adId,
+    adTitle: row.adTitle,
+    sourceCode: row.sourceCode,
+    sourceName: row.sourceCode ? nameByCode.get(row.sourceCode) || row.sourceCode : null,
+    firstSeenAt: row.firstSeenAt.toISOString(),
+    leadsCount: countByAdId.get(row.adId) || 0,
+  }));
+}
+
+/** Призначає (або скидає, якщо sourceCode = null) агенцію конкретному ad_id і донараховує вже отриманих лідів. */
+export async function setLeadAdIdSource(adId: string, sourceCode: string | null): Promise<{ updatedClients: number }> {
+  const row = await prisma.leadSourceAdId.findUnique({ where: { adId } });
+  if (!row) throw new Error("Таке оголошення ще не бачили");
+  if (sourceCode) {
+    const source = await prisma.leadSource.findUnique({ where: { code: sourceCode } });
+    if (!source) throw new Error("Невідоме джерело");
+  }
+  await prisma.leadSourceAdId.update({ where: { adId }, data: { sourceCode } });
+
+  let updatedClients = 0;
+  if (sourceCode) {
+    // Прив'язка по оголошенню надійніша за будь-що інше — донараховуємо вже отриманих лідів з цим ad_id.
+    const result = await prisma.directClient.updateMany({
+      where: { leadAdId: adId },
+      data: { leadAgency: sourceCode },
+    });
+    updatedClients = result.count;
+  }
+  console.log("[leads] ad_id → джерело", { adId, sourceCode, updatedClients });
+  return { updatedClients };
 }
 
 export async function ensureDirectLeadClient(input: {
