@@ -5,7 +5,7 @@ import { prisma } from "@/lib/prisma";
 import { getAuthContext } from "@/lib/auth-rbac";
 import { isPreviewDeploymentHost } from "@/lib/auth-preview";
 import { getTodayKyiv } from "@/lib/direct-stats-config";
-import { ensureLeadSources, leadSourceStats, type LeadSourceKind } from "@/lib/lead-sources";
+import { ensureLeadSources, leadSourceHasAnyLead, leadSourceStats, type LeadSourceKind } from "@/lib/lead-sources";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
@@ -95,6 +95,12 @@ export async function PATCH(req: NextRequest) {
   const id = typeof body?.id === "string" ? body.id : "";
   const current = id ? await prisma.leadSource.findUnique({ where: { id } }) : null;
   if (!current) return NextResponse.json({ ok: false, error: "Джерело не знайдено" }, { status: 404 });
+  if (current.kind !== "organic" && (await leadSourceHasAnyLead(current.code))) {
+    return NextResponse.json(
+      { ok: false, error: "У цього джерела вже є ліди — редагування заборонено, щоб не зіпсувати статистику" },
+      { status: 400 },
+    );
+  }
   const name = cleanName(body?.name) || current.name;
   const kind = cleanKind(body?.kind) || (current.kind as LeadSourceKind);
   const mark = kind === "ads" ? cleanMark(body?.mark) : null;
@@ -129,6 +135,12 @@ export async function DELETE(req: NextRequest) {
   if (!current) return NextResponse.json({ ok: false, error: "Джерело не знайдено" }, { status: 404 });
   if (current.kind === "organic") {
     return NextResponse.json({ ok: false, error: "Органіку не видаляємо: це джерело без знака" }, { status: 400 });
+  }
+  if (await leadSourceHasAnyLead(current.code)) {
+    return NextResponse.json(
+      { ok: false, error: "У цього джерела вже є ліди — видалення заборонено, щоб не загубити статистику" },
+      { status: 400 },
+    );
   }
   await prisma.leadSource.delete({ where: { id } });
   console.log("[leads] Видалено джерело", { code: current.code });

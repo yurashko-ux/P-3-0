@@ -234,20 +234,31 @@ export type LeadSourceStat = LeadSourceRow & {
   leads: number;
   consultations: number;
   paid: number;
+  // Загальна кількість лідів з цим джерелом за весь час (без фільтра місяця/KPI) —
+  // використовується, щоб дозволити видалення/редагування лише порожніх джерел.
+  totalLeads: number;
 };
 
 export async function leadSourceStats(monthKey: string): Promise<LeadSourceStat[]> {
   const sources = await ensureLeadSources();
-  const clients = await prisma.directClient.findMany({
-    where: { leadAgency: { not: null }, includeInNewLeadsKpi: true },
-    select: {
-      leadAgency: true,
-      firstContactDate: true,
-      consultationBookingDate: true,
-      paidServiceDate: true,
-      instagramUsername: true,
-    },
-  });
+  const [clients, totalCounts] = await Promise.all([
+    prisma.directClient.findMany({
+      where: { leadAgency: { not: null }, includeInNewLeadsKpi: true },
+      select: {
+        leadAgency: true,
+        firstContactDate: true,
+        consultationBookingDate: true,
+        paidServiceDate: true,
+        instagramUsername: true,
+      },
+    }),
+    prisma.directClient.groupBy({
+      by: ["leadAgency"],
+      where: { leadAgency: { not: null } },
+      _count: { _all: true },
+    }),
+  ]);
+  const totalByCode = new Map(totalCounts.map((c) => [c.leadAgency as string, c._count._all]));
   return sources.map((source) => {
     const cohort = clients.filter((client) => {
       if (client.leadAgency !== source.code) return false;
@@ -261,6 +272,13 @@ export async function leadSourceStats(monthKey: string): Promise<LeadSourceStat[
       leads: cohort.length,
       consultations: cohort.filter((client) => client.consultationBookingDate).length,
       paid: cohort.filter((client) => client.paidServiceDate).length,
+      totalLeads: totalByCode.get(source.code) || 0,
     };
   });
+}
+
+/** Чи є хоч один лід, прив'язаний до цього джерела (за весь час) — визначає, чи можна редагувати/видаляти. */
+export async function leadSourceHasAnyLead(code: string): Promise<boolean> {
+  const count = await prisma.directClient.count({ where: { leadAgency: code } });
+  return count > 0;
 }

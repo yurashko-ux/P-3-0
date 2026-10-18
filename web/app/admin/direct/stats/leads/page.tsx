@@ -15,6 +15,7 @@ type Source = {
   leads: number;
   consultations: number;
   paid: number;
+  totalLeads: number;
 };
 
 type AdIdRow = {
@@ -144,6 +145,10 @@ export default function LeadSourcesPage() {
   const [mark, setMark] = useState("");
   const [kind, setKind] = useState<Kind>("ads");
   const [saving, setSaving] = useState(false);
+  const [editingId, setEditingId] = useState<string | null>(null);
+  const [editName, setEditName] = useState("");
+  const [editMark, setEditMark] = useState("");
+  const [editKind, setEditKind] = useState<Kind>("ads");
 
   const load = useCallback(async (nextMonth?: string) => {
     const query = nextMonth ? `?month=${encodeURIComponent(nextMonth)}` : "";
@@ -183,13 +188,44 @@ export default function LeadSourcesPage() {
   }
 
   async function removeSource(id: string) {
-    if (!confirm("Прибрати це джерело? Вже проставлені ліди лишаться зі своїм кодом.")) return;
+    if (!confirm("Прибрати це джерело?")) return;
     const response = await fetch(`/api/admin/direct/lead-sources?id=${encodeURIComponent(id)}`, { method: "DELETE" });
     const data = await response.json().catch(() => null);
     if (!response.ok || !data?.ok) {
       setError(data?.error || "Не видалилось");
       return;
     }
+    await load(month);
+  }
+
+  function startEdit(source: Source) {
+    setEditingId(source.id);
+    setEditName(source.name);
+    setEditMark(source.mark || "");
+    setEditKind(source.kind);
+    setError("");
+  }
+
+  function cancelEdit() {
+    setEditingId(null);
+  }
+
+  async function saveEdit() {
+    if (!editingId) return;
+    setSaving(true);
+    setError("");
+    const response = await fetch("/api/admin/direct/lead-sources", {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ id: editingId, name: editName, mark: editMark, kind: editKind }),
+    });
+    const data = await response.json().catch(() => null);
+    setSaving(false);
+    if (!response.ok || !data?.ok) {
+      setError(data?.error || "Не збереглось");
+      return;
+    }
+    setEditingId(null);
     await load(month);
   }
 
@@ -239,23 +275,85 @@ export default function LeadSourcesPage() {
             </tr>
           </thead>
           <tbody>
-            {sources.map((source) => (
-              <tr key={source.id}>
-                <td>{source.name}</td>
-                <td>{source.mark || "—"}</td>
-                <td>{KIND_LABEL[source.kind]}</td>
-                <td>{source.leads}</td>
-                <td>{source.consultations}</td>
-                <td>{source.paid}</td>
-                <td>
-                  {source.kind === "organic" ? null : (
-                    <button className="btn btn-ghost btn-xs" type="button" onClick={() => void removeSource(source.id)}>
-                      прибрати
-                    </button>
-                  )}
-                </td>
-              </tr>
-            ))}
+            {sources.map((source) => {
+              const canModify = source.kind !== "organic" && source.totalLeads === 0;
+              if (editingId === source.id) {
+                return (
+                  <tr key={source.id}>
+                    <td>
+                      <input
+                        className="input input-bordered input-xs w-28"
+                        value={editName}
+                        onChange={(event) => setEditName(event.target.value)}
+                      />
+                    </td>
+                    <td>
+                      {editKind === "ads" ? (
+                        <input
+                          className="input input-bordered input-xs w-16"
+                          value={editMark}
+                          onChange={(event) => setEditMark(event.target.value)}
+                        />
+                      ) : (
+                        "—"
+                      )}
+                    </td>
+                    <td>
+                      <select
+                        className="select select-bordered select-xs"
+                        value={editKind}
+                        onChange={(event) => setEditKind(event.target.value as Kind)}
+                      >
+                        <option value="ads">Реклама</option>
+                        <option value="website">Сайт</option>
+                      </select>
+                    </td>
+                    <td>{source.leads}</td>
+                    <td>{source.consultations}</td>
+                    <td>{source.paid}</td>
+                    <td className="flex gap-1">
+                      <button
+                        className="btn btn-primary btn-xs"
+                        type="button"
+                        disabled={saving || !editName.trim()}
+                        onClick={() => void saveEdit()}
+                      >
+                        зберегти
+                      </button>
+                      <button className="btn btn-ghost btn-xs" type="button" onClick={cancelEdit}>
+                        відміна
+                      </button>
+                    </td>
+                  </tr>
+                );
+              }
+              return (
+                <tr key={source.id}>
+                  <td>{source.name}</td>
+                  <td>{source.mark || "—"}</td>
+                  <td>{KIND_LABEL[source.kind]}</td>
+                  <td>{source.leads}</td>
+                  <td>{source.consultations}</td>
+                  <td>{source.paid}</td>
+                  <td>
+                    {source.kind === "organic" ? null : canModify ? (
+                      <div className="flex gap-1">
+                        <button className="btn btn-ghost btn-xs" type="button" onClick={() => startEdit(source)}>
+                          редагувати
+                        </button>
+                        <button className="btn btn-ghost btn-xs" type="button" onClick={() => void removeSource(source.id)}>
+                          прибрати
+                        </button>
+                      </div>
+                    ) : (
+                      <span className="text-xs text-gray-400" title="Є ліди з цим джерелом — редагування і видалення заборонено">
+                        є ліди
+                      </span>
+                    )}
+                  </td>
+                </tr>
+              );
+            })}
           </tbody>
         </table>
       </div>
