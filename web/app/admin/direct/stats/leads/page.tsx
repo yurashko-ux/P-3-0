@@ -12,6 +12,7 @@ type Source = {
   mark: string | null;
   kind: Kind;
   enabled: boolean;
+  hidden: boolean;
   leads: number;
   consultations: number;
   paid: number;
@@ -293,6 +294,23 @@ export default function LeadSourcesPage() {
     await load(month);
   }
 
+  // Приховати/показати в списку вибору ручного призначення джерела — доступно незалежно від того,
+  // є вже ліди чи ні (на відміну від редагування/видалення), бо не чіпає статистику.
+  async function toggleHidden(source: Source) {
+    setError("");
+    const response = await fetch("/api/admin/direct/lead-sources/visibility", {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ id: source.id, hidden: !source.hidden }),
+    });
+    const data = await response.json().catch(() => null);
+    if (!response.ok || !data?.ok) {
+      setError(data?.error || "Не збереглось");
+      return;
+    }
+    await load(month);
+  }
+
   function startEdit(source: Source) {
     setEditingId(source.id);
     setEditName(source.name);
@@ -419,28 +437,47 @@ export default function LeadSourcesPage() {
                 );
               }
               return (
-                <tr key={source.id}>
-                  <td>{source.name}</td>
+                <tr key={source.id} className={source.hidden ? "opacity-40" : undefined}>
+                  <td>
+                    {source.name}
+                    {source.hidden ? (
+                      <span className="ml-1 text-xs text-gray-400" title="Приховано зі списку вибору в ручному призначенні джерела">
+                        (приховано)
+                      </span>
+                    ) : null}
+                  </td>
                   <td>{source.mark || "—"}</td>
                   <td>{KIND_LABEL[source.kind]}</td>
                   <td>{source.leads}</td>
                   <td>{source.consultations}</td>
                   <td>{source.paid}</td>
                   <td>
-                    {source.kind === "organic" ? null : canModify ? (
-                      <div className="flex gap-1">
-                        <button className="btn btn-ghost btn-xs" type="button" onClick={() => startEdit(source)}>
-                          редагувати
+                    <div className="flex flex-wrap gap-1">
+                      {source.kind === "organic" ? null : canModify ? (
+                        <>
+                          <button className="btn btn-ghost btn-xs" type="button" onClick={() => startEdit(source)}>
+                            редагувати
+                          </button>
+                          <button className="btn btn-ghost btn-xs" type="button" onClick={() => void removeSource(source.id)}>
+                            прибрати
+                          </button>
+                        </>
+                      ) : (
+                        <span className="text-xs text-gray-400" title="Є ліди з цим джерелом — редагування і видалення заборонено">
+                          є ліди
+                        </span>
+                      )}
+                      {source.kind === "organic" ? null : (
+                        <button
+                          className="btn btn-ghost btn-xs"
+                          type="button"
+                          title="Прибрати/повернути зі списку вибору в ручному призначенні джерела (статистику не чіпає)"
+                          onClick={() => void toggleHidden(source)}
+                        >
+                          {source.hidden ? "показати" : "приховати"}
                         </button>
-                        <button className="btn btn-ghost btn-xs" type="button" onClick={() => void removeSource(source.id)}>
-                          прибрати
-                        </button>
-                      </div>
-                    ) : (
-                      <span className="text-xs text-gray-400" title="Є ліди з цим джерелом — редагування і видалення заборонено">
-                        є ліди
-                      </span>
-                    )}
+                      )}
+                    </div>
                   </td>
                 </tr>
               );

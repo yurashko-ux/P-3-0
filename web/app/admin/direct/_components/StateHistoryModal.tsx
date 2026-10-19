@@ -109,6 +109,88 @@ function AdSourceQuickAssign({ client }: { client: DirectClient }) {
   );
 }
 
+// Перший день (Europe/Kyiv), з якого доступне ручне призначення джерела лідам без ad_id —
+// щоб не навантажувати маркетолога звіркою з Лід-центром усіх ~1800 старих лідів, лише нових.
+const MANUAL_SOURCE_ASSIGN_MIN_KYIV_DAY = "2026-10-19";
+
+/**
+ * Ручне призначення джерела для лідів БЕЗ ad_id (referral від Meta не прийшов, а не просто не визначений
+ * кабінет оголошення). Маркетолог звіряє такого ліда з Лід-центром Meta і сама обирає джерело
+ * (агенцію або «Органіка»). На відміну від AdSourceQuickAssign — пише leadAgency лише цьому клієнту,
+ * без прив'язки до оголошення. Видно лише для нових лідів (з MANUAL_SOURCE_ASSIGN_MIN_KYIV_DAY).
+ */
+function ManualSourceAssign({ client }: { client: DirectClient }) {
+  const leadAdId = (client as unknown as { leadAdId?: string }).leadAdId;
+  const firstContactKyivDay = (client.firstContactDate || "").slice(0, 10);
+  const eligible = !leadAdId && firstContactKyivDay >= MANUAL_SOURCE_ASSIGN_MIN_KYIV_DAY;
+
+  const [sources, setSources] = useState<LeadSourceOption[]>([]);
+  const [sourceCode, setSourceCode] = useState<string>((client.leadAgency as string) || "");
+  const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState(false);
+
+  useEffect(() => {
+    if (!eligible) {
+      setLoading(false);
+      return;
+    }
+    let cancelled = false;
+    (async () => {
+      setLoading(true);
+      try {
+        const res = await fetch("/api/admin/direct/lead-sources", { cache: "no-store" });
+        const data = await res.json().catch(() => null);
+        if (cancelled) return;
+        if (data?.ok) {
+          const list = ((data.sources || []) as Array<LeadSourceOption & { hidden?: boolean }>).filter((s) => !s.hidden);
+          setSources(list);
+        }
+      } finally {
+        if (!cancelled) setLoading(false);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [eligible]);
+
+  async function assign(code: string) {
+    setSaving(true);
+    try {
+      const res = await fetch("/api/admin/direct/lead-sources/manual-assign", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ clientId: client.id, sourceCode: code || null }),
+      });
+      const data = await res.json().catch(() => null);
+      if (res.ok && data?.ok) setSourceCode(code);
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  if (!eligible) return null;
+
+  return (
+    <div className="flex flex-col items-end gap-0.5">
+      <select
+        className="select select-bordered select-xs"
+        value={sourceCode}
+        disabled={loading || saving}
+        onChange={(event) => void assign(event.target.value)}
+      >
+        <option value="">— не визначено —</option>
+        {sources.map((s) => (
+          <option key={s.code} value={s.code}>
+            {s.name}
+          </option>
+        ))}
+      </select>
+      <span className="text-[10px] text-base-content/50">Джерело (вручну)</span>
+    </div>
+  );
+}
+
 // Функція для отримання назви стану
 function getStateName(state: string | null): string {
   const stateNames: Record<string, string> = {
@@ -236,6 +318,7 @@ export function StateHistoryModal({ client, isOpen, onClose }: StateHistoryModal
             </h3>
             <div className="flex items-center gap-2 flex-shrink-0">
               <AdSourceQuickAssign client={client} />
+              <ManualSourceAssign client={client} />
               <button
                 className="btn btn-sm btn-circle btn-ghost"
                 onClick={onClose}

@@ -863,6 +863,10 @@ model LeadSource {
   /// ads | organic | website
   kind      String
   enabled   Boolean  @default(true)
+  /// Приховано зі списку вибору (напр. у ручному призначенні джерела для лідів без ad_id).
+  /// Не впливає на вже проставлені ліди і статистику — лише на видимість у дропдаунах.
+  /// Органіку приховати не можна (завжди потрібна як дефолт).
+  hidden    Boolean  @default(false)
   sortOrder Int      @default(0)
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt

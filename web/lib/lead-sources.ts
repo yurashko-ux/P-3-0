@@ -14,13 +14,15 @@ export type LeadSourceRow = {
   mark: string | null;
   kind: LeadSourceKind;
   enabled: boolean;
+  /** Приховано зі списку вибору (ручне призначення джерела) — статистику й уже проставлених лідів не чіпає. */
+  hidden: boolean;
   sortOrder: number;
 };
 
 const DEFAULTS: Array<Omit<LeadSourceRow, "id">> = [
-  { code: "agency_2", name: "Агенція 1", mark: "💙", kind: "ads", enabled: true, sortOrder: 10 },
-  { code: "agency_1", name: "Агенція 2", mark: "*", kind: "ads", enabled: true, sortOrder: 20 },
-  { code: "organic", name: "Органіка", mark: null, kind: "organic", enabled: true, sortOrder: 30 },
+  { code: "agency_2", name: "Агенція 1", mark: "💙", kind: "ads", enabled: true, hidden: false, sortOrder: 10 },
+  { code: "agency_1", name: "Агенція 2", mark: "*", kind: "ads", enabled: true, hidden: false, sortOrder: 20 },
+  { code: "organic", name: "Органіка", mark: null, kind: "organic", enabled: true, hidden: false, sortOrder: 30 },
 ];
 
 function asKind(value: string): LeadSourceKind {
@@ -35,6 +37,7 @@ function toRow(row: {
   mark: string | null;
   kind: string;
   enabled: boolean;
+  hidden?: boolean;
   sortOrder: number;
 }): LeadSourceRow {
   return {
@@ -44,6 +47,7 @@ function toRow(row: {
     mark: row.mark,
     kind: asKind(row.kind),
     enabled: row.enabled,
+    hidden: row.hidden === true,
     sortOrder: row.sortOrder,
   };
 }
@@ -285,4 +289,34 @@ export async function leadSourceStats(monthKey: string): Promise<LeadSourceStat[
 export async function leadSourceHasAnyLead(code: string): Promise<boolean> {
   const count = await prisma.directClient.count({ where: { leadAgency: code } });
   return count > 0;
+}
+
+/**
+ * Приховує/показує джерело у списку вибору (напр. у ручному призначенні джерела лідам без ad_id).
+ * На відміну від редагування/видалення — доступно незалежно від того, є вже ліди чи ні,
+ * бо не чіпає статистику й уже проставлених лідів, лише видимість у дропдаунах. Органіку не приховуємо.
+ */
+export async function setLeadSourceHidden(id: string, hidden: boolean): Promise<void> {
+  const current = await prisma.leadSource.findUnique({ where: { id } });
+  if (!current) throw new Error("Джерело не знайдено");
+  if (current.kind === "organic") throw new Error("Органіку приховати не можна");
+  await prisma.leadSource.update({ where: { id }, data: { hidden } });
+}
+
+/**
+ * Пряме ручне призначення джерела конкретному клієнту — для лідів БЕЗ ad_id (referral від Meta не прийшов).
+ * На відміну від setLeadAdIdSource() — не груповий і не прив'язаний до оголошення, лише цей один клієнт.
+ * Дозволено перезаписувати вже проставлене leadAgency (напр. авто-органіку) ручним рішенням маркетолога
+ * після звірки з Lead Center. Клієнтів з leadAdId сюди не пускаємо — для них є дропдаун «Кабінет (ad_id)».
+ */
+export async function setClientLeadAgencyManually(clientId: string, sourceCode: string | null): Promise<void> {
+  const client = await prisma.directClient.findUnique({ where: { id: clientId }, select: { id: true, leadAdId: true } });
+  if (!client) throw new Error("Клієнта не знайдено");
+  if (client.leadAdId) throw new Error("У цього ліда вже є ad_id — джерело призначається через «Кабінет (ad_id)»");
+  if (sourceCode) {
+    const source = await prisma.leadSource.findUnique({ where: { code: sourceCode } });
+    if (!source) throw new Error("Невідоме джерело");
+  }
+  await prisma.directClient.update({ where: { id: clientId }, data: { leadAgency: sourceCode } });
+  console.log("[leads] Ручне призначення джерела", { clientId, sourceCode });
 }
