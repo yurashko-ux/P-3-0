@@ -26,6 +26,7 @@ type AdIdRow = {
   sourceName: string | null;
   firstSeenAt: string;
   leadsCount: number;
+  lastUsername: string | null;
 };
 
 const KIND_LABEL: Record<Kind, string> = {
@@ -176,20 +177,35 @@ function AdIdsPanel({ sources }: { sources: Source[] }) {
             <div className="overflow-x-auto rounded border">
               <table className="table table-sm">
                 <thead>
-                  <tr>
-                    <th>ad_id</th>
-                    <th>Назва оголошення</th>
-                    <th>Лідів</th>
-                    <th>Кабінет</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {[...unresolved, ...resolved].map((row) => (
-                    <tr key={row.id} className={!row.sourceCode ? "bg-amber-50" : undefined}>
-                      <td className="font-mono text-xs">{row.adId}</td>
-                      <td className="text-sm">{row.adTitle || <span className="text-gray-400">—</span>}</td>
-                      <td>{row.leadsCount}</td>
-                      <td>
+              <tr>
+                <th>ad_id</th>
+                <th>Назва оголошення</th>
+                <th>Лідів</th>
+                <th>Instagram юзернейм</th>
+                <th>Кабінет</th>
+              </tr>
+            </thead>
+            <tbody>
+              {[...unresolved, ...resolved].map((row) => (
+                <tr key={row.id} className={!row.sourceCode ? "bg-amber-50" : undefined}>
+                  <td className="font-mono text-xs">{row.adId}</td>
+                  <td className="text-sm">{row.adTitle || <span className="text-gray-400">—</span>}</td>
+                  <td>{row.leadsCount}</td>
+                  <td className="text-sm">
+                    {row.lastUsername ? (
+                      <a
+                        href={`https://instagram.com/${row.lastUsername}`}
+                        target="_blank"
+                        rel="noreferrer"
+                        className="link"
+                      >
+                        @{row.lastUsername}
+                      </a>
+                    ) : (
+                      <span className="text-gray-400">—</span>
+                    )}
+                  </td>
+                  <td>
                         <select
                           className="select select-bordered select-xs"
                           value={row.sourceCode || ""}

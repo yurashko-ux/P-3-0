@@ -386,7 +386,7 @@ async function acceptMessage(input: {
       if (!outgoing) {
         const referralAdId = input.item.referral?.adId || null;
         if (referralAdId) {
-          await recordLeadAdReferral(referralAdId, input.item.referral?.adTitle || null);
+          await recordLeadAdReferral(referralAdId, input.item.referral?.adTitle || null, username);
         }
         await assignLeadSourceFromFirstIncoming({
           clientId: client.id,

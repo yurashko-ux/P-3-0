@@ -883,6 +883,9 @@ model LeadSourceAdId {
   adTitle     String?
   /// null = ще не призначено («нерозпізнане оголошення»)
   sourceCode  String?
+  /// Instagram-юзернейм останньої людини, яка прийшла з цього ad_id (лише орієнтир в UI,
+  /// навіть якщо DirectClient.leadAdId не проставився — напр. для вже знайомого контакту).
+  lastUsername String?
   firstSeenAt DateTime @default(now())
   updatedAt   DateTime @updatedAt
 

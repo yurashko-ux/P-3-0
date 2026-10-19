@@ -82,14 +82,15 @@ export async function matchLeadSourceCode(text: string): Promise<string> {
  * чи вже відома агенція. Робить це нерозпізнаним оголошення видимим в адмінці «Джерела»,
  * щоб його можна було прив'язати до кабінету один раз.
  */
-export async function recordLeadAdReferral(adId: string, adTitle: string | null): Promise<void> {
+export async function recordLeadAdReferral(adId: string, adTitle: string | null, username?: string | null): Promise<void> {
   const clean = adId.trim();
   if (!clean) return;
+  const cleanUsername = username?.trim() || null;
   try {
     await prisma.leadSourceAdId.upsert({
       where: { adId: clean },
-      create: { adId: clean, adTitle: adTitle || null },
-      update: adTitle ? { adTitle } : {},
+      create: { adId: clean, adTitle: adTitle || null, lastUsername: cleanUsername },
+      update: { ...(adTitle ? { adTitle } : {}), ...(cleanUsername ? { lastUsername: cleanUsername } : {}) },
     });
   } catch (error) {
     console.warn("[leads] Не вдалося зберегти ad_id", { adId: clean, error: error instanceof Error ? error.message : error });
@@ -142,6 +143,8 @@ export type LeadAdIdRow = {
   sourceName: string | null;
   firstSeenAt: string;
   leadsCount: number;
+  /** Юзернейм останньої людини з цим ad_id — орієнтир, навіть якщо вона вже була контактом раніше. */
+  lastUsername: string | null;
 };
 
 /** Усі колись побачені ad_id — прив'язані й нерозпізнані, з кількістю лідів кожного. */
@@ -165,6 +168,7 @@ export async function listLeadAdIds(): Promise<LeadAdIdRow[]> {
     sourceName: row.sourceCode ? nameByCode.get(row.sourceCode) || row.sourceCode : null,
     firstSeenAt: row.firstSeenAt.toISOString(),
     leadsCount: countByAdId.get(row.adId) || 0,
+    lastUsername: row.lastUsername,
   }));
 }
 
