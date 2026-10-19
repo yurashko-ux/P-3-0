@@ -6,6 +6,13 @@ import { kvWrite } from "@/lib/kv";
 import { handleEncashmentOwnerTelegramCallback } from "@/lib/finance/encashment-confirmation-telegram";
 import { bindDailyReportTelegramChat } from "@/lib/reports/recipients";
 import { deliverDailyReport } from "@/lib/reports/delivery";
+import {
+  consumePendingAccess,
+  consumePendingAccessForUser,
+  peekPendingAccessByToken,
+} from "@/lib/access/pending-access";
+import { normalizeTelegramUsername } from "@/lib/access/normalize-telegram-username";
+import { prisma } from "@/lib/prisma";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
@@ -36,6 +43,75 @@ async function logReportsBotUpdate(payload: object) {
 function isReportCommand(text: string | undefined): boolean {
   const normalized = String(text || "").trim().toLowerCase();
   return normalized === "/звіт" || normalized === "/zvit" || normalized === "/report";
+}
+
+function parseStartPayload(text: string | undefined): string | null {
+  const m = String(text || "").trim().match(/^\/start(?:@\w+)?(?:\s+(.+))?$/i);
+  if (!m) return null;
+  const payload = (m[1] || "").trim();
+  return payload || null;
+}
+
+function escapeHtml(text: string): string {
+  return text
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;");
+}
+
+async function deliverPendingAccessCredentials(input: {
+  chatId: number;
+  botToken: string;
+  pending: {
+    login: string;
+    password: string;
+    crescoLoginUrl: string;
+    telegramUsername: string;
+    token: string;
+  };
+  fromUsername: string | null;
+}): Promise<boolean> {
+  const fromNorm = normalizeTelegramUsername(input.fromUsername);
+  const expectNorm = normalizeTelegramUsername(input.pending.telegramUsername);
+  if (!fromNorm || !expectNorm || fromNorm !== expectNorm) {
+    await sendMessage(
+      input.chatId,
+      [
+        "<b>Це посилання доступу призначене іншому Telegram-акаунту.</b>",
+        "",
+        expectNorm ? `Очікується @${escapeHtml(expectNorm)}.` : "Очікується інший username.",
+        fromNorm ? `Зараз ви: @${escapeHtml(fromNorm)}.` : "У вашому профілі немає username.",
+        "",
+        "Відкрийте посилання з того акаунта, який вказаний у Доступах, або попросіть адміна надіслати доступ ще раз.",
+      ].join("\n"),
+      {},
+      input.botToken,
+    );
+    return false;
+  }
+
+  const consumed = await consumePendingAccess(input.pending.token);
+  if (!consumed) return false;
+
+  const text =
+    `<b>Доступ до Креско CRM</b>\n\n` +
+    `Посилання: ${escapeHtml(consumed.crescoLoginUrl)}\n` +
+    `Логін: <code>${escapeHtml(consumed.login)}</code>\n` +
+    `Пароль: <code>${escapeHtml(consumed.password)}</code>`;
+
+  await sendMessage(
+    input.chatId,
+    text,
+    { parse_mode: "HTML", disable_web_page_preview: true },
+    input.botToken,
+  );
+  console.log("[reports-webhook] Видано pending-доступ", {
+    login: consumed.login,
+    telegramUsername: consumed.telegramUsername,
+    chatId: input.chatId,
+  });
+  return true;
 }
 
 export async function GET() {
@@ -111,11 +187,69 @@ export async function POST(req: NextRequest) {
 
     if (messageText?.startsWith("/start") && chatId) {
       const botToken = getReportsBotToken();
+      const fromUsername = update.message?.from?.username ?? null;
+      const startPayload = parseStartPayload(messageText);
+
+      // Deep-link «Надіслати доступ»: /start access_<token>
+      let deliveredPending = false;
+      if (startPayload?.startsWith("access_")) {
+        const token = startPayload.slice("access_".length).trim();
+        const pending = token ? await peekPendingAccessByToken(token) : null;
+        if (pending) {
+          deliveredPending = await deliverPendingAccessCredentials({
+            chatId,
+            botToken,
+            pending,
+            fromUsername,
+          });
+        } else {
+          await sendMessage(
+            chatId,
+            "Посилання доступу вже використане або протерміноване. Попросіть адміна натиснути «Надіслати доступ» ще раз.",
+            {},
+            botToken,
+          );
+        }
+      }
+
       const bind = await bindDailyReportTelegramChat({
         chatId,
         telegramUserId: update.message?.from?.id ?? null,
-        telegramUsername: update.message?.from?.username ?? null,
+        telegramUsername: fromUsername,
       });
+
+      // Звичайний /start після «Надіслати доступ» без deep-link — теж видаємо pending за userId
+      const fromNorm = normalizeTelegramUsername(fromUsername);
+      if (bind.ok && !deliveredPending && fromNorm) {
+        const matchedUser = await prisma.appUser.findFirst({
+          where: {
+            isActive: true,
+            telegramUsername: { equals: fromNorm, mode: "insensitive" },
+          },
+          select: { id: true },
+        });
+        if (matchedUser) {
+          const pendingByUser = await consumePendingAccessForUser(matchedUser.id);
+          if (pendingByUser) {
+            const text =
+              `<b>Доступ до Креско CRM</b>\n\n` +
+              `Посилання: ${escapeHtml(pendingByUser.crescoLoginUrl)}\n` +
+              `Логін: <code>${escapeHtml(pendingByUser.login)}</code>\n` +
+              `Пароль: <code>${escapeHtml(pendingByUser.password)}</code>`;
+            await sendMessage(
+              chatId,
+              text,
+              { parse_mode: "HTML", disable_web_page_preview: true },
+              botToken,
+            );
+            deliveredPending = true;
+            console.log("[reports-webhook] Видано pending-доступ після звичайного /start", {
+              login: pendingByUser.login,
+              chatId,
+            });
+          }
+        }
+      }
 
       if (bind.ok) {
         const lines = [
@@ -123,6 +257,9 @@ export async function POST(req: NextRequest) {
           "",
           `Вітаємо, ${bind.userName || "колего"}!`,
         ];
+        if (deliveredPending) {
+          lines.push("", "Логін і пароль до Креско надіслано повідомленням вище.");
+        }
         if (bind.canReceiveReport) {
           lines.push(
             "Ви підписані на <b>щоденний операційний звіт</b> (наступного ранку, ~9:00 Kyiv, за вчора).",
@@ -150,9 +287,7 @@ export async function POST(req: NextRequest) {
             "Переконайтесь, що у розділі Доступи для вас вказано Telegram username.",
             "",
             `Ваш chat_id: <code>${chatId}</code>`,
-            update.message?.from?.username
-              ? `Username: @${update.message.from.username}`
-              : null,
+            fromUsername ? `Username: @${fromUsername}` : null,
           ]
             .filter(Boolean)
             .join("\n"),
@@ -164,11 +299,13 @@ export async function POST(req: NextRequest) {
       await logReportsBotUpdate({
         event: "start_ack_sent",
         chatId,
-        username: update.message?.from?.username ?? null,
+        username: fromUsername,
         bindOk: bind.ok,
         canReceiveReport: bind.canReceiveReport,
+        deliveredPending,
+        startPayload,
       });
-      return NextResponse.json({ ok: true, handled: "start" });
+      return NextResponse.json({ ok: true, handled: "start", deliveredPending });
     }
 
     return NextResponse.json({ ok: true, handled: false });

@@ -1,11 +1,16 @@
 // POST /api/admin/access/users/[id]/send-access
 // Зберігає (за потреби) пароль/Telegram і надсилає доступ у Telegram (посилання Креско + логін + пароль).
+// Якщо telegramChatId ще немає — створює deep-link: користувач тисне /start і бот сам видає доступ.
 
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { hashPassword } from "@/lib/auth-rbac";
 import { normalizeTelegramUsername } from "@/lib/access/normalize-telegram-username";
 import { CRESCO_LOGIN_URL } from "@/lib/access/cresco-login-url";
+import {
+  createPendingAccess,
+  REPORTS_BOT_USERNAME,
+} from "@/lib/access/pending-access";
 import { sendMessage } from "@/lib/telegram/api";
 import { TELEGRAM_ENV, assertReportsBotToken } from "@/lib/telegram/env";
 import { kvWrite } from "@/lib/kv";
@@ -28,6 +33,31 @@ function toChatId(value: bigint | number | null | undefined): number | null {
   if (value == null) return null;
   const n = typeof value === "bigint" ? Number(value) : Number(value);
   return Number.isFinite(n) && n > 0 ? n : null;
+}
+
+function buildAccessMessage(login: string, password: string, crescoLoginUrl: string): string {
+  return (
+    `<b>Доступ до Креско CRM</b>\n\n` +
+    `Посилання: ${escapeHtml(crescoLoginUrl)}\n` +
+    `Логін: <code>${escapeHtml(login)}</code>\n` +
+    `Пароль: <code>${escapeHtml(password)}</code>`
+  );
+}
+
+async function logOutgoing(payload: object) {
+  try {
+    await kvWrite.lpush(
+      "access:telegram:outgoing",
+      JSON.stringify({
+        at: new Date().toISOString(),
+        event: "send_access",
+        ...payload,
+      }),
+    );
+    await kvWrite.ltrim("access:telegram:outgoing", 0, 99);
+  } catch (kvErr) {
+    console.warn("[access/send-access] KV log failed:", kvErr);
+  }
 }
 
 export async function POST(req: Request, { params }: Params) {
@@ -98,26 +128,6 @@ export async function POST(req: Request, { params }: Params) {
     },
   });
 
-  const chatId = toChatId(user.telegramChatId);
-  if (!chatId) {
-    console.warn("[access/send-access] Немає telegramChatId:", {
-      userId: user.id,
-      telegramUsername,
-    });
-    return NextResponse.json(
-      {
-        error:
-          `У користувача @${telegramUsername} ще немає привʼязки Telegram chat. ` +
-          `Попросіть надіслати /start боту @ZVITY_HoB_bot, після цього повторіть «Надіслати доступ». ` +
-          `Пароль уже збережено.`,
-        passwordSaved: true,
-        login: user.login,
-        telegramUsername,
-      },
-      { status: 409 },
-    );
-  }
-
   try {
     assertReportsBotToken();
   } catch (err) {
@@ -130,77 +140,127 @@ export async function POST(req: Request, { params }: Params) {
     );
   }
 
-  const text =
-    `<b>Доступ до Креско CRM</b>\n\n` +
-    `Посилання: ${escapeHtml(crescoLoginUrl)}\n` +
-    `Логін: <code>${escapeHtml(user.login)}</code>\n` +
-    `Пароль: <code>${escapeHtml(password)}</code>`;
+  const text = buildAccessMessage(user.login, password, crescoLoginUrl);
+  let chatId = toChatId(user.telegramChatId);
 
-  try {
-    await sendMessage(chatId, text, { parse_mode: "HTML", disable_web_page_preview: true }, TELEGRAM_ENV.REPORTS_BOT_TOKEN);
+  // 1) Якщо є chatId — шлемо напряму
+  if (chatId) {
     try {
-      await kvWrite.lpush(
-        "access:telegram:outgoing",
-        JSON.stringify({
-          at: new Date().toISOString(),
-          event: "send_access",
-          userId: user.id,
-          chatId,
-          telegramUsername,
-          login: user.login,
-          crescoLoginUrl,
-          ok: true,
-        }),
+      await sendMessage(
+        chatId,
+        text,
+        { parse_mode: "HTML", disable_web_page_preview: true },
+        TELEGRAM_ENV.REPORTS_BOT_TOKEN,
       );
-      await kvWrite.ltrim("access:telegram:outgoing", 0, 99);
-    } catch (kvErr) {
-      console.warn("[access/send-access] KV log failed:", kvErr);
+      await logOutgoing({
+        userId: user.id,
+        chatId,
+        telegramUsername,
+        login: user.login,
+        crescoLoginUrl,
+        ok: true,
+        via: "chatId",
+      });
+      console.log("[access/send-access] Надіслано доступ:", {
+        userId: user.id,
+        login: user.login,
+        chatId,
+        telegramUsername,
+      });
+      return NextResponse.json({
+        ok: true,
+        sent: true,
+        passwordSaved: true,
+        login: user.login,
+        chatId,
+        telegramUsername,
+        crescoLoginUrl,
+      });
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      console.error("[access/send-access] Telegram error (chatId):", msg);
+      // якщо chatId «протух» — пробуємо далі через @username / deep-link
+      chatId = null;
     }
+  }
 
-    console.log("[access/send-access] Надіслано доступ:", {
+  // 2) Спроба через @username (працює лише якщо людина вже колись писала боту)
+  try {
+    await sendMessage(
+      `@${telegramUsername}`,
+      text,
+      { parse_mode: "HTML", disable_web_page_preview: true },
+      TELEGRAM_ENV.REPORTS_BOT_TOKEN,
+    );
+    await logOutgoing({
+      userId: user.id,
+      telegramUsername,
+      login: user.login,
+      crescoLoginUrl,
+      ok: true,
+      via: "username",
+    });
+    console.log("[access/send-access] Надіслано доступ через @username:", {
       userId: user.id,
       login: user.login,
-      chatId,
       telegramUsername,
     });
-
     return NextResponse.json({
       ok: true,
       sent: true,
       passwordSaved: true,
       login: user.login,
-      chatId,
       telegramUsername,
       crescoLoginUrl,
+      via: "username",
     });
   } catch (err) {
-    const msg = err instanceof Error ? err.message : String(err);
-    console.error("[access/send-access] Telegram error:", msg);
-    try {
-      await kvWrite.lpush(
-        "access:telegram:outgoing",
-        JSON.stringify({
-          at: new Date().toISOString(),
-          event: "send_access",
-          userId: user.id,
-          chatId,
-          telegramUsername,
-          login: user.login,
-          ok: false,
-          error: msg,
-        }),
-      );
-      await kvWrite.ltrim("access:telegram:outgoing", 0, 99);
-    } catch {
-      // ignore
-    }
-    return NextResponse.json(
-      {
-        error: `Не вдалося надіслати в Telegram: ${msg}. Пароль уже збережено.`,
-        passwordSaved: true,
-        login: user.login,
-      },
-      { status: 502 },
-    );
+    console.warn("[access/send-access] @username не спрацював (очікувано без /start):", {
+      telegramUsername,
+      error: err instanceof Error ? err.message : String(err),
+    });
   }
+
+  // 3) Немає привʼязки — створюємо deep-link: після /start бот сам видасть доступ
+  const pending = await createPendingAccess({
+    userId: user.id,
+    login: user.login,
+    password,
+    crescoLoginUrl,
+    telegramUsername,
+  });
+
+  await logOutgoing({
+    userId: user.id,
+    telegramUsername,
+    login: user.login,
+    crescoLoginUrl,
+    ok: true,
+    via: "pending_deeplink",
+    deepLink: pending.deepLink,
+    expiresAt: pending.expiresAt,
+  });
+
+  console.log("[access/send-access] Немає chatId — створено deep-link", {
+    userId: user.id,
+    login: user.login,
+    telegramUsername,
+    deepLink: pending.deepLink,
+  });
+
+  return NextResponse.json({
+    ok: true,
+    sent: false,
+    pending: true,
+    passwordSaved: true,
+    login: user.login,
+    telegramUsername,
+    crescoLoginUrl,
+    deepLink: pending.deepLink,
+    expiresAt: pending.expiresAt,
+    botUsername: REPORTS_BOT_USERNAME,
+    message:
+      `Пароль збережено. У @${telegramUsername} ще немає привʼязки Telegram. ` +
+      `Надішліть їй це посилання — після відкриття бот сам видасть логін і пароль: ${pending.deepLink}`,
+  });
 }

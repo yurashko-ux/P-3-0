@@ -35,6 +35,7 @@ export function EditUserModal({ user, functions, onClose, onSaved }: Props) {
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState<string | null>(null);
   const [passwordChanged, setPasswordChanged] = useState<{ login: string; password: string } | null>(null);
+  const [pendingDeepLink, setPendingDeepLink] = useState<string | null>(null);
   const [showPassword, setShowPassword] = useState(false);
   const [showPasswordInBlock, setShowPasswordInBlock] = useState(true);
 
@@ -119,8 +120,16 @@ export function EditUserModal({ user, functions, onClose, onSaved }: Props) {
         return;
       }
       onSaved();
-      setSuccess(`Доступ надіслано в Telegram @${data.telegramUsername || telegramUsername.trim()}`);
       setPasswordChanged({ login: user.login, password });
+      if (data.pending && data.deepLink) {
+        setPendingDeepLink(String(data.deepLink));
+        setSuccess(
+          `Пароль збережено. У @${data.telegramUsername || telegramUsername.trim()} ще немає привʼязки Telegram — надішліть їй посилання нижче. Після відкриття бот сам видасть логін і пароль.`,
+        );
+      } else {
+        setPendingDeepLink(null);
+        setSuccess(`Доступ надіслано в Telegram @${data.telegramUsername || telegramUsername.trim()}`);
+      }
     } catch (e) {
       setError(String(e));
     } finally {
@@ -131,7 +140,9 @@ export function EditUserModal({ user, functions, onClose, onSaved }: Props) {
   const handleCopy = async () => {
     if (!passwordChanged) return;
     const link = crescoLoginUrl.trim() || CRESCO_LOGIN_URL;
-    const text = `${link}\nЛогін: ${passwordChanged.login}\nПароль: ${passwordChanged.password}`;
+    const text = pendingDeepLink
+      ? `Відкрийте бота (один клік) — отримаєте доступ до Креско:\n${pendingDeepLink}\n\nАбо вручну:\n${link}\nЛогін: ${passwordChanged.login}\nПароль: ${passwordChanged.password}`
+      : `${link}\nЛогін: ${passwordChanged.login}\nПароль: ${passwordChanged.password}`;
     await navigator.clipboard.writeText(text);
     alert("Скопійовано!");
   };
@@ -144,10 +155,35 @@ export function EditUserModal({ user, functions, onClose, onSaved }: Props) {
           className="bg-white rounded-lg shadow-xl max-w-md w-full mx-4 p-6"
           onClick={(e) => e.stopPropagation()}
         >
-          <h3 className="text-lg font-bold mb-4">Пароль змінено</h3>
+          <h3 className="text-lg font-bold mb-4">
+            {pendingDeepLink ? "Доступ готовий — надішліть посилання" : "Пароль змінено"}
+          </h3>
           {success && (
             <div className="mb-3 p-3 bg-green-50 border border-green-200 rounded text-green-800 text-sm">
               {success}
+            </div>
+          )}
+          {pendingDeepLink && (
+            <div className="mb-3 p-3 bg-amber-50 border border-amber-200 rounded text-sm space-y-2">
+              <div className="font-medium text-amber-900">Посилання для Telegram (@ZVITY_HoB_bot)</div>
+              <a
+                href={pendingDeepLink}
+                target="_blank"
+                rel="noreferrer"
+                className="block break-all text-blue-700 underline"
+              >
+                {pendingDeepLink}
+              </a>
+              <button
+                type="button"
+                className="btn btn-sm btn-outline"
+                onClick={async () => {
+                  await navigator.clipboard.writeText(pendingDeepLink);
+                  alert("Посилання скопійовано — надішліть його користувачу в Telegram");
+                }}
+              >
+                Скопіювати посилання бота
+              </button>
             </div>
           )}
           {error && (
