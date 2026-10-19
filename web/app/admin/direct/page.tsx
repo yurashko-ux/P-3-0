@@ -796,11 +796,20 @@ function DirectPageContent() {
   const showFinanceDocs =
     permissions == null ||
     permissions.financeDocsSection !== "none" ||
-    permissions.financeReportSection !== "none";
+    permissions.financeReportSection !== "none" ||
+    permissions.financeOperationsSection !== "none" ||
+    permissions.cashSection !== "none";
+  const showCash = permissions == null || permissions.cashSection !== "none" || permissions.financeDocsSection !== "none";
   const showWarehouse = permissions == null || permissions.warehouseSection !== "none";
   const showJournal = permissions == null || permissions.journalSection !== "none";
   const showTeam = permissions == null || permissions.teamSection !== "none";
   const showBank = permissions == null || permissions.bankSection !== "none";
+  const showPaymentReconciliation =
+    permissions == null ||
+    permissions.paymentReconciliationSection !== "none" ||
+    permissions.bankSection !== "none";
+  const showStats = permissions == null || permissions.statsSection !== "none";
+  const showOboyma = permissions == null || permissions.oboymaSection !== "none";
   const showDebug = permissions == null || permissions.debugSection !== "none";
   const showAccess = permissions == null || permissions.accessSection !== "none";
   const showStatusesCreate = permissions == null || permissions.statusesCreateSubsection !== "none";
@@ -2484,7 +2493,7 @@ function DirectPageContent() {
               🏦 Банк
             </Link>
           )}
-          {showBank && (
+          {showPaymentReconciliation && (
             <Link
               href="/admin/direct/payment-reconciliation"
               className="btn btn-ghost min-h-0 py-0.5 text-[10px] px-1 leading-tight"
@@ -2494,7 +2503,7 @@ function DirectPageContent() {
               Платежі
             </Link>
           )}
-          {showFinanceDocs && (
+          {showCash && (
             <Link
               href="/admin/finance/cash"
               className="btn btn-ghost min-h-0 py-0.5 text-[10px] px-1 leading-tight"
@@ -2564,9 +2573,11 @@ function DirectPageContent() {
               Команда
             </Link>
           )}
-          <Link href={statsFiltersQuery ? `/admin/direct/stats?${statsFiltersQuery}` : "/admin/direct/stats"} className="btn btn-ghost min-h-0 py-0.5 text-[10px] px-1 leading-tight" target="_blank" rel="noopener noreferrer">
-            📈 Статистика
-          </Link>
+          {showStats && (
+            <Link href={statsFiltersQuery ? `/admin/direct/stats?${statsFiltersQuery}` : "/admin/direct/stats"} className="btn btn-ghost min-h-0 py-0.5 text-[10px] px-1 leading-tight" target="_blank" rel="noopener noreferrer">
+              📈 Статистика
+            </Link>
+          )}
           {showDebug && (
             <button
               type="button"
@@ -2621,15 +2632,17 @@ function DirectPageContent() {
                       + Створити статус
                     </button>
                   )}
-                  <Link
-                    href="/admin/direct/oboyma"
-                    className="block w-full text-left px-2 py-1 rounded text-xs hover:bg-base-200 transition-colors"
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    onClick={() => setIsAddMenuOpen(false)}
-                  >
-                    Обойма
-                  </Link>
+                  {showOboyma && (
+                    <Link
+                      href="/admin/direct/oboyma"
+                      className="block w-full text-left px-2 py-1 rounded text-xs hover:bg-base-200 transition-colors"
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      onClick={() => setIsAddMenuOpen(false)}
+                    >
+                      Обойма
+                    </Link>
+                  )}
                   {showAccess && (
                     <Link
                       href="/admin/access"

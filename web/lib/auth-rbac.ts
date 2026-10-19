@@ -18,14 +18,24 @@ export type PermissionKey =
   | "statusesCreateSubsection"
   | "phoneOutgoingCalls"
   | "statsSection"
+  | "leadsSourcesSection"
+  | "inactiveBaseSection"
+  | "oboymaSection"
+  | "mastersStatsSection"
   | "financeReportSection"
   | "warehouseSection"
   | "journalSection"
   | "teamSection"
   | "financeDocsSection"
+  | "financeOperationsSection"
+  | "cashSection"
   | "bankSection"
   | "bankOneSection"
+  | "paymentReconciliationSection"
   | "notionSection"
+  | "photoReportsSection"
+  | "campaignsSection"
+  | "altegioSection"
   | "debugSection"
   | "accessSection"
   | "telegramDailyReport";
@@ -43,14 +53,24 @@ const DEFAULT_PERMISSIONS: Permissions = {
   statusesCreateSubsection: "edit",
   phoneOutgoingCalls: "edit",
   statsSection: "edit",
+  leadsSourcesSection: "edit",
+  inactiveBaseSection: "edit",
+  oboymaSection: "edit",
+  mastersStatsSection: "edit",
   financeReportSection: "edit",
   warehouseSection: "edit",
   journalSection: "edit",
   teamSection: "edit",
   financeDocsSection: "edit",
+  financeOperationsSection: "edit",
+  cashSection: "edit",
   bankSection: "edit",
   bankOneSection: "edit",
+  paymentReconciliationSection: "edit",
   notionSection: "edit",
+  photoReportsSection: "edit",
+  campaignsSection: "edit",
+  altegioSection: "edit",
   debugSection: "edit",
   accessSection: "edit",
   telegramDailyReport: "none",

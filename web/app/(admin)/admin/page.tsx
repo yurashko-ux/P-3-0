@@ -26,12 +26,25 @@ export default function AdminHome() {
   const showDebug = permissions == null || permissions.debugSection !== 'none';
   const showAccess = permissions == null || permissions.accessSection !== 'none';
   const showFinanceReport = permissions == null || permissions.financeReportSection !== 'none';
-  const showFinanceDocs = permissions == null || permissions.financeDocsSection !== 'none' || permissions.financeReportSection !== 'none';
+  const showFinanceDocs =
+    permissions == null ||
+    permissions.financeDocsSection !== 'none' ||
+    permissions.financeReportSection !== 'none' ||
+    permissions.financeOperationsSection !== 'none' ||
+    permissions.cashSection !== 'none';
   const showWarehouse = permissions == null || permissions.warehouseSection !== 'none';
   const showJournal = permissions == null || permissions.journalSection !== 'none';
   const showTeam = permissions == null || permissions.teamSection !== 'none';
   const showBank = permissions == null || permissions.bankSection !== 'none';
   const showNotion = permissions == null || permissions.notionSection !== 'none';
+  const showPhotoReports = permissions == null || permissions.photoReportsSection !== 'none';
+  const showCampaigns = permissions == null || permissions.campaignsSection !== 'none';
+  const showAltegio = permissions == null || permissions.altegioSection !== 'none';
+  const showInactiveBase = permissions == null || permissions.inactiveBaseSection !== 'none';
+  const showLeadsSources =
+    permissions == null ||
+    permissions.leadsSourcesSection !== 'none' ||
+    permissions.statsSection !== 'none';
 
   return (
     <main style={{ maxWidth: 1040, margin: '48px auto', padding: '0 20px' }}>
@@ -72,6 +85,7 @@ export default function AdminHome() {
         </Card>
 
         {/* Кампанії — список */}
+        {showCampaigns && (
         <Card>
           <CardHeader emoji="📋" title="Кампанії" subtitle="Перегляд та керування" />
           <CardBody>
@@ -85,8 +99,10 @@ export default function AdminHome() {
             <PrimaryLink href="/admin/campaigns">Переглянути список</PrimaryLink>
           </CardFooter>
         </Card>
+        )}
 
         {/* Нова кампанія */}
+        {showCampaigns && (
         <Card accent>
           <CardHeader emoji="✨" title="Нова кампанія" subtitle="Швидке створення з правилами v1/v2" />
           <CardBody>
@@ -100,6 +116,7 @@ export default function AdminHome() {
             <PrimaryLink href="/admin/campaigns/new">Створити кампанію</PrimaryLink>
           </CardFooter>
         </Card>
+        )}
         {/* Тестова / debug — тільки якщо є право */}
         {showDebug && (
         <Card>
@@ -123,6 +140,7 @@ export default function AdminHome() {
         )}
 
         {/* Аналітика Alteg.io */}
+        {showAltegio && (
         <Card>
           <CardHeader
             emoji="📊"
@@ -141,8 +159,10 @@ export default function AdminHome() {
             <SecondaryLink href="/admin/analytics">Переглянути дашборд</SecondaryLink>
           </CardFooter>
         </Card>
+        )}
 
         {/* Фото-звіти */}
+        {showPhotoReports && (
         <Card>
           <CardHeader
             emoji="📸"
@@ -160,6 +180,47 @@ export default function AdminHome() {
             <PrimaryLink href="/admin/photo-reports">Відкрити модуль</PrimaryLink>
           </CardFooter>
         </Card>
+        )}
+
+        {showInactiveBase && (
+        <Card>
+          <CardHeader
+            emoji="📭"
+            title="Неактивна база"
+            subtitle="Клієнти без візитів і кампанії повернення"
+          />
+          <CardBody>
+            <ul style={{ margin: 0, paddingLeft: 18, color: 'rgba(0,0,0,0.75)' }}>
+              <li>Список неактивних і консультаційна база</li>
+              <li>Кампанії в Telegram / Instagram</li>
+              <li>Перенесення між групами</li>
+            </ul>
+          </CardBody>
+          <CardFooter>
+            <PrimaryLink href="/admin/direct/inactive-base">Відкрити</PrimaryLink>
+          </CardFooter>
+        </Card>
+        )}
+
+        {showLeadsSources && (
+        <Card>
+          <CardHeader
+            emoji="🎯"
+            title="Джерела лідів"
+            subtitle="Агенції, органіка, ad_id з Meta"
+          />
+          <CardBody>
+            <ul style={{ margin: 0, paddingLeft: 18, color: 'rgba(0,0,0,0.75)' }}>
+              <li>Статистика лідів по джерелах</li>
+              <li>Призначення кабінетів за ad_id</li>
+              <li>Ручне джерело для лідів без реклами</li>
+            </ul>
+          </CardBody>
+          <CardFooter>
+            <PrimaryLink href="/admin/direct/stats/leads">Відкрити</PrimaryLink>
+          </CardFooter>
+        </Card>
+        )}
 
         {/* Доступи — тільки якщо є право */}
         {showAccess && (

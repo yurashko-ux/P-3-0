@@ -31,7 +31,7 @@ function parseKvJson(raw: unknown): Record<string, unknown> | null {
 }
 
 export async function GET(req: NextRequest) {
-  if (!isInactiveBaseAuthorized(req)) {
+  if (!(await isInactiveBaseAuthorized(req))) {
     return NextResponse.json({ ok: false, error: 'Unauthorized' }, { status: 401 });
   }
 

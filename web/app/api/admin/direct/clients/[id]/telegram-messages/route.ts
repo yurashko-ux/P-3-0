@@ -3,7 +3,8 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
 import { sourcesWhereClause, isTelegramCampaignSource } from '@/lib/direct-channel-chat';
-import { isInactiveBaseAuthorized } from '@/lib/inactive-base/auth';
+import { getAuthContext } from '@/lib/auth-rbac';
+import { isPreviewDeploymentHost } from '@/lib/auth-preview';
 import { syncTelegramMessagesIfNeeded } from '@/lib/inactive-base/save-telegram-direct-message';
 
 export const dynamic = 'force-dynamic';
@@ -16,7 +17,8 @@ export async function GET(
   req: NextRequest,
   { params }: { params: { id: string } | Promise<{ id: string }> }
 ) {
-  if (!isInactiveBaseAuthorized(req)) {
+  // Історія Telegram потрібна і в Direct, і в Неактивній базі — достатньо будь-якого логіну.
+  if (!isPreviewDeploymentHost(req.headers.get('host') || '') && !(await getAuthContext(req))) {
     return NextResponse.json({ ok: false, error: 'Unauthorized' }, { status: 401 });
   }
 

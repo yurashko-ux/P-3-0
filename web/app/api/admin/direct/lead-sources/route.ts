@@ -16,7 +16,8 @@ async function allowed(req: NextRequest, needEdit: boolean): Promise<boolean> {
   const auth = await getAuthContext(req);
   if (!auth) return false;
   if (auth.type === "superadmin") return true;
-  const level = auth.permissions.statsSection;
+  // Джерела лідів — окреме право; fallback на Статистику для старих посад без нового ключа.
+  const level = auth.permissions.leadsSourcesSection || auth.permissions.statsSection;
   if (needEdit) return level === "edit";
   return level === "edit" || level === "view";
 }

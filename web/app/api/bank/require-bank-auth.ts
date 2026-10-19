@@ -21,7 +21,12 @@ export async function requireBankSection(req: Request): Promise<AuthContext | Ne
     if (!auth) {
       return NextResponse.json({ error: "Не авторизовано" }, { status: 401 });
     }
-    if (!hasPermission(auth.permissions, BANK_SECTION)) {
+    // Платежі (зведення) і каса теж ходять через bank-API — дозволяємо їхні окремі права.
+    const ok =
+      hasPermission(auth.permissions, BANK_SECTION) ||
+      hasPermission(auth.permissions, "paymentReconciliationSection") ||
+      hasPermission(auth.permissions, "cashSection");
+    if (!ok) {
       return NextResponse.json({ error: "Немає доступу до розділу Банк" }, { status: 403 });
     }
     return auth;

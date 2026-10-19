@@ -20,7 +20,7 @@ export async function GET(
   req: NextRequest,
   { params }: { params: { id: string } | Promise<{ id: string }> }
 ) {
-  if (!isInactiveBaseAuthorized(req)) {
+  if (!(await isInactiveBaseAuthorized(req))) {
     return NextResponse.json({ ok: false, error: 'Unauthorized' }, { status: 401 });
   }
   const { id } = await resolveParams(params);
@@ -48,7 +48,7 @@ export async function PATCH(
   req: NextRequest,
   { params }: { params: { id: string } | Promise<{ id: string }> }
 ) {
-  if (!isInactiveBaseAuthorized(req)) {
+  if (!(await isInactiveBaseAuthorized(req))) {
     return NextResponse.json({ ok: false, error: 'Unauthorized' }, { status: 401 });
   }
   const { id } = await resolveParams(params);
@@ -114,7 +114,7 @@ export async function DELETE(
   req: NextRequest,
   { params }: { params: { id: string } | Promise<{ id: string }> }
 ) {
-  if (!isInactiveBaseAuthorized(req)) {
+  if (!(await isInactiveBaseAuthorized(req))) {
     return NextResponse.json({ ok: false, error: 'Unauthorized' }, { status: 401 });
   }
   const { id } = await resolveParams(params);

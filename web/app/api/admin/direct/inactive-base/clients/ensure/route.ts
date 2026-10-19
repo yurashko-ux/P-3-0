@@ -12,7 +12,7 @@ import { prisma } from '@/lib/prisma';
 export const dynamic = 'force-dynamic';
 
 export async function POST(req: NextRequest) {
-  if (!isInactiveBaseAuthorized(req)) {
+  if (!(await isInactiveBaseAuthorized(req))) {
     return NextResponse.json({ ok: false, error: 'Unauthorized' }, { status: 401 });
   }
 

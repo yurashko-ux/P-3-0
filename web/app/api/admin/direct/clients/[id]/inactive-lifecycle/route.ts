@@ -22,7 +22,7 @@ export async function GET(
   req: NextRequest,
   ctx: { params: Promise<{ id: string }> | { id: string } }
 ) {
-  if (!isInactiveBaseAuthorized(req)) {
+  if (!(await isInactiveBaseAuthorized(req))) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 

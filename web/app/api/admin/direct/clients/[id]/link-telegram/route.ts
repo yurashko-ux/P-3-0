@@ -2,7 +2,8 @@
 
 import { NextRequest, NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
-import { isInactiveBaseAuthorized } from '@/lib/inactive-base/auth';
+import { getAuthContext } from '@/lib/auth-rbac';
+import { isPreviewDeploymentHost } from '@/lib/auth-preview';
 
 export const dynamic = 'force-dynamic';
 
@@ -14,7 +15,8 @@ export async function POST(
   req: NextRequest,
   { params }: { params: { id: string } | Promise<{ id: string }> }
 ) {
-  if (!isInactiveBaseAuthorized(req)) {
+  // Привʼязка Telegram — спільна для Direct і Неактивної бази.
+  if (!isPreviewDeploymentHost(req.headers.get('host') || '') && !(await getAuthContext(req))) {
     return NextResponse.json({ ok: false, error: 'Unauthorized' }, { status: 401 });
   }
 

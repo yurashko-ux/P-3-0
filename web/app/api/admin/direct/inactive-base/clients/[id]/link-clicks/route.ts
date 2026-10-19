@@ -9,7 +9,7 @@ export const dynamic = 'force-dynamic';
 type RouteParams = { params: Promise<{ id: string }> };
 
 export async function GET(req: NextRequest, { params }: RouteParams) {
-  if (!isInactiveBaseAuthorized(req)) {
+  if (!(await isInactiveBaseAuthorized(req))) {
     return NextResponse.json({ ok: false, error: 'Unauthorized' }, { status: 401 });
   }
 

@@ -15,7 +15,7 @@ async function allowed(req: NextRequest, needEdit: boolean): Promise<boolean> {
   const auth = await getAuthContext(req);
   if (!auth) return false;
   if (auth.type === "superadmin") return true;
-  const level = auth.permissions.statsSection;
+  const level = auth.permissions.leadsSourcesSection || auth.permissions.statsSection;
   if (needEdit) return level === "edit";
   return level === "edit" || level === "view";
 }

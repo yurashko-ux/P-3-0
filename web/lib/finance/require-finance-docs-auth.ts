@@ -22,10 +22,12 @@ export async function requireFinanceDocsSection(
     if (!auth) {
       return NextResponse.json({ error: "Не авторизовано" }, { status: 401 });
     }
-    // Fallback: хто має фінзвіт — теж бачить документи
+    // Fallback: фінзвіт / операції лідів / каса — теж можуть бачити документи (спільний модуль Фінанси)
     const ok =
       hasPermission(auth.permissions, FINANCE_DOCS) ||
-      hasPermission(auth.permissions, "financeReportSection");
+      hasPermission(auth.permissions, "financeReportSection") ||
+      hasPermission(auth.permissions, "financeOperationsSection") ||
+      hasPermission(auth.permissions, "cashSection");
     if (!ok) {
       return NextResponse.json({ error: "Немає доступу до фінансових документів" }, { status: 403 });
     }
@@ -33,7 +35,9 @@ export async function requireFinanceDocsSection(
       mode === "edit" &&
       auth.type !== "superadmin" &&
       !canEdit(auth.permissions, FINANCE_DOCS) &&
-      !canEdit(auth.permissions, "financeReportSection")
+      !canEdit(auth.permissions, "financeReportSection") &&
+      !canEdit(auth.permissions, "financeOperationsSection") &&
+      !canEdit(auth.permissions, "cashSection")
     ) {
       return NextResponse.json({ error: "Немає права редагувати фінанси" }, { status: 403 });
     }
