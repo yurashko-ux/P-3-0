@@ -5,6 +5,7 @@
 
 import { useState, useEffect } from "react";
 import type { DirectClient } from "@/lib/direct-types";
+import { kyivDayFromISO } from "@/lib/altegio/records-grouping";
 import { ClientNameWithLoyalty } from "@/app/admin/_components/ClientNameWithLoyalty";
 import { getFullName } from "./direct-client-table-formatters";
 import { StateIcon } from "./StateIcon";
@@ -121,7 +122,9 @@ const MANUAL_SOURCE_ASSIGN_MIN_KYIV_DAY = "2026-10-19";
  */
 function ManualSourceAssign({ client }: { client: DirectClient }) {
   const leadAdId = (client as unknown as { leadAdId?: string }).leadAdId;
-  const firstContactKyivDay = (client.firstContactDate || "").slice(0, 10);
+  // Порівнюємо саме київський день: firstContactDate у БД — UTC ISO, і вечір 18.10 UTC
+  // часто є вже 19.10 за Києвом (як у Журавської: 21:50 UTC = 00:50 Kyiv 19.10).
+  const firstContactKyivDay = kyivDayFromISO(client.firstContactDate || "") || "";
   const eligible = !leadAdId && firstContactKyivDay >= MANUAL_SOURCE_ASSIGN_MIN_KYIV_DAY;
 
   const [sources, setSources] = useState<LeadSourceOption[]>([]);
