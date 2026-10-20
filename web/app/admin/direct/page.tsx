@@ -780,6 +780,11 @@ function DirectPageContent() {
       .then((res) => res.json())
       .then((data) => {
         if (!cancelled && data?.ok) {
+          const startPath = typeof data.startPath === "string" ? data.startPath : "";
+          if (startPath.startsWith("/") && startPath !== "/admin/direct") {
+            window.location.replace(startPath);
+            return;
+          }
           if (data.permissions) setPermissions(data.permissions);
           if (data.user?.login != null) setCurrentUser({ login: data.user.login, name: data.user.name });
         } else if (!cancelled) {

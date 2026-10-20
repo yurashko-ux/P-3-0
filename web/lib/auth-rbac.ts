@@ -4,6 +4,7 @@
 import { createHmac, timingSafeEqual } from "crypto";
 import * as bcrypt from "bcryptjs";
 import { prisma } from "./prisma";
+import { readStartSection, startSectionPath } from "./start-section";
 
 const ADMIN_PASS = process.env.ADMIN_PASS || "";
 const CRON_SECRET = process.env.CRON_SECRET || "";
@@ -139,8 +140,8 @@ export function verifyUserToken(token: string): string | null {
 
 /** Повертає auth-контекст: супер-адмін або користувач з permissions */
 export type AuthContext =
-  | { type: "superadmin"; userId: null; permissions: Permissions }
-  | { type: "user"; userId: string; userName: string; login: string; permissions: Permissions };
+  | { type: "superadmin"; userId: null; permissions: Permissions; startPath?: string }
+  | { type: "user"; userId: string; userName: string; login: string; permissions: Permissions; startPath?: string };
 
 export async function getAuthContext(req: Request): Promise<AuthContext | null> {
   const adminToken = getAdminTokenFromRequest(req);
@@ -180,6 +181,7 @@ export async function getAuthContext(req: Request): Promise<AuthContext | null> 
     userName: user.name,
     login: user.login,
     permissions,
+    startPath: startSectionPath(readStartSection(user.function?.permissions)),
   };
 }
 

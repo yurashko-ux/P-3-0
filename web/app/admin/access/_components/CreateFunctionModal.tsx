@@ -3,6 +3,7 @@
 import { useState } from "react";
 import { PERMISSION_CATEGORIES, DEFAULT_PERMISSIONS } from "@/lib/permissions-default";
 import type { PermissionKey } from "@/lib/auth-rbac";
+import { START_SECTIONS, parseStartSection, type StartSectionId } from "@/lib/start-section";
 
 type Props = {
   onClose: () => void;
@@ -11,6 +12,7 @@ type Props = {
 
 export function CreateFunctionModal({ onClose, onCreated }: Props) {
   const [name, setName] = useState("");
+  const [startSection, setStartSection] = useState<StartSectionId>("direct");
   const [permissions, setPermissions] = useState<Record<string, string>>(
     Object.fromEntries(
       PERMISSION_CATEGORIES.map((c) => [c.key, DEFAULT_PERMISSIONS[c.key] ?? "edit"])
@@ -31,7 +33,7 @@ export function CreateFunctionModal({ onClose, onCreated }: Props) {
       const res = await fetch("/api/admin/access/functions", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ name: name.trim(), permissions }),
+        body: JSON.stringify({ name: name.trim(), permissions: { ...permissions, startSection } }),
       });
       const data = await res.json();
       if (!res.ok) {
@@ -69,6 +71,24 @@ export function CreateFunctionModal({ onClose, onCreated }: Props) {
               placeholder="Наприклад: Адміністратор, Дірект-менеджер"
               required
             />
+          </div>
+          <div>
+            <label className="block text-sm font-medium mb-1" htmlFor="create-start-section">
+              Стартовий розділ
+            </label>
+            <select
+              id="create-start-section"
+              className="select select-bordered w-full"
+              value={startSection}
+              onChange={(e) => setStartSection(parseStartSection(e.target.value))}
+            >
+              {START_SECTIONS.map((section) => (
+                <option key={section.id} value={section.id}>
+                  {section.label}
+                </option>
+              ))}
+            </select>
+            <p className="mt-1 text-xs text-gray-500">Ця сторінка відкривається після входу.</p>
           </div>
           <div>
             <label className="block text-sm font-medium mb-2">

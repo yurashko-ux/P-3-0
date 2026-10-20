@@ -17,5 +17,6 @@ export async function GET(req: Request) {
       ? { type: 'superadmin', name: 'Супер-адмін', login: 'admin', userId: null }
       : { type: 'user', name: auth.userName, login: auth.login, userId: auth.userId },
     permissions: auth.permissions,
+    startPath: auth.startPath || "/admin/direct",
   });
 }

@@ -2,6 +2,7 @@
 import { NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
 import { verifyPassword, createUserSessionCookie } from '@/lib/auth-rbac';
+import { readStartSection, startSectionPath } from '@/lib/start-section';
 
 type LoginPayload =
   | { password?: string; login?: string }
@@ -60,7 +61,8 @@ export async function POST(req: Request) {
         include: { function: true },
       });
       if (user && (await verifyPassword(password, user.passwordHash))) {
-        const res = NextResponse.json({ ok: true, userId: user.id, name: user.name });
+        const startPath = startSectionPath(readStartSection(user.function?.permissions));
+        const res = NextResponse.json({ ok: true, userId: user.id, name: user.name, startPath });
         const cookieValue = createUserSessionCookie(user.id);
         res.cookies.set('admin_token', cookieValue, {
           path: '/',
@@ -96,7 +98,7 @@ export async function POST(req: Request) {
     );
   }
 
-  const res = NextResponse.json({ ok: true });
+  const res = NextResponse.json({ ok: true, startPath: '/admin/direct' });
   res.cookies.set('admin_token', incoming, {
     path: '/',
     httpOnly: false,

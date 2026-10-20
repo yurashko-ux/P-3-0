@@ -40,7 +40,9 @@ function LoginInner() {
       });
       const data = await res.json();
       if (data.ok) {
-        window.location.href = '/admin/direct';
+        window.location.href = typeof data.startPath === 'string' && data.startPath.startsWith('/')
+          ? data.startPath
+          : '/admin/direct';
         return;
       }
       setError(data.error || 'Помилка входу');

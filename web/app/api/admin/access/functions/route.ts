@@ -5,6 +5,7 @@ import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { requireAccessSection } from "../require-access";
 import { DEFAULT_PERMISSIONS } from "@/lib/permissions-default";
+import { parseStartSection } from "@/lib/start-section";
 
 export async function GET(req: Request) {
   try {
@@ -53,8 +54,12 @@ export async function POST(req: Request) {
 
   const permissions =
     body.permissions && typeof body.permissions === "object"
-      ? { ...DEFAULT_PERMISSIONS, ...body.permissions }
-      : { ...DEFAULT_PERMISSIONS };
+      ? {
+          ...DEFAULT_PERMISSIONS,
+          ...body.permissions,
+          startSection: parseStartSection(body.permissions.startSection),
+        }
+      : { ...DEFAULT_PERMISSIONS, startSection: "direct" };
 
   const fn = await prisma.function.create({
     data: {

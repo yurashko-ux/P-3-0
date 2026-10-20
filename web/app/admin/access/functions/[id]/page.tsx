@@ -8,12 +8,14 @@ import { useParams, useRouter } from "next/navigation";
 import Link from "next/link";
 import { PERMISSION_CATEGORIES, mergeFunctionPermissions, isPermissionChecked } from "@/lib/permissions-default";
 import type { PermissionKey } from "@/lib/auth-rbac";
+import { START_SECTIONS, parseStartSection, type StartSectionId } from "@/lib/start-section";
 
 export default function EditFunctionPage() {
   const params = useParams();
   const router = useRouter();
   const id = String(params?.id ?? "");
   const [name, setName] = useState("");
+  const [startSection, setStartSection] = useState<StartSectionId>("direct");
   const [permissions, setPermissions] = useState<Record<string, string>>({});
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -28,6 +30,7 @@ export default function EditFunctionPage() {
       })
       .then((data) => {
         setName(data.name ?? "");
+        setStartSection(parseStartSection(data.permissions?.startSection));
         setPermissions(mergeFunctionPermissions(data.permissions));
       })
       .catch((e) => setError(String(e)))
@@ -51,7 +54,10 @@ export default function EditFunctionPage() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           name: name.trim(),
-          permissions: mergeFunctionPermissions(permissions),
+          permissions: {
+            ...mergeFunctionPermissions(permissions),
+            startSection,
+          },
         }),
       });
       if (!res.ok) {
@@ -99,6 +105,25 @@ export default function EditFunctionPage() {
               className="input input-bordered w-full"
               placeholder="Наприклад: Адміністратор"
             />
+          </div>
+
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1" htmlFor="start-section">
+              Стартовий розділ
+            </label>
+            <select
+              id="start-section"
+              className="select select-bordered w-full max-w-xs"
+              value={startSection}
+              onChange={(e) => setStartSection(parseStartSection(e.target.value))}
+            >
+              {START_SECTIONS.map((section) => (
+                <option key={section.id} value={section.id}>
+                  {section.label}
+                </option>
+              ))}
+            </select>
+            <p className="mt-1 text-xs text-gray-500">Ця сторінка відкривається після входу. Direct у списку галочок немає — його вмикають тут.</p>
           </div>
 
           <div>
