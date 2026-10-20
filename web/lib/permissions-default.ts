@@ -13,6 +13,7 @@ export const PERMISSION_CATEGORIES: { key: PermissionKey; label: string }[] = [
   { key: "phoneOutgoingCalls", label: "Телефон: вихідні дзвінки" },
   { key: "statsSection", label: "Розділ Статистика" },
   { key: "leadsSourcesSection", label: "Розділ Джерела лідів" },
+  { key: "leadsSection", label: "Розділ Ліди" },
   { key: "inactiveBaseSection", label: "Розділ Клієнти" },
   { key: "oboymaSection", label: "Розділ Обойма" },
   { key: "mastersStatsSection", label: "Розділ Статистика майстрів" },
@@ -45,6 +46,7 @@ export const DEFAULT_PERMISSIONS: Permissions = {
   phoneOutgoingCalls: "edit",
   statsSection: "edit",
   leadsSourcesSection: "edit",
+  leadsSection: "edit",
   inactiveBaseSection: "edit",
   oboymaSection: "edit",
   mastersStatsSection: "edit",
@@ -77,6 +79,9 @@ export function mergeFunctionPermissions(stored: unknown): Permissions {
       if (value === "view" || value === "edit" || value === "none") {
         permissions[key] = value;
       }
+    }
+    if (!("leadsSection" in raw)) {
+      permissions.leadsSection = "none";
     }
   }
   return permissions;

@@ -10,7 +10,7 @@ import {
   startOfMonthKyivFromDay,
   endOfMonthKyivFromDay,
 } from "@/lib/direct-f4-client-match";
-import { verifyUserToken } from "@/lib/auth-rbac";
+import { getAuthContext, hasPermission, verifyUserToken } from "@/lib/auth-rbac";
 import { isPreviewDeploymentHost } from "@/lib/auth-preview";
 import { getConsultationMasterColumnNames } from "@/lib/direct-master-column-names";
 import type { DirectClient } from "@/lib/direct-types";
@@ -96,6 +96,14 @@ function isNewLeadInMonth(
 export async function GET(req: NextRequest) {
   if (!isAuthorized(req)) {
     return NextResponse.json({ ok: false, error: "Unauthorized" }, { status: 401 });
+  }
+  const auth = await getAuthContext(req);
+  if (
+    auth?.type === "user" &&
+    !hasPermission(auth.permissions, "leadsSection") &&
+    !hasPermission(auth.permissions, "statsSection")
+  ) {
+    return NextResponse.json({ ok: false, error: "Немає доступу до розділу Ліди" }, { status: 403 });
   }
 
   try {

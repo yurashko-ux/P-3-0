@@ -30,8 +30,13 @@ export default function AdminHome() {
     permissions == null ||
     permissions.financeDocsSection !== 'none' ||
     permissions.financeReportSection !== 'none' ||
-    permissions.financeOperationsSection !== 'none' ||
     permissions.cashSection !== 'none';
+  const showLeadOperationsOnly =
+    permissions != null &&
+    permissions.financeOperationsSection !== 'none' &&
+    permissions.financeDocsSection === 'none' &&
+    permissions.financeReportSection === 'none' &&
+    permissions.cashSection === 'none';
   const showWarehouse = permissions == null || permissions.warehouseSection !== 'none';
   const showJournal = permissions == null || permissions.journalSection !== 'none';
   const showTeam = permissions == null || permissions.teamSection !== 'none';
@@ -280,6 +285,19 @@ export default function AdminHome() {
           </CardBody>
           <CardFooter>
             <PrimaryLink href="/admin/finance">Відкрити фінанси</PrimaryLink>
+          </CardFooter>
+        </Card>
+        )}
+
+        {showLeadOperationsOnly && (
+        <Card>
+          <CardHeader
+            emoji="🧾"
+            title="Операції лідів"
+            subtitle="Витрати на ліди без розділу фінансів"
+          />
+          <CardFooter>
+            <PrimaryLink href="/admin/finance/operations">Відкрити операції</PrimaryLink>
           </CardFooter>
         </Card>
         )}

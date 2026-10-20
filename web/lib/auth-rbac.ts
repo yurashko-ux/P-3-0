@@ -19,6 +19,7 @@ export type PermissionKey =
   | "phoneOutgoingCalls"
   | "statsSection"
   | "leadsSourcesSection"
+  | "leadsSection"
   | "inactiveBaseSection"
   | "oboymaSection"
   | "mastersStatsSection"
@@ -54,6 +55,7 @@ const DEFAULT_PERMISSIONS: Permissions = {
   phoneOutgoingCalls: "edit",
   statsSection: "edit",
   leadsSourcesSection: "edit",
+  leadsSection: "edit",
   inactiveBaseSection: "edit",
   oboymaSection: "edit",
   mastersStatsSection: "edit",
@@ -165,6 +167,10 @@ export async function getAuthContext(req: Request): Promise<AuthContext | null> 
       if (p[k] === "view" || p[k] === "edit" || p[k] === "none") {
         permissions[k as PermissionKey] = p[k] as PermissionValue;
       }
+    }
+    // Посади, збережені до появи «Ліди», не отримують розділ, доки галочку не поставлять.
+    if (!("leadsSection" in p)) {
+      permissions.leadsSection = "none";
     }
   }
 
