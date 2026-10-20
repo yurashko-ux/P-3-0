@@ -228,7 +228,6 @@ function ConsultationsPageContent() {
         if (!cancelled) {
           setClients([]);
           setMasters([]);
-          setSummary(null);
           setError(e instanceof Error ? e.message : String(e));
         }
       } finally {
