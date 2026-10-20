@@ -10,6 +10,30 @@ import type { InactiveBaseClientRow } from "./InactiveBaseChatCell";
 const PILL_BASE =
   "relative inline-flex items-center justify-center rounded-full px-1.5 py-0.5 tabular-nums text-[11px] font-normal leading-none min-w-[1.25rem]";
 
+function kyivDay(iso: string | null | undefined): string {
+  if (!iso) return "";
+  const d = new Date(iso);
+  if (isNaN(d.getTime())) return "";
+  return new Intl.DateTimeFormat("en-CA", {
+    timeZone: "Europe/Kyiv",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  }).format(d);
+}
+
+function isCallTodayKyiv(iso: string | null | undefined): boolean {
+  const day = kyivDay(iso);
+  if (!day) return false;
+  const today = new Intl.DateTimeFormat("en-CA", {
+    timeZone: "Europe/Kyiv",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  }).format(new Date());
+  return day === today;
+}
+
 function groupCallsPillClass(count: number): string {
   return count === 0
     ? `${PILL_BASE} bg-gray-200 text-gray-900 cursor-default`
@@ -85,7 +109,7 @@ export function InactiveBaseCallsCell({
             size={18}
           />
         </button>
-        {hasRecording && isSuccess ? (
+        {hasRecording && isSuccess && isCallTodayKyiv(startTime) ? (
           <PlayRecordingButton
             recordingUrl={client.binotelLatestCallRecordingUrl}
             generalCallID={client.binotelLatestCallGeneralID}

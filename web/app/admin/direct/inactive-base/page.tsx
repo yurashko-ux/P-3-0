@@ -1003,7 +1003,7 @@ function InactiveBasePageContent() {
 
         {isActiveBaseView ? (
           <div className="bg-base-100 rounded-lg border border-base-300 overflow-x-auto">
-            <table className="table table-xs table-zebra table-direct-manager [&_td]:!py-[5px] [&_th]:!py-[5px]">
+            <table className="table table-xs table-zebra table-direct-manager !w-max [&_td]:!px-1.5 [&_th]:!px-1.5 [&_td]:!py-[5px] [&_th]:!py-[5px]">
               <thead>
                 <tr className="text-[10px]">
                   <th className="w-8">
@@ -1072,7 +1072,7 @@ function InactiveBasePageContent() {
                         />
                       </td>
                       <td className="tabular-nums text-xs">{index + 1}</td>
-                      <td className="text-xs whitespace-nowrap max-w-[280px]">
+                      <td className="text-xs whitespace-nowrap">
                         <DirectClientIdentityCell client={client} />
                       </td>
                       <td className="text-xs text-left tabular-nums">

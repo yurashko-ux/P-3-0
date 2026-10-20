@@ -125,7 +125,7 @@ export function DirectClientIdentityCell({ client }: Props) {
 
   return (
     <>
-      <div className="flex items-center gap-1 min-w-0 max-w-full">
+      <div className="flex items-center gap-1 whitespace-nowrap">
         <AvatarSlot
           avatarSrc={avatarSrc}
           onError={onAvatarError}
@@ -139,18 +139,16 @@ export function DirectClientIdentityCell({ client }: Props) {
             href={`https://instagram.com/${username}`}
             target="_blank"
             rel="noopener noreferrer"
-            className="link link-primary flex items-center gap-1 min-w-0 max-w-full"
+            className="link link-primary inline-flex items-center gap-1 whitespace-nowrap"
             title={hasName ? `${nameOneLine} - https://instagram.com/${username}` : `https://instagram.com/${username}`}
             onClick={(e) => e.stopPropagation()}
           >
-            <span className="min-w-0 truncate" title={label}>
-              {label}
-            </span>
+            <span title={label}>{label}</span>
             {visitsSuffix ? <span className="shrink-0 opacity-80">{` ${visitsSuffix}`}</span> : null}
           </a>
         ) : (
-          <span className="flex items-center gap-1 min-w-0 max-w-full" title={label}>
-            <span className="min-w-0 truncate">{label}</span>
+          <span className="inline-flex items-center gap-1 whitespace-nowrap" title={label}>
+            <span>{label}</span>
             {visitsSuffix ? <span className="shrink-0 opacity-80">{` ${visitsSuffix}`}</span> : null}
           </span>
         )}
