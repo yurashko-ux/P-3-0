@@ -385,7 +385,7 @@ function ConsultationsPageContent() {
           ) : clients.length === 0 ? (
             <p className="text-center text-gray-500 py-6">Записів за цей період немає.</p>
           ) : (
-            <table className="table table-xs table-fixed min-w-[1000px] [&_th]:py-0.5 [&_th]:text-[11px] [&_.consultation-data-row_td]:py-0.5 [&_.consultation-data-row_td]:text-[11px] [&_.consultation-data-row_td]:leading-5">
+            <table className="table table-xs table-fixed min-w-[1000px] [&_th]:!py-0.5 [&_th]:!px-1 [&_th]:text-[11px] [&_.consultation-data-row]:h-5 [&_.consultation-data-row_td]:!h-5 [&_.consultation-data-row_td]:!max-h-5 [&_.consultation-data-row_td]:!py-0 [&_.consultation-data-row_td]:!px-1 [&_.consultation-data-row_td]:text-[11px] [&_.consultation-data-row_td]:leading-5 [&_.consultation-data-row_td]:overflow-hidden [&_.lead-state-cell]:!overflow-visible">
               <colgroup>
                 <col className="w-8" />
                 <col className="w-[5.5rem]" />
@@ -516,8 +516,9 @@ function ConsultationsPageContent() {
                           );
                         })()}
                       </td>
-                      <td className="text-center align-middle">
+                      <td className="lead-state-cell text-center align-middle">
                         <LeadStateIcon
+                          compact
                           clientId={c.id}
                           firstContactDate={c.firstContactDate}
                           leadAgency={c.leadAgency}

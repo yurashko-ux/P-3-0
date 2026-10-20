@@ -16,12 +16,15 @@ export function LeadStateIcon({
   leadAgency,
   leadAdId,
   onAgencyChange,
+  compact = false,
 }: {
   clientId: string;
   firstContactDate?: string | null;
   leadAgency?: string | null;
   leadAdId?: string | null;
   onAgencyChange?: (leadAgency: string | null) => void;
+  /** Не розтягує рядок: хмарка 28px малюється поверх комірки висотою 20px. */
+  compact?: boolean;
 }) {
   const today = kyivDayFromISO(new Date().toISOString());
   const firstDay = firstContactDate ? kyivDayFromISO(firstContactDate) : "";
@@ -113,7 +116,11 @@ export function LeadStateIcon({
     }
   }
 
-  const icon = <StateIcon state={isNewToday ? "new-lead" : "message"} size={ICON_SIZE} />;
+  const icon = (
+    <span className={compact ? "inline-flex origin-center scale-[1.4]" : undefined}>
+      <StateIcon state={isNewToday ? "new-lead" : "message"} size={compact ? 20 : ICON_SIZE} />
+    </span>
+  );
   const marked = leadAgency === "agency_1"
     ? <LeadAgencyStar>{icon}</LeadAgencyStar>
     : leadAgency === "agency_2"
