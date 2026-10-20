@@ -188,7 +188,10 @@ export default function DirectMessagesPage() {
                         </WithCornerRedDot>
                       </td>
                       <td className="text-center" style={cellStyle}>
-                        <LeadStateIcon firstContactDate={c.firstContactDate} />
+                        <LeadStateIcon
+                          clientId={c.id}
+                          firstContactDate={c.firstContactDate}
+                        />
                       </td>
                     </tr>
                   );

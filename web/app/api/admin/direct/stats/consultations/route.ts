@@ -183,6 +183,8 @@ export async function GET(req: NextRequest) {
         chatStatusId: true,
         chatStatusSetAt: true,
         chatStatusCheckedAt: true,
+        leadAgency: true,
+        leadAdId: true,
       },
     });
 
@@ -234,6 +236,8 @@ export async function GET(req: NextRequest) {
         chatStatusId: c.chatStatusId,
         chatStatusSetAt: c.chatStatusSetAt,
         chatStatusCheckedAt: c.chatStatusCheckedAt,
+        leadAgency: c.leadAgency,
+        leadAdId: c.leadAdId,
       };
     });
 

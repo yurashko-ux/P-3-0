@@ -57,7 +57,7 @@ export async function GET(req: NextRequest) {
     return NextResponse.json({ ok: false, error: "Unauthorized" }, { status: 401 });
   }
   const auth = await getAuthContext(req);
-  if (auth?.type === "user" && !hasPermission(auth.permissions, "messagesSection")) {
+  if (auth?.type === "user" && !hasPermission(auth.permissions, "messagesSection") && !hasPermission(auth.permissions, "leadsSection") && !hasPermission(auth.permissions, "statsSection")) {
     return NextResponse.json({ ok: false, error: "Немає доступу до розділу Переписки" }, { status: 403 });
   }
 

@@ -56,6 +56,8 @@ type ConsultationClient = {
   chatStatusId?: string | null;
   chatStatusName?: string | null;
   lastMessageAt?: string | null;
+  leadAgency?: string | null;
+  leadAdId?: string | null;
 };
 
 const COLOR_LEGEND: Array<{ key: ConsultationRowColorKey; label: string; className: string }> = [
@@ -357,7 +359,10 @@ function ConsultationsPageContent() {
             </span>
           ))}
         </div>
-        <Link href="/admin/direct/stats/leads" className="btn btn-outline btn-xs min-h-6 h-6 px-1.5 text-[10px] ml-auto">
+        <Link href="/admin/direct/messages" className="btn btn-outline btn-xs min-h-6 h-6 px-1.5 text-[10px] ml-auto">
+          Переписки
+        </Link>
+        <Link href="/admin/direct/stats/leads" className="btn btn-outline btn-xs min-h-6 h-6 px-1.5 text-[10px]">
           Джерела
         </Link>
       </div>
@@ -380,14 +385,14 @@ function ConsultationsPageContent() {
           ) : clients.length === 0 ? (
             <p className="text-center text-gray-500 py-6">Записів за цей період немає.</p>
           ) : (
-            <table className="table table-xs table-fixed min-w-[1000px] [&_th]:py-0.5 [&_th]:text-[11px] [&_.consultation-data-row]:h-5 [&_.consultation-data-row_td]:h-5 [&_.consultation-data-row_td]:max-h-5 [&_.consultation-data-row_td]:py-0 [&_.consultation-data-row_td]:text-[11px] [&_.consultation-data-row_td]:leading-5">
+            <table className="table table-xs table-fixed min-w-[1000px] [&_th]:py-0.5 [&_th]:text-[11px] [&_.consultation-data-row_td]:py-0.5 [&_.consultation-data-row_td]:text-[11px] [&_.consultation-data-row_td]:leading-5">
               <colgroup>
                 <col className="w-8" />
                 <col className="w-[5.5rem]" />
                 <col className="w-[7rem]" />
                 <col className="w-[8rem]" />
                 <col className="w-[3.2rem]" />
-                <col className="w-[2.2rem]" />
+                <col className="w-[2.75rem]" />
                 <col className="w-[5.5rem]" />
                 <col className="w-[7.5rem]" />
                 <col className="w-[8rem]" />
@@ -511,8 +516,14 @@ function ConsultationsPageContent() {
                           );
                         })()}
                       </td>
-                      <td className="text-center">
-                        <LeadStateIcon firstContactDate={c.firstContactDate} size={16} />
+                      <td className="text-center align-middle">
+                        <LeadStateIcon
+                          clientId={c.id}
+                          firstContactDate={c.firstContactDate}
+                          leadAgency={c.leadAgency}
+                          leadAdId={c.leadAdId}
+                          onAgencyChange={(leadAgency) => updateClientLocal(c.id, { leadAgency })}
+                        />
                       </td>
                       <td className="whitespace-nowrap tabular-nums">
                         {formatKyivDate(c.consultationBookingDate)}
