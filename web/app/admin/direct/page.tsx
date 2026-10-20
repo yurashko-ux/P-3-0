@@ -812,6 +812,7 @@ function DirectPageContent() {
   const showWarehouse = permissions == null || permissions.warehouseSection !== "none";
   const showJournal = permissions == null || permissions.journalSection !== "none";
   const showClientsSection = permissions == null || permissions.inactiveBaseSection !== "none";
+  const showMessages = permissions == null || permissions.messagesSection !== "none";
   const showLeads =
     permissions == null ||
     permissions.leadsSection !== "none" ||
@@ -2575,6 +2576,16 @@ function DirectPageContent() {
               rel="noopener noreferrer"
             >
               Клієнти
+            </Link>
+          )}
+          {showMessages && (
+            <Link
+              href="/admin/direct/messages"
+              className="btn btn-ghost min-h-0 py-0.5 text-[10px] px-1 leading-tight"
+              target="_blank"
+              rel="noopener noreferrer"
+            >
+              Переписки
             </Link>
           )}
           {showLeads && (

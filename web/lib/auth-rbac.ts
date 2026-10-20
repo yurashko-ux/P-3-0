@@ -21,6 +21,7 @@ export type PermissionKey =
   | "statsSection"
   | "leadsSourcesSection"
   | "leadsSection"
+  | "messagesSection"
   | "inactiveBaseSection"
   | "oboymaSection"
   | "mastersStatsSection"
@@ -57,6 +58,7 @@ const DEFAULT_PERMISSIONS: Permissions = {
   statsSection: "edit",
   leadsSourcesSection: "edit",
   leadsSection: "edit",
+  messagesSection: "edit",
   inactiveBaseSection: "edit",
   oboymaSection: "edit",
   mastersStatsSection: "edit",
@@ -172,6 +174,10 @@ export async function getAuthContext(req: Request): Promise<AuthContext | null> 
     // Посади, збережені до появи «Ліди», не отримують розділ, доки галочку не поставлять.
     if (!("leadsSection" in p)) {
       permissions.leadsSection = "none";
+    }
+    // Посади, збережені до появи «Переписки», не отримують розділ, доки галочку не поставлять.
+    if (!("messagesSection" in p)) {
+      permissions.messagesSection = "none";
     }
   }
 

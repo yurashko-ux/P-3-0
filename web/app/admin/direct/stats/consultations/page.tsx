@@ -26,6 +26,7 @@ import { hasNormalInstagramUsername } from "@/lib/altegio/client-utils";
 import type { DirectClient } from "@/lib/direct-types";
 import { AvatarSlot } from "../../_components/DirectClientTableAvatar";
 import { formatDateDDMMYY } from "../../_components/direct-client-table-formatters";
+import { LeadStateIcon } from "../../_components/LeadStateIcon";
 import { MessagesHistoryModal } from "../../_components/MessagesHistoryModal";
 
 type MasterOption = { id: string; name: string };
@@ -66,7 +67,7 @@ const COLOR_LEGEND: Array<{ key: ConsultationRowColorKey; label: string; classNa
   { key: "no_show", label: "Не з'явилась", className: "bg-purple-200" },
 ];
 
-const COL_COUNT = 11;
+const COL_COUNT = 12;
 
 /** Нативний select/input — daisyUI select-xs обрізає текст при малій висоті. */
 const COMPACT_SELECT_BASE =
@@ -379,13 +380,14 @@ function ConsultationsPageContent() {
           ) : clients.length === 0 ? (
             <p className="text-center text-gray-500 py-6">Записів за цей період немає.</p>
           ) : (
-            <table className="table table-xs table-fixed min-w-[960px] [&_th]:py-0.5 [&_th]:text-[11px] [&_.consultation-data-row]:h-5 [&_.consultation-data-row_td]:h-5 [&_.consultation-data-row_td]:max-h-5 [&_.consultation-data-row_td]:py-0 [&_.consultation-data-row_td]:text-[11px] [&_.consultation-data-row_td]:leading-5">
+            <table className="table table-xs table-fixed min-w-[1000px] [&_th]:py-0.5 [&_th]:text-[11px] [&_.consultation-data-row]:h-5 [&_.consultation-data-row_td]:h-5 [&_.consultation-data-row_td]:max-h-5 [&_.consultation-data-row_td]:py-0 [&_.consultation-data-row_td]:text-[11px] [&_.consultation-data-row_td]:leading-5">
               <colgroup>
                 <col className="w-8" />
                 <col className="w-[5.5rem]" />
                 <col className="w-[7rem]" />
                 <col className="w-[8rem]" />
                 <col className="w-[3.2rem]" />
+                <col className="w-[2.2rem]" />
                 <col className="w-[5.5rem]" />
                 <col className="w-[7.5rem]" />
                 <col className="w-[8rem]" />
@@ -400,6 +402,7 @@ function ConsultationsPageContent() {
                   <th>Instagram</th>
                   <th>Ім&apos;я</th>
                   <th>Inst</th>
+                  <th className="text-center">Стан</th>
                   <th>Дата консультації</th>
                   <th>Результат</th>
                   <th>Коментар</th>
@@ -507,6 +510,9 @@ function ConsultationsPageContent() {
                             </button>
                           );
                         })()}
+                      </td>
+                      <td className="text-center">
+                        <LeadStateIcon firstContactDate={c.firstContactDate} size={16} />
                       </td>
                       <td className="whitespace-nowrap tabular-nums">
                         {formatKyivDate(c.consultationBookingDate)}

@@ -14,6 +14,7 @@ export const PERMISSION_CATEGORIES: { key: PermissionKey; label: string }[] = [
   { key: "statsSection", label: "Розділ Статистика" },
   { key: "leadsSourcesSection", label: "Розділ Джерела лідів" },
   { key: "leadsSection", label: "Розділ Ліди" },
+  { key: "messagesSection", label: "Розділ Переписки" },
   { key: "inactiveBaseSection", label: "Розділ Клієнти" },
   { key: "oboymaSection", label: "Розділ Обойма" },
   { key: "mastersStatsSection", label: "Розділ Статистика майстрів" },
@@ -47,6 +48,7 @@ export const DEFAULT_PERMISSIONS: Permissions = {
   statsSection: "edit",
   leadsSourcesSection: "edit",
   leadsSection: "edit",
+  messagesSection: "edit",
   inactiveBaseSection: "edit",
   oboymaSection: "edit",
   mastersStatsSection: "edit",
@@ -82,6 +84,9 @@ export function mergeFunctionPermissions(stored: unknown): Permissions {
     }
     if (!("leadsSection" in raw)) {
       permissions.leadsSection = "none";
+    }
+    if (!("messagesSection" in raw)) {
+      permissions.messagesSection = "none";
     }
   }
   return permissions;
