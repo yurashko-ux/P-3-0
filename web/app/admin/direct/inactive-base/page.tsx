@@ -95,23 +95,43 @@ const BASE_VIEW_LABELS: Record<InactiveBaseView, string> = {
   consultation_not_attended: "Консультація не відбулась",
 };
 
-const BASE_VIEW_SHORT_LABELS: Record<InactiveBaseView, string> = {
-  active: "Активна",
-  inactive: "Неактивна",
-  consultation_attended: "Відбулись",
-  consultation_not_attended: "Не відбулись",
-};
-
-const BASE_VIEW_ORDER: InactiveBaseView[] = [
-  "active",
-  "inactive",
-  "consultation_attended",
-  "consultation_not_attended",
-];
-
 type SortOrder = "asc" | "desc";
 
 const CLIENTS_PAGE_SIZE = 40;
+
+function ClientsMenuTile({
+  label,
+  count,
+  active,
+  title,
+  onClick,
+}: {
+  label: string;
+  count?: number;
+  active: boolean;
+  title: string;
+  onClick: () => void;
+}) {
+  return (
+    <button
+      type="button"
+      title={title}
+      onClick={onClick}
+      className={`flex flex-col items-center justify-center w-[92px] h-[40px] px-1 rounded-[4px] text-[11px] leading-none font-medium transition-colors ${
+        active
+          ? "text-white bg-[#3b82f6] hover:bg-[#2563eb]"
+          : "text-slate-800 bg-white border border-slate-300 hover:bg-slate-50"
+      }`}
+    >
+      <span className="truncate max-w-full">{label}</span>
+      {typeof count === "number" ? (
+        <span className={`mt-0.5 tabular-nums text-[10px] ${active ? "text-white/90" : "text-slate-500"}`}>
+          {count}
+        </span>
+      ) : null}
+    </button>
+  );
+}
 
 function SortableTh({
   label,
@@ -787,68 +807,78 @@ function InactiveBasePageContent() {
   };
 
   return (
-    <div className="min-h-screen bg-base-200 p-4">
-      <div className="w-full max-w-[calc(100vw-32px)] mx-auto">
-        <div className="bg-base-100 rounded-lg border border-base-300 px-2 py-1.5 mb-2">
-        <div className="flex flex-wrap gap-1 items-end">
+    <div className="min-h-screen bg-base-200 px-2 pt-1 pb-2">
+      <div className="w-full max-w-[calc(100vw-16px)] mx-auto">
+        <div className="bg-base-100 rounded-lg border border-base-300 px-1.5 py-1 mb-1">
+        <div className="flex flex-wrap gap-1 items-center">
           <Link href="/admin/direct" className="btn btn-xs btn-ghost shrink-0 mb-0 min-h-6 h-6 px-1.5 text-[10px]">
             ← Direct
           </Link>
-          <h1 className="text-sm font-semibold leading-none px-1 mb-0.5">Клієнти</h1>
-          <div className="inline-flex flex-wrap gap-px rounded border border-base-300 p-px shrink-0">
-            {BASE_VIEW_ORDER.map((view) => {
-              const count =
-                view === "active"
-                  ? baseCounts?.active
-                  : view === "inactive"
-                    ? baseCounts?.inactive
-                    : view === "consultation_attended"
-                      ? baseCounts?.consultationAttended
-                      : baseCounts?.consultationNotAttended;
-              return (
-              <button
-                key={view}
-                type="button"
-                className={`btn btn-xs min-h-6 h-6 px-1.5 text-[10px] font-normal ${
-                  baseView === view ? "btn-primary" : "btn-ghost"
-                }`}
-                title={BASE_VIEW_LABELS[view]}
-                onClick={() => switchBaseView(view)}
-              >
-                {BASE_VIEW_SHORT_LABELS[view]}
-                {typeof count === "number" ? ` ${count}` : ""}
-              </button>
-              );
-            })}
-          </div>
-          {isActiveBaseView ? (
-            <div className="inline-flex flex-wrap gap-px rounded border border-base-300 p-px shrink-0">
-              {(
-                [
-                  ["hair", "Нарощування", baseCounts?.activeHair],
-                  ["color", "Колористика", baseCounts?.activeColor],
-                ] as const
-              ).map(([service, label, count]) => (
-                <button
-                  key={service}
-                  type="button"
-                  className={`btn btn-xs min-h-6 h-6 px-1.5 text-[10px] font-normal ${
-                    activeService === service ? "btn-primary" : "btn-ghost"
-                  }`}
+          <h1 className="text-sm font-semibold leading-none px-1">Клієнти</h1>
+          <div className="inline-flex flex-col gap-0.5 shrink-0">
+            <div className="flex gap-0.5">
+              <ClientsMenuTile
+                label="Активна"
+                count={baseCounts?.active}
+                active={baseView === "active"}
+                title={BASE_VIEW_LABELS.active}
+                onClick={() => switchBaseView("active")}
+              />
+              <ClientsMenuTile
+                label="Відбулись"
+                count={baseCounts?.consultationAttended}
+                active={baseView === "consultation_attended"}
+                title={BASE_VIEW_LABELS.consultation_attended}
+                onClick={() => switchBaseView("consultation_attended")}
+              />
+              {isActiveBaseView ? (
+                <ClientsMenuTile
+                  label="Нарощування"
+                  count={baseCounts?.activeHair}
+                  active={activeService === "hair"}
+                  title="Нарощування"
                   onClick={() => {
-                    if (service === activeService) return;
+                    if (activeService === "hair") return;
                     const params = new URLSearchParams(searchParams.toString());
                     params.set("base", "active");
-                    params.set("service", service);
+                    params.set("service", "hair");
                     router.replace(`?${params.toString()}`);
                   }}
-                >
-                  {label}
-                  {typeof count === "number" ? ` ${count}` : ""}
-                </button>
-              ))}
+                />
+              ) : null}
             </div>
-          ) : null}
+            <div className="flex gap-0.5">
+              <ClientsMenuTile
+                label="Неактивна"
+                count={baseCounts?.inactive}
+                active={baseView === "inactive"}
+                title={BASE_VIEW_LABELS.inactive}
+                onClick={() => switchBaseView("inactive")}
+              />
+              <ClientsMenuTile
+                label="Не відбулись"
+                count={baseCounts?.consultationNotAttended}
+                active={baseView === "consultation_not_attended"}
+                title={BASE_VIEW_LABELS.consultation_not_attended}
+                onClick={() => switchBaseView("consultation_not_attended")}
+              />
+              {isActiveBaseView ? (
+                <ClientsMenuTile
+                  label="Колористика"
+                  count={baseCounts?.activeColor}
+                  active={activeService === "color"}
+                  title="Колористика"
+                  onClick={() => {
+                    if (activeService === "color") return;
+                    const params = new URLSearchParams(searchParams.toString());
+                    params.set("base", "active");
+                    params.set("service", "color");
+                    router.replace(`?${params.toString()}`);
+                  }}
+                />
+              ) : null}
+            </div>
+          </div>
           <div>
             <label className="text-[10px] block mb-0.5 leading-none">Пошук</label>
             <div className="relative w-40">
