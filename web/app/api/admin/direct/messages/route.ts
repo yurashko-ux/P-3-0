@@ -1,4 +1,4 @@
-// Список лідів без консультації для розділу «Переписки».
+// Переписки: зліва клієнти (консультація або платний візит), справа ліди без живого запису.
 // Сортування за останнім повідомленням: нове піднімає картку вгору.
 
 import { NextRequest, NextResponse } from "next/server";
@@ -39,16 +39,52 @@ function isAuthorized(req: NextRequest): boolean {
   return false;
 }
 
-function leadWhere(): Prisma.DirectClientWhereInput {
+const SOURCE_NAME_FALLBACK: Record<string, string> = {
+  agency_1: "Агенція 2",
+  agency_2: "Агенція 1",
+  organic: "Органіка",
+};
+
+function instagramWhere(): Prisma.DirectClientWhereInput {
   return {
-    includeInNewLeadsKpi: true,
     NOT: [
       { state: "binotel-lead" },
       ...TECHNICAL_USERNAME_PREFIXES.map((prefix) => ({
         instagramUsername: { startsWith: prefix },
       })),
     ],
-    OR: [{ consultationBookingDate: null }, { consultationDeletedInAltegio: true }],
+  };
+}
+
+/** Жива консультація або вже був платний візит — це клієнт, не лід. */
+function clientWhere(): Prisma.DirectClientWhereInput {
+  return {
+    AND: [
+      instagramWhere(),
+      {
+        OR: [
+          {
+            AND: [
+              { consultationBookingDate: { not: null } },
+              { consultationDeletedInAltegio: false },
+            ],
+          },
+          { paidServiceDate: { not: null } },
+        ],
+      },
+    ],
+  };
+}
+
+/** Лід без живої консультації і без платної послуги, щоб не дублюватись у клієнтах. */
+function leadWhere(): Prisma.DirectClientWhereInput {
+  return {
+    AND: [
+      instagramWhere(),
+      { includeInNewLeadsKpi: true },
+      { paidServiceDate: null },
+      { OR: [{ consultationBookingDate: null }, { consultationDeletedInAltegio: true }] },
+    ],
   };
 }
 
@@ -68,9 +104,14 @@ export async function GET(req: NextRequest) {
     const limit = Number.isFinite(limitRaw)
       ? Math.min(PAGE_SIZE_MAX, Math.max(1, Math.floor(limitRaw)))
       : PAGE_SIZE_DEFAULT;
-    const where = leadWhere();
+    const audienceParam = req.nextUrl.searchParams.get("audience") || "leads";
+    if (audienceParam !== "clients" && audienceParam !== "leads") {
+      return NextResponse.json({ ok: false, error: "Невідома аудиторія переписок" }, { status: 400 });
+    }
+    const audience = audienceParam;
+    const where = audience === "clients" ? clientWhere() : leadWhere();
 
-    const [total, rows] = await Promise.all([
+    const [total, rows, sources] = await Promise.all([
       prisma.directClient.count({ where }),
       prisma.directClient.findMany({
         where,
@@ -87,10 +128,14 @@ export async function GET(req: NextRequest) {
           chatStatusId: true,
           chatStatusSetAt: true,
           chatStatusCheckedAt: true,
+          leadAgency: true,
+          leadAdId: true,
         },
       }),
+      prisma.leadSource.findMany({ select: { code: true, name: true } }),
     ]);
 
+    const sourceNameByCode = new Map(sources.map((source) => [source.code, source.name]));
     const mapped = rows.map((row) => ({
       id: row.id,
       firstName: row.firstName,
@@ -101,11 +146,16 @@ export async function GET(req: NextRequest) {
       chatStatusId: row.chatStatusId,
       chatStatusSetAt: row.chatStatusSetAt ? row.chatStatusSetAt.toISOString() : null,
       chatStatusCheckedAt: row.chatStatusCheckedAt ? row.chatStatusCheckedAt.toISOString() : null,
+      leadAgency: row.leadAgency,
+      leadAdId: row.leadAdId,
+      sourceName: row.leadAgency
+        ? sourceNameByCode.get(row.leadAgency) || SOURCE_NAME_FALLBACK[row.leadAgency] || row.leadAgency
+        : null,
     }));
     const withChat = await enrichClientsWithChannelChatMeta(mapped, "instagram");
 
     console.log(
-      `[direct/messages] Сторінка offset=${offset} limit=${limit} віддано=${withChat.length} з ${total}`
+      `[direct/messages] audience=${audience} сторінка offset=${offset} limit=${limit} віддано=${withChat.length} з ${total}`
     );
 
     return NextResponse.json({

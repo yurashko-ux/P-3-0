@@ -1,4 +1,4 @@
-// Розділ «Переписки»: ліди без консультації, нові повідомлення зверху.
+// Розділ «Переписки»: зліва клієнти, справа ліди. Джерело лише показується.
 
 "use client";
 
@@ -9,10 +9,9 @@ import { hasNormalInstagramUsername } from "@/lib/altegio/client-utils";
 import type { DirectClient } from "@/lib/direct-types";
 import { AvatarSlot, WithCornerRedDot } from "../_components/DirectClientTableAvatar";
 import { formatDateDDMMYY } from "../_components/direct-client-table-formatters";
-import { LeadStateIcon } from "../_components/LeadStateIcon";
 import { MessagesHistoryModal } from "../_components/MessagesHistoryModal";
 
-type MessageLead = {
+type MessageRow = {
   id: string;
   firstName: string | null;
   lastName: string | null;
@@ -22,12 +21,17 @@ type MessageLead = {
   messagesTotal?: number;
   chatNeedsAttention?: boolean;
   chatStatusId?: string | null;
+  leadAgency?: string | null;
+  leadAdId?: string | null;
+  sourceName?: string | null;
 };
+
+type Audience = "clients" | "leads";
 
 const PAGE_SIZE = 40;
 const TODAY_ROW_SEPARATOR = "inset 0 -3px 0 #d1d5db";
 
-function getClientName(c: MessageLead): string {
+function getClientName(c: MessageRow): string {
   const parts = [c.firstName, c.lastName].filter(Boolean);
   return parts.length > 0 ? parts.join(" ") : c.instagramUsername;
 }
@@ -45,82 +49,149 @@ function isMessageToday(iso: string | null | undefined, todayKyiv: string): bool
   return kyivDayFromISO(iso) === todayKyiv;
 }
 
-export default function DirectMessagesPage() {
-  const [clients, setClients] = useState<MessageLead[]>([]);
+function LeadSourceMark({
+  leadAgency,
+  leadAdId,
+  sourceName,
+}: {
+  leadAgency?: string | null;
+  leadAdId?: string | null;
+  sourceName?: string | null;
+}) {
+  if (leadAgency === "agency_1") {
+    return (
+      <span className="text-[13px] font-bold leading-none text-amber-600" title={sourceName || "Агенція 2"}>
+        *
+      </span>
+    );
+  }
+  if (leadAgency === "agency_2") {
+    return (
+      <span className="text-[13px] leading-none text-rose-500" title={sourceName || "Агенція 1"}>
+        ♥
+      </span>
+    );
+  }
+  if (!leadAgency && leadAdId) {
+    return (
+      <span
+        className="inline-flex h-3.5 w-3.5 items-center justify-center rounded-full bg-amber-400 text-[8px] font-bold leading-none text-white"
+        title="Оголошення без призначеного джерела"
+      >
+        ?
+      </span>
+    );
+  }
+  if (sourceName) {
+    return (
+      <span className="text-[10px] leading-none text-gray-600" title={sourceName}>
+        {sourceName}
+      </span>
+    );
+  }
+  return null;
+}
+
+function useConversationList(audience: Audience) {
+  const [rows, setRows] = useState<MessageRow[]>([]);
   const [total, setTotal] = useState(0);
   const [loading, setLoading] = useState(true);
   const [loadingMore, setLoadingMore] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [messagesClient, setMessagesClient] = useState<MessageLead | null>(null);
-  const [fullscreenAvatar, setFullscreenAvatar] = useState<{ src: string; username: string } | null>(null);
-  const todayKyiv = kyivDayFromISO(new Date().toISOString());
 
-  const load = useCallback(async (offset: number, append: boolean) => {
-    if (append) setLoadingMore(true);
-    else setLoading(true);
-    setError(null);
-    try {
-      const params = new URLSearchParams();
-      params.set("offset", String(offset));
-      params.set("limit", String(PAGE_SIZE));
-      const res = await fetch(`/api/admin/direct/messages?${params.toString()}`, {
-        cache: "no-store",
-        credentials: "include",
-      });
-      const data = await res.json().catch(() => ({}));
-      if (!res.ok || !data.ok) {
-        throw new Error(data.error || "Не вдалося завантажити переписки");
+  const load = useCallback(
+    async (offset: number, append: boolean) => {
+      if (append) setLoadingMore(true);
+      else setLoading(true);
+      setError(null);
+      try {
+        const params = new URLSearchParams();
+        params.set("audience", audience);
+        params.set("offset", String(offset));
+        params.set("limit", String(PAGE_SIZE));
+        const res = await fetch(`/api/admin/direct/messages?${params.toString()}`, {
+          cache: "no-store",
+          credentials: "include",
+        });
+        const data = await res.json().catch(() => ({}));
+        if (!res.ok || !data.ok) {
+          throw new Error(data.error || "Не вдалося завантажити переписки");
+        }
+        const next = (data.clients || []) as MessageRow[];
+        setTotal(typeof data.total === "number" ? data.total : next.length);
+        setRows((prev) => (append ? [...prev, ...next] : next));
+      } catch (err) {
+        setError(err instanceof Error ? err.message : "Помилка завантаження");
+        if (!append) setRows([]);
+      } finally {
+        setLoading(false);
+        setLoadingMore(false);
       }
-      const next = (data.clients || []) as MessageLead[];
-      setTotal(typeof data.total === "number" ? data.total : next.length);
-      setClients((prev) => (append ? [...prev, ...next] : next));
-    } catch (err) {
-      setError(err instanceof Error ? err.message : "Помилка завантаження");
-      if (!append) setClients([]);
-    } finally {
-      setLoading(false);
-      setLoadingMore(false);
-    }
-  }, []);
+    },
+    [audience]
+  );
 
   useEffect(() => {
     void load(0, false);
   }, [load]);
 
+  return { rows, total, loading, loadingMore, error, load };
+}
+
+function ConversationTable({
+  title,
+  emptyText,
+  rows,
+  total,
+  loading,
+  loadingMore,
+  error,
+  onLoadMore,
+  todayKyiv,
+  onOpenMessages,
+  onOpenAvatar,
+}: {
+  title: string;
+  emptyText: string;
+  rows: MessageRow[];
+  total: number;
+  loading: boolean;
+  loadingMore: boolean;
+  error: string | null;
+  onLoadMore: () => void;
+  todayKyiv: string;
+  onOpenMessages: (row: MessageRow) => void;
+  onOpenAvatar: (avatar: { src: string; username: string }) => void;
+}) {
   let todayBorderIndex = -1;
-  for (let i = 0; i < clients.length; i += 1) {
-    if (!isMessageToday(clients[i].lastMessageAt, todayKyiv)) break;
+  for (let i = 0; i < rows.length; i += 1) {
+    if (!isMessageToday(rows[i].lastMessageAt, todayKyiv)) break;
     todayBorderIndex = i;
   }
-  const todayBlockContinues = todayBorderIndex === clients.length - 1 && clients.length < total;
+  const todayBlockContinues = todayBorderIndex === rows.length - 1 && rows.length < total;
   const borderIndex = todayBlockContinues ? -1 : todayBorderIndex;
 
   return (
-    <div className="w-full max-w-full px-2 pt-1 pb-2 min-w-0">
-      <div className="flex flex-wrap items-center gap-1 mb-1">
-        <Link href="/admin/direct" className="btn btn-ghost btn-xs min-h-6 h-6 px-1.5 text-[10px]">
-          ← Direct
-        </Link>
-        <h1 className="text-sm font-semibold leading-none px-1">Переписки</h1>
-        <span className="text-[11px] text-gray-500 tabular-nums">{total}</span>
+    <section className="min-w-0">
+      <div className="mb-1 flex items-baseline gap-1 px-1">
+        <h2 className="text-xs font-semibold leading-none">{title}</h2>
+        <span className="text-[11px] tabular-nums text-gray-500">{total}</span>
       </div>
-
-      {error && (
+      {error ? (
         <div className="alert alert-error mb-1 py-1 text-sm">
           <span>{error}</span>
         </div>
-      )}
-
+      ) : null}
       <div className="card bg-base-100 shadow-sm">
-        <div className="card-body p-1 overflow-x-auto">
+        <div className="card-body p-1">
           {loading ? (
             <div className="flex justify-center py-8">
               <span className="loading loading-spinner loading-md" />
             </div>
-          ) : clients.length === 0 ? (
-            <p className="text-center text-gray-500 py-6">Лідів без консультації немає.</p>
+          ) : rows.length === 0 ? (
+            <p className="py-6 text-center text-gray-500">{emptyText}</p>
           ) : (
-            <table className="table table-xs !w-max [&_th]:py-0.5 [&_th]:text-[11px] [&_td]:py-0.5 [&_td]:text-[11px] [&_th]:whitespace-nowrap [&_td]:whitespace-nowrap">
+            <table className="table table-xs !w-max [&_th]:whitespace-nowrap [&_th]:py-0.5 [&_th]:text-[11px] [&_td]:whitespace-nowrap [&_td]:py-0.5 [&_td]:text-[11px]">
               <thead>
                 <tr>
                   <th className="w-8" />
@@ -131,7 +202,7 @@ export default function DirectMessagesPage() {
                 </tr>
               </thead>
               <tbody>
-                {clients.map((c, index) => {
+                {rows.map((c, index) => {
                   const username = (c.instagramUsername || "").replace(/^@/, "");
                   const avatarSrc = hasNormalInstagramUsername(c.instagramUsername)
                     ? `/api/admin/direct/instagram-avatar?username=${encodeURIComponent(username)}`
@@ -158,11 +229,11 @@ export default function DirectMessagesPage() {
                             onError={(e) => {
                               (e.currentTarget as HTMLImageElement).style.display = "none";
                             }}
-                            onClick={() => setFullscreenAvatar({ src: avatarSrc, username })}
+                            onClick={() => onOpenAvatar({ src: avatarSrc, username })}
                           />
                         ) : null}
                       </td>
-                      <td className="whitespace-nowrap" style={cellStyle}>
+                      <td style={cellStyle}>
                         <Link
                           href={buildDirectClientHref(c.id, getClientName(c))}
                           className="link link-hover"
@@ -187,26 +258,30 @@ export default function DirectMessagesPage() {
                         )}
                       </td>
                       <td className="text-center" style={cellStyle}>
-                        <WithCornerRedDot show={showDot} title="Тригер: нове повідомлення">
-                          <button
-                            type="button"
-                            className={`inline-flex items-center justify-center rounded-full px-1.5 min-w-[1.25rem] h-4 text-[11px] tabular-nums leading-none ${countClass}`}
-                            title={
-                              lastAt !== "-"
-                                ? `Останнє повідомлення: ${lastAt}. Відкрити переписку`
-                                : "Відкрити переписку"
-                            }
-                            onClick={() => setMessagesClient(c)}
-                          >
-                            {totalMessages}
-                          </button>
-                        </WithCornerRedDot>
+                        <span className="inline-flex flex-col items-center gap-0.5">
+                          <WithCornerRedDot show={showDot} title="Тригер: нове повідомлення">
+                            <button
+                              type="button"
+                              className={`inline-flex h-4 min-w-[1.25rem] items-center justify-center rounded-full px-1.5 text-[11px] tabular-nums leading-none ${countClass}`}
+                              title={
+                                lastAt !== "-"
+                                  ? `Останнє повідомлення: ${lastAt}. Відкрити переписку`
+                                  : "Відкрити переписку"
+                              }
+                              onClick={() => onOpenMessages(c)}
+                            >
+                              {totalMessages}
+                            </button>
+                          </WithCornerRedDot>
+                          {lastAt !== "-" ? (
+                            <span className="text-[10px] leading-none opacity-60" title={`Останнє повідомлення: ${lastAt}`}>
+                              {lastAt}
+                            </span>
+                          ) : null}
+                        </span>
                       </td>
                       <td className="text-center" style={cellStyle}>
-                        <LeadStateIcon
-                          clientId={c.id}
-                          firstContactDate={c.firstContactDate}
-                        />
+                        <LeadSourceMark leadAgency={c.leadAgency} leadAdId={c.leadAdId} sourceName={c.sourceName} />
                       </td>
                     </tr>
                   );
@@ -214,19 +289,62 @@ export default function DirectMessagesPage() {
               </tbody>
             </table>
           )}
-          {!loading && clients.length < total && (
+          {!loading && rows.length < total ? (
             <div className="flex justify-center py-2">
-              <button
-                type="button"
-                className="btn btn-xs btn-ghost"
-                disabled={loadingMore}
-                onClick={() => void load(clients.length, true)}
-              >
+              <button type="button" className="btn btn-ghost btn-xs" disabled={loadingMore} onClick={onLoadMore}>
                 {loadingMore ? "Завантаження…" : "Завантажити ще"}
               </button>
             </div>
-          )}
+          ) : null}
         </div>
+      </div>
+    </section>
+  );
+}
+
+export default function DirectMessagesPage() {
+  const clients = useConversationList("clients");
+  const leads = useConversationList("leads");
+  const [messagesClient, setMessagesClient] = useState<MessageRow | null>(null);
+  const [fullscreenAvatar, setFullscreenAvatar] = useState<{ src: string; username: string } | null>(null);
+  const todayKyiv = kyivDayFromISO(new Date().toISOString());
+
+  return (
+    <div className="w-full max-w-full min-w-0 px-2 pb-2 pt-1">
+      <div className="mb-1 flex flex-wrap items-center gap-1">
+        <Link href="/admin/direct" className="btn btn-ghost btn-xs h-6 min-h-6 px-1.5 text-[10px]">
+          ← Direct
+        </Link>
+        <h1 className="px-1 text-sm font-semibold leading-none">Переписки</h1>
+      </div>
+
+      <div className="flex flex-wrap items-start justify-between gap-3">
+        <ConversationTable
+          title="Клієнти"
+          emptyText="Клієнтів із перепискою немає."
+          rows={clients.rows}
+          total={clients.total}
+          loading={clients.loading}
+          loadingMore={clients.loadingMore}
+          error={clients.error}
+          onLoadMore={() => void clients.load(clients.rows.length, true)}
+          todayKyiv={todayKyiv}
+          onOpenMessages={setMessagesClient}
+          onOpenAvatar={setFullscreenAvatar}
+        />
+        <ConversationTable
+          title="Ліди"
+          emptyText="Лідів без консультації немає."
+          rows={leads.rows}
+          total={leads.total}
+          loading={leads.loading}
+          loadingMore={leads.loadingMore}
+          error={leads.error}
+          onLoadMore={() => void leads.load(leads.rows.length, true)}
+          todayKyiv={todayKyiv}
+          onOpenMessages={setMessagesClient}
+          onOpenAvatar={setFullscreenAvatar}
+        />
       </div>
 
       {fullscreenAvatar ? (
@@ -237,7 +355,7 @@ export default function DirectMessagesPage() {
           <img
             src={fullscreenAvatar.src}
             alt={fullscreenAvatar.username}
-            className="max-w-[90vw] max-h-[90vh] object-contain"
+            className="max-h-[90vh] max-w-[90vw] object-contain"
             onClick={(e) => e.stopPropagation()}
           />
         </div>
