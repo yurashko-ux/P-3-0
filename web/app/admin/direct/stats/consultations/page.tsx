@@ -337,7 +337,7 @@ function ConsultationsPageContent() {
         </Link>
         <h1 className="text-sm font-semibold leading-none px-1">Ліди</h1>
         <select
-          className="select select-bordered select-xs h-7 min-h-0 !w-40 max-w-[10rem]"
+          className="h-8 w-[12.5rem] shrink-0 rounded-md border border-gray-300 bg-white px-2 text-[13px] leading-8 text-gray-900"
           value={selectedMonth}
           onChange={(e) => handleMonthChange(e.target.value)}
         >
@@ -384,8 +384,8 @@ function ConsultationsPageContent() {
                 <col className="w-8" />
                 <col className="w-[5.5rem]" />
                 <col className="w-[7rem]" />
-                <col className="w-[3.2rem]" />
                 <col className="w-[8rem]" />
+                <col className="w-[3.2rem]" />
                 <col className="w-[5.5rem]" />
                 <col className="w-[7.5rem]" />
                 <col className="w-[8rem]" />
@@ -398,8 +398,8 @@ function ConsultationsPageContent() {
                   <th className="text-center">№</th>
                   <th>Дата контакту</th>
                   <th>Instagram</th>
-                  <th>Inst</th>
                   <th>Ім&apos;я</th>
+                  <th>Inst</th>
                   <th>Дата консультації</th>
                   <th>Результат</th>
                   <th>Коментар</th>
@@ -470,6 +470,16 @@ function ConsultationsPageContent() {
                           )}
                         </div>
                       </td>
+                      <td>
+                        <Link
+                          href={buildDirectClientHref(c.id, getClientName(c))}
+                          className="link link-hover"
+                          target="_blank"
+                          rel="noopener noreferrer"
+                        >
+                          {getClientName(c)}
+                        </Link>
+                      </td>
                       <td className="text-center">
                         {(() => {
                           const total = typeof c.messagesTotal === "number" ? c.messagesTotal : 0;
@@ -497,16 +507,6 @@ function ConsultationsPageContent() {
                             </button>
                           );
                         })()}
-                      </td>
-                      <td>
-                        <Link
-                          href={buildDirectClientHref(c.id, getClientName(c))}
-                          className="link link-hover"
-                          target="_blank"
-                          rel="noopener noreferrer"
-                        >
-                          {getClientName(c)}
-                        </Link>
                       </td>
                       <td className="whitespace-nowrap tabular-nums">
                         {formatKyivDate(c.consultationBookingDate)}
