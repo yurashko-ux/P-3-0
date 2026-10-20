@@ -130,6 +130,9 @@ export async function GET(req: NextRequest) {
           chatStatusCheckedAt: true,
           leadAgency: true,
           leadAdId: true,
+          spent: true,
+          visits: true,
+          altegioClientId: true,
         },
       }),
       prisma.leadSource.findMany({ select: { code: true, name: true } }),
@@ -148,6 +151,9 @@ export async function GET(req: NextRequest) {
       chatStatusCheckedAt: row.chatStatusCheckedAt ? row.chatStatusCheckedAt.toISOString() : null,
       leadAgency: row.leadAgency,
       leadAdId: row.leadAdId,
+      spent: row.spent,
+      visits: row.visits,
+      altegioClientId: row.altegioClientId,
       sourceName: row.leadAgency
         ? sourceNameByCode.get(row.leadAgency) || SOURCE_NAME_FALLBACK[row.leadAgency] || row.leadAgency
         : null,

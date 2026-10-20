@@ -2,13 +2,20 @@
 
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { kyivDayFromISO } from "@/lib/altegio/records-grouping";
 import { hasNormalInstagramUsername } from "@/lib/altegio/client-utils";
 import type { DirectClient } from "@/lib/direct-types";
 import { AvatarSlot, WithCornerRedDot } from "../_components/DirectClientTableAvatar";
+import {
+  LeadBadgeIcon,
+  SpendCircleBadge,
+  SpendMegaBadge,
+  SpendStarBadge,
+} from "../_components/DirectClientTableRowBadges";
 import { formatDateDDMMYY } from "../_components/direct-client-table-formatters";
+import { LeadAgencyHeart, LeadAgencyPending, LeadAgencyStar, StateIcon } from "../_components/StateIcon";
 import { MessagesHistoryModal } from "../_components/MessagesHistoryModal";
 
 type MessageRow = {
@@ -24,12 +31,15 @@ type MessageRow = {
   leadAgency?: string | null;
   leadAdId?: string | null;
   sourceName?: string | null;
+  spent?: number | null;
+  visits?: number | null;
+  altegioClientId?: number | null;
 };
 
 type Audience = "clients" | "leads";
 
 const PAGE_SIZE = 40;
-const TODAY_ROW_SEPARATOR = "inset 0 -3px 0 #d1d5db";
+const TODAY_ROW_SEPARATOR = "inset 0 -3px 0 #4b5563";
 
 function getClientName(c: MessageRow): string {
   const parts = [c.firstName, c.lastName].filter(Boolean);
@@ -49,47 +59,71 @@ function isMessageToday(iso: string | null | undefined, todayKyiv: string): bool
   return kyivDayFromISO(iso) === todayKyiv;
 }
 
-function LeadSourceMark({
+function sourceLabel(leadAgency?: string | null, leadAdId?: string | null, sourceName?: string | null): string {
+  if (leadAgency === "agency_1") return sourceName || "Агенція 2";
+  if (leadAgency === "agency_2") return sourceName || "Агенція 1";
+  if (!leadAgency && leadAdId) return "Оголошення без призначеного джерела";
+  return sourceName || "";
+}
+
+/** Хмарка як у Direct, знак джерела зверху. Без вибору. */
+function LeadSourceCloud({
+  firstContactDate,
   leadAgency,
   leadAdId,
   sourceName,
 }: {
+  firstContactDate?: string | null;
   leadAgency?: string | null;
   leadAdId?: string | null;
   sourceName?: string | null;
 }) {
-  if (leadAgency === "agency_1") {
-    return (
-      <span className="text-[13px] font-bold leading-none text-amber-600" title={sourceName || "Агенція 2"}>
-        *
-      </span>
+  const today = kyivDayFromISO(new Date().toISOString());
+  const firstDay = firstContactDate ? kyivDayFromISO(firstContactDate) : "";
+  const isNewToday = Boolean(firstDay && firstDay === today);
+  const titleBase = isNewToday ? "Новий лід (перший контакт сьогодні)" : "Повідомлення";
+  const label = sourceLabel(leadAgency, leadAdId, sourceName);
+  const title = label ? `${titleBase} · ${label}` : titleBase;
+  const icon = (
+    <span className="inline-flex origin-center scale-[1.4]">
+      <StateIcon state={isNewToday ? "new-lead" : "message"} size={20} />
+    </span>
+  );
+  const marked =
+    leadAgency === "agency_1" ? (
+      <LeadAgencyStar>{icon}</LeadAgencyStar>
+    ) : leadAgency === "agency_2" ? (
+      <LeadAgencyHeart>{icon}</LeadAgencyHeart>
+    ) : !leadAgency && leadAdId ? (
+      <LeadAgencyPending>{icon}</LeadAgencyPending>
+    ) : (
+      icon
     );
+  const showName = Boolean(sourceName) && leadAgency !== "agency_1" && leadAgency !== "agency_2";
+  return (
+    <span className="inline-flex items-center gap-1" title={title}>
+      {marked}
+      {showName ? <span className="text-[10px] leading-none text-gray-500">{sourceName}</span> : null}
+    </span>
+  );
+}
+
+/** Зірка і кружечок витрат — ті самі пороги, що в колонці імені Direct. */
+function ClientSpendBadge({ spent, altegioClientId }: { spent?: number | null; altegioClientId?: number | null }) {
+  if (!altegioClientId) return <LeadBadgeIcon />;
+  const spendValue = Number(spent) || 0;
+  if (spendValue > 1000000) return <SpendMegaBadge />;
+  if (spendValue >= 100000) {
+    const showNumber = spendValue > 200000;
+    const number = Math.min(9, Math.max(1, Math.floor(spendValue / 100000)));
+    return <SpendStarBadge size={showNumber ? 22 : 18} number={showNumber ? number : undefined} fontSize={showNumber ? 8 : 12} />;
   }
-  if (leadAgency === "agency_2") {
-    return (
-      <span className="text-[13px] leading-none text-rose-500" title={sourceName || "Агенція 1"}>
-        ♥
-      </span>
-    );
+  if (spendValue >= 20000) {
+    const number = Math.min(9, Math.max(2, Math.floor(spendValue / 10000)));
+    return <SpendCircleBadge number={number} />;
   }
-  if (!leadAgency && leadAdId) {
-    return (
-      <span
-        className="inline-flex h-3.5 w-3.5 items-center justify-center rounded-full bg-amber-400 text-[8px] font-bold leading-none text-white"
-        title="Оголошення без призначеного джерела"
-      >
-        ?
-      </span>
-    );
-  }
-  if (sourceName) {
-    return (
-      <span className="text-[10px] leading-none text-gray-600" title={sourceName}>
-        {sourceName}
-      </span>
-    );
-  }
-  return null;
+  if (spendValue >= 10000) return <SpendCircleBadge number={1} />;
+  return <SpendCircleBadge />;
 }
 
 function useConversationList(audience: Audience) {
@@ -150,6 +184,7 @@ function ConversationTable({
   todayKyiv,
   onOpenMessages,
   onOpenAvatar,
+  showClientMarks,
 }: {
   title: string;
   emptyText: string;
@@ -162,7 +197,20 @@ function ConversationTable({
   todayKyiv: string;
   onOpenMessages: (row: MessageRow) => void;
   onOpenAvatar: (avatar: { src: string; username: string }) => void;
+  showClientMarks?: boolean;
 }) {
+  const scrollRef = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    const el = scrollRef.current;
+    if (!el) return;
+    const onWheel = (event: WheelEvent) => {
+      if (el.scrollHeight <= el.clientHeight + 1) return;
+      event.preventDefault();
+      el.scrollTop += event.deltaY;
+    };
+    el.addEventListener("wheel", onWheel, { passive: false });
+    return () => el.removeEventListener("wheel", onWheel);
+  }, []);
   let todayBorderIndex = -1;
   for (let i = 0; i < rows.length; i += 1) {
     if (!isMessageToday(rows[i].lastMessageAt, todayKyiv)) break;
@@ -183,7 +231,7 @@ function ConversationTable({
         </div>
       ) : null}
       <div className="card bg-base-100 shadow-sm">
-        <div className="card-body p-1">
+        <div ref={scrollRef} className="card-body max-h-[calc(100vh-4.25rem)] overflow-y-auto overscroll-contain p-1">
           {loading ? (
             <div className="flex justify-center py-8">
               <span className="loading loading-spinner loading-md" />
@@ -191,9 +239,10 @@ function ConversationTable({
           ) : rows.length === 0 ? (
             <p className="py-6 text-center text-gray-500">{emptyText}</p>
           ) : (
-            <table className="table table-xs !w-max [&_th]:whitespace-nowrap [&_th]:py-0.5 [&_th]:text-[11px] [&_td]:whitespace-nowrap [&_td]:py-0.5 [&_td]:text-[11px]">
-              <thead>
+            <table className="table table-xs !w-max [&_th]:whitespace-nowrap [&_th]:py-0.5 [&_th]:text-[11px] [&_td]:whitespace-nowrap [&_td]:py-0.5 [&_td]:text-[11px] [&_td]:!overflow-visible">
+              <thead className="sticky top-0 z-10 bg-base-100">
                 <tr>
+                  <th className="w-8 text-right">№</th>
                   <th className="w-8" />
                   <th>Ім&apos;я</th>
                   <th>Instagram</th>
@@ -219,8 +268,17 @@ function ConversationTable({
                   const showDot = isMessageToday(c.lastMessageAt, todayKyiv);
                   const cellStyle = index === borderIndex ? { boxShadow: TODAY_ROW_SEPARATOR } : undefined;
                   const lastAt = formatDateDDMMYY(c.lastMessageAt);
+                  const usernameRaw = c.instagramUsername || "";
+                  const invalidIg = usernameRaw.startsWith("missing_instagram_")
+                    ? "missing"
+                    : usernameRaw === "NO INSTAGRAM" || usernameRaw.startsWith("no_instagram_")
+                      ? "NO"
+                      : null;
                   return (
                     <tr key={c.id}>
+                      <td className="w-8 text-right tabular-nums text-gray-400" style={cellStyle}>
+                        {index + 1}
+                      </td>
                       <td className="w-8" style={cellStyle}>
                         {avatarSrc ? (
                           <AvatarSlot
@@ -234,14 +292,27 @@ function ConversationTable({
                         ) : null}
                       </td>
                       <td style={cellStyle}>
-                        <Link
-                          href={buildDirectClientHref(c.id, getClientName(c))}
-                          className="link link-hover"
-                          target="_blank"
-                          rel="noopener noreferrer"
-                        >
-                          {getClientName(c)}
-                        </Link>
+                        <span className="inline-flex items-center gap-1">
+                          {showClientMarks ? (
+                            <ClientSpendBadge spent={c.spent} altegioClientId={c.altegioClientId} />
+                          ) : null}
+                          <span className="inline-flex flex-col items-start leading-none">
+                            <Link
+                              href={buildDirectClientHref(c.id, getClientName(c))}
+                              className="link link-hover"
+                              target="_blank"
+                              rel="noopener noreferrer"
+                            >
+                              {getClientName(c)}
+                              {showClientMarks && c.visits != null ? (
+                                <span className="opacity-80">{` (${c.visits})`}</span>
+                              ) : null}
+                            </Link>
+                            {showClientMarks && invalidIg ? (
+                              <span className="text-[10px] font-semibold leading-none text-red-600">{invalidIg}</span>
+                            ) : null}
+                          </span>
+                        </span>
                       </td>
                       <td style={cellStyle}>
                         {username ? (
@@ -280,8 +351,13 @@ function ConversationTable({
                           ) : null}
                         </span>
                       </td>
-                      <td className="text-center" style={cellStyle}>
-                        <LeadSourceMark leadAgency={c.leadAgency} leadAdId={c.leadAdId} sourceName={c.sourceName} />
+                      <td className="text-center !overflow-visible" style={cellStyle}>
+                        <LeadSourceCloud
+                          firstContactDate={c.firstContactDate}
+                          leadAgency={c.leadAgency}
+                          leadAdId={c.leadAdId}
+                          sourceName={c.sourceName}
+                        />
                       </td>
                     </tr>
                   );
@@ -318,9 +394,10 @@ export default function DirectMessagesPage() {
         <h1 className="px-1 text-sm font-semibold leading-none">Переписки</h1>
       </div>
 
-      <div className="flex flex-wrap items-start justify-between gap-3">
+      <div className="flex flex-wrap items-start gap-2">
         <ConversationTable
           title="Клієнти"
+          showClientMarks
           emptyText="Клієнтів із перепискою немає."
           rows={clients.rows}
           total={clients.total}
