@@ -120,13 +120,14 @@ export default function DirectMessagesPage() {
           ) : clients.length === 0 ? (
             <p className="text-center text-gray-500 py-6">Лідів без консультації немає.</p>
           ) : (
-            <table className="table table-xs w-max [&_th]:py-0.5 [&_th]:text-[11px] [&_td]:py-0.5 [&_td]:text-[11px]">
+            <table className="table table-xs !w-max [&_th]:py-0.5 [&_th]:text-[11px] [&_td]:py-0.5 [&_td]:text-[11px] [&_th]:whitespace-nowrap [&_td]:whitespace-nowrap">
               <thead>
                 <tr>
                   <th className="w-8" />
                   <th>Ім&apos;я</th>
-                  <th className="w-12 text-center">Inst</th>
-                  <th className="w-10 text-center">Стан</th>
+                  <th>Instagram</th>
+                  <th className="text-center">Inst</th>
+                  <th className="text-center">Стан</th>
                 </tr>
               </thead>
               <tbody>
@@ -170,6 +171,20 @@ export default function DirectMessagesPage() {
                         >
                           {getClientName(c)}
                         </Link>
+                      </td>
+                      <td style={cellStyle}>
+                        {username ? (
+                          <a
+                            href={`https://instagram.com/${username}`}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="link link-primary"
+                          >
+                            @{username}
+                          </a>
+                        ) : (
+                          <span>—</span>
+                        )}
                       </td>
                       <td className="text-center" style={cellStyle}>
                         <WithCornerRedDot show={showDot} title="Тригер: нове повідомлення">
