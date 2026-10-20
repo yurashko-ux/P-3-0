@@ -610,7 +610,7 @@ function ConsultationsPageContent() {
         </div>
       ) : null}
       <MessagesHistoryModal
-        client={messagesClient as DirectClient | null}
+        client={(messagesClient as unknown as DirectClient | null)}
         isOpen={messagesClient != null}
         channel="instagram"
         onClose={() => setMessagesClient(null)}
