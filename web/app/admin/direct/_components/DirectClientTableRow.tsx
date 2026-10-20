@@ -898,7 +898,24 @@ return (
             const hasRecording =
               (client as any).binotelLatestCallRecordingUrl ||
               (client as any).binotelLatestCallGeneralID;
-            if (!hasRecording || !isSuccess) return null;
+            const latestCallAt = (client as { binotelLatestCallStartTime?: string | null }).binotelLatestCallStartTime;
+            const latestCallDate = latestCallAt ? new Date(latestCallAt) : null;
+            const latestCallDay =
+              latestCallDate && !isNaN(latestCallDate.getTime())
+                ? new Intl.DateTimeFormat("en-CA", {
+                    timeZone: "Europe/Kyiv",
+                    year: "numeric",
+                    month: "2-digit",
+                    day: "2-digit",
+                  }).format(latestCallDate)
+                : "";
+            const todayKyivCall = new Intl.DateTimeFormat("en-CA", {
+              timeZone: "Europe/Kyiv",
+              year: "numeric",
+              month: "2-digit",
+              day: "2-digit",
+            }).format(new Date());
+            if (!hasRecording || !isSuccess || !latestCallDay || latestCallDay !== todayKyivCall) return null;
             return (
               <PlayRecordingButton
                 recordingUrl={(client as any).binotelLatestCallRecordingUrl}

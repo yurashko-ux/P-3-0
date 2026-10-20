@@ -392,9 +392,6 @@ export async function GET(req: NextRequest) {
       }
     }
 
-    inactive = await enrichClientsWithInstagramAndTelegramChatMeta(inactive);
-    inactive = await enrichClientsWithCallMeta(inactive);
-
     const instInstagramCounts = computeInstInstagramCounts(inactive);
     const telegramCanSendCounts = computeTelegramCanSendCounts(inactive);
     if (instInstagramFilter.length > 0) {
@@ -404,66 +401,11 @@ export async function GET(req: NextRequest) {
       inactive = filterByTelegramCanSend(inactive, telegramCanSendFilter);
     }
 
-    const showCampaignColumn = await hasAnyInactiveBaseCampaigns();
-
-    const lastCampaignMap = showCampaignColumn
-      ? await getLastCampaignByClientIds(inactive.map((c) => c.id))
-      : new Map();
-
-    if (campaignMeta) {
-      const joinBaselines = await getAudienceJoinBaselinesForCampaign(campaignMeta.id);
-      inactive = inactive.map((c) => {
-        const joined = joinBaselines.get(c.id);
-        return {
-          ...c,
-          lastCampaign: joined
-            ? {
-                name: campaignMeta!.name,
-                at: joined.toISOString(),
-                campaignId: campaignMeta!.id,
-                channels: campaignMeta!.channels,
-                createdAt: campaignMeta!.createdAt,
-                joinedAt: joined.toISOString(),
-              }
-            : null,
-        };
-      });
-    } else {
-      inactive = inactive.map((c) => {
-        const lc = lastCampaignMap.get(c.id);
-        if (!lc) return { ...c, lastCampaign: null };
-        return {
-          ...c,
-          lastCampaign: {
-            name: lc.name,
-            at: lc.at,
-            campaignId: lc.campaignId,
-            channels: lc.channels,
-            createdAt: lc.createdAt,
-            joinedAt: lc.joinedAt,
-          },
-        };
-      });
+    // Лічильники повідомлень потрібні до сортування. Решту чатів і дзвінків рахуємо лише для сторінки.
+    const sortNeedsChatCounts = sortBy === 'messagesTotal' || sortBy === 'telegramMessagesTotal';
+    if (sortNeedsChatCounts) {
+      inactive = await enrichClientsWithInstagramAndTelegramChatMeta(inactive);
     }
-
-    inactive = await enrichClientsWithCampaignChatStats(inactive);
-
-    const campaignIdsForLinks = [
-      ...new Set(
-        inactive
-          .map((c) => (c as { lastCampaign?: { campaignId?: string } }).lastCampaign?.campaignId)
-          .filter((id): id is string => Boolean(id))
-      ),
-    ];
-    const campaignsWithLink = await getCampaignsWithTrackableLink(campaignIdsForLinks);
-    const linkPairs = inactive
-      .map((c) => {
-        const campaignId = (c as { lastCampaign?: { campaignId?: string } }).lastCampaign?.campaignId;
-        return campaignId ? { clientId: c.id, campaignId } : null;
-      })
-      .filter((p): p is { clientId: string; campaignId: string } => Boolean(p));
-    await ensureLinkTokensForClientCampaignPairs(linkPairs);
-    inactive = await enrichClientsWithLinkClickMeta(inactive, campaignsWithLink);
 
     inactive.sort((a, b) => {
       let cmp = 0;
@@ -504,7 +446,73 @@ export async function GET(req: NextRequest) {
     });
 
     const totalCount = inactive.length;
-    const page = inactive.slice(offset, offset + limit);
+    let page = inactive.slice(offset, offset + limit);
+    if (!sortNeedsChatCounts) {
+      page = await enrichClientsWithInstagramAndTelegramChatMeta(page);
+    }
+    page = await enrichClientsWithCallMeta(page);
+
+    const showCampaignColumn = await hasAnyInactiveBaseCampaigns();
+    const lastCampaignMap = showCampaignColumn
+      ? await getLastCampaignByClientIds(page.map((c) => c.id))
+      : new Map();
+
+    if (campaignMeta) {
+      const joinBaselines = await getAudienceJoinBaselinesForCampaign(campaignMeta.id);
+      page = page.map((c) => {
+        const joined = joinBaselines.get(c.id);
+        return {
+          ...c,
+          lastCampaign: joined
+            ? {
+                name: campaignMeta!.name,
+                at: joined.toISOString(),
+                campaignId: campaignMeta!.id,
+                channels: campaignMeta!.channels,
+                createdAt: campaignMeta!.createdAt,
+                joinedAt: joined.toISOString(),
+              }
+            : null,
+        };
+      });
+    } else {
+      page = page.map((c) => {
+        const lc = lastCampaignMap.get(c.id);
+        if (!lc) return { ...c, lastCampaign: null };
+        return {
+          ...c,
+          lastCampaign: {
+            name: lc.name,
+            at: lc.at,
+            campaignId: lc.campaignId,
+            channels: lc.channels,
+            createdAt: lc.createdAt,
+            joinedAt: lc.joinedAt,
+          },
+        };
+      });
+    }
+
+    page = await enrichClientsWithCampaignChatStats(page);
+    const campaignIdsForLinks = [
+      ...new Set(
+        page
+          .map((c) => (c as { lastCampaign?: { campaignId?: string } }).lastCampaign?.campaignId)
+          .filter((id): id is string => Boolean(id))
+      ),
+    ];
+    const campaignsWithLink = await getCampaignsWithTrackableLink(campaignIdsForLinks);
+    const linkPairs = page
+      .map((c) => {
+        const campaignId = (c as { lastCampaign?: { campaignId?: string } }).lastCampaign?.campaignId;
+        return campaignId ? { clientId: c.id, campaignId } : null;
+      })
+      .filter((p): p is { clientId: string; campaignId: string } => Boolean(p));
+    await ensureLinkTokensForClientCampaignPairs(linkPairs);
+    page = await enrichClientsWithLinkClickMeta(page, campaignsWithLink);
+    console.log(
+      `[inactive-base/clients] Сторінка base=${baseView} offset=${offset} limit=${limit} віддано=${page.length} з ${totalCount}`
+    );
 
     const clients = page.map((c) => {
       const life = enrichClientWithLifecycle(c as any, todayKyiv);

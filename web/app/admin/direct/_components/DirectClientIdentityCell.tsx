@@ -134,28 +134,30 @@ export function DirectClientIdentityCell({ client }: Props) {
           }
         />
         {typeBadge}
-        {isNormalInstagram ? (
-          <a
-            href={`https://instagram.com/${username}`}
-            target="_blank"
-            rel="noopener noreferrer"
-            className="link link-primary inline-flex items-center gap-1 whitespace-nowrap"
-            title={hasName ? `${nameOneLine} - https://instagram.com/${username}` : `https://instagram.com/${username}`}
-            onClick={(e) => e.stopPropagation()}
-          >
-            <span title={label}>{label}</span>
-            {visitsSuffix ? <span className="shrink-0 opacity-80">{` ${visitsSuffix}`}</span> : null}
-          </a>
-        ) : (
-          <span className="inline-flex items-center gap-1 whitespace-nowrap" title={label}>
-            <span>{label}</span>
-            {visitsSuffix ? <span className="shrink-0 opacity-80">{` ${visitsSuffix}`}</span> : null}
-          </span>
-        )}
+        <span className="inline-flex flex-col items-start justify-center leading-none">
+          {isNormalInstagram ? (
+            <a
+              href={`https://instagram.com/${username}`}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="link link-primary inline-flex items-center gap-1 whitespace-nowrap"
+              title={hasName ? `${nameOneLine} - https://instagram.com/${username}` : `https://instagram.com/${username}`}
+              onClick={(e) => e.stopPropagation()}
+            >
+              <span title={label}>{label}</span>
+              {visitsSuffix ? <span className="shrink-0 opacity-80">{` ${visitsSuffix}`}</span> : null}
+            </a>
+          ) : (
+            <span className="inline-flex items-center gap-1 whitespace-nowrap" title={label}>
+              <span>{label}</span>
+              {visitsSuffix ? <span className="shrink-0 opacity-80">{` ${visitsSuffix}`}</span> : null}
+            </span>
+          )}
+          {invalidIgLabel ? (
+            <span className="text-[10px] text-red-600 font-semibold leading-none">{invalidIgLabel}</span>
+          ) : null}
+        </span>
       </div>
-      {invalidIgLabel ? (
-        <span className="mt-0.5 text-[10px] text-red-600 font-semibold leading-none">{invalidIgLabel}</span>
-      ) : null}
       {fullscreen ? (
         <div
           className="fixed inset-0 z-[300] flex items-center justify-center bg-black/70 p-4"

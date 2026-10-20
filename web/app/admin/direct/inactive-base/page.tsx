@@ -111,6 +111,8 @@ const BASE_VIEW_ORDER: InactiveBaseView[] = [
 
 type SortOrder = "asc" | "desc";
 
+const CLIENTS_PAGE_SIZE = 40;
+
 function SortableTh({
   label,
   field,
@@ -158,6 +160,7 @@ function InactiveBasePageContent() {
   const [clients, setClients] = useState<InactiveBaseClientRow[]>([]);
   const [totalCount, setTotalCount] = useState(0);
   const [loading, setLoading] = useState(true);
+  const [loadingMore, setLoadingMore] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [search, setSearch] = useState("");
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
@@ -334,14 +337,20 @@ function InactiveBasePageContent() {
     }
   };
 
-  const loadClients = useCallback(async () => {
+  const loadClients = useCallback(async (options?: { append?: boolean; offset?: number }) => {
+    const append = options?.append === true;
+    const offset = append ? Math.max(0, options?.offset ?? 0) : 0;
     const requestId = ++loadRequestIdRef.current;
     const requestedBase = baseView;
-    setLoading(true);
-    setError(null);
+    if (append) setLoadingMore(true);
+    else {
+      setLoading(true);
+      setError(null);
+    }
     try {
       const params = new URLSearchParams({
-        limit: requestedBase === "active" ? "3000" : "500",
+        limit: String(CLIENTS_PAGE_SIZE),
+        offset: String(offset),
         sortBy,
         sortOrder,
         base: requestedBase,
@@ -358,7 +367,15 @@ function InactiveBasePageContent() {
       const data = await res.json();
       if (requestId !== loadRequestIdRef.current) return;
       if (!res.ok || !data.ok) throw new Error(data.error || `HTTP ${res.status}`);
-      setClients(Array.isArray(data.clients) ? data.clients : []);
+      const nextClients: InactiveBaseClientRow[] = Array.isArray(data.clients) ? data.clients : [];
+      if (append) {
+        setClients((prev) => {
+          const seen = new Set(prev.map((row) => row.id));
+          return [...prev, ...nextClients.filter((row) => !seen.has(row.id))];
+        });
+      } else {
+        setClients(nextClients);
+      }
       setTotalCount(Number(data.totalCount ?? 0));
       setShowCampaignColumn(Boolean(data.showCampaignColumn));
       setCampaignFilter(
@@ -392,7 +409,10 @@ function InactiveBasePageContent() {
       if (requestId !== loadRequestIdRef.current) return;
       setError(e instanceof Error ? e.message : String(e));
     } finally {
-      if (requestId === loadRequestIdRef.current) setLoading(false);
+      if (requestId === loadRequestIdRef.current) {
+        setLoading(false);
+        setLoadingMore(false);
+      }
     }
   }, [search, sortBy, sortOrder, campaignIdFromUrl, instInstagramFilter, telegramCanSendFilter, baseView, activeService]);
 
@@ -400,7 +420,7 @@ function InactiveBasePageContent() {
     (next: InactiveBaseView) => {
       if (next === baseView) return;
       const params = new URLSearchParams(searchParams.toString());
-      if (next === "inactive") params.delete("base");
+      if (next === "active") params.delete("base");
       else params.set("base", next);
       if (next !== "active") params.delete("service");
       else if (!params.get("service")) params.set("service", "hair");
@@ -981,7 +1001,7 @@ function InactiveBasePageContent() {
             </span>
             <Link
               href={
-                baseView === "inactive"
+                baseView === "active"
                   ? "/admin/direct/inactive-base"
                   : `/admin/direct/inactive-base?base=${baseView}`
               }
@@ -1557,6 +1577,19 @@ function InactiveBasePageContent() {
           </table>
         </div>
         )}
+
+        {clients.length < totalCount ? (
+          <div className="py-2 text-center">
+            <button
+              type="button"
+              className="btn btn-sm btn-ghost"
+              disabled={loading || loadingMore}
+              onClick={() => void loadClients({ append: true, offset: clients.length })}
+            >
+              {loadingMore ? "Завантаження..." : "Завантажити ще"}
+            </button>
+          </div>
+        ) : null}
 
         <p className="text-[10px] text-base-content/60 mt-2">
           {isActiveBaseView

@@ -19,7 +19,7 @@ const VALID_BASE_VIEWS: InactiveBaseView[] = [
 export function parseInactiveBaseView(raw: string | null | undefined): InactiveBaseView {
   const v = (raw || '').trim();
   if (VALID_BASE_VIEWS.includes(v as InactiveBaseView)) return v as InactiveBaseView;
-  return 'inactive';
+  return 'active';
 }
 
 export type ConsultationBaseClientFields = {
