@@ -23,7 +23,10 @@ import {
   type ConsultationRowColorKey,
 } from "@/lib/consultation-list-styles";
 import { hasNormalInstagramUsername } from "@/lib/altegio/client-utils";
+import type { DirectClient } from "@/lib/direct-types";
 import { AvatarSlot } from "../../_components/DirectClientTableAvatar";
+import { formatDateDDMMYY } from "../../_components/direct-client-table-formatters";
+import { MessagesHistoryModal } from "../../_components/MessagesHistoryModal";
 
 type MasterOption = { id: string; name: string };
 
@@ -47,16 +50,11 @@ type ConsultationClient = {
   rowColorKey: ConsultationRowColorKey;
   outcome: ConsultationOutcome;
   isLeadOnly: boolean;
-};
-
-type ConsultationsSummary = {
-  newLeadsCount: number;
-  leadOnlyCount: number;
-  total: number;
-  realized: number;
-  planned: number;
-  cancelled: number;
-  noShow: number;
+  messagesTotal?: number;
+  chatNeedsAttention?: boolean;
+  chatStatusId?: string | null;
+  chatStatusName?: string | null;
+  lastMessageAt?: string | null;
 };
 
 const COLOR_LEGEND: Array<{ key: ConsultationRowColorKey; label: string; className: string }> = [
@@ -68,7 +66,7 @@ const COLOR_LEGEND: Array<{ key: ConsultationRowColorKey; label: string; classNa
   { key: "no_show", label: "Не з'явилась", className: "bg-purple-200" },
 ];
 
-const COL_COUNT = 10;
+const COL_COUNT = 11;
 
 /** Нативний select/input — daisyUI select-xs обрізає текст при малій висоті. */
 const COMPACT_SELECT_BASE =
@@ -163,19 +161,13 @@ function ConsultationsPageContent() {
   const [error, setError] = useState<string | null>(null);
   const [clients, setClients] = useState<ConsultationClient[]>([]);
   const [masters, setMasters] = useState<MasterOption[]>([]);
-  const [summary, setSummary] = useState<ConsultationsSummary | null>(null);
-  const [anchorDay, setAnchorDay] = useState<string | null>(null);
   const [todayKyiv, setTodayKyiv] = useState(() => kyivDayFromISO(new Date().toISOString()));
+  const [messagesClient, setMessagesClient] = useState<ConsultationClient | null>(null);
   const [savingIds, setSavingIds] = useState<Set<string>>(new Set());
   const [fullscreenAvatar, setFullscreenAvatar] = useState<{ src: string; username: string } | null>(
     null
   );
   const commentTimers = useRef<Map<string, ReturnType<typeof setTimeout>>>(new Map());
-
-  const selectedMonthLabel = useMemo(
-    () => monthOptions.find((o) => o.value === selectedMonth)?.label ?? selectedMonth,
-    [monthOptions, selectedMonth]
-  );
 
   const clientsById = useMemo(() => {
     const map = new Map<string, ConsultationClient>();
@@ -187,6 +179,19 @@ function ConsultationsPageContent() {
     () => buildConsultationTableRows(clients, todayKyiv),
     [clients, todayKyiv]
   );
+
+  const colorCounts = useMemo(() => {
+    const counts: Record<ConsultationRowColorKey, number> = {
+      lead: 0,
+      planned: 0,
+      positive: 0,
+      negative: 0,
+      thinking: 0,
+      no_show: 0,
+    };
+    for (const c of clients) counts[c.rowColorKey] += 1;
+    return counts;
+  }, [clients]);
 
   useEffect(() => {
     if (/^\d{4}-\d{2}$/.test(monthFromUrl) && monthFromUrl !== selectedMonth) {
@@ -213,14 +218,11 @@ function ConsultationsPageContent() {
         if (!res.ok || !data?.ok) {
           setClients([]);
           setMasters([]);
-          setSummary(null);
           setError(typeof data?.error === "string" ? data.error : `HTTP ${res.status}`);
           return;
         }
         setClients(Array.isArray(data.clients) ? data.clients : []);
         setMasters(Array.isArray(data.masters) ? data.masters : []);
-        setSummary(data.summary ?? null);
-        setAnchorDay(typeof data.anchorDay === "string" ? data.anchorDay : null);
         if (typeof data.todayKyiv === "string") setTodayKyiv(data.todayKyiv);
       } catch (e) {
         if (!cancelled) {
@@ -329,18 +331,14 @@ function ConsultationsPageContent() {
   }
 
   return (
-    <div className="w-full max-w-full px-2 py-4 min-w-0">
-      <div className="flex items-center gap-3 mb-3">
-        <Link href="/admin/direct/stats" className="btn btn-ghost btn-sm">
+    <div className="w-full max-w-full px-2 pt-1 pb-2 min-w-0">
+      <div className="flex flex-wrap items-center gap-1 mb-1">
+        <Link href="/admin/direct/stats" className="btn btn-ghost btn-xs min-h-6 h-6 px-1.5 text-[10px]">
           ← Статистика
         </Link>
-        <h1 className="text-xl font-semibold">Нові ліди та консультації</h1>
-        <Link href="/admin/direct/stats/leads" className="btn btn-outline btn-sm ml-auto">
-          Джерела
-        </Link>
-      </div>
-      <select
-          className="select select-bordered select-sm mb-4"
+        <h1 className="text-sm font-semibold leading-none px-1">Ліди</h1>
+        <select
+          className="select select-bordered select-xs h-7 min-h-0 !w-40 max-w-[10rem]"
           value={selectedMonth}
           onChange={(e) => handleMonthChange(e.target.value)}
         >
@@ -350,37 +348,22 @@ function ConsultationsPageContent() {
             </option>
           ))}
         </select>
-
-      <p className="text-sm text-gray-500 mb-2">
-        Нові ліди за {selectedMonthLabel} і консультації з записом у цьому місяці
-        {anchorDay ? ` (до ${formatKyivDate(anchorDay)} включно)` : ""}.
-      </p>
-
-      <div className="flex flex-wrap gap-2 mb-3 text-xs">
-        {COLOR_LEGEND.map((item) => (
-          <span key={item.key} className="inline-flex items-center gap-1">
-            <span className={`w-3 h-3 rounded ${item.className}`} />
-            {item.label}
-          </span>
-        ))}
+        <div className="flex flex-wrap items-center gap-1 text-[11px]">
+          {COLOR_LEGEND.map((item) => (
+            <span key={item.key} className="inline-flex items-center gap-1 whitespace-nowrap">
+              <span className={`w-2.5 h-2.5 rounded-sm ${item.className}`} />
+              {item.label}
+              <span className="tabular-nums font-semibold">{colorCounts[item.key]}</span>
+            </span>
+          ))}
+        </div>
+        <Link href="/admin/direct/stats/leads" className="btn btn-outline btn-xs min-h-6 h-6 px-1.5 text-[10px] ml-auto">
+          Джерела
+        </Link>
       </div>
 
-      {summary && (
-        <div className="flex flex-wrap gap-2 mb-4 text-sm">
-          <span className="badge badge-outline">Ліди: {summary.newLeadsCount}</span>
-          {summary.leadOnlyCount > 0 ? (
-            <span className="badge badge-ghost badge-outline">Без запису: {summary.leadOnlyCount}</span>
-          ) : null}
-          <span className="badge badge-outline">Консультації (План): {summary.total}</span>
-          <span className="badge badge-success badge-outline">Відбулось (Факт): {summary.realized}</span>
-          <span className="badge badge-warning badge-outline">Заплановано: {summary.planned}</span>
-          <span className="badge badge-error badge-outline">Скасовано: {summary.cancelled}</span>
-          <span className="badge badge-ghost badge-outline">Не прийшов: {summary.noShow}</span>
-        </div>
-      )}
-
       {error && (
-        <div className="alert alert-error mb-4 text-sm">
+        <div className="alert alert-error mb-1 py-1 text-sm">
           <span>{error}</span>
           <button type="button" className="btn btn-ghost btn-xs" onClick={() => setError(null)}>
             ✕
@@ -389,7 +372,7 @@ function ConsultationsPageContent() {
       )}
 
       <div className="card bg-base-100 shadow-sm">
-        <div className="card-body p-3 overflow-x-auto">
+        <div className="card-body p-1 overflow-x-auto">
           {loading ? (
             <div className="flex justify-center py-8">
               <span className="loading loading-spinner loading-md" />
@@ -397,11 +380,12 @@ function ConsultationsPageContent() {
           ) : clients.length === 0 ? (
             <p className="text-center text-gray-500 py-6">Записів за цей період немає.</p>
           ) : (
-            <table className="table table-xs table-fixed min-w-[880px] [&_th]:py-0.5 [&_th]:text-[11px] [&_.consultation-data-row]:h-5 [&_.consultation-data-row_td]:h-5 [&_.consultation-data-row_td]:max-h-5 [&_.consultation-data-row_td]:py-0 [&_.consultation-data-row_td]:text-[11px] [&_.consultation-data-row_td]:leading-5">
+            <table className="table table-xs table-fixed min-w-[960px] [&_th]:py-0.5 [&_th]:text-[11px] [&_.consultation-data-row]:h-5 [&_.consultation-data-row_td]:h-5 [&_.consultation-data-row_td]:max-h-5 [&_.consultation-data-row_td]:py-0 [&_.consultation-data-row_td]:text-[11px] [&_.consultation-data-row_td]:leading-5">
               <colgroup>
                 <col className="w-8" />
                 <col className="w-[5.5rem]" />
                 <col className="w-[7rem]" />
+                <col className="w-[3.2rem]" />
                 <col className="w-[8rem]" />
                 <col className="w-[5.5rem]" />
                 <col className="w-[7.5rem]" />
@@ -415,6 +399,7 @@ function ConsultationsPageContent() {
                   <th className="text-center">№</th>
                   <th>Дата контакту</th>
                   <th>Instagram</th>
+                  <th>Inst</th>
                   <th>Ім&apos;я</th>
                   <th>Дата консультації</th>
                   <th>Результат</th>
@@ -485,6 +470,34 @@ function ConsultationsPageContent() {
                             <span>—</span>
                           )}
                         </div>
+                      </td>
+                      <td className="text-center">
+                        {(() => {
+                          const total = typeof c.messagesTotal === "number" ? c.messagesTotal : 0;
+                          const needs = Boolean(c.chatNeedsAttention);
+                          const hasStatus = Boolean((c.chatStatusId || "").trim());
+                          const countClass =
+                            total === 0
+                              ? "bg-gray-200 text-gray-900"
+                              : needs || !hasStatus
+                                ? "bg-[#2AABEE] text-white"
+                                : "bg-gray-200 text-gray-900";
+                          const lastAt = formatDateDDMMYY(c.lastMessageAt);
+                          return (
+                            <button
+                              type="button"
+                              className={`inline-flex items-center justify-center rounded-full px-1.5 min-w-[1.25rem] h-4 text-[11px] tabular-nums leading-none ${countClass}`}
+                              title={
+                                lastAt !== "-"
+                                  ? `Останнє повідомлення: ${lastAt}. Відкрити переписку`
+                                  : "Відкрити переписку"
+                              }
+                              onClick={() => setMessagesClient(c)}
+                            >
+                              {total}
+                            </button>
+                          );
+                        })()}
                       </td>
                       <td>
                         <Link
@@ -597,6 +610,12 @@ function ConsultationsPageContent() {
           />
         </div>
       ) : null}
+      <MessagesHistoryModal
+        client={messagesClient as DirectClient | null}
+        isOpen={messagesClient != null}
+        channel="instagram"
+        onClose={() => setMessagesClient(null)}
+      />
     </div>
   );
 }

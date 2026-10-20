@@ -2,6 +2,7 @@
 // Список нових лідів і консультацій за місяць Kyiv — вкладка з блоку «Ліди».
 
 import { NextRequest, NextResponse } from "next/server";
+import { enrichClientsWithChannelChatMeta } from "@/lib/direct-clients-channel-chat-meta";
 import { prisma } from "@/lib/prisma";
 import { isHiddenDirectMaster, loadHiddenStaffIndex } from "@/lib/team/hidden-staff";
 import { getKyivDayUtcBounds, getTodayKyiv, clientCountsTowardNewLeadsKpi } from "@/lib/direct-stats-config";
@@ -171,6 +172,9 @@ export async function GET(req: NextRequest) {
         signedUpForPaidServiceAfterConsultation: true,
         consultationListComment: true,
         consultationListOutcomeOverride: true,
+        chatStatusId: true,
+        chatStatusSetAt: true,
+        chatStatusCheckedAt: true,
       },
     });
 
@@ -219,6 +223,9 @@ export async function GET(req: NextRequest) {
         rowColorKey,
         outcome,
         isLeadOnly,
+        chatStatusId: c.chatStatusId,
+        chatStatusSetAt: c.chatStatusSetAt,
+        chatStatusCheckedAt: c.chatStatusCheckedAt,
       };
     });
 
@@ -227,6 +234,8 @@ export async function GET(req: NextRequest) {
       const sb = b.consultationBookingDate || b.firstContactDate;
       return sb.localeCompare(sa);
     });
+
+    const withChat = await enrichClientsWithChannelChatMeta(mapped, "instagram");
 
     const withConsultationInMonth = mapped.filter((c) => !c.isLeadOnly);
 
@@ -259,7 +268,7 @@ export async function GET(req: NextRequest) {
       summary,
       masters: visibleMasters.map((m) => ({ id: m.id, name: m.name })),
       todayKyiv,
-      clients: mapped,
+      clients: withChat,
     });
   } catch (err) {
     console.error("[stats/consultations] Помилка:", err);

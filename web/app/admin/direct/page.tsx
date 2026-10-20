@@ -792,7 +792,6 @@ function DirectPageContent() {
     return () => { cancelled = true; };
   }, []);
 
-  const showFinanceReport = permissions == null || permissions.financeReportSection !== "none";
   const showFinanceDocs =
     permissions == null ||
     permissions.financeDocsSection !== "none" ||
@@ -2514,16 +2513,6 @@ function DirectPageContent() {
               Каса
             </Link>
           )}
-          {showFinanceReport && (
-            <Link
-              href="/admin/finance-report"
-              className="btn btn-ghost min-h-0 py-0.5 text-[10px] px-1 leading-tight"
-              target="_blank"
-              rel="noopener noreferrer"
-            >
-              💰 Фінансовий звіт
-            </Link>
-          )}
           {showFinanceDocs && (
             <Link
               href="/admin/finance"
@@ -2562,6 +2551,16 @@ function DirectPageContent() {
               rel="noopener noreferrer"
             >
               Клієнти
+            </Link>
+          )}
+          {showStats && (
+            <Link
+              href="/admin/direct/stats/consultations"
+              className="btn btn-ghost min-h-0 py-0.5 text-[10px] px-1 leading-tight"
+              target="_blank"
+              rel="noopener noreferrer"
+            >
+              Ліди
             </Link>
           )}
           {showTeam && (
@@ -4261,7 +4260,7 @@ function DirectPageContent() {
         <div className="alert alert-info py-2">
           <div className="text-sm">
             <div className="font-semibold">
-              Нові ліди та консультації
+              Ліди
               {consultationClientFilter.label ? `: ${consultationClientFilter.label}` : ""}
             </div>
             <div className="opacity-80">

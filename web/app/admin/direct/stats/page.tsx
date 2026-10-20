@@ -1981,9 +1981,9 @@ function DirectStatsPageContent() {
                 className="btn btn-outline btn-sm shrink-0"
                 target="_blank"
                 rel="noopener noreferrer"
-                title="Нові ліди та консультації за обраний місяць"
+                title="Ліди за обраний місяць"
               >
-                Ліди / Консультації
+                Ліди
               </Link>
             </div>
             <div className="overflow-x-auto w-full">
