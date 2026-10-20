@@ -9,14 +9,17 @@ import { isInactiveBaseAuthorized } from '@/lib/inactive-base/auth';
 import {
   filterClientsByInactiveBaseView,
   getConsultationSalonVisit,
+  isColoristicsStatusName,
   isConsultationAttendedClient,
   isConsultationBasePoolClient,
   isConsultationNotAttendedClient,
+  parseActiveBaseService,
   parseInactiveBaseView,
   type InactiveBaseView,
 } from '@/lib/inactive-base/consultation-base-client';
 import { enrichClientsDaysLikeDirect, reverifyInactiveCandidatesFromAltegioApi } from '@/lib/inactive-base/enrich-days-like-direct';
-import { isInactiveBaseByDaysSinceLastVisit, isInactiveBaseListMember } from '@/lib/inactive-base/is-inactive-client';
+import { isInactiveBaseListMember } from '@/lib/inactive-base/is-inactive-client';
+import { isActiveBaseOnKyivDay } from '@/lib/inactive-base/days-since-last-visit';
 import { enrichClientWithLifecycle } from '@/lib/inactive-base/lifecycle';
 import { getTodayKyiv } from '@/lib/direct-stats-config';
 import {
@@ -70,6 +73,13 @@ const CLIENT_SELECT = {
   paidServiceDate: true,
   paidServiceKyivDay: true,
   paidServiceRecordCreatedAt: true,
+  paidServiceTotalCost: true,
+  paidServiceIsRebooking: true,
+  paidServiceCancelled: true,
+  paidServiceAttendanceSetAt: true,
+  paidServiceDeletedInAltegio: true,
+  paidServiceVisitBreakdown: true,
+  serviceMasterName: true,
   signedUpForPaidService: true,
   lastVisitAt: true,
   lastMessageAt: true,
@@ -208,6 +218,41 @@ async function loadInactiveBaseClients(todayKyiv: string, maxApiFallback = 16) {
   return filtered;
 }
 
+/** Активна база Direct: 0–100 днів або майбутній платний запис. Без лідів. */
+async function loadActiveBaseClients(todayKyiv: string) {
+  const raw = await prisma.directClient.findMany({
+    where: {
+      altegioClientId: { not: null },
+      OR: [
+        ...PAID_VISIT_WHERE.OR,
+        { paidServiceDate: { not: null } },
+        { signedUpForPaidService: true },
+      ],
+    },
+    select: CLIENT_SELECT,
+  });
+  const withDays = await enrichClientsDaysLikeDirect(raw, todayKyiv, 0);
+  const filtered = withDays.filter((c) => {
+    const altegioId = Number(c.altegioClientId);
+    if (!Number.isFinite(altegioId) || altegioId <= 0) return false;
+    return isActiveBaseOnKyivDay(c, todayKyiv);
+  });
+  console.log(
+    `[inactive-base/clients] Активна база: кандидатів=${raw.length}, після isActiveBase=${filtered.length} (ref=${todayKyiv})`
+  );
+  return filtered;
+}
+
+async function loadColorStatusIds(): Promise<Set<string>> {
+  const rows = await prisma.directStatus.findMany({ select: { id: true, name: true } });
+  return new Set(rows.filter((s) => isColoristicsStatusName(s.name)).map((s) => s.id));
+}
+
+function isColoristicsClient(statusId: string | null | undefined, colorStatusIds: Set<string>): boolean {
+  const id = (statusId || '').trim();
+  return id !== '' && colorStatusIds.has(id);
+}
+
 async function loadConsultationBasePool() {
   // NOT + OR у Prisma дає 0 рядків — фільтруємо в памʼяті (як Direct days=consultation).
   const raw = await prisma.directClient.findMany({
@@ -238,7 +283,7 @@ export async function GET(req: NextRequest) {
   }
 
   try {
-    const limit = Math.min(500, Math.max(1, parseInt(req.nextUrl.searchParams.get('limit') || '100', 10) || 100));
+    const limit = Math.min(3000, Math.max(1, parseInt(req.nextUrl.searchParams.get('limit') || '100', 10) || 100));
     const offset = Math.max(0, parseInt(req.nextUrl.searchParams.get('offset') || '0', 10) || 0);
     const sortByRaw = req.nextUrl.searchParams.get('sortBy') || 'daysSinceLastVisit';
     const sortBy: SortField = (SORT_FIELDS as readonly string[]).includes(sortByRaw)
@@ -262,6 +307,7 @@ export async function GET(req: NextRequest) {
       req.nextUrl.searchParams.get('telegramCanSend')
     );
     const baseView: InactiveBaseView = parseInactiveBaseView(req.nextUrl.searchParams.get('base'));
+    const activeService = parseActiveBaseService(req.nextUrl.searchParams.get('service'));
     const todayKyiv = getTodayKyiv();
     const campaignId = (req.nextUrl.searchParams.get('campaignId') || '').trim();
     const campaignClientIds = campaignId ? await getClientIdsForCampaign(campaignId) : null;
@@ -288,21 +334,33 @@ export async function GET(req: NextRequest) {
       };
     }
 
-    const [inactiveClients, consultationPool] = await Promise.all([
+    const [inactiveClients, consultationPool, activeClients, colorStatusIds] = await Promise.all([
       loadInactiveBaseClients(todayKyiv, baseView === 'inactive' ? 24 : 0),
       loadConsultationBasePool(),
+      loadActiveBaseClients(todayKyiv),
+      loadColorStatusIds(),
     ]);
     const consultationCounts = await computeConsultationBaseCounts(todayKyiv, consultationPool);
+    const activeColorCount = activeClients.filter((c) => isColoristicsClient(c.statusId, colorStatusIds)).length;
     const baseCounts = {
       inactive: inactiveClients.length,
       consultationAttended: consultationCounts.consultationAttended,
       consultationNotAttended: consultationCounts.consultationNotAttended,
+      active: activeClients.length,
+      activeHair: activeClients.length - activeColorCount,
+      activeColor: activeColorCount,
     };
 
     let initialClients =
       baseView === 'inactive'
         ? inactiveClients
-        : await enrichClientsDaysLikeDirect(
+        : baseView === 'active'
+          ? activeClients.filter((c) =>
+              activeService === 'color'
+                ? isColoristicsClient(c.statusId, colorStatusIds)
+                : !isColoristicsClient(c.statusId, colorStatusIds)
+            )
+          : await enrichClientsDaysLikeDirect(
             filterClientsByInactiveBaseView(consultationPool, baseView, todayKyiv),
             todayKyiv,
             16
@@ -466,6 +524,7 @@ export async function GET(req: NextRequest) {
       spent: c.spent ?? null,
       visits: c.visits ?? null,
       daysSinceLastVisit: c.daysSinceLastVisit,
+      lastVisitAt: c.lastVisitAt ? new Date(c.lastVisitAt).toISOString() : null,
       inactiveLifecycleStatus: life.inactiveLifecycleStatus,
       inactiveSinceKyivDay: life.inactiveSinceKyivDay,
       restoredAtKyivDay: life.restoredAtKyivDay,
@@ -551,6 +610,24 @@ export async function GET(req: NextRequest) {
         : null,
       consultationAttended: c.consultationAttended ?? null,
       consultationCancelled: c.consultationCancelled ?? false,
+      paidServiceDate: c.paidServiceDate ? new Date(c.paidServiceDate).toISOString() : null,
+      paidServiceKyivDay: c.paidServiceKyivDay ?? null,
+      paidServiceRecordCreatedAt: c.paidServiceRecordCreatedAt
+        ? new Date(c.paidServiceRecordCreatedAt).toISOString()
+        : null,
+      paidServiceTotalCost: c.paidServiceTotalCost ?? null,
+      paidRecordsInHistoryCount: c.paidRecordsInHistoryCount ?? null,
+      paidServiceIsRebooking: c.paidServiceIsRebooking ?? null,
+      paidServiceCancelled: c.paidServiceCancelled ?? false,
+      paidServiceAttended: c.paidServiceAttended ?? null,
+      paidServiceAttendanceValue: c.paidServiceAttendanceValue ?? null,
+      paidServiceAttendanceSetAt: c.paidServiceAttendanceSetAt
+        ? new Date(c.paidServiceAttendanceSetAt).toISOString()
+        : null,
+      paidServiceDeletedInAltegio: c.paidServiceDeletedInAltegio ?? false,
+      paidServiceVisitBreakdown: c.paidServiceVisitBreakdown ?? null,
+      serviceMasterName: c.serviceMasterName ?? null,
+      signedUpForPaidService: c.signedUpForPaidService ?? null,
     };
     });
 
@@ -558,6 +635,7 @@ export async function GET(req: NextRequest) {
       ok: true,
       clients,
       base: baseView,
+      service: baseView === 'active' ? activeService : null,
       baseCounts,
       showCampaignColumn,
       campaignFilter: campaignMeta,

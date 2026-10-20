@@ -802,6 +802,7 @@ function DirectPageContent() {
   const showCash = permissions == null || permissions.cashSection !== "none" || permissions.financeDocsSection !== "none";
   const showWarehouse = permissions == null || permissions.warehouseSection !== "none";
   const showJournal = permissions == null || permissions.journalSection !== "none";
+  const showClientsSection = permissions == null || permissions.inactiveBaseSection !== "none";
   const showTeam = permissions == null || permissions.teamSection !== "none";
   const showBank = permissions == null || permissions.bankSection !== "none";
   const showPaymentReconciliation =
@@ -2553,14 +2554,14 @@ function DirectPageContent() {
               Журнал
             </Link>
           )}
-          {showJournal && (
+          {showClientsSection && (
             <Link
-              href="/book"
+              href="/admin/direct/inactive-base"
               className="btn btn-ghost min-h-0 py-0.5 text-[10px] px-1 leading-tight"
               target="_blank"
               rel="noopener noreferrer"
             >
-              Онлайн-запис
+              Клієнти
             </Link>
           )}
           {showTeam && (

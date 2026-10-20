@@ -186,12 +186,12 @@ export default function AdminHome() {
         <Card>
           <CardHeader
             emoji="📭"
-            title="Неактивна база"
-            subtitle="Клієнти без візитів і кампанії повернення"
+            title="Клієнти"
+            subtitle="Активна база, неактивні і кампанії повернення"
           />
           <CardBody>
             <ul style={{ margin: 0, paddingLeft: 18, color: 'rgba(0,0,0,0.75)' }}>
-              <li>Список неактивних і консультаційна база</li>
+              <li>Активна база, неактивні і консультації</li>
               <li>Кампанії в Telegram / Instagram</li>
               <li>Перенесення між групами</li>
             </ul>

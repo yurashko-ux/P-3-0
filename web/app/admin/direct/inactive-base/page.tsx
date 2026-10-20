@@ -5,7 +5,10 @@ import { createPortal } from "react-dom";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import {
+  isColoristicsStatusName,
+  parseActiveBaseService,
   parseInactiveBaseView,
+  type ActiveBaseService,
   type InactiveBaseView,
 } from "@/lib/inactive-base/consultation-base-client";
 import type { DirectClient, DirectStatus } from "@/lib/direct-types";
@@ -26,6 +29,14 @@ import { InactiveBaseLinkClickCell } from "./_components/InactiveBaseLinkClickCe
 import { InactiveBaseLinkClickHistoryModal } from "./_components/InactiveBaseLinkClickHistoryModal";
 import { InactiveBaseMessageStatusCell } from "./_components/InactiveBaseMessageStatusCell";
 import { InactiveBaseNameCell } from "./_components/InactiveBaseNameCell";
+import {
+  ActiveBasePhoneCell,
+  ActiveBaseRecordCell,
+  ActiveBaseRecordMasterCell,
+  ActiveBaseStateCell,
+} from "./_components/ActiveBaseRecordCells";
+import { DirectClientIdentityCell } from "../_components/DirectClientIdentityCell";
+import { ExitDaysCell } from "../_components/ExitDaysCell";
 import {
   INACTIVE_BASE_CAMPAIGNS_CHANGED_EVENT,
   INACTIVE_BASE_TRANSFER_NO_GROUP,
@@ -50,7 +61,6 @@ import {
 } from "./_components/inactive-base-table-rows";
 import { InactiveBaseInstagramFilterDropdown } from "./_components/InactiveBaseInstagramFilterDropdown";
 import { InactiveBaseTelegramFilterDropdown } from "./_components/InactiveBaseTelegramFilterDropdown";
-import { ExitDaysCell } from "../_components/ExitDaysCell";
 import { InactiveLifecycleHistoryModal } from "../_components/InactiveLifecycleHistoryModal";
 import type {
   InstInstagramCounts,
@@ -73,19 +83,31 @@ type InactiveBaseCounts = {
   inactive: number;
   consultationAttended: number;
   consultationNotAttended: number;
+  active: number;
+  activeHair: number;
+  activeColor: number;
 };
 
 const BASE_VIEW_LABELS: Record<InactiveBaseView, string> = {
+  active: "Активна база",
   inactive: "Неактивна база",
   consultation_attended: "Консультація відбулись",
   consultation_not_attended: "Консультація не відбулась",
 };
 
 const BASE_VIEW_SHORT_LABELS: Record<InactiveBaseView, string> = {
+  active: "Активна",
   inactive: "Неактивна",
   consultation_attended: "Відбулись",
   consultation_not_attended: "Не відбулись",
 };
+
+const BASE_VIEW_ORDER: InactiveBaseView[] = [
+  "active",
+  "inactive",
+  "consultation_attended",
+  "consultation_not_attended",
+];
 
 type SortOrder = "asc" | "desc";
 
@@ -128,7 +150,10 @@ function InactiveBasePageContent() {
   const router = useRouter();
   const campaignIdFromUrl = searchParams.get("campaignId")?.trim() || "";
   const baseView = parseInactiveBaseView(searchParams.get("base"));
+  const activeService: ActiveBaseService =
+    baseView === "active" ? parseActiveBaseService(searchParams.get("service")) : "hair";
   const isInactiveBaseView = baseView === "inactive";
+  const isActiveBaseView = baseView === "active";
 
   const [clients, setClients] = useState<InactiveBaseClientRow[]>([]);
   const [totalCount, setTotalCount] = useState(0);
@@ -209,7 +234,7 @@ function InactiveBasePageContent() {
     [clients]
   );
 
-  const tableColSpan = 15;
+  const tableColSpan = isActiveBaseView ? 12 : 15;
 
   const openBinotelHistory = useCallback((client: InactiveBaseClientRow) => {
     setBinotelHistoryClient(inactiveBaseRowToDirectClient(client));
@@ -234,18 +259,37 @@ function InactiveBasePageContent() {
       throw new Error(typeof data?.error === "string" ? data.error : `HTTP ${res.status}`);
     }
     const saved = data.client as { statusId?: string; statusSetAt?: string | null } | undefined;
-    setClients((prev) =>
-      prev.map((c) =>
+    const savedStatusId = saved?.statusId || update.statusId;
+    const nextName = statuses.find((s) => s.id === savedStatusId)?.name;
+    const nextIsColor = isColoristicsStatusName(nextName);
+    const leavesCurrentList =
+      baseView === "active" && (activeService === "color" ? !nextIsColor : nextIsColor);
+    setClients((prev) => {
+      if (leavesCurrentList) return prev.filter((c) => c.id !== update.clientId);
+      return prev.map((c) =>
         c.id === update.clientId
           ? {
               ...c,
-              statusId: saved?.statusId || update.statusId,
+              statusId: savedStatusId,
               statusSetAt: saved?.statusSetAt ?? new Date().toISOString(),
             }
           : c
-      )
-    );
-  }, []);
+      );
+    });
+    if (leavesCurrentList) {
+      const delta = nextIsColor ? 1 : -1;
+      setBaseCounts((prev) =>
+        prev
+          ? {
+              ...prev,
+              activeHair: prev.activeHair - delta,
+              activeColor: prev.activeColor + delta,
+            }
+          : prev
+      );
+      setTotalCount((n) => Math.max(0, n - 1));
+    }
+  }, [activeService, baseView, statuses]);
 
   const toggleCampaignExpand = (campaignId: string) => {
     setExpandedCampaignIds((prev) => {
@@ -297,11 +341,12 @@ function InactiveBasePageContent() {
     setError(null);
     try {
       const params = new URLSearchParams({
-        limit: "500",
+        limit: requestedBase === "active" ? "3000" : "500",
         sortBy,
         sortOrder,
         base: requestedBase,
       });
+      if (requestedBase === "active") params.set("service", activeService);
       if (search.trim()) params.set("search", search.trim());
       if (campaignIdFromUrl) params.set("campaignId", campaignIdFromUrl);
       if (instInstagramFilter.length) params.set("instInstagram", instInstagramFilter.join(","));
@@ -338,6 +383,9 @@ function InactiveBasePageContent() {
           inactive: Number(data.baseCounts.inactive ?? 0),
           consultationAttended: Number(data.baseCounts.consultationAttended ?? 0),
           consultationNotAttended: Number(data.baseCounts.consultationNotAttended ?? 0),
+          active: Number(data.baseCounts.active ?? 0),
+          activeHair: Number(data.baseCounts.activeHair ?? 0),
+          activeColor: Number(data.baseCounts.activeColor ?? 0),
         });
       }
     } catch (e) {
@@ -346,7 +394,7 @@ function InactiveBasePageContent() {
     } finally {
       if (requestId === loadRequestIdRef.current) setLoading(false);
     }
-  }, [search, sortBy, sortOrder, campaignIdFromUrl, instInstagramFilter, telegramCanSendFilter, baseView]);
+  }, [search, sortBy, sortOrder, campaignIdFromUrl, instInstagramFilter, telegramCanSendFilter, baseView, activeService]);
 
   const switchBaseView = useCallback(
     (next: InactiveBaseView) => {
@@ -354,6 +402,8 @@ function InactiveBasePageContent() {
       const params = new URLSearchParams(searchParams.toString());
       if (next === "inactive") params.delete("base");
       else params.set("base", next);
+      if (next !== "active") params.delete("service");
+      else if (!params.get("service")) params.set("service", "hair");
       const qs = params.toString();
       router.replace(qs ? `?${qs}` : "/admin/direct/inactive-base");
     },
@@ -724,14 +774,18 @@ function InactiveBasePageContent() {
           <Link href="/admin/direct" className="btn btn-xs btn-ghost shrink-0 mb-0 min-h-6 h-6 px-1.5 text-[10px]">
             ← Direct
           </Link>
+          <h1 className="text-sm font-semibold leading-none px-1 mb-0.5">Клієнти</h1>
           <div className="inline-flex flex-wrap gap-px rounded border border-base-300 p-px shrink-0">
-            {(
-              [
-                ["inactive", baseCounts?.inactive],
-                ["consultation_attended", baseCounts?.consultationAttended],
-                ["consultation_not_attended", baseCounts?.consultationNotAttended],
-              ] as const
-            ).map(([view, count]) => (
+            {BASE_VIEW_ORDER.map((view) => {
+              const count =
+                view === "active"
+                  ? baseCounts?.active
+                  : view === "inactive"
+                    ? baseCounts?.inactive
+                    : view === "consultation_attended"
+                      ? baseCounts?.consultationAttended
+                      : baseCounts?.consultationNotAttended;
+              return (
               <button
                 key={view}
                 type="button"
@@ -744,8 +798,37 @@ function InactiveBasePageContent() {
                 {BASE_VIEW_SHORT_LABELS[view]}
                 {typeof count === "number" ? ` ${count}` : ""}
               </button>
-            ))}
+              );
+            })}
           </div>
+          {isActiveBaseView ? (
+            <div className="inline-flex flex-wrap gap-px rounded border border-base-300 p-px shrink-0">
+              {(
+                [
+                  ["hair", "Нарощування", baseCounts?.activeHair],
+                  ["color", "Колористика", baseCounts?.activeColor],
+                ] as const
+              ).map(([service, label, count]) => (
+                <button
+                  key={service}
+                  type="button"
+                  className={`btn btn-xs min-h-6 h-6 px-1.5 text-[10px] font-normal ${
+                    activeService === service ? "btn-primary" : "btn-ghost"
+                  }`}
+                  onClick={() => {
+                    if (service === activeService) return;
+                    const params = new URLSearchParams(searchParams.toString());
+                    params.set("base", "active");
+                    params.set("service", service);
+                    router.replace(`?${params.toString()}`);
+                  }}
+                >
+                  {label}
+                  {typeof count === "number" ? ` ${count}` : ""}
+                </button>
+              ))}
+            </div>
+          ) : null}
           <div>
             <label className="text-[10px] block mb-0.5 leading-none">Пошук</label>
             <div className="relative w-40">
@@ -918,6 +1001,146 @@ function InactiveBasePageContent() {
           </div>
         )}
 
+        {isActiveBaseView ? (
+          <div className="bg-base-100 rounded-lg border border-base-300 overflow-x-auto">
+            <table className="table table-xs table-zebra table-direct-manager [&_td]:!py-[5px] [&_th]:!py-[5px]">
+              <thead>
+                <tr className="text-[10px]">
+                  <th className="w-8">
+                    <input
+                      type="checkbox"
+                      className="checkbox checkbox-xs"
+                      checked={clients.length > 0 && clients.every((c) => selectedIds.has(c.id))}
+                      title="Обрати всі на сторінці"
+                      onChange={(e) => {
+                        if (e.target.checked) setSelectedIds(new Set(clients.map((c) => c.id)));
+                        else setSelectedIds(new Set());
+                      }}
+                    />
+                  </th>
+                  <th className="w-10">№</th>
+                  <th>Ім&apos;я</th>
+                  <SortableTh
+                    label="Днів"
+                    field="daysSinceLastVisit"
+                    sortBy={sortBy}
+                    sortOrder={sortOrder}
+                    onSort={handleSort}
+                    className="text-left w-16"
+                  />
+                  <th>Inst</th>
+                  <th>Дзвінки</th>
+                  <th>Передзвонити</th>
+                  <th>Статус</th>
+                  <th>Стан</th>
+                  <th>Запис</th>
+                  <th>Майстер запису</th>
+                  <th>Телефон</th>
+                </tr>
+              </thead>
+              <tbody>
+                {loading && clients.length === 0 ? (
+                  <tr>
+                    <td colSpan={12} className="text-center py-8 text-sm opacity-70">
+                      Завантаження…
+                    </td>
+                  </tr>
+                ) : clients.length === 0 ? (
+                  <tr>
+                    <td colSpan={12} className="text-center py-8 text-sm opacity-70">
+                      {activeService === "color"
+                        ? "Немає клієнтів колористики в активній базі"
+                        : "Немає клієнтів нарощування в активній базі"}
+                    </td>
+                  </tr>
+                ) : (
+                  clients.map((client, index) => (
+                    <tr key={client.id} className={selectedIds.has(client.id) ? "!bg-sky-100" : undefined}>
+                      <td>
+                        <input
+                          type="checkbox"
+                          className="checkbox checkbox-xs"
+                          checked={selectedIds.has(client.id)}
+                          onChange={() => {
+                            setSelectedIds((prev) => {
+                              const next = new Set(prev);
+                              if (next.has(client.id)) next.delete(client.id);
+                              else next.add(client.id);
+                              return next;
+                            });
+                          }}
+                        />
+                      </td>
+                      <td className="tabular-nums text-xs">{index + 1}</td>
+                      <td className="text-xs whitespace-nowrap max-w-[280px]">
+                        <DirectClientIdentityCell client={client} />
+                      </td>
+                      <td className="text-xs text-left tabular-nums">
+                        <ExitDaysCell
+                          exitDays={
+                            typeof client.liveDaysSinceLastVisit === "number"
+                              ? client.liveDaysSinceLastVisit
+                              : client.daysSinceLastVisit
+                          }
+                          inactiveSinceKyivDay={client.inactiveSinceKyivDay}
+                          restoredAtKyivDay={client.restoredAtKyivDay}
+                          status={client.inactiveLifecycleStatus}
+                          showInactiveBadge={false}
+                          lastVisitAt={client.lastVisitAt as string | null | undefined}
+                          align="left"
+                          onOpenHistory={
+                            client.inactiveLifecycleStatus === "inactive" ||
+                            client.inactiveLifecycleStatus === "restored"
+                              ? () => setLifecycleHistoryClient(client)
+                              : undefined
+                          }
+                        />
+                      </td>
+                      <td className="text-xs align-top">
+                        <InactiveBaseChatCell channel="instagram" client={client} />
+                      </td>
+                      <td className="text-xs align-top">
+                        <InactiveBaseCallsCell
+                          client={client}
+                          canListenCalls={canListenCalls}
+                          onOpenHistory={(dc) => setBinotelHistoryClient(dc)}
+                          onPlayRequest={(url) => setInlineRecordingUrl(url)}
+                        />
+                      </td>
+                      <td className="text-xs align-middle">
+                        <CallbackReminderCell
+                          client={inactiveBaseRowToDirectClient(client)}
+                          onOpen={(dc) => setCallbackReminderClient(dc)}
+                          onSendPhone={(dc) => sendPhoneToTelegram(dc.id)}
+                        />
+                      </td>
+                      <td className="text-xs align-middle overflow-visible">
+                        <DirectStatusCell
+                          client={inactiveBaseRowToStatusCellClient(client)}
+                          statuses={statuses}
+                          onStatusChange={handleStatusChange}
+                          onMenuOpen={handleStatusMenuOpen}
+                        />
+                      </td>
+                      <td className="text-xs">
+                        <ActiveBaseStateCell client={client} />
+                      </td>
+                      <td className="text-xs whitespace-nowrap">
+                        <ActiveBaseRecordCell client={client} />
+                      </td>
+                      <td className="text-xs whitespace-nowrap">
+                        <ActiveBaseRecordMasterCell client={client} />
+                      </td>
+                      <td className="text-xs whitespace-nowrap">
+                        <ActiveBasePhoneCell phone={client.phone} />
+                      </td>
+                    </tr>
+                  ))
+                )}
+              </tbody>
+            </table>
+          </div>
+        ) : (
         <div className="bg-base-100 rounded-lg border border-base-300 overflow-x-auto">
           <table className="table table-xs table-zebra table-direct-manager [&_td]:!py-[5px] [&_th]:!py-[5px]">
             <thead>
@@ -1333,13 +1556,20 @@ function InactiveBasePageContent() {
             </tbody>
           </table>
         </div>
+        )}
 
         <p className="text-[10px] text-base-content/60 mt-2">
-          {enableCampaignGrouping
-            ? "▶/▼ — згорнути/розгорнути групу. Перенести: виділіть клієнтів і групу в списку (або «Немає групи»). "
-            : null}
-          Виділення: Shift+клік між чекбоксами. Inst, Telegram і дзвінки — як у Direct. Клік по телефону — історія дзвінків. Клік по галочці в «Посилання» — історія переходів.
-          Автоматична розсилка вимкнена.
+          {isActiveBaseView
+            ? "Нарощування — усі, крім статусів «кератин» і «фарбування». Статус, нагадування і дзвінки змінюються як у Direct."
+            : (
+              <>
+                {enableCampaignGrouping
+                  ? "▶/▼ — згорнути/розгорнути групу. Перенести: виділіть клієнтів і групу в списку (або «Немає групи»). "
+                  : null}
+                Виділення: Shift+клік між чекбоксами. Inst, Telegram і дзвінки — як у Direct. Клік по телефону — історія дзвінків. Клік по галочці в «Посилання» — історія переходів.
+                Автоматична розсилка вимкнена.
+              </>
+            )}
         </p>
       </div>
 

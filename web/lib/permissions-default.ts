@@ -13,7 +13,7 @@ export const PERMISSION_CATEGORIES: { key: PermissionKey; label: string }[] = [
   { key: "phoneOutgoingCalls", label: "Телефон: вихідні дзвінки" },
   { key: "statsSection", label: "Розділ Статистика" },
   { key: "leadsSourcesSection", label: "Розділ Джерела лідів" },
-  { key: "inactiveBaseSection", label: "Розділ Неактивна база" },
+  { key: "inactiveBaseSection", label: "Розділ Клієнти" },
   { key: "oboymaSection", label: "Розділ Обойма" },
   { key: "mastersStatsSection", label: "Розділ Статистика майстрів" },
   { key: "financeReportSection", label: "Розділ Фінансовий звіт" },

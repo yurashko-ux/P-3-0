@@ -3,7 +3,9 @@
 import { toKyivDay } from '@/lib/direct-stats-config';
 import { hasPaidServiceVisitForInactiveBase } from '@/lib/inactive-base/is-inactive-client';
 
-export type InactiveBaseView = 'inactive' | 'consultation_attended' | 'consultation_not_attended';
+export type InactiveBaseView = 'inactive' | 'consultation_attended' | 'consultation_not_attended' | 'active';
+
+export type ActiveBaseService = 'hair' | 'color';
 
 export type ConsultationSalonVisit = 'attended' | 'not_attended';
 
@@ -11,6 +13,7 @@ const VALID_BASE_VIEWS: InactiveBaseView[] = [
   'inactive',
   'consultation_attended',
   'consultation_not_attended',
+  'active',
 ];
 
 export function parseInactiveBaseView(raw: string | null | undefined): InactiveBaseView {
@@ -80,6 +83,16 @@ export function getConsultationSalonVisit(
   todayKyiv: string
 ): ConsultationSalonVisit {
   return isConsultationAttendedClient(c, todayKyiv) ? 'attended' : 'not_attended';
+}
+
+/** Колористика: назва статусу Direct містить «кератин» або «фарбування». */
+export function isColoristicsStatusName(name: string | null | undefined): boolean {
+  const n = (name || '').toLowerCase();
+  return n.includes('кератин') || n.includes('фарбування');
+}
+
+export function parseActiveBaseService(raw: string | null | undefined): ActiveBaseService {
+  return (raw || '').trim() === 'color' ? 'color' : 'hair';
 }
 
 export function filterClientsByInactiveBaseView<T extends ConsultationBaseClientFields>(
