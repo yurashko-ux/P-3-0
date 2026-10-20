@@ -199,7 +199,9 @@ export function buildConsultationTableRows(
 
   const countByDay = new Map<string, number>();
   for (const c of clients) {
-    const day = kyivDayFromISO(getConsultationListSortIso(c)) || "unknown";
+    // У дужках лише ліди без запису. Консультація цього дня в число не входить.
+    if (c.consultationBookingDate) continue;
+    const day = kyivDayFromISO(c.firstContactDate || "") || "unknown";
     countByDay.set(day, (countByDay.get(day) ?? 0) + 1);
   }
 
