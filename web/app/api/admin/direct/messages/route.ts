@@ -76,6 +76,47 @@ function clientWhere(): Prisma.DirectClientWhereInput {
   };
 }
 
+/**
+ * Сторінка в порядку останнього Instagram-повідомлення.
+ * Нове повідомлення піднімає і клієнта, і ліда — те саме, що дата під лічильником Inst.
+ */
+async function findIdsByLastInstagramMessage(
+  audience: "clients" | "leads",
+  offset: number,
+  limit: number
+): Promise<string[]> {
+  const audienceSql =
+    audience === "clients"
+      ? Prisma.sql`(
+          (c."consultationBookingDate" IS NOT NULL AND c."consultationDeletedInAltegio" = false)
+          OR c."paidServiceDate" IS NOT NULL
+        )`
+      : Prisma.sql`(
+          c."includeInNewLeadsKpi" = true
+          AND c."paidServiceDate" IS NULL
+          AND (c."consultationBookingDate" IS NULL OR c."consultationDeletedInAltegio" = true)
+        )`;
+  const rows = await prisma.$queryRaw<{ id: string }[]>(Prisma.sql`
+    SELECT c.id
+    FROM "direct_clients" c
+    WHERE c.state IS DISTINCT FROM 'binotel-lead'
+      AND c."instagramUsername" NOT LIKE 'binotel_%'
+      AND c."instagramUsername" NOT LIKE 'missing_instagram_%'
+      AND c."instagramUsername" NOT LIKE 'no_instagram_%'
+      AND c."instagramUsername" NOT LIKE 'altegio_%'
+      AND c."instagramUsername" NOT LIKE '\\_\\_no_ig\\_%'
+      AND ${audienceSql}
+    ORDER BY (
+      SELECT MAX(m."receivedAt")
+      FROM "direct_messages" m
+      WHERE m."clientId" = c.id
+        AND LOWER(COALESCE(m.source, 'manychat')) NOT IN ('telegram', 'telegram_campaign')
+    ) DESC NULLS LAST, c.id ASC
+    LIMIT ${limit} OFFSET ${offset}
+  `);
+  return rows.map((row) => row.id);
+}
+
 /** Лід без живої консультації і без платної послуги, щоб не дублюватись у клієнтах. */
 function leadWhere(): Prisma.DirectClientWhereInput {
   return {
@@ -111,32 +152,34 @@ export async function GET(req: NextRequest) {
     const audience = audienceParam;
     const where = audience === "clients" ? clientWhere() : leadWhere();
 
-    const [total, rows, sources] = await Promise.all([
+    const [total, orderedIds, sources] = await Promise.all([
       prisma.directClient.count({ where }),
-      prisma.directClient.findMany({
-        where,
-        orderBy: [{ lastMessageAt: { sort: "desc", nulls: "last" } }, { id: "asc" }],
-        skip: offset,
-        take: limit,
-        select: {
-          id: true,
-          firstName: true,
-          lastName: true,
-          instagramUsername: true,
-          firstContactDate: true,
-          lastMessageAt: true,
-          chatStatusId: true,
-          chatStatusSetAt: true,
-          chatStatusCheckedAt: true,
-          leadAgency: true,
-          leadAdId: true,
-          spent: true,
-          visits: true,
-          altegioClientId: true,
-        },
-      }),
+      findIdsByLastInstagramMessage(audience, offset, limit),
       prisma.leadSource.findMany({ select: { code: true, name: true } }),
     ]);
+    const unordered = orderedIds.length
+      ? await prisma.directClient.findMany({
+          where: { id: { in: orderedIds } },
+          select: {
+            id: true,
+            firstName: true,
+            lastName: true,
+            instagramUsername: true,
+            firstContactDate: true,
+            lastMessageAt: true,
+            chatStatusId: true,
+            chatStatusSetAt: true,
+            chatStatusCheckedAt: true,
+            leadAgency: true,
+            leadAdId: true,
+            spent: true,
+            visits: true,
+            altegioClientId: true,
+          },
+        })
+      : [];
+    const byId = new Map(unordered.map((row) => [row.id, row]));
+    const rows = orderedIds.map((id) => byId.get(id)).filter((row): row is NonNullable<typeof row> => Boolean(row));
 
     const sourceNameByCode = new Map(sources.map((source) => [source.code, source.name]));
     const mapped = rows.map((row) => ({

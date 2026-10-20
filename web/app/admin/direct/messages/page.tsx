@@ -39,7 +39,7 @@ type MessageRow = {
 type Audience = "clients" | "leads";
 
 const PAGE_SIZE = 40;
-const TODAY_ROW_SEPARATOR = "inset 0 -3px 0 #4b5563";
+const TODAY_ROW_SEPARATOR = "inset 0 -3px 0 #111111";
 
 function getClientName(c: MessageRow): string {
   const parts = [c.firstName, c.lastName].filter(Boolean);
@@ -99,11 +99,9 @@ function LeadSourceCloud({
     ) : (
       icon
     );
-  const showName = Boolean(sourceName) && leadAgency !== "agency_1" && leadAgency !== "agency_2";
   return (
-    <span className="inline-flex items-center gap-1" title={title}>
+    <span className="inline-flex items-center justify-center" title={title}>
       {marked}
-      {showName ? <span className="text-[10px] leading-none text-gray-500">{sourceName}</span> : null}
     </span>
   );
 }
