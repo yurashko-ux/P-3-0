@@ -12,6 +12,7 @@ import { ChatBadgeIcon, CHAT_BADGE_KEYS } from './ChatBadgeIcon';
 import { hasNormalInstagramUsername } from '@/lib/altegio/client-utils';
 import { resolveDisplayInstagramUsername } from '@/lib/direct-message-handle';
 import { ClientSpendLoyaltyBadge } from '@/app/admin/_components/ClientNameWithLoyalty';
+import { resolveInstagramReactionEmoji } from '@/lib/instagram-webhook';
 import { LeadBadgeIcon } from './DirectClientTableRowBadges';
 import { getFullName } from './direct-client-table-formatters';
 
@@ -106,11 +107,7 @@ function mergeReactionsOntoMessages(list: Message[]): Message[] {
       emojiByMid.set(mid, null);
       continue;
     }
-    const emoji =
-      (raw?.emoji || '').trim() ||
-      (raw?.reaction === 'love' ? '❤️' : '') ||
-      '👍';
-    emojiByMid.set(mid, emoji);
+    emojiByMid.set(mid, resolveInstagramReactionEmoji(raw?.emoji, raw?.reaction));
   }
 
   return list

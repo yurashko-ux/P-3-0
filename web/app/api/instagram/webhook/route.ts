@@ -13,6 +13,7 @@ import {
   loadInstagramPageToken,
   rememberInstagramRawWebhook,
   rememberInstagramWebhook,
+  resolveInstagramReactionEmoji,
   sanitizeMeta,
   type InstagramWebhookEvent,
 } from "@/lib/instagram-webhook";
@@ -112,8 +113,8 @@ function extractReaction(row: Record<string, unknown>): MessagingItem["reaction"
 
 function reactionDisplayText(reaction: NonNullable<MessagingItem["reaction"]>): string {
   if (reaction.action === "unreact") return "➖ знято реакцію";
-  const emoji = (reaction.emoji || "").trim() || (reaction.reaction === "love" ? "❤️" : "");
-  return emoji ? `${emoji} реакція` : "❤️ реакція";
+  const emoji = resolveInstagramReactionEmoji(reaction.emoji, reaction.reaction);
+  return `${emoji} реакція`;
 }
 
 function normalizeItem(raw: unknown): MessagingItem | null {

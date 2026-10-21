@@ -33,6 +33,39 @@ export function sanitizeMeta(text: string): string {
     .replace(/EAA[A-Za-z0-9]+/g, "***");
 }
 
+/**
+ * Коди реакцій Meta (поле reaction) → емодзі, коли в payload немає emoji.
+ * Instagram офіційно документує love; на практиці приходять і like тощо.
+ * Messenger-назви (haha/wow/sad/angry/care) — запас на сумісні payload'и.
+ */
+const INSTAGRAM_REACTION_EMOJI: Record<string, string> = {
+  love: "❤️",
+  like: "👍",
+  dislike: "👎",
+  laugh: "😂",
+  haha: "😂",
+  smile: "😊",
+  wow: "😮",
+  surprised: "😮",
+  sad: "😢",
+  angry: "😠",
+  care: "🤗",
+  fire: "🔥",
+  hundred: "💯",
+};
+
+/** Емодзі для відображення реакції: спочатку з Meta, інакше за кодом reaction. */
+export function resolveInstagramReactionEmoji(
+  emoji?: string | null,
+  reactionCode?: string | null,
+): string {
+  const fromMeta = (emoji || "").trim();
+  if (fromMeta) return fromMeta;
+  const code = (reactionCode || "").trim().toLowerCase();
+  if (code && INSTAGRAM_REACTION_EMOJI[code]) return INSTAGRAM_REACTION_EMOJI[code];
+  return "❤️";
+}
+
 export function instagramWebhookVerifyToken(): string {
   const explicit = (process.env.INSTAGRAM_WEBHOOK_VERIFY_TOKEN || "").trim();
   if (explicit) return explicit;
