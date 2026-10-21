@@ -362,10 +362,20 @@ function ConsultationsPageContent() {
             </span>
           ))}
         </div>
-        <Link href="/admin/direct/messages" className="btn btn-outline btn-xs min-h-6 h-6 px-1.5 text-[10px] ml-auto">
+        <Link
+          href="/admin/direct/messages"
+          target="_blank"
+          rel="noopener noreferrer"
+          className="btn btn-outline btn-xs min-h-6 h-6 px-1.5 text-[10px] ml-auto"
+        >
           Переписки
         </Link>
-        <Link href="/admin/direct/stats/leads" className="btn btn-outline btn-xs min-h-6 h-6 px-1.5 text-[10px]">
+        <Link
+          href="/admin/direct/stats/leads"
+          target="_blank"
+          rel="noopener noreferrer"
+          className="btn btn-outline btn-xs min-h-6 h-6 px-1.5 text-[10px]"
+        >
           Джерела
         </Link>
       </div>
