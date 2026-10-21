@@ -160,14 +160,14 @@ async function countWaitingByAudience(audience: "clients" | "leads"): Promise<nu
       AND c."instagramUsername" NOT LIKE 'altegio_%'
       AND c."instagramUsername" NOT LIKE '\\_\\_no_ig\\_%'
       AND ${audienceSql}
-      AND (
+      AND LOWER((
         SELECT m.direction
         FROM "direct_messages" m
         WHERE m."clientId" = c.id
           AND m.source IN ('instagram_graph', 'manual')
         ORDER BY m."receivedAt" DESC, m.id DESC
         LIMIT 1
-      ) = 'incoming'
+      )) = 'incoming'
   `);
   const n = rows[0]?.n;
   return typeof n === "bigint" ? Number(n) : Number(n) || 0;
@@ -176,19 +176,24 @@ async function countWaitingByAudience(audience: "clients" | "leads"): Promise<nu
 async function loadReplyTimes(ids: string[]): Promise<Map<string, ThreadReplyTime>> {
   const map = new Map<string, ThreadReplyTime>();
   if (!ids.length) return map;
+  // Усі IG-повідомлення (не Telegram): вихідні з будь-якого source знімають «очікує»;
+  // старт очікування — лише instagram_graph/manual (див. computeThreadReplyTime).
   const messages = await prisma.directMessage.findMany({
     where: {
       clientId: { in: ids },
       ...sourcesWhereClause("instagram"),
-      source: { in: [...RELIABLE_REPLY_SOURCES] },
     },
-    select: { clientId: true, direction: true, receivedAt: true },
-    orderBy: { receivedAt: "asc" },
+    select: { clientId: true, direction: true, receivedAt: true, source: true },
+    orderBy: [{ receivedAt: "asc" }, { id: "asc" }],
   });
-  const grouped = new Map<string, Array<{ direction: string; receivedAt: Date }>>();
+  const grouped = new Map<string, Array<{ direction: string; receivedAt: Date; source: string | null }>>();
   for (const message of messages) {
     const list = grouped.get(message.clientId) ?? [];
-    list.push({ direction: message.direction, receivedAt: message.receivedAt });
+    list.push({
+      direction: message.direction,
+      receivedAt: message.receivedAt,
+      source: message.source,
+    });
     grouped.set(message.clientId, list);
   }
   for (const id of ids) {
@@ -291,14 +296,22 @@ export async function GET(req: NextRequest) {
       `[direct/messages] audience=${audience} сторінка offset=${offset} limit=${limit} віддано=${withReply.length} з ${total}`
     );
 
-    return NextResponse.json({
-      ok: true,
-      total,
-      offset,
-      limit,
-      ...(waitingCount != null ? { waitingCount } : {}),
-      clients: withReply,
-    });
+    return NextResponse.json(
+      {
+        ok: true,
+        total,
+        offset,
+        limit,
+        ...(waitingCount != null ? { waitingCount } : {}),
+        clients: withReply,
+      },
+      {
+        headers: {
+          "Cache-Control": "no-store, no-cache, must-revalidate",
+          Pragma: "no-cache",
+        },
+      }
+    );
   } catch (err) {
     console.error("[direct/messages] Помилка:", err);
     return NextResponse.json(

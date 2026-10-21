@@ -166,9 +166,11 @@ function useConversationList(audience: Audience) {
         params.set("audience", audience);
         params.set("offset", String(offset));
         params.set("limit", String(PAGE_SIZE));
+        params.set("_t", String(Date.now()));
         const res = await fetch(`/api/admin/direct/messages?${params.toString()}`, {
           cache: "no-store",
           credentials: "include",
+          headers: { "Cache-Control": "no-cache", Pragma: "no-cache" },
         });
         const data = await res.json().catch(() => ({}));
         if (!res.ok || !data.ok) {

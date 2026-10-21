@@ -9,7 +9,11 @@ const REAL_WAIT_INCLUDES_NIGHT_MS = DAY_MS;
 export type ReplyMessage = {
   direction: string;
   receivedAt: Date | string;
+  /** manychat | instagram_graph | manual — для фільтра «надійних» вхідних. */
+  source?: string | null;
 };
+
+const RELIABLE_REPLY_SOURCES = new Set(["instagram_graph", "manual"]);
 
 export type ThreadReplyTime = {
   /** Середнє в хвилинах. null — ще не було жодної нашої відповіді на повідомлення клієнта. */
@@ -122,7 +126,8 @@ export function formatWaitingClock(elapsedMs: number): string {
 export function computeThreadReplyTime(messages: ReplyMessage[]): ThreadReplyTime {
   const sorted = messages
     .map((message) => ({
-      direction: message.direction,
+      direction: String(message.direction || "").trim().toLowerCase(),
+      source: String(message.source || "manychat").trim().toLowerCase(),
       at: message.receivedAt instanceof Date ? message.receivedAt.getTime() : new Date(message.receivedAt).getTime(),
     }))
     .filter((message) => Number.isFinite(message.at))
@@ -132,13 +137,28 @@ export function computeThreadReplyTime(messages: ReplyMessage[]): ThreadReplyTim
   let waitStart: number | null = null;
   for (const message of sorted) {
     if (message.direction === "incoming") {
+      // ManyChat інколи дублює/плутає вхідні — для старту очікування лише Graph/manual.
+      if (!RELIABLE_REPLY_SOURCES.has(message.source)) continue;
       if (waitStart == null) waitStart = message.at;
       continue;
     }
-    if (message.direction === "outgoing" && waitStart != null) {
-      samples.push(businessReplyMs(waitStart, message.at));
-      waitStart = null;
+    if (message.direction === "outgoing") {
+      // Будь-яка вихідна IG (Graph/manual/іноді manychat) знімає очікування — салон відповів.
+      if (waitStart != null) {
+        if (RELIABLE_REPLY_SOURCES.has(message.source)) {
+          samples.push(businessReplyMs(waitStart, message.at));
+        }
+        waitStart = null;
+      }
     }
+  }
+
+  // Страховка: останнє надійне повідомлення вихідне → точно не чекаємо.
+  for (let i = sorted.length - 1; i >= 0; i -= 1) {
+    const message = sorted[i];
+    if (!RELIABLE_REPLY_SOURCES.has(message.source)) continue;
+    if (message.direction === "outgoing") waitStart = null;
+    break;
   }
 
   const replyAvgMinutes =
