@@ -157,10 +157,11 @@ function useConversationList(audience: Audience) {
   const [error, setError] = useState<string | null>(null);
 
   const load = useCallback(
-    async (offset: number, append: boolean) => {
+    async (offset: number, append: boolean, opts?: { silent?: boolean }) => {
+      const silent = Boolean(opts?.silent);
       if (append) setLoadingMore(true);
-      else setLoading(true);
-      setError(null);
+      else if (!silent) setLoading(true);
+      if (!silent) setError(null);
       try {
         const params = new URLSearchParams();
         params.set("audience", audience);
@@ -180,14 +181,18 @@ function useConversationList(audience: Audience) {
         setTotal(typeof data.total === "number" ? data.total : next.length);
         if (typeof data.waitingCount === "number") setWaitingCount(data.waitingCount);
         setRows((prev) => (append ? [...prev, ...next] : next));
+        if (silent) setError(null);
       } catch (err) {
-        setError(err instanceof Error ? err.message : "Помилка завантаження");
-        if (!append) {
-          setRows([]);
-          setWaitingCount(0);
+        // Тихе оновлення: лишаємо поточний список, без мигання порожнім екраном.
+        if (!silent) {
+          setError(err instanceof Error ? err.message : "Помилка завантаження");
+          if (!append) {
+            setRows([]);
+            setWaitingCount(0);
+          }
         }
       } finally {
-        setLoading(false);
+        if (!silent) setLoading(false);
         setLoadingMore(false);
       }
     },
@@ -202,7 +207,7 @@ function useConversationList(audience: Audience) {
   useEffect(() => {
     const refresh = () => {
       if (document.visibilityState === "hidden") return;
-      void load(0, false);
+      void load(0, false, { silent: true });
     };
     const timer = window.setInterval(refresh, 15_000);
     window.addEventListener("focus", refresh);
@@ -525,9 +530,9 @@ export default function DirectMessagesPage() {
         channel="instagram"
         onClose={() => {
           setMessagesClient(null);
-          // Після відповіді салону в історії — одразу оновити «Очікують» і пігулки.
-          void clients.load(0, false);
-          void leads.load(0, false);
+          // Після відповіді салону в історії — одразу оновити «Очікують» і пігулки (без мигання).
+          void clients.load(0, false, { silent: true });
+          void leads.load(0, false, { silent: true });
         }}
       />
     </div>
