@@ -27,6 +27,7 @@ import type { DirectClient } from "@/lib/direct-types";
 import { AvatarSlot } from "../../_components/DirectClientTableAvatar";
 import { formatDateDDMMYY } from "../../_components/direct-client-table-formatters";
 import { LeadStateIcon } from "../../_components/LeadStateIcon";
+import { invalidateLeadSourcesMapCache } from "../../_components/useLeadSourcesMap";
 import { MessagesHistoryModal } from "../../_components/MessagesHistoryModal";
 
 type MasterOption = { id: string; name: string };
@@ -207,6 +208,8 @@ function ConsultationsPageContent() {
     async function load() {
       setLoading(true);
       setError(null);
+      // Свіжа мапа джерел (знаки біля хмарки) — без застарілого кешу після змін у «Джерела».
+      invalidateLeadSourcesMapCache();
       try {
         const params = new URLSearchParams();
         params.set("month", selectedMonth);
