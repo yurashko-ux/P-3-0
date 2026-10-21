@@ -146,16 +146,22 @@ export async function buildDailyOpsReport(options?: {
     if (!clientCountsTowardNewLeadsKpi(client)) continue;
     if (toKyivDay(client.firstContactDate) !== kyivDay) continue;
     const link = leadInstagramLink(client);
+    // Органіка — лише явно проставлене leadAgency=organic (вручну).
+    // Невизначені (null) і кастомні src_* сюди НЕ потрапляють.
     if (client.leadAgency === "agency_2") heartRows.push(link);
     else if (client.leadAgency === "agency_1") starRows.push(link);
-    else organicRows.push(link);
+    else if (client.leadAgency === "organic") organicRows.push(link);
   }
   const newLeadsAgency2Count = Math.min(starRows.length, newLeadsCount);
   const newLeadsAgency1Count = Math.min(
     heartRows.length,
     Math.max(0, newLeadsCount - newLeadsAgency2Count),
   );
-  const newLeadsOrganicCount = Math.max(0, newLeadsCount - newLeadsAgency2Count - newLeadsAgency1Count);
+  // Раніше «органіка» = усі інші нові ліди (залишок). Тепер — лише ручна органіка.
+  const newLeadsOrganicCount = Math.min(
+    organicRows.length,
+    Math.max(0, newLeadsCount - newLeadsAgency2Count - newLeadsAgency1Count),
+  );
   const takeLeadLinks = (
     rows: Array<LeadInstagramLink & { sortKey: string }>,
     count: number,

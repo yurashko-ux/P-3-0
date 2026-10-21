@@ -1,5 +1,8 @@
-// Джерело ліда: знак із розділу «Ліди» шукаємо лише в першому вхідному повідомленні.
-// Органіка — якщо знака немає. Сайт — окремий вхід, з тексту Instagram не ставиться.
+// Джерело ліда (політика з 19.10.2026):
+// - автоматично ставимо leadAgency ЛИШЕ якщо є referral.ad_id і кабінет уже привʼязаний до цього ad_id;
+// - без ad_id — leadAgency = null («не визначено», хмаринка без значка);
+// - органіку та всі інші джерела ставить маркетолог вручну (дропдаун на картці / біля хмарки);
+// - Сайт — окремий вхід, з Instagram не ставиться.
 
 import { prisma } from "@/lib/prisma";
 import { getDirectManager } from "@/lib/direct-masters/store";
@@ -123,10 +126,9 @@ export async function assignLeadSourceFromFirstIncoming(input: {
   });
   if (prior > 0) return null;
 
-  // Пріоритет: ad_id → (опційно) знак у тексті для рекламних джерел.
-  // Органіку НЕ ставимо автоматично — лише вручну з дропдауна («Джерело (вручну)»).
-  // Без ad_id і без знака — leadAgency лишається null («не визначено», хмаринка без значка).
-  // Якщо ad_id є, але кабінет ще не призначено — теж null; setLeadAdIdSource() донарахує пізніше.
+  // ЄДИНИЙ авто-шлях: ad_id з referral → код кабінету, якщо вже привʼязаний у «Оголошення Meta».
+  // Інакше leadAgency не чіпаємо (лишається null = не визначено). Органіку/агенції/Offline тощо
+  // ставить лише маркетолог вручну (manual-assign / дропдаун біля хмарки).
   if (input.adId) {
     const code = await resolveLeadSourceByAdId(input.adId);
     await prisma.directClient.update({
@@ -141,8 +143,6 @@ export async function assignLeadSourceFromFirstIncoming(input: {
     return code;
   }
 
-  // Без ad_id не чіпаємо leadAgency — навіть якщо в тексті є старий «знак» агенції.
-  // Джерело для таких лідів задає маркетолог вручну після звірки з Lead Center.
   console.log("[leads] Перше вхідне без ad_id — leadAgency не визначено (очікуємо ручний вибір)", {
     clientId: input.clientId,
   });
