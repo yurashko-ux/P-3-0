@@ -4,9 +4,10 @@
 
 import { useEffect, useRef, useState } from "react";
 import { kyivDayFromISO } from "@/lib/altegio/records-grouping";
-import { LeadAgencyHeart, LeadAgencyPending, LeadAgencyStar, StateIcon } from "./StateIcon";
+import { LeadAgencyMark, LeadAgencyPending, StateIcon } from "./StateIcon";
+import { useLeadSourcesMap } from "./useLeadSourcesMap";
 
-type LeadSourceOption = { code: string; name: string; kind: string; hidden?: boolean };
+type LeadSourceOption = { code: string; name: string; mark?: string | null; kind: string; hidden?: boolean };
 
 const ICON_SIZE = 28;
 
@@ -33,6 +34,7 @@ export function LeadStateIcon({
     ? "Новий лід (перший контакт сьогодні)"
     : "Повідомлення / Лід (перший контакт раніше)";
 
+  const sourcesMap = useLeadSourcesMap();
   const [open, setOpen] = useState(false);
   const [sources, setSources] = useState<LeadSourceOption[]>([]);
   const [value, setValue] = useState(leadAgency || "");
@@ -121,14 +123,16 @@ export function LeadStateIcon({
       <StateIcon state={isNewToday ? "new-lead" : "message"} size={compact ? 20 : ICON_SIZE} />
     </span>
   );
-  const marked = leadAgency === "agency_1"
-    ? <LeadAgencyStar>{icon}</LeadAgencyStar>
-    : leadAgency === "agency_2"
-      ? <LeadAgencyHeart>{icon}</LeadAgencyHeart>
+  const sourceMark =
+    (leadAgency && (sourcesMap[leadAgency]?.mark || sources.find((s) => s.code === leadAgency)?.mark)) || null;
+  const marked =
+    leadAgency && sourceMark
+      ? <LeadAgencyMark mark={sourceMark}>{icon}</LeadAgencyMark>
       : !leadAgency && leadAdId
         ? <LeadAgencyPending>{icon}</LeadAgencyPending>
         : icon;
-  const options = (leadAdId ? sources.filter((source) => source.kind === "ads") : sources.filter((source) => !source.hidden));
+  const menuSources = sources.length > 0 ? sources : Object.values(sourcesMap);
+  const options = (leadAdId ? menuSources.filter((source) => source.kind === "ads") : menuSources.filter((source) => !source.hidden));
 
   return (
     <div ref={rootRef} className="relative inline-flex">

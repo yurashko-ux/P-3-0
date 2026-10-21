@@ -15,7 +15,8 @@ import {
 import { getChatBadgeStyle } from "./ChatBadgeIcon";
 import { CommunicationChannelPicker } from "./CommunicationChannelPicker";
 import { ConfirmedCheckIcon } from "./CheckIcon";
-import { LeadAgencyHeart, LeadAgencyPending, LeadAgencyStar, StateIcon } from "./StateIcon";
+import { LeadAgencyMark, LeadAgencyPending, StateIcon } from "./StateIcon";
+import { useLeadSourcesMap } from "./useLeadSourcesMap";
 import { DirectStatusCell } from "./DirectStatusCell";
 import { BinotelCallTypeIcon } from "./BinotelCallTypeIcon";
 import { PlayRecordingButton } from "./PlayRecordingButton";
@@ -56,10 +57,11 @@ function leadAgencyCloudTitle(
   titleBase: string,
   leadAgency: DirectClient["leadAgency"],
   leadAdId?: DirectClient["leadAdId"],
+  sourceName?: string | null,
 ): string {
-  if (leadAgency === "agency_1") return `${titleBase} · Агенція 2`;
-  if (leadAgency === "agency_2") return `${titleBase} · Агенція 1`;
+  if (sourceName) return `${titleBase} · ${sourceName}`;
   if (!leadAgency && leadAdId) return `${titleBase} · Лід з реклами, кабінет ще не визначено (Джерела → Оголошення)`;
+  if (leadAgency) return `${titleBase} · ${leadAgency}`;
   return titleBase;
 }
 
@@ -67,9 +69,10 @@ function wrapLeadAgencyCloud(
   icon: ReactNode,
   leadAgency: DirectClient["leadAgency"],
   leadAdId?: DirectClient["leadAdId"],
+  mark?: string | null,
 ): ReactNode {
-  if (leadAgency === "agency_1") return <LeadAgencyStar>{icon}</LeadAgencyStar>;
-  if (leadAgency === "agency_2") return <LeadAgencyHeart>{icon}</LeadAgencyHeart>;
+  if (leadAgency && mark) return <LeadAgencyMark mark={mark}>{icon}</LeadAgencyMark>;
+  if (leadAgency && !mark) return icon;
   if (!leadAgency && leadAdId) return <LeadAgencyPending>{icon}</LeadAgencyPending>;
   return icon;
 }
@@ -87,6 +90,10 @@ function DirectClientTableRowInner({
   virtualRow,
   measureElement,
 }: DirectClientTableRowProps) {
+  const leadSourcesMap = useLeadSourcesMap();
+  const leadSourceMeta = client.leadAgency ? leadSourcesMap[client.leadAgency] : undefined;
+  const leadSourceMark = leadSourceMeta?.mark ?? null;
+  const leadSourceName = leadSourceMeta?.name ?? null;
   const {
     columnWidths,
     getStickyLeft,
@@ -1247,13 +1254,13 @@ return (
           const daysSinceFirst = Math.floor((todayStart - firstStart) / 86400000);
           if (daysSinceFirst === 0) {
             const titleBase = stateDateLead !== '-' ? `Новий лід. Дата встановлення: ${stateDateLead}` : "Новий лід (перший контакт сьогодні). Натисніть для історії станів";
-            const title = leadAgencyCloudTitle(titleBase, client.leadAgency, client.leadAdId);
+            const title = leadAgencyCloudTitle(titleBase, client.leadAgency, client.leadAdId, leadSourceName);
             const icon = <StateIcon state="new-lead" size={28} />;
             return (
               <div className="flex flex-col items-start gap-0.5">
                 <span className="inline-flex items-center justify-center">
                   <button type="button" className="hover:opacity-70 transition-opacity p-0" title={title} onClick={() => setStateHistoryClient(client)}>
-                    {wrapLeadAgencyCloud(icon, client.leadAgency, client.leadAdId)}
+                    {wrapLeadAgencyCloud(icon, client.leadAgency, client.leadAdId, leadSourceMark)}
                   </button>
                 </span>
                 {stateDateLead !== '-' && <span className="text-[10px] leading-none opacity-60">{stateDateLead}</span>}
@@ -1261,13 +1268,13 @@ return (
             );
           }
           const titleBase = stateDateLead !== '-' ? `Повідомлення / Лід. Дата встановлення: ${stateDateLead}` : "Повідомлення / Лід (перший контакт раніше). Натисніть для історії станів";
-          const title = leadAgencyCloudTitle(titleBase, client.leadAgency, client.leadAdId);
+          const title = leadAgencyCloudTitle(titleBase, client.leadAgency, client.leadAdId, leadSourceName);
           const icon = <StateIcon state="message" size={28} />;
           return (
             <div className="flex flex-col items-start gap-0.5">
               <span className="inline-flex items-center justify-center">
                 <button type="button" className="hover:opacity-70 transition-opacity p-0" title={title} onClick={() => setStateHistoryClient(client)}>
-                  {wrapLeadAgencyCloud(icon, client.leadAgency, client.leadAdId)}
+                  {wrapLeadAgencyCloud(icon, client.leadAgency, client.leadAdId, leadSourceMark)}
                 </button>
               </span>
               {stateDateLead !== '-' && <span className="text-[10px] leading-none opacity-60">{stateDateLead}</span>}

@@ -16,34 +16,36 @@ const STATE_EMOJI: Record<string, string> = {
   sold: "🔥",
 };
 
-/** Знак * зверху справа на хмаринці ліда зі зірочкою (Агенція 2, leadAgency = agency_1). */
-export function LeadAgencyStar({ children }: { children: ReactNode }) {
+/**
+ * Знак джерела (LeadSource.mark) зверху справа на хмаринці — саме той емодзі/символ,
+ * який обрано в «Джерела», без підміни кольору/форми (♥ замість 💙 тощо).
+ * Лише зменшуємо розмір.
+ */
+export function LeadAgencyMark({ children, mark }: { children: ReactNode; mark?: string | null }) {
+  const m = (mark || "").trim();
+  if (!m) return <>{children}</>;
   return (
     <span className="relative inline-flex">
       {children}
       <span
-        className="pointer-events-none absolute -right-1 -top-1 text-[13px] font-bold leading-none text-amber-600"
+        className="pointer-events-none absolute -right-1.5 -top-1.5 leading-none"
+        style={{ fontSize: "10px" }}
         aria-hidden
       >
-        *
+        {m}
       </span>
     </span>
   );
 }
 
-/** Маленьке серце зверху справа на хмаринці (Агенція 1, leadAgency = agency_2). */
+/** @deprecated Використовуйте LeadAgencyMark з mark із LeadSource. Залишено для сумісності. */
+export function LeadAgencyStar({ children }: { children: ReactNode }) {
+  return <LeadAgencyMark mark="*">{children}</LeadAgencyMark>;
+}
+
+/** @deprecated Використовуйте LeadAgencyMark з mark із LeadSource. Залишено для сумісності. */
 export function LeadAgencyHeart({ children }: { children: ReactNode }) {
-  return (
-    <span className="relative inline-flex">
-      {children}
-      <span
-        className="pointer-events-none absolute -right-1 -top-1 text-[11px] leading-none text-rose-500"
-        aria-hidden
-      >
-        ♥
-      </span>
-    </span>
-  );
+  return <LeadAgencyMark mark="💙">{children}</LeadAgencyMark>;
 }
 
 /**

@@ -15,7 +15,7 @@ import {
   SpendStarBadge,
 } from "../_components/DirectClientTableRowBadges";
 import { formatDateDDMMYY } from "../_components/direct-client-table-formatters";
-import { LeadAgencyHeart, LeadAgencyPending, LeadAgencyStar, StateIcon } from "../_components/StateIcon";
+import { LeadAgencyMark, LeadAgencyPending, StateIcon } from "../_components/StateIcon";
 import { formatWaitingClock, waitingElapsedMs } from "@/lib/direct-reply-time";
 import { MessagesHistoryModal } from "../_components/MessagesHistoryModal";
 
@@ -32,6 +32,7 @@ type MessageRow = {
   leadAgency?: string | null;
   leadAdId?: string | null;
   sourceName?: string | null;
+  sourceMark?: string | null;
   spent?: number | null;
   visits?: number | null;
   altegioClientId?: number | null;
@@ -63,10 +64,9 @@ function isMessageToday(iso: string | null | undefined, todayKyiv: string): bool
 }
 
 function sourceLabel(leadAgency?: string | null, leadAdId?: string | null, sourceName?: string | null): string {
-  if (leadAgency === "agency_1") return sourceName || "Агенція 2";
-  if (leadAgency === "agency_2") return sourceName || "Агенція 1";
+  if (sourceName) return sourceName;
   if (!leadAgency && leadAdId) return "Оголошення без призначеного джерела";
-  return sourceName || "";
+  return leadAgency || "";
 }
 
 /** Хмарка як у Direct, знак джерела зверху. Без вибору. */
@@ -75,11 +75,13 @@ function LeadSourceCloud({
   leadAgency,
   leadAdId,
   sourceName,
+  sourceMark,
 }: {
   firstContactDate?: string | null;
   leadAgency?: string | null;
   leadAdId?: string | null;
   sourceName?: string | null;
+  sourceMark?: string | null;
 }) {
   const today = kyivDayFromISO(new Date().toISOString());
   const firstDay = firstContactDate ? kyivDayFromISO(firstContactDate) : "";
@@ -93,10 +95,8 @@ function LeadSourceCloud({
     </span>
   );
   const marked =
-    leadAgency === "agency_1" ? (
-      <LeadAgencyStar>{icon}</LeadAgencyStar>
-    ) : leadAgency === "agency_2" ? (
-      <LeadAgencyHeart>{icon}</LeadAgencyHeart>
+    leadAgency && sourceMark ? (
+      <LeadAgencyMark mark={sourceMark}>{icon}</LeadAgencyMark>
     ) : !leadAgency && leadAdId ? (
       <LeadAgencyPending>{icon}</LeadAgencyPending>
     ) : (
@@ -383,6 +383,7 @@ function ConversationTable({
                           leadAgency={c.leadAgency}
                           leadAdId={c.leadAdId}
                           sourceName={c.sourceName}
+                          sourceMark={c.sourceMark}
                         />
                       </td>
                     </tr>

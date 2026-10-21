@@ -185,7 +185,7 @@ export async function GET(req: NextRequest) {
     const [total, orderedIds, sources] = await Promise.all([
       prisma.directClient.count({ where }),
       findIdsByLastInstagramMessage(audience, offset, limit),
-      prisma.leadSource.findMany({ select: { code: true, name: true } }),
+      prisma.leadSource.findMany({ select: { code: true, name: true, mark: true } }),
     ]);
     const unordered = orderedIds.length
       ? await prisma.directClient.findMany({
@@ -212,6 +212,7 @@ export async function GET(req: NextRequest) {
     const rows = orderedIds.map((id) => byId.get(id)).filter((row): row is NonNullable<typeof row> => Boolean(row));
 
     const sourceNameByCode = new Map(sources.map((source) => [source.code, source.name]));
+    const sourceMarkByCode = new Map(sources.map((source) => [source.code, source.mark]));
     const mapped = rows.map((row) => ({
       id: row.id,
       firstName: row.firstName,
@@ -230,6 +231,7 @@ export async function GET(req: NextRequest) {
       sourceName: row.leadAgency
         ? sourceNameByCode.get(row.leadAgency) || SOURCE_NAME_FALLBACK[row.leadAgency] || row.leadAgency
         : null,
+      sourceMark: row.leadAgency ? sourceMarkByCode.get(row.leadAgency) || null : null,
     }));
     const [withChat, replyTimes] = await Promise.all([
       enrichClientsWithChannelChatMeta(mapped, "instagram"),

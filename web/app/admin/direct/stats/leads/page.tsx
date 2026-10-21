@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import Link from "next/link";
+import { invalidateLeadSourcesMapCache } from "@/app/admin/direct/_components/useLeadSourcesMap";
 
 type Kind = "ads" | "organic" | "website";
 
@@ -36,14 +37,17 @@ const KIND_LABEL: Record<Kind, string> = {
   website: "Сайт",
 };
 
-// Готовий набір значків для "Знак" — лише візуально розрізняти агенції (кабінети) в таблиці.
-// Старий механізм пошуку знака в тексті першого повідомлення нічого не чіпає, просто цим не користуємось.
+// Готовий набір значків для "Знак" — візуально біля хмарки в Direct.
+// Старий механізм пошуку знака в тексті першого повідомлення нічого не чіпає.
+// Перші 20 — як були; далі +20 нових (не чіпати існуючі).
 const MARK_EMOJI_OPTIONS = [
   "💙", "💚", "💛", "🧡", "💜", "🖤", "🤍", "❤️", "🩷", "🩵",
   "⭐", "🔥", "✨", "🎯", "🔵", "🟢", "🟣", "🟠", "🟡", "🔴",
+  "🍀", "🌿", "🌸", "🌺", "🍄", "🌟", "🔑", "💎", "🌙", "☀️",
+  "🦋", "🐠", "🦊", "🦄", "🎈", "🎀", "🧩", "🎵", "⚡", "🌊",
 ];
 
-// Поле "Знак" з попапом вибору емодзі — випадає, коли курсор стає в поле, і зникає при кліку поза ним.
+// Поле "Знак" з попапом вибору емодзі — випадає при фокусі, сітка як у emoji-picker.
 function MarkField({
   value,
   onChange,
@@ -72,23 +76,43 @@ function MarkField({
         value={value}
         onFocus={() => setOpen(true)}
         onChange={(event) => onChange(event.target.value)}
+        placeholder="значок"
       />
       {open ? (
-        <div className="absolute left-0 top-full z-20 mt-1 grid w-[200px] grid-cols-5 gap-1 rounded border bg-white p-2 shadow-lg">
-          {MARK_EMOJI_OPTIONS.map((emoji) => (
+        <div className="absolute left-0 top-full z-30 mt-1 w-[280px] rounded-xl border border-gray-200 bg-white p-2 shadow-xl">
+          <div className="mb-1.5 px-1 text-[10px] font-medium uppercase tracking-wide text-gray-400">
+            Оберіть значок
+          </div>
+          <div className="grid max-h-[220px] grid-cols-8 gap-0.5 overflow-y-auto">
+            {MARK_EMOJI_OPTIONS.map((emoji) => (
+              <button
+                key={emoji}
+                type="button"
+                className={`flex h-8 w-8 items-center justify-center rounded-lg text-base transition-colors hover:bg-gray-100 ${
+                  value === emoji ? "bg-blue-100 ring-1 ring-blue-400" : ""
+                }`}
+                onClick={() => {
+                  onChange(emoji);
+                  setOpen(false);
+                }}
+                title={emoji}
+              >
+                {emoji}
+              </button>
+            ))}
+          </div>
+          {value ? (
             <button
-              key={emoji}
               type="button"
-              className={`btn btn-xs btn-square ${value === emoji ? "btn-primary" : "btn-ghost"}`}
+              className="mt-1.5 w-full rounded-lg px-2 py-1 text-left text-[11px] text-gray-500 hover:bg-gray-50"
               onClick={() => {
-                onChange(emoji);
+                onChange("");
                 setOpen(false);
               }}
-              title={emoji}
             >
-              {emoji}
+              Прибрати значок
             </button>
-          ))}
+          ) : null}
         </div>
       ) : null}
     </div>
@@ -257,6 +281,7 @@ export default function LeadSourcesPage() {
     setError("");
     setMonth(data.month || "");
     setSources(data.sources || []);
+    invalidateLeadSourcesMapCache();
   }, []);
 
   useEffect(() => {
@@ -390,6 +415,8 @@ export default function LeadSourcesPage() {
           <tbody>
             {sources.map((source) => {
               const canModify = source.kind !== "organic" && source.totalLeads === 0;
+              // Органіку можна редагувати завжди (щоб обрати емодзі біля хмарки), видаляти/ховати — ні.
+              const canEdit = source.kind === "organic" || canModify;
               if (editingId === source.id) {
                 return (
                   <tr key={source.id}>
@@ -401,37 +428,39 @@ export default function LeadSourcesPage() {
                       />
                     </td>
                     <td>
-                      {editKind === "ads" ? (
-                        <MarkField value={editMark} onChange={setEditMark} inputClassName="input input-bordered input-xs w-16" />
-                      ) : (
-                        "—"
-                      )}
+                      <MarkField value={editMark} onChange={setEditMark} inputClassName="input input-bordered input-xs w-16" />
                     </td>
                     <td>
-                      <select
-                        className="select select-bordered select-xs"
-                        value={editKind}
-                        onChange={(event) => setEditKind(event.target.value as Kind)}
-                      >
-                        <option value="ads">Реклама</option>
-                        <option value="website">Сайт</option>
-                      </select>
+                      {editKind === "organic" ? (
+                        KIND_LABEL.organic
+                      ) : (
+                        <select
+                          className="select select-bordered select-xs"
+                          value={editKind}
+                          onChange={(event) => setEditKind(event.target.value as Kind)}
+                        >
+                          <option value="ads">Реклама</option>
+                          <option value="website">Сайт</option>
+                        </select>
+                      )}
                     </td>
                     <td>{source.leads}</td>
                     <td>{source.consultations}</td>
                     <td>{source.paid}</td>
-                    <td className="flex gap-1">
-                      <button
-                        className="btn btn-primary btn-xs"
-                        type="button"
-                        disabled={saving || !editName.trim()}
-                        onClick={() => void saveEdit()}
-                      >
-                        зберегти
-                      </button>
-                      <button className="btn btn-ghost btn-xs" type="button" onClick={cancelEdit}>
-                        відміна
-                      </button>
+                    <td>
+                      <div className="flex flex-nowrap items-center gap-1 whitespace-nowrap">
+                        <button
+                          className="btn btn-primary btn-xs"
+                          type="button"
+                          disabled={saving || !editName.trim()}
+                          onClick={() => void saveEdit()}
+                        >
+                          зберегти
+                        </button>
+                        <button className="btn btn-ghost btn-xs" type="button" onClick={cancelEdit}>
+                          відміна
+                        </button>
+                      </div>
                     </td>
                   </tr>
                 );
@@ -452,22 +481,22 @@ export default function LeadSourcesPage() {
                   <td>{source.consultations}</td>
                   <td>{source.paid}</td>
                   <td>
-                    <div className="flex flex-wrap gap-1">
-                      {source.kind === "organic" ? null : canModify ? (
-                        <>
-                          <button className="btn btn-ghost btn-xs" type="button" onClick={() => startEdit(source)}>
-                            редагувати
-                          </button>
-                          <button className="btn btn-ghost btn-xs" type="button" onClick={() => void removeSource(source.id)}>
-                            прибрати
-                          </button>
-                        </>
-                      ) : (
-                        <span className="text-xs text-gray-400" title="Є ліди з цим джерелом — редагування і видалення заборонено">
+                    <div className="flex flex-nowrap items-center gap-1 whitespace-nowrap">
+                      {canEdit ? (
+                        <button className="btn btn-ghost btn-xs" type="button" onClick={() => startEdit(source)}>
+                          редагувати
+                        </button>
+                      ) : null}
+                      {canModify ? (
+                        <button className="btn btn-ghost btn-xs" type="button" onClick={() => void removeSource(source.id)}>
+                          прибрати
+                        </button>
+                      ) : source.kind !== "organic" ? (
+                        <span className="text-xs text-gray-400" title="Є ліди з цим джерелом — видалення заборонено">
                           є ліди
                         </span>
-                      )}
-                      {source.kind === "organic" ? null : (
+                      ) : null}
+                      {source.kind !== "organic" ? (
                         <button
                           className="btn btn-ghost btn-xs"
                           type="button"
@@ -476,7 +505,7 @@ export default function LeadSourcesPage() {
                         >
                           {source.hidden ? "показати" : "приховати"}
                         </button>
-                      )}
+                      ) : null}
                     </div>
                   </td>
                 </tr>

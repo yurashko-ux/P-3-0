@@ -103,8 +103,13 @@ export async function PATCH(req: NextRequest) {
     );
   }
   const name = cleanName(body?.name) || current.name;
-  const kind = cleanKind(body?.kind) || (current.kind as LeadSourceKind);
-  const mark = kind === "ads" ? cleanMark(body?.mark) : null;
+  // Органіку не перетворюємо на інший тип через цей ендпоінт — лише назва/знак.
+  const kind =
+    current.kind === "organic"
+      ? ("organic" as LeadSourceKind)
+      : cleanKind(body?.kind) || (current.kind as LeadSourceKind);
+  // Знак тепер візуальний для всіх типів (у т.ч. органіка) — показується біля хмарки.
+  const mark = cleanMark(body?.mark !== undefined ? body.mark : current.mark);
   if (kind === "ads" && !mark) {
     return NextResponse.json({ ok: false, error: "Для реклами потрібен знак" }, { status: 400 });
   }

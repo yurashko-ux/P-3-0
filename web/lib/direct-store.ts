@@ -3,7 +3,7 @@
 
 import { Prisma } from '@prisma/client';
 import { prisma } from './prisma';
-import { isDirectLeadAgency, type CallbackReminderHistoryEntry, type DirectClient, type DirectStatus } from './direct-types';
+import { isLeadAgencyCode, type CallbackReminderHistoryEntry, type DirectClient, type DirectStatus } from './direct-types';
 import { kyivYmdFromDateTimeInput } from './direct-kyiv-today';
 import { hasNormalInstagramUsername, isTechnicalDirectInstagramUsername, preferInstagramUsername } from './altegio/client-utils';
 import {
@@ -90,8 +90,8 @@ export function prismaClientToDirectClient(dbClient: any): DirectClient {
     state: (dbClient.state as 'client' | 'consultation' | 'consultation-booked' | 'consultation-no-show' | 'consultation-rescheduled' | 'hair-extension' | 'other-services' | 'all-good' | 'too-expensive' | 'message') || undefined,
     firstContactDate: dbClient.firstContactDate.toISOString(),
     includeInNewLeadsKpi: (dbClient as any).includeInNewLeadsKpi !== false,
-    leadAgency: isDirectLeadAgency((dbClient as any).leadAgency)
-      ? (dbClient as any).leadAgency
+    leadAgency: isLeadAgencyCode((dbClient as any).leadAgency)
+      ? String((dbClient as any).leadAgency).trim()
       : undefined,
     leadAdId: typeof (dbClient as any).leadAdId === 'string' && (dbClient as any).leadAdId.trim()
       ? (dbClient as any).leadAdId
@@ -260,7 +260,7 @@ function directClientToPrisma(client: DirectClient) {
     consultationListComment: client.consultationListComment ?? null,
     consultationListOutcomeOverride: client.consultationListOutcomeOverride ?? null,
     ...(client.includeInNewLeadsKpi !== undefined ? { includeInNewLeadsKpi: client.includeInNewLeadsKpi } : {}),
-    ...(isDirectLeadAgency(client.leadAgency) ? { leadAgency: client.leadAgency } : {}),
+    ...(isLeadAgencyCode(client.leadAgency) ? { leadAgency: client.leadAgency.trim() } : {}),
     ...(typeof client.starredLeadCheckUah === 'number'
       ? { starredLeadCheckUah: Math.round(client.starredLeadCheckUah) }
       : {}),

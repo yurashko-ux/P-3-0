@@ -13,11 +13,20 @@ export type CallbackReminderHistoryEntry = {
   note: string | null;
 };
 
-/** agency_1 = зірочка (Агенція 2), agency_2 = серце (Агенція 1), organic = без знака. */
-export type DirectLeadAgency = 'agency_1' | 'agency_2' | 'organic';
+/**
+ * Код джерела ліда (LeadSource.code): agency_1 / agency_2 / organic / src_….
+ * Раніше були лише три фіксовані коди; тепер будь-яке джерело з розділу «Джерела».
+ */
+export type DirectLeadAgency = string;
 
+/** Легасі-перевірка старих трьох кодів (ManyChat-знаки). Для нових src_* — див. isLeadAgencyCode. */
 export function isDirectLeadAgency(value: unknown): value is DirectLeadAgency {
   return value === 'agency_1' || value === 'agency_2' || value === 'organic';
+}
+
+/** Чи це непорожній код джерела (включно з кастомними src_*). */
+export function isLeadAgencyCode(value: unknown): value is string {
+  return typeof value === 'string' && value.trim().length > 0;
 }
 
 export type DirectClient = {
@@ -43,7 +52,7 @@ export type DirectClient = {
   firstContactDate: string; // ISO date - дата першого контакту
   /** false = не в KPI «нові ліди» (Binotel, імпорт/масові синки) */
   includeInNewLeadsKpi?: boolean;
-  /** ManyChat: agency_1 = *, agency_2 = 💙, organic = без знака. Порожнє = стара картка без мітки. */
+  /** Код джерела (LeadSource.code). Знак біля хмарки береться з LeadSource.mark. Порожнє = без мітки. */
   leadAgency?: DirectLeadAgency;
   /** ad_id з referral Meta (перше вхідне повідомлення). Є, а leadAgency порожній = лід з реклами, кабінет ще не призначено. */
   leadAdId?: string;
