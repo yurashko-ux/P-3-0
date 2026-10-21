@@ -25,10 +25,11 @@ export function LeadAgencyMark({ children, mark }: { children: ReactNode; mark?:
   const m = (mark || "").trim();
   if (!m) return <>{children}</>;
   return (
-    <span className="relative inline-flex">
+    <span className="relative inline-flex overflow-visible">
       {children}
+      {/* Трохи нижче (top-0), щоб не вилазити над хмаркою і не розтягувати рядок по висоті */}
       <span
-        className="pointer-events-none absolute -right-1.5 -top-1.5 leading-none"
+        className="pointer-events-none absolute -right-1 top-0 leading-none"
         style={{ fontSize: "10px" }}
         aria-hidden
       >
@@ -36,7 +37,6 @@ export function LeadAgencyMark({ children, mark }: { children: ReactNode; mark?:
       </span>
     </span>
   );
-}
 
 /** @deprecated Використовуйте LeadAgencyMark з mark із LeadSource. Залишено для сумісності. */
 export function LeadAgencyStar({ children }: { children: ReactNode }) {
