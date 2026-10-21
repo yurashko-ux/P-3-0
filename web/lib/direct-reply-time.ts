@@ -9,10 +9,11 @@ const REAL_WAIT_INCLUDES_NIGHT_MS = DAY_MS;
 export type ReplyMessage = {
   direction: string;
   receivedAt: Date | string;
-  /** manychat | instagram_graph | manual — для фільтра «надійних» вхідних. */
+  /** manychat | instagram_graph | instagram_reaction | manual — для фільтра «надійних» вхідних. */
   source?: string | null;
 };
 
+/** Вхідні реакції (лайки) не стартують очікування; вихідні знімають його як будь-яка відповідь салону. */
 const RELIABLE_REPLY_SOURCES = new Set(["instagram_graph", "manual"]);
 
 export type ThreadReplyTime = {

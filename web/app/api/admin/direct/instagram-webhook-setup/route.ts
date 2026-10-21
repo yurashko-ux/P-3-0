@@ -43,7 +43,7 @@ export async function POST(req: NextRequest) {
     callbackUrl: INSTAGRAM_WEBHOOK_URL,
     verifyToken,
     signatureCheck: Boolean(instagramAppSecret()),
-    fields: ["messages", "message_echoes", "messaging_referral"],
+    fields: ["messages", "message_reactions", "messaging_referral"],
   };
 
   if (!verifyToken || !userToken || !pageId) {
@@ -82,10 +82,14 @@ export async function POST(req: NextRequest) {
     { base: INSTAGRAM_GRAPH, label: "instagram.com" },
     { base: GRAPH, label: "facebook.com" },
   ];
-  // Пробуємо підписатись одразу і на referral (дані про рекламне походження ліда,
-  // ad_id/ads_context_data), і без нього — якщо Meta для цієї сторінки/токена
-  // відхилить messaging_referral, підписка все одно пройде хоча б на messages.
-  const fieldOptions = ["messages,messaging_referral", "messages"];
+  // Пробуємо підписатись на messages + реакції (лайки) + referral.
+  // Якщо Meta відхилить окремі поля — поступово спрощуємо список.
+  const fieldOptions = [
+    "messages,message_reactions,messaging_referral",
+    "messages,message_reactions",
+    "messages,messaging_referral",
+    "messages",
+  ];
   let usedFields = "";
   outer: for (const target of targets) {
     for (const fields of fieldOptions) {

@@ -1,4 +1,4 @@
-// Вхід Meta: нове повідомлення Direct або луна відповіді салону з застосунку Instagram.
+// Вхід Meta: нове повідомлення Direct, луна відповіді салону або реакція (лайк) на повідомлення.
 // Стару переписку не читаємо. Токен у відповідь не потрапляє.
 
 import { NextRequest, NextResponse } from "next/server";
@@ -44,6 +44,13 @@ type MessagingItem = {
     is_self?: boolean;
     attachments?: unknown[];
   };
+  /// Лайк / реакція на повідомлення (поле message_reactions у Meta).
+  reaction?: {
+    mid: string;
+    action: string;
+    reaction?: string;
+    emoji?: string;
+  };
   /// Контекст реклами (Click-to-Instagram-Direct): Meta присилає це автоматично, без наших налаштувань.
   referral?: {
     adId?: string;
@@ -88,9 +95,47 @@ function extractReferral(row: Record<string, unknown>): MessagingItem["referral"
   return { adId: String(adId), source, adTitle };
 }
 
+/** Реакція (лайк) на повідомлення — окремий messaging-елемент без message. */
+function extractReaction(row: Record<string, unknown>): MessagingItem["reaction"] | undefined {
+  const reaction = asRecord(row.reaction);
+  if (!reaction) return undefined;
+  const mid = reaction.mid ? String(reaction.mid) : "";
+  const action = typeof reaction.action === "string" ? reaction.action.trim() : "";
+  if (!mid || !action) return undefined;
+  return {
+    mid,
+    action,
+    reaction: typeof reaction.reaction === "string" ? reaction.reaction : undefined,
+    emoji: typeof reaction.emoji === "string" ? reaction.emoji : undefined,
+  };
+}
+
+function reactionDisplayText(reaction: NonNullable<MessagingItem["reaction"]>): string {
+  if (reaction.action === "unreact") return "➖ знято реакцію";
+  const emoji = (reaction.emoji || "").trim() || (reaction.reaction === "love" ? "❤️" : "");
+  return emoji ? `${emoji} реакція` : "❤️ реакція";
+}
+
 function normalizeItem(raw: unknown): MessagingItem | null {
   const row = asRecord(raw);
   if (!row) return null;
+  const reaction = extractReaction(row);
+  // Реакція — окрема подія: не плутати mid реакції з mid звичайного повідомлення.
+  if (reaction) {
+    const sender = asRecord(row.sender) || asRecord(row.from);
+    const recipient = asRecord(row.recipient) || asRecord(row.to);
+    return {
+      sender: sender
+        ? {
+            id: sender.id ? String(sender.id) : undefined,
+            username: typeof sender.username === "string" ? sender.username : undefined,
+          }
+        : undefined,
+      recipient: recipient?.id ? { id: String(recipient.id) } : undefined,
+      timestamp: row.timestamp as number | string | undefined,
+      reaction,
+    };
+  }
   const message = asRecord(row.message) || row;
   const text = typeof message.text === "string" ? message.text : typeof row.text === "string" ? row.text : undefined;
   const mid = message.mid || message.id || row.mid || row.id;
@@ -341,20 +386,34 @@ async function acceptMessage(input: {
   const senderId = input.item.sender?.id ? String(input.item.sender.id) : "";
   const recipientId = input.item.recipient?.id ? String(input.item.recipient.id) : "";
   const salonIds = new Set([input.entryId, input.igId, input.pageId].filter(Boolean));
+  const reaction = input.item.reaction;
   const outgoing =
     Boolean(input.item.message?.is_echo || input.item.message?.is_self) ||
     (Boolean(senderId) && salonIds.has(senderId));
   const otherId = outgoing ? recipientId : senderId;
-  const plainText = (input.item.message?.text || "").trim();
-  let files = readWebhookAttachments(input.item.message?.attachments);
+  const plainText = reaction ? "" : (input.item.message?.text || "").trim();
+  let files = reaction ? [] : readWebhookAttachments(input.item.message?.attachments);
   const receivedAt = messageTime(input.item.timestamp);
-  const messageId = input.item.message?.mid ? String(input.item.message.mid) : "";
-  if (files.length === 0 && messageId && input.pageToken && (attachmentList(input.item.message?.attachments).length > 0 || !plainText)) {
+  // mid реакції = id повідомлення, на яке лайкнули; унікальний ключ події — окремо.
+  const reactedMessageId = reaction?.mid || "";
+  const messageId = reaction
+    ? `reaction:${reaction.action}:${reaction.mid}:${senderId || "unknown"}`
+    : input.item.message?.mid
+      ? String(input.item.message.mid)
+      : "";
+  if (
+    !reaction &&
+    files.length === 0 &&
+    messageId &&
+    input.pageToken &&
+    (attachmentList(input.item.message?.attachments).length > 0 || !plainText)
+  ) {
     files = await loadGraphAttachmentUrls(messageId, input.pageToken);
   }
-  let text =
-    plainText ||
-    (files.length ? files.map((file) => mediaLabel(mediaKind(file.type, ""))).join("\n") : "(без тексту)");
+  let text = reaction
+    ? reactionDisplayText(reaction)
+    : plainText ||
+      (files.length ? files.map((file) => mediaLabel(mediaKind(file.type, ""))).join("\n") : "(без тексту)");
 
   let username = normalizeInstagram(input.item.sender?.username);
   let name: string | null = null;
@@ -368,7 +427,12 @@ async function acceptMessage(input: {
     }
   }
   if (!username && input.pageToken && input.pageId) {
-    username = await usernameFromLatestThread(input.pageId, input.pageToken, messageId, input.igUsername);
+    username = await usernameFromLatestThread(
+      input.pageId,
+      input.pageToken,
+      reactedMessageId || messageId,
+      input.igUsername,
+    );
   }
 
   let status = "отримано";
@@ -383,7 +447,8 @@ async function acceptMessage(input: {
     if (!client) {
       status = "отримано, клієнта в таблиці немає";
     } else {
-      if (!outgoing) {
+      // Реакції не вважаємо першим вхідним для джерела ліда.
+      if (!outgoing && !reaction) {
         const referralAdId = input.item.referral?.adId || null;
         if (referralAdId) {
           await recordLeadAdReferral(referralAdId, input.item.referral?.adTitle || null, username);
@@ -419,7 +484,24 @@ async function acceptMessage(input: {
         }
       }
       if (!dbMessageId) {
-        const saved = await saveIfNew(client.id, client.lastMessageAt, outgoing, text, messageId, username, receivedAt);
+        const saved = await saveIfNew(
+          client.id,
+          client.lastMessageAt,
+          outgoing,
+          text,
+          messageId,
+          username,
+          receivedAt,
+          reaction
+            ? {
+                kind: "reaction",
+                action: reaction.action,
+                emoji: reaction.emoji || null,
+                reaction: reaction.reaction || null,
+                reactedMessageId,
+              }
+            : undefined,
+        );
         status = saved.status;
         dbMessageId = saved.id;
       }
@@ -438,7 +520,11 @@ async function acceptMessage(input: {
     recipientId: recipientId || null,
     username,
     name,
-    status: input.item.referral?.adId ? `${status} · referral ad_id=${input.item.referral.adId}` : status,
+    status: reaction
+      ? `${status} · реакція ${reaction.action}${reactedMessageId ? ` mid=${reactedMessageId}` : ""}`
+      : input.item.referral?.adId
+        ? `${status} · referral ad_id=${input.item.referral.adId}`
+        : status,
   };
   await rememberInstagramWebhook(event);
   console.log("[instagram/webhook] Подія", {
@@ -447,6 +533,9 @@ async function acceptMessage(input: {
     status,
     hasText: Boolean(plainText),
     media: files.length,
+    reaction: reaction
+      ? { action: reaction.action, emoji: reaction.emoji || null, mid: reactedMessageId }
+      : null,
     referralAdId: input.item.referral?.adId || null,
     referralSource: input.item.referral?.source || null,
   });
@@ -499,40 +588,46 @@ async function saveIfNew(
   messageId: string,
   username: string,
   receivedAt: Date,
+  extraRaw?: Record<string, unknown>,
 ): Promise<{ status: string; id: string | null }> {
   const direction = outgoing ? "outgoing" : "incoming";
-  const nearby = await prisma.directMessage.findMany({
-    where: {
-      clientId,
-      direction,
-      receivedAt: {
-        gte: new Date(receivedAt.getTime() - DEDUP_WINDOW_MS),
-        lte: new Date(receivedAt.getTime() + DEDUP_WINDOW_MS),
+  // Реакції дедупликуємо лише за messageId (унікальний ключ події), не за текстом.
+  if (!extraRaw?.kind || extraRaw.kind !== "reaction") {
+    const nearby = await prisma.directMessage.findMany({
+      where: {
+        clientId,
+        direction,
+        receivedAt: {
+          gte: new Date(receivedAt.getTime() - DEDUP_WINDOW_MS),
+          lte: new Date(receivedAt.getTime() + DEDUP_WINDOW_MS),
+        },
       },
-    },
-    select: { id: true, text: true, source: true },
-    take: 20,
-  });
-  const duplicate = nearby.find((row) => {
-    if (row.source === "instagram_graph") return false;
-    return normText(row.text || "") === normText(text);
-  });
-  if (duplicate) {
-    return {
-      status: duplicate.source === "manychat" ? "вже є з ManyChat" : "вже є в історії",
-      id: duplicate.id,
-    };
+      select: { id: true, text: true, source: true },
+      take: 20,
+    });
+    const duplicate = nearby.find((row) => {
+      if (row.source === "instagram_graph") return false;
+      return normText(row.text || "") === normText(text);
+    });
+    if (duplicate) {
+      return {
+        status: duplicate.source === "manychat" ? "вже є з ManyChat" : "вже є в історії",
+        id: duplicate.id,
+      };
+    }
   }
 
+  const isReaction = extraRaw?.kind === "reaction";
   const created = await prisma.directMessage.create({
     data: {
       clientId,
       direction,
       text: text.slice(0, 4000),
       messageId: messageId || null,
-      source: "instagram_graph",
+      // Окремий source: вхідна реакція не стартує «очікує», вихідна (лайк салону) його знімає.
+      source: isReaction ? "instagram_reaction" : "instagram_graph",
       receivedAt,
-      rawData: JSON.stringify({ username }).slice(0, 2000),
+      rawData: JSON.stringify({ username, ...extraRaw }).slice(0, 2000),
     },
     select: { id: true },
   });

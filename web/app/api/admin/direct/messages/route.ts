@@ -164,7 +164,10 @@ async function countWaitingByAudience(audience: "clients" | "leads"): Promise<nu
         SELECT m.direction
         FROM "direct_messages" m
         WHERE m."clientId" = c.id
-          AND m.source IN ('instagram_graph', 'manual')
+          AND (
+            m.source IN ('instagram_graph', 'manual')
+            OR (m.source = 'instagram_reaction' AND LOWER(m.direction) = 'outgoing')
+          )
         ORDER BY m."receivedAt" DESC, m.id DESC
         LIMIT 1
       )) = 'incoming'

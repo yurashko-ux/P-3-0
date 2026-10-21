@@ -907,7 +907,7 @@ model DirectMessage {
   text         String // Текст повідомлення
   messageId    String? // ID повідомлення з ManyChat (якщо є)
   subscriberId String? // ID subscriber в ManyChat
-  source       String   @default("manychat") // 'manychat' | 'instagram_graph' | 'manual'
+  source       String   @default("manychat") // 'manychat' | 'instagram_graph' | 'instagram_reaction' | 'manual'
   receivedAt   DateTime @default(now()) // Коли отримано/відправлено
   rawData      String? // Повні дані webhook/API response (JSON)
   createdAt    DateTime @default(now())

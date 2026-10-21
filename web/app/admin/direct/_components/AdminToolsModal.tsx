@@ -981,7 +981,7 @@ export function AdminToolsModal({
             return (
               `Адреса для Meta:\n${data?.callbackUrl || ""}\n\n` +
               `Код перевірки:\n${data?.verifyToken || ""}\n\n` +
-              `Поля: messages, message_echoes, messaging_referral\n` +
+              `Поля: messages, message_reactions, messaging_referral\n` +
               `Сторінка підписана на: ${fields}\n` +
               `Instagram: ${data?.instagramUsername ? `@${data.instagramUsername}` : "—"}\n` +
               `Перевірка підпису: ${data?.signatureCheck ? "увімкнена" : "ще немає INSTAGRAM_APP_SECRET"}`
