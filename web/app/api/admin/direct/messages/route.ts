@@ -5,7 +5,9 @@ import { NextRequest, NextResponse } from "next/server";
 import { Prisma } from "@prisma/client";
 import { getAuthContext, hasPermission, verifyUserToken } from "@/lib/auth-rbac";
 import { isPreviewDeploymentHost } from "@/lib/auth-preview";
+import { sourcesWhereClause } from "@/lib/direct-channel-chat";
 import { enrichClientsWithChannelChatMeta } from "@/lib/direct-clients-channel-chat-meta";
+import { computeThreadReplyTime, type ThreadReplyTime } from "@/lib/direct-reply-time";
 import { prisma } from "@/lib/prisma";
 
 export const dynamic = "force-dynamic";
@@ -129,6 +131,27 @@ function leadWhere(): Prisma.DirectClientWhereInput {
   };
 }
 
+async function loadReplyTimes(ids: string[]): Promise<Map<string, ThreadReplyTime>> {
+  const map = new Map<string, ThreadReplyTime>();
+  if (!ids.length) return map;
+  const messages = await prisma.directMessage.findMany({
+    where: { clientId: { in: ids }, ...sourcesWhereClause("instagram") },
+    select: { clientId: true, direction: true, receivedAt: true },
+    orderBy: { receivedAt: "asc" },
+  });
+  const grouped = new Map<string, Array<{ direction: string; receivedAt: Date }>>();
+  for (const message of messages) {
+    const list = grouped.get(message.clientId) ?? [];
+    list.push({ direction: message.direction, receivedAt: message.receivedAt });
+    grouped.set(message.clientId, list);
+  }
+  for (const id of ids) {
+    map.set(id, computeThreadReplyTime(grouped.get(id) ?? []));
+  }
+  console.log(`[direct/messages] Час відповіді: карток ${ids.length}, повідомлень ${messages.length}`);
+  return map;
+}
+
 export async function GET(req: NextRequest) {
   if (!isAuthorized(req)) {
     return NextResponse.json({ ok: false, error: "Unauthorized" }, { status: 401 });
@@ -201,10 +224,21 @@ export async function GET(req: NextRequest) {
         ? sourceNameByCode.get(row.leadAgency) || SOURCE_NAME_FALLBACK[row.leadAgency] || row.leadAgency
         : null,
     }));
-    const withChat = await enrichClientsWithChannelChatMeta(mapped, "instagram");
+    const [withChat, replyTimes] = await Promise.all([
+      enrichClientsWithChannelChatMeta(mapped, "instagram"),
+      loadReplyTimes(orderedIds),
+    ]);
+    const withReply = withChat.map((client) => {
+      const reply = replyTimes.get(client.id);
+      return {
+        ...client,
+        replyAvgMinutes: reply?.replyAvgMinutes ?? null,
+        waitingSince: reply?.waitingSince ?? null,
+      };
+    });
 
     console.log(
-      `[direct/messages] audience=${audience} сторінка offset=${offset} limit=${limit} віддано=${withChat.length} з ${total}`
+      `[direct/messages] audience=${audience} сторінка offset=${offset} limit=${limit} віддано=${withReply.length} з ${total}`
     );
 
     return NextResponse.json({
@@ -212,7 +246,7 @@ export async function GET(req: NextRequest) {
       total,
       offset,
       limit,
-      clients: withChat,
+      clients: withReply,
     });
   } catch (err) {
     console.error("[direct/messages] Помилка:", err);

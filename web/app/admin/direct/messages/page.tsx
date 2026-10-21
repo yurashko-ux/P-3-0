@@ -16,6 +16,7 @@ import {
 } from "../_components/DirectClientTableRowBadges";
 import { formatDateDDMMYY } from "../_components/direct-client-table-formatters";
 import { LeadAgencyHeart, LeadAgencyPending, LeadAgencyStar, StateIcon } from "../_components/StateIcon";
+import { formatWaitingClock, waitingElapsedMs } from "@/lib/direct-reply-time";
 import { MessagesHistoryModal } from "../_components/MessagesHistoryModal";
 
 type MessageRow = {
@@ -34,6 +35,8 @@ type MessageRow = {
   spent?: number | null;
   visits?: number | null;
   altegioClientId?: number | null;
+  replyAvgMinutes?: number | null;
+  waitingSince?: string | null;
 };
 
 type Audience = "clients" | "leads";
@@ -124,6 +127,22 @@ function ClientSpendBadge({ spent, altegioClientId }: { spent?: number | null; a
   return <SpendCircleBadge />;
 }
 
+function ReplyTimeCell({ row, now }: { row: MessageRow; now: number }) {
+  if (row.waitingSince) {
+    const since = new Date(row.waitingSince).getTime();
+    const clock = formatWaitingClock(waitingElapsedMs(since, now));
+    return (
+      <span className="whitespace-nowrap font-medium text-amber-700" title="Клієнт чекає відповіді">
+        Очікує {clock}
+      </span>
+    );
+  }
+  if (typeof row.replyAvgMinutes === "number") {
+    return <span className="tabular-nums">{row.replyAvgMinutes} хв</span>;
+  }
+  return null;
+}
+
 function useConversationList(audience: Audience) {
   const [rows, setRows] = useState<MessageRow[]>([]);
   const [total, setTotal] = useState(0);
@@ -183,6 +202,8 @@ function ConversationTable({
   onOpenMessages,
   onOpenAvatar,
   showClientMarks,
+  showLeadBadge,
+  now,
 }: {
   title: string;
   emptyText: string;
@@ -196,6 +217,9 @@ function ConversationTable({
   onOpenMessages: (row: MessageRow) => void;
   onOpenAvatar: (avatar: { src: string; username: string }) => void;
   showClientMarks?: boolean;
+  /** Синя крапка ліда, або зірка витрат якщо є сума в Altegio. */
+  showLeadBadge?: boolean;
+  now: number;
 }) {
   const scrollRef = useRef<HTMLDivElement>(null);
   useEffect(() => {
@@ -245,6 +269,7 @@ function ConversationTable({
                   <th>Ім&apos;я</th>
                   <th>Instagram</th>
                   <th className="text-center">Inst</th>
+                  <th>Відповідь</th>
                   <th className="text-center">Стан</th>
                 </tr>
               </thead>
@@ -291,7 +316,7 @@ function ConversationTable({
                       </td>
                       <td style={cellStyle}>
                         <span className="inline-flex items-center gap-1">
-                          {showClientMarks ? (
+                          {showClientMarks || showLeadBadge ? (
                             <ClientSpendBadge spent={c.spent} altegioClientId={c.altegioClientId} />
                           ) : null}
                           <span className="inline-flex flex-col items-start leading-none">
@@ -349,6 +374,9 @@ function ConversationTable({
                           ) : null}
                         </span>
                       </td>
+                      <td style={cellStyle}>
+                        <ReplyTimeCell row={c} now={now} />
+                      </td>
                       <td className="text-center !overflow-visible" style={cellStyle}>
                         <LeadSourceCloud
                           firstContactDate={c.firstContactDate}
@@ -381,7 +409,13 @@ export default function DirectMessagesPage() {
   const leads = useConversationList("leads");
   const [messagesClient, setMessagesClient] = useState<MessageRow | null>(null);
   const [fullscreenAvatar, setFullscreenAvatar] = useState<{ src: string; username: string } | null>(null);
+  const [now, setNow] = useState(() => Date.now());
   const todayKyiv = kyivDayFromISO(new Date().toISOString());
+
+  useEffect(() => {
+    const timer = window.setInterval(() => setNow(Date.now()), 1000);
+    return () => window.clearInterval(timer);
+  }, []);
 
   return (
     <div className="w-full max-w-full min-w-0 px-2 pb-2 pt-1">
@@ -404,11 +438,13 @@ export default function DirectMessagesPage() {
           error={clients.error}
           onLoadMore={() => void clients.load(clients.rows.length, true)}
           todayKyiv={todayKyiv}
+          now={now}
           onOpenMessages={setMessagesClient}
           onOpenAvatar={setFullscreenAvatar}
         />
         <ConversationTable
           title="Ліди"
+          showLeadBadge
           emptyText="Лідів без консультації немає."
           rows={leads.rows}
           total={leads.total}
@@ -417,6 +453,7 @@ export default function DirectMessagesPage() {
           error={leads.error}
           onLoadMore={() => void leads.load(leads.rows.length, true)}
           todayKyiv={todayKyiv}
+          now={now}
           onOpenMessages={setMessagesClient}
           onOpenAvatar={setFullscreenAvatar}
         />
