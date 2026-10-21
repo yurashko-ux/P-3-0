@@ -7,6 +7,7 @@ import { useState, useEffect, useMemo, useRef } from 'react';
 import type { DirectChatStatus, DirectClient, DirectClientChatStatusLog } from '@/lib/direct-types';
 import type { DirectChatChannel } from '@/lib/direct-channel-chat';
 import { CHANNEL_CHAT_STATUS_FIELDS } from '@/lib/direct-channel-chat';
+import { kyivDayFromISO } from '@/lib/altegio/records-grouping';
 import { ChatBadgeIcon, CHAT_BADGE_KEYS } from './ChatBadgeIcon';
 import { hasNormalInstagramUsername } from '@/lib/altegio/client-utils';
 import { resolveDisplayInstagramUsername } from '@/lib/direct-message-handle';
@@ -131,14 +132,10 @@ export function MessagesHistoryModal({
 
   const NEW_STATUS_NAME_MAX_LEN = 24;
 
+  /** День групи — завжди Europe/Kyiv (не локаль браузера). */
   function dayKeyFromDateString(dateString: string): string {
     try {
-      const d = new Date(dateString);
-      if (isNaN(d.getTime())) return '';
-      const y = d.getFullYear();
-      const m = String(d.getMonth() + 1).padStart(2, '0');
-      const day = String(d.getDate()).padStart(2, '0');
-      return `${y}-${m}-${day}`;
+      return kyivDayFromISO(dateString) || '';
     } catch {
       return '';
     }
@@ -148,12 +145,14 @@ export function MessagesHistoryModal({
     try {
       const [y, m, d] = dayKey.split('-').map((x) => Number(x));
       if (!y || !m || !d) return dayKey;
-      const dt = new Date(y, m - 1, d);
-      const now = new Date();
-      const sameYear = dt.getFullYear() === now.getFullYear();
+      // Полудень UTC, щоб Intl з timeZone=Kyiv не зсунув календарний день.
+      const dt = new Date(Date.UTC(y, m - 1, d, 12, 0, 0));
+      const todayKyiv = kyivDayFromISO(new Date().toISOString());
+      const sameYear = todayKyiv ? todayKyiv.slice(0, 4) === String(y) : true;
       return new Intl.DateTimeFormat('uk-UA', {
         day: 'numeric',
         month: 'long',
+        timeZone: 'Europe/Kyiv',
         ...(sameYear ? {} : { year: 'numeric' }),
       }).format(dt);
     } catch {
@@ -165,7 +164,11 @@ export function MessagesHistoryModal({
     try {
       const dt = new Date(dateString);
       if (isNaN(dt.getTime())) return '';
-      return dt.toLocaleTimeString('uk-UA', { hour: '2-digit', minute: '2-digit' });
+      return dt.toLocaleTimeString('uk-UA', {
+        hour: '2-digit',
+        minute: '2-digit',
+        timeZone: 'Europe/Kyiv',
+      });
     } catch {
       return '';
     }

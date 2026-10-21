@@ -505,7 +505,12 @@ export default function DirectMessagesPage() {
         client={messagesClient as unknown as DirectClient | null}
         isOpen={messagesClient != null}
         channel="instagram"
-        onClose={() => setMessagesClient(null)}
+        onClose={() => {
+          setMessagesClient(null);
+          // Після відповіді салону в історії — одразу оновити «Очікують» і пігулки.
+          void clients.load(0, false);
+          void leads.load(0, false);
+        }}
       />
     </div>
   );
