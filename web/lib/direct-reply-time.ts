@@ -103,13 +103,20 @@ export function waitingElapsedMs(waitingSinceMs: number, nowMs: number): number 
   return businessReplyMs(waitingSinceMs, nowMs);
 }
 
-/** гг:хх:сс — години можуть бути > 24. */
+/**
+ * гг:хх:сс; якщо повних годин ≥ 24 (вже без викидання ночі у waitingElapsedMs) —
+ * кожні 24 год → 1 день: «1д. 00:59:59» з 24:59:59.
+ */
 export function formatWaitingClock(elapsedMs: number): string {
   const totalSec = Math.max(0, Math.floor(elapsedMs / 1000));
-  const hours = Math.floor(totalSec / 3600);
-  const minutes = Math.floor((totalSec % 3600) / 60);
-  const seconds = totalSec % 60;
-  return `${pad2(hours)}:${pad2(minutes)}:${pad2(seconds)}`;
+  const days = Math.floor(totalSec / 86400);
+  const rest = totalSec % 86400;
+  const hours = Math.floor(rest / 3600);
+  const minutes = Math.floor((rest % 3600) / 60);
+  const seconds = rest % 60;
+  const clock = `${pad2(hours)}:${pad2(minutes)}:${pad2(seconds)}`;
+  if (days <= 0) return clock;
+  return `${days}д. ${clock}`;
 }
 
 export function computeThreadReplyTime(messages: ReplyMessage[]): ThreadReplyTime {
