@@ -559,6 +559,11 @@ export default function DirectMessagesPage() {
         isOpen={messagesClient != null}
         channel="instagram"
         contactKind={messagesContactKind === "leads" ? "lead" : "client"}
+        onHistoryLoaded={() => {
+          // Щойно історія показала нове (у т.ч. вихідне салону) — підтягнути порядок у списках.
+          void clients.load(0, false, { silent: true });
+          void leads.load(0, false, { silent: true });
+        }}
         onClose={() => {
           setMessagesClient(null);
           // Після відповіді салону в історії — одразу оновити «Очікують» і пігулки (без мигання).

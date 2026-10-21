@@ -79,8 +79,10 @@ function clientWhere(): Prisma.DirectClientWhereInput {
 }
 
 /**
- * Сторінка в порядку останнього Instagram-повідомлення.
- * Нове повідомлення піднімає і клієнта, і ліда — те саме, що дата під лічильником Inst.
+ * Сторінка в порядку останньої Instagram-активності (вхідні + вихідні салону).
+ * GREATEST з lastMessageAt на клієнті — страховка, якщо луна (echo) уже оновила поле,
+ * а підзапит по messages ще «не бачить» рядок (лаг репліки / гонка з вебхуком).
+ * Реакції (лайки) навмисно не рухають картку.
  */
 async function findIdsByLastInstagramMessage(
   audience: "clients" | "leads",
@@ -108,12 +110,15 @@ async function findIdsByLastInstagramMessage(
       AND c."instagramUsername" NOT LIKE 'altegio_%'
       AND c."instagramUsername" NOT LIKE '\\_\\_no_ig\\_%'
       AND ${audienceSql}
-    ORDER BY (
-      SELECT MAX(m."receivedAt")
-      FROM "direct_messages" m
-      WHERE m."clientId" = c.id
-        AND LOWER(COALESCE(m.source, 'manychat')) NOT IN ('telegram', 'telegram_campaign', 'instagram_reaction')
-    ) DESC NULLS LAST, c.id ASC
+    ORDER BY GREATEST(
+      COALESCE(c."lastMessageAt", TIMESTAMPTZ 'epoch'),
+      COALESCE((
+        SELECT MAX(m."receivedAt")
+        FROM "direct_messages" m
+        WHERE m."clientId" = c.id
+          AND LOWER(COALESCE(m.source, 'manychat')) NOT IN ('telegram', 'telegram_campaign', 'instagram_reaction')
+      ), TIMESTAMPTZ 'epoch')
+    ) DESC, c.id ASC
     LIMIT ${limit} OFFSET ${offset}
   `);
   return rows.map((row) => row.id);

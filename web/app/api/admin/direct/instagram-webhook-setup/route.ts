@@ -43,7 +43,8 @@ export async function POST(req: NextRequest) {
     callbackUrl: INSTAGRAM_WEBHOOK_URL,
     verifyToken,
     signatureCheck: Boolean(instagramAppSecret()),
-    fields: ["messages", "message_reactions", "messaging_referral"],
+    // message_echoes — вихідні з застосунку Instagram (салон відповів у телефоні).
+    fields: ["messages", "message_echoes", "message_reactions", "messaging_referral"],
   };
 
   if (!verifyToken || !userToken || !pageId) {
@@ -82,10 +83,13 @@ export async function POST(req: NextRequest) {
     { base: INSTAGRAM_GRAPH, label: "instagram.com" },
     { base: GRAPH, label: "facebook.com" },
   ];
-  // Пробуємо підписатись на messages + реакції (лайки) + referral.
+  // Пробуємо підписатись на messages + echoes (вихідні салону) + реакції + referral.
   // Якщо Meta відхилить окремі поля — поступово спрощуємо список.
   const fieldOptions = [
+    "messages,message_echoes,message_reactions,messaging_referral",
+    "messages,message_echoes,message_reactions",
     "messages,message_reactions,messaging_referral",
+    "messages,message_echoes",
     "messages,message_reactions",
     "messages,messaging_referral",
     "messages",

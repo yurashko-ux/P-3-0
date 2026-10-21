@@ -48,6 +48,8 @@ interface MessagesHistoryModalProps {
   channel?: DirectChatChannel;
   /** У Переписках: лід → синій кружечок, клієнт → бейдж витрат. */
   contactKind?: 'client' | 'lead';
+  /** Після завантаження історії — щоб Переписки одразу підтягнули порядок (вихідні салону). */
+  onHistoryLoaded?: (info: { clientId: string; lastMessageAt: string | null }) => void;
   onChatStatusUpdated?: (update: {
     clientId: string;
     chatStatusId: string | null;
@@ -163,6 +165,7 @@ export function MessagesHistoryModal({
   onClose,
   channel = 'instagram',
   contactKind = 'client',
+  onHistoryLoaded,
   onChatStatusUpdated,
 }: MessagesHistoryModalProps) {
   const statusFields = CHANNEL_CHAT_STATUS_FIELDS[channel];
@@ -407,6 +410,10 @@ export function MessagesHistoryModal({
       if (dbMessages.length > 0) {
         setMessages(dbMessages);
         setError(null);
+        onHistoryLoaded?.({
+          clientId: client.id,
+          lastMessageAt: dbMessages[0]?.receivedAt || null,
+        });
       }
 
       // 2) Recover реального IG (паралельно з відображенням історії)
