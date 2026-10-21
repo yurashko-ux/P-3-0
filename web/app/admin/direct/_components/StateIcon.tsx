@@ -37,6 +37,7 @@ export function LeadAgencyMark({ children, mark }: { children: ReactNode; mark?:
       </span>
     </span>
   );
+}
 
 /** @deprecated Використовуйте LeadAgencyMark з mark із LeadSource. Залишено для сумісності. */
 export function LeadAgencyStar({ children }: { children: ReactNode }) {
