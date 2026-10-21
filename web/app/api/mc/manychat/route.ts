@@ -433,7 +433,9 @@ const AGENCY_HEART = '💙';
 
 /**
  * agency_1 = у тексті є * (Агенція 2). agency_2 = є 💙 (Агенція 1).
- * Поле agency з ManyChat головне, зокрема Organic. Без знака — organic, не друга агенція.
+ * Поле agency з ManyChat головне (якщо ManyChat явно шле Organic — приймаємо).
+ * Без поля і без знака — null («не визначено»), органіку більше не ставимо автоматично
+ * (лише вручну з дропдауна в Direct).
  * Вихідні повідомлення салону не мітять картку.
  */
 function resolveIncomingLeadAgency(
@@ -447,7 +449,7 @@ function resolveIncomingLeadAgency(
   if (!text) return null;
   if (text.includes('*')) return 'agency_1';
   if (text.includes(AGENCY_HEART)) return 'agency_2';
-  return 'organic';
+  return null;
 }
 
 function normalisePayload(payload: unknown, rawText?: string | null): LatestMessage {

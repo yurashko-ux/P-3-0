@@ -68,8 +68,12 @@ export async function ensureLeadSources(): Promise<LeadSourceRow[]> {
   return rows.map(toRow);
 }
 
-/** Довший знак перемагає, якщо в тексті збіглось кілька. */
-export async function matchLeadSourceCode(text: string): Promise<string> {
+/**
+ * Довший знак перемагає, якщо в тексті збіглось кілька.
+ * Органіку сюди більше не підставляємо — її ставлять лише вручну з дропдауна.
+ * Повертає null, якщо знака агенції в тексті немає.
+ */
+export async function matchLeadSourceCode(text: string): Promise<string | null> {
   const sources = await ensureLeadSources();
   const marks = sources
     .filter((source) => source.enabled && source.kind === "ads" && source.mark)
@@ -77,8 +81,7 @@ export async function matchLeadSourceCode(text: string): Promise<string> {
   for (const source of marks) {
     if (text.includes(source.mark || "")) return source.code;
   }
-  const organic = sources.find((source) => source.enabled && source.kind === "organic");
-  return organic?.code || "organic";
+  return null;
 }
 
 /**
@@ -120,23 +123,30 @@ export async function assignLeadSourceFromFirstIncoming(input: {
   });
   if (prior > 0) return null;
 
-  // Пріоритет: ad_id конкретного оголошення (найнадійніше, не залежить від тексту) → знак у тексті → органіка.
-  // Якщо ad_id є, але ще не призначений кабінету — лишаємо leadAgency = null («не визначено», а не
-  // «органіка»), щоб таких лідів було видно в UI й не загубити їх серед справжньої органіки.
-  // Коли admin призначить кабінет цьому ad_id, setLeadAdIdSource() донарахує leadAgency автоматично.
-  let code: string | null = null;
+  // Пріоритет: ad_id → (опційно) знак у тексті для рекламних джерел.
+  // Органіку НЕ ставимо автоматично — лише вручну з дропдауна («Джерело (вручну)»).
+  // Без ad_id і без знака — leadAgency лишається null («не визначено», хмаринка без значка).
+  // Якщо ad_id є, але кабінет ще не призначено — теж null; setLeadAdIdSource() донарахує пізніше.
   if (input.adId) {
-    code = await resolveLeadSourceByAdId(input.adId);
-  } else {
-    code = await matchLeadSourceCode(input.text);
+    const code = await resolveLeadSourceByAdId(input.adId);
+    await prisma.directClient.update({
+      where: { id: input.clientId },
+      data: { leadAdId: input.adId, ...(code ? { leadAgency: code } : {}) },
+    });
+    console.log("[leads] Джерело за першим вхідним (ad_id)", {
+      clientId: input.clientId,
+      code,
+      adId: input.adId,
+    });
+    return code;
   }
 
-  await prisma.directClient.update({
-    where: { id: input.clientId },
-    data: { leadAgency: code, ...(input.adId ? { leadAdId: input.adId } : {}) },
+  // Без ad_id не чіпаємо leadAgency — навіть якщо в тексті є старий «знак» агенції.
+  // Джерело для таких лідів задає маркетолог вручну після звірки з Lead Center.
+  console.log("[leads] Перше вхідне без ad_id — leadAgency не визначено (очікуємо ручний вибір)", {
+    clientId: input.clientId,
   });
-  console.log("[leads] Джерело за першим вхідним", { clientId: input.clientId, code, adId: input.adId || null });
-  return code;
+  return null;
 }
 
 export type LeadAdIdRow = {
