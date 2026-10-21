@@ -2,7 +2,7 @@
 
 "use client";
 
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
 import Link from "next/link";
 import { kyivDayFromISO } from "@/lib/altegio/records-grouping";
 import { hasNormalInstagramUsername } from "@/lib/altegio/client-utils";
@@ -16,7 +16,7 @@ import {
 } from "../_components/DirectClientTableRowBadges";
 import { formatDateDDMMYY } from "../_components/direct-client-table-formatters";
 import { LeadAgencyMark, LeadAgencyPending, StateIcon } from "../_components/StateIcon";
-import { formatWaitingClock, waitingElapsedMs } from "@/lib/direct-reply-time";
+import { formatReplyAvgMinutes, formatWaitingClock, waitingElapsedMs } from "@/lib/direct-reply-time";
 import { MessagesHistoryModal } from "../_components/MessagesHistoryModal";
 
 type MessageRow = {
@@ -127,10 +127,37 @@ function ClientSpendBadge({ spent, altegioClientId }: { spent?: number | null; a
   return <SpendCircleBadge />;
 }
 
+/** Клік по бейджу → профіль Instagram (замість окремої колонки). */
+function InstagramBadgeLink({
+  username,
+  children,
+}: {
+  username?: string | null;
+  children: ReactNode;
+}) {
+  const raw = (username || "").replace(/^@/, "").trim();
+  if (!hasNormalInstagramUsername(raw)) {
+    return <span className="inline-flex shrink-0">{children}</span>;
+  }
+  return (
+    <a
+      href={`https://instagram.com/${encodeURIComponent(raw)}`}
+      target="_blank"
+      rel="noopener noreferrer"
+      className="inline-flex shrink-0 hover:opacity-80"
+      title={`Відкрити @${raw} в Instagram`}
+      onClick={(e) => e.stopPropagation()}
+    >
+      {children}
+    </a>
+  );
+}
+
 /** Колір кнопки «Очистити» у фільтрах Direct (Tailwind pink-500 / #EC4899). */
 const WAITING_INST_PILL_CLASS = "bg-pink-500 text-white";
 
 function ReplyTimeCell({ row, now }: { row: MessageRow; now: number }) {
+  // Годинник лише для незакритих розмов (клієнт чекає нашої відповіді).
   if (row.waitingSince) {
     const since = new Date(row.waitingSince).getTime();
     const clock = formatWaitingClock(waitingElapsedMs(since, now));
@@ -141,9 +168,11 @@ function ReplyTimeCell({ row, now }: { row: MessageRow; now: number }) {
     );
   }
   if (typeof row.replyAvgMinutes === "number") {
-    // Середній час відповіді теж у гг:хх:сс.
-    const clock = formatWaitingClock(Math.max(0, row.replyAvgMinutes) * 60_000);
-    return <span className="tabular-nums">{clock}</span>;
+    return (
+      <span className="tabular-nums" title="Середній час відповіді">
+        {formatReplyAvgMinutes(row.replyAvgMinutes)}
+      </span>
+    );
   }
   return null;
 }
@@ -238,6 +267,7 @@ function ConversationTable({
   showClientMarks,
   showLeadBadge,
   now,
+  contactKind,
 }: {
   title: string;
   emptyText: string;
@@ -252,9 +282,10 @@ function ConversationTable({
   onOpenMessages: (row: MessageRow) => void;
   onOpenAvatar: (avatar: { src: string; username: string }) => void;
   showClientMarks?: boolean;
-  /** Синя крапка ліда, або зірка витрат якщо є сума в Altegio. */
+  /** Для лідів — завжди синій кружечок (не бейдж витрат). */
   showLeadBadge?: boolean;
   now: number;
+  contactKind: Audience;
 }) {
   const scrollRef = useRef<HTMLDivElement>(null);
   useEffect(() => {
@@ -301,13 +332,12 @@ function ConversationTable({
           ) : rows.length === 0 ? (
             <p className="py-6 text-center text-gray-500">{emptyText}</p>
           ) : (
-            <table className="table table-xs !w-max [&_th]:whitespace-nowrap [&_th]:py-0.5 [&_th]:text-[11px] [&_td]:whitespace-nowrap [&_td]:py-0.5 [&_td]:text-[11px] [&_td]:!overflow-visible">
+            <table className="table table-xs w-auto [&_th]:whitespace-nowrap [&_th]:py-0.5 [&_th]:text-[11px] [&_td]:whitespace-nowrap [&_td]:py-0.5 [&_td]:text-[11px] [&_td]:!overflow-visible">
               <thead className="sticky top-0 z-10 bg-base-100">
                 <tr>
                   <th className="w-8 text-right">№</th>
                   <th className="w-8" />
                   <th>Ім&apos;я</th>
-                  <th>Instagram</th>
                   <th className="text-center">Inst</th>
                   <th>Відповідь</th>
                   <th className="text-center">Стан</th>
@@ -340,6 +370,12 @@ function ConversationTable({
                     : usernameRaw === "NO INSTAGRAM" || usernameRaw.startsWith("no_instagram_")
                       ? "NO"
                       : null;
+                  const badge =
+                    showLeadBadge || contactKind === "leads" ? (
+                      <LeadBadgeIcon />
+                    ) : showClientMarks ? (
+                      <ClientSpendBadge spent={c.spent} altegioClientId={c.altegioClientId} />
+                    ) : null;
                   return (
                     <tr key={c.id} title={waiting ? "Клієнт чекає відповіді" : undefined}>
                       <td className="w-8 text-right tabular-nums text-gray-400" style={cellStyle}>
@@ -359,8 +395,8 @@ function ConversationTable({
                       </td>
                       <td style={cellStyle}>
                         <span className="inline-flex items-center gap-1">
-                          {showClientMarks || showLeadBadge ? (
-                            <ClientSpendBadge spent={c.spent} altegioClientId={c.altegioClientId} />
+                          {badge ? (
+                            <InstagramBadgeLink username={c.instagramUsername}>{badge}</InstagramBadgeLink>
                           ) : null}
                           <span className="inline-flex flex-col items-start leading-none">
                             <Link
@@ -379,20 +415,6 @@ function ConversationTable({
                             ) : null}
                           </span>
                         </span>
-                      </td>
-                      <td style={cellStyle}>
-                        {username ? (
-                          <a
-                            href={`https://instagram.com/${username}`}
-                            target="_blank"
-                            rel="noopener noreferrer"
-                            className="link link-primary"
-                          >
-                            @{username}
-                          </a>
-                        ) : (
-                          <span>—</span>
-                        )}
                       </td>
                       <td className="text-center" style={cellStyle}>
                         <span className="inline-flex flex-col items-center gap-0.5">
@@ -452,6 +474,7 @@ export default function DirectMessagesPage() {
   const clients = useConversationList("clients");
   const leads = useConversationList("leads");
   const [messagesClient, setMessagesClient] = useState<MessageRow | null>(null);
+  const [messagesContactKind, setMessagesContactKind] = useState<Audience>("clients");
   const [fullscreenAvatar, setFullscreenAvatar] = useState<{ src: string; username: string } | null>(null);
   const [now, setNow] = useState(() => Date.now());
   const todayKyiv = kyivDayFromISO(new Date().toISOString());
@@ -460,6 +483,11 @@ export default function DirectMessagesPage() {
     const timer = window.setInterval(() => setNow(Date.now()), 1000);
     return () => window.clearInterval(timer);
   }, []);
+
+  const openMessages = (kind: Audience) => (row: MessageRow) => {
+    setMessagesContactKind(kind);
+    setMessagesClient(row);
+  };
 
   return (
     <div className="w-full max-w-full min-w-0 px-2 pb-2 pt-1">
@@ -480,6 +508,7 @@ export default function DirectMessagesPage() {
         <ConversationTable
           title="Клієнти"
           showClientMarks
+          contactKind="clients"
           emptyText="Клієнтів із перепискою немає."
           rows={clients.rows}
           total={clients.total}
@@ -490,12 +519,13 @@ export default function DirectMessagesPage() {
           onLoadMore={() => void clients.load(clients.rows.length, true)}
           todayKyiv={todayKyiv}
           now={now}
-          onOpenMessages={setMessagesClient}
+          onOpenMessages={openMessages("clients")}
           onOpenAvatar={setFullscreenAvatar}
         />
         <ConversationTable
           title="Ліди"
           showLeadBadge
+          contactKind="leads"
           emptyText="Лідів без консультації немає."
           rows={leads.rows}
           total={leads.total}
@@ -506,7 +536,7 @@ export default function DirectMessagesPage() {
           onLoadMore={() => void leads.load(leads.rows.length, true)}
           todayKyiv={todayKyiv}
           now={now}
-          onOpenMessages={setMessagesClient}
+          onOpenMessages={openMessages("leads")}
           onOpenAvatar={setFullscreenAvatar}
         />
       </div>
@@ -528,6 +558,7 @@ export default function DirectMessagesPage() {
         client={messagesClient as unknown as DirectClient | null}
         isOpen={messagesClient != null}
         channel="instagram"
+        contactKind={messagesContactKind === "leads" ? "lead" : "client"}
         onClose={() => {
           setMessagesClient(null);
           // Після відповіді салону в історії — одразу оновити «Очікують» і пігулки (без мигання).

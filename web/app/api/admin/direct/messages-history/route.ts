@@ -257,7 +257,9 @@ export async function GET(req: NextRequest) {
             username: m.client.instagramUsername || undefined,
             direction: m.direction,
             id: m.id,
+            messageId: m.messageId || null,
             source: m.source,
+            rawData: m.rawData || null,
             media: m.media.map((file) => ({
               id: file.id,
               kind: file.kind,

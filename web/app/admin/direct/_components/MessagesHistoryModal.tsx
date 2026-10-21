@@ -11,7 +11,8 @@ import { kyivDayFromISO } from '@/lib/altegio/records-grouping';
 import { ChatBadgeIcon, CHAT_BADGE_KEYS } from './ChatBadgeIcon';
 import { hasNormalInstagramUsername } from '@/lib/altegio/client-utils';
 import { resolveDisplayInstagramUsername } from '@/lib/direct-message-handle';
-import { ClientNameWithLoyalty } from '@/app/admin/_components/ClientNameWithLoyalty';
+import { ClientSpendLoyaltyBadge } from '@/app/admin/_components/ClientNameWithLoyalty';
+import { LeadBadgeIcon } from './DirectClientTableRowBadges';
 import { getFullName } from './direct-client-table-formatters';
 
 interface MessageMedia {
@@ -28,10 +29,15 @@ interface Message {
   username?: string;
   direction?: 'incoming' | 'outgoing';
   id?: string;
+  /** Instagram mid (для привʼязки реакцій). */
+  messageId?: string | null;
   type?: string;
   source?: string;
+  rawData?: string | null;
   messageKind?: 'system' | 'manual';
   media?: MessageMedia[];
+  /** Емодзі реакції на це повідомлення (після злиття з instagram_reaction). */
+  reactionEmoji?: string | null;
 }
 
 interface MessagesHistoryModalProps {
@@ -40,6 +46,8 @@ interface MessagesHistoryModalProps {
   onClose: () => void;
   /** Канал переписки: instagram (за замовч.) або telegram */
   channel?: DirectChatChannel;
+  /** У Переписках: лід → синій кружечок, клієнт → бейдж витрат. */
+  contactKind?: 'client' | 'lead';
   onChatStatusUpdated?: (update: {
     clientId: string;
     chatStatusId: string | null;
@@ -52,6 +60,72 @@ interface MessagesHistoryModalProps {
     lastActivityAt?: string;
     lastActivityKeys?: string[];
   }) => void;
+}
+
+function parseReactionRaw(rawData: string | null | undefined): {
+  kind?: string;
+  action?: string;
+  emoji?: string | null;
+  reaction?: string | null;
+  reactedMessageId?: string;
+} | null {
+  if (!rawData) return null;
+  try {
+    const parsed = JSON.parse(rawData) as Record<string, unknown>;
+    if (!parsed || typeof parsed !== 'object') return null;
+    return {
+      kind: typeof parsed.kind === 'string' ? parsed.kind : undefined,
+      action: typeof parsed.action === 'string' ? parsed.action : undefined,
+      emoji: typeof parsed.emoji === 'string' ? parsed.emoji : null,
+      reaction: typeof parsed.reaction === 'string' ? parsed.reaction : null,
+      reactedMessageId:
+        typeof parsed.reactedMessageId === 'string' ? parsed.reactedMessageId : undefined,
+    };
+  } catch {
+    return null;
+  }
+}
+
+/** Реакції Meta мають mid повідомлення — чіпляємо емодзі до бульбашки, окремі рядки ховаємо. */
+function mergeReactionsOntoMessages(list: Message[]): Message[] {
+  const emojiByMid = new Map<string, string | null>();
+  const chrono = [...list].sort(
+    (a, b) => new Date(a.receivedAt).getTime() - new Date(b.receivedAt).getTime(),
+  );
+  for (const row of chrono) {
+    const isReaction =
+      String(row.source || '').toLowerCase() === 'instagram_reaction' ||
+      parseReactionRaw(row.rawData)?.kind === 'reaction';
+    if (!isReaction) continue;
+    const raw = parseReactionRaw(row.rawData);
+    const mid = (raw?.reactedMessageId || '').trim();
+    if (!mid) continue;
+    if (raw?.action === 'unreact') {
+      emojiByMid.set(mid, null);
+      continue;
+    }
+    const emoji =
+      (raw?.emoji || '').trim() ||
+      (raw?.reaction === 'love' ? '❤️' : '') ||
+      '👍';
+    emojiByMid.set(mid, emoji);
+  }
+
+  return list
+    .filter((row) => {
+      const isReaction =
+        String(row.source || '').toLowerCase() === 'instagram_reaction' ||
+        parseReactionRaw(row.rawData)?.kind === 'reaction';
+      return !isReaction;
+    })
+    .map((row) => {
+      const mid = (row.messageId || '').trim();
+      const emoji = mid ? emojiByMid.get(mid) : undefined;
+      return {
+        ...row,
+        reactionEmoji: emoji || null,
+      };
+    });
 }
 
 function MessageMediaView({ files }: { files?: MessageMedia[] }) {
@@ -88,6 +162,7 @@ export function MessagesHistoryModal({
   isOpen,
   onClose,
   channel = 'instagram',
+  contactKind = 'client',
   onChatStatusUpdated,
 }: MessagesHistoryModalProps) {
   const statusFields = CHANNEL_CHAT_STATUS_FIELDS[channel];
@@ -180,8 +255,13 @@ export function MessagesHistoryModal({
     );
   }
 
+  const displayMessages = useMemo(
+    () => mergeReactionsOntoMessages(Array.isArray(messages) ? messages : []),
+    [messages],
+  );
+
   const groupedMessages = useMemo(() => {
-    const arr = Array.isArray(messages) ? messages : [];
+    const arr = displayMessages;
     const out: Array<{ dayKey: string; items: Message[] }> = [];
     let lastKey = '';
     for (const msg of arr) {
@@ -194,7 +274,7 @@ export function MessagesHistoryModal({
       }
     }
     return out;
-  }, [messages]);
+  }, [displayMessages]);
 
   function toMsSafe(dateString: string | null | undefined): number | null {
     try {
@@ -662,19 +742,44 @@ export function MessagesHistoryModal({
                 {channel === 'telegram' ? 'Telegram — історія' : 'Instagram — історія'}
               </h3>
               <p className="text-sm text-gray-600 mt-1">
-                <ClientNameWithLoyalty
-                  name={clientName}
-                  spent={client.spent}
-                  visits={client.visits}
-                  nameClassName="text-sm text-gray-600"
-                />
                 {(() => {
                   const ig = resolveDisplayInstagramUsername(
                     displayIg || client.instagramUsername,
                     displayIg,
                   );
-                  if (!hasNormalInstagramUsername(ig)) return null;
-                  return <span>{` (@${ig})`}</span>;
+                  const igHandle = String(ig || '').replace(/^@/, '');
+                  const igOk = hasNormalInstagramUsername(igHandle);
+                  const badge =
+                    contactKind === 'lead' ? (
+                      <LeadBadgeIcon size={16} />
+                    ) : (
+                      <ClientSpendLoyaltyBadge spent={client.spent} size="sm" />
+                    );
+                  const badgeNode = igOk ? (
+                    <a
+                      href={`https://instagram.com/${encodeURIComponent(igHandle)}`}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="inline-flex shrink-0 hover:opacity-80"
+                      title={`Відкрити @${igHandle} в Instagram`}
+                    >
+                      {badge}
+                    </a>
+                  ) : (
+                    <span className="inline-flex shrink-0">{badge}</span>
+                  );
+                  return (
+                    <span className="inline-flex items-center gap-1.5">
+                      {badgeNode}
+                      <span>
+                        {clientName}
+                        {contactKind === 'client' && client.visits != null ? (
+                          <span className="opacity-80">{` (${client.visits})`}</span>
+                        ) : null}
+                        {igOk ? <span>{` (@${igHandle})`}</span> : null}
+                      </span>
+                    </span>
+                  );
                 })()}
               </p>
               {channel === 'telegram' && telegramStats ? (
@@ -707,7 +812,7 @@ export function MessagesHistoryModal({
                     Спробувати ще раз
                   </button>
                 </div>
-              ) : messages.length === 0 ? (
+              ) : displayMessages.length === 0 ? (
                 <div className="text-center p-8 text-gray-500">
                   <p className="mb-2">Немає повідомлень для відображення</p>
                   {diagnostics && (
@@ -764,6 +869,7 @@ export function MessagesHistoryModal({
                             const isAnchorByTime = Boolean(
                               !isAnchor && anchorMs != null && msgMs != null && Math.abs(msgMs - anchorMs) <= 2000
                             );
+                            const reactionEmoji = (message.reactionEmoji || '').trim();
                             return (
                               <div key={key} className={`flex items-end gap-2 ${isOutgoing ? 'justify-end' : 'justify-start'}`}>
                                 {!isOutgoing ? (
@@ -773,13 +879,13 @@ export function MessagesHistoryModal({
                                   />
                                 ) : null}
                                 <div
-                                  className={`max-w-[80%] rounded-2xl px-3 py-2 text-sm whitespace-pre-wrap ${
+                                  className={`relative max-w-[80%] mb-2 rounded-2xl px-3 py-2 text-sm whitespace-pre-wrap ${
                                     isOutgoing
                                       ? isSystemOutgoing
                                         ? 'bg-sky-100 text-sky-900'
                                         : 'bg-lime-100 text-lime-900'
                                       : 'bg-gray-100 text-gray-900'
-                                  } relative`}
+                                  }`}
                                   title={message.receivedAt ? formatDate(message.receivedAt) : ''}
                                 >
                                   {isAnchor || isAnchorByTime ? (
@@ -804,6 +910,17 @@ export function MessagesHistoryModal({
                                     <div className="mt-1 flex justify-end">
                                       <span className="text-[10px] text-gray-500">{timeHHMM}</span>
                                     </div>
+                                  ) : null}
+                                  {reactionEmoji ? (
+                                    <span
+                                      className={`absolute -bottom-2 z-10 inline-flex h-5 min-w-[1.25rem] items-center justify-center rounded-full border border-base-300 bg-base-100 px-1 text-[13px] leading-none shadow-sm ${
+                                        isOutgoing ? 'left-1' : 'right-1'
+                                      }`}
+                                      title="Реакція Instagram"
+                                      aria-label={`Реакція ${reactionEmoji}`}
+                                    >
+                                      {reactionEmoji}
+                                    </span>
                                   ) : null}
                                 </div>
                               </div>

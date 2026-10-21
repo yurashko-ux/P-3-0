@@ -124,6 +124,12 @@ export function formatWaitingClock(elapsedMs: number): string {
   return `${days}д. ${clock}`;
 }
 
+/** Середній час відповіді для Переписок: «1 хв.», «23 хв.». */
+export function formatReplyAvgMinutes(minutes: number): string {
+  const n = Math.max(0, Math.round(Number(minutes) || 0));
+  return `${n} хв.`;
+}
+
 export function computeThreadReplyTime(messages: ReplyMessage[]): ThreadReplyTime {
   const sorted = messages
     .map((message) => ({
