@@ -132,8 +132,8 @@ function ReplyTimeCell({ row, now }: { row: MessageRow; now: number }) {
     const since = new Date(row.waitingSince).getTime();
     const clock = formatWaitingClock(waitingElapsedMs(since, now));
     return (
-      <span className="whitespace-nowrap font-medium text-amber-700" title="Клієнт чекає відповіді">
-        Очікує {clock}
+      <span className="whitespace-nowrap font-medium tabular-nums text-amber-900" title="Клієнт чекає відповіді">
+        {clock}
       </span>
     );
   }
@@ -297,8 +297,13 @@ function ConversationTable({
                     : usernameRaw === "NO INSTAGRAM" || usernameRaw.startsWith("no_instagram_")
                       ? "NO"
                       : null;
+                  const waiting = Boolean(c.waitingSince);
                   return (
-                    <tr key={c.id}>
+                    <tr
+                      key={c.id}
+                      className={waiting ? "bg-orange-100 [&_td]:bg-orange-100" : undefined}
+                      title={waiting ? "Клієнт чекає відповіді" : undefined}
+                    >
                       <td className="w-8 text-right tabular-nums text-gray-400" style={cellStyle}>
                         {index + 1}
                       </td>
