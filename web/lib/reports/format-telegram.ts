@@ -2,10 +2,6 @@
 
 import type { DailyOpsReportData } from "@/lib/reports/daily-ops";
 import { formatNameListForTelegram } from "@/lib/reports/daily-ops-extras";
-import {
-  formatLeadInstagramTelegramLine,
-  type LeadInstagramLink,
-} from "@/lib/reports/lead-instagram-links";
 
 function formatKyivDateLabel(kyivDay: string): string {
   const [, m, d] = kyivDay.split("-");
@@ -66,25 +62,23 @@ function formatActiveBasePeople(
   return `${countHtml}${namesHtml}`;
 }
 
-function formatLeadSourceLines(
-  title: string,
-  count: number,
-  leads: LeadInstagramLink[],
-): string[] {
-  const lines = [`${title}: <b>${count}</b>`];
-  for (const lead of leads) lines.push(formatLeadInstagramTelegramLine(lead));
-  return lines;
+function formatLeadSourceCountLine(name: string, mark: string | null | undefined, count: number): string {
+  const markPart = (mark || "").trim() ? ` ${mark!.trim()}` : "";
+  return `👤 Ліди ${escapeTelegramHtml(name)}${markPart}: <b>${count}</b>`;
 }
 
 export function formatDailyReportTelegram(data: DailyOpsReportData): string {
   const missedNames = formatNameListForTelegram(data.callsMissedNames);
+  const leadSourceLines = [
+    ...data.newLeadSourceCounts.map((row) => formatLeadSourceCountLine(row.name, row.mark, row.count)),
+    formatLeadSourceCountLine("Не визначено", null, data.newLeadsUndefinedCount),
+    `Загалом: <b>${data.newLeadsCount}</b>`,
+  ];
 
   return [
     `<b>📊 Щоденний звіт · ${formatKyivDateLabel(data.kyivDay)}</b>`,
     "────────────────",
-    ...formatLeadSourceLines("👤 Ліди Агенція 1♥", data.newLeadsAgency1Count, data.newLeadsAgency1Links),
-    ...formatLeadSourceLines("👤 Ліди Агенція 2*", data.newLeadsAgency2Count, data.newLeadsAgency2Links),
-    ...formatLeadSourceLines("👤 Ліди Organic", data.newLeadsOrganicCount, data.newLeadsOrganicLinks),
+    ...leadSourceLines,
     `Записалось на консультацію: <b>${data.leadsRecordsCount}</b>`,
     `Прийшло на консультацію: <b>${data.consultationRealized}</b>`,
     `Нові клієнти: <b>${data.newClientsCount}</b>`,

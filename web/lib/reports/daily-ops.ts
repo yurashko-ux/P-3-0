@@ -20,20 +20,24 @@ import {
 import type { DirectClient } from "@/lib/direct-types";
 import { countLeadsStatsRecordsOnKyivDay } from "@/lib/direct-leads-stats-filters";
 import { fetchFinanceSummary } from "@/lib/altegio/analytics";
-import { leadInstagramLink, type LeadInstagramLink } from "@/lib/reports/lead-instagram-links";
+import { ensureLeadSources } from "@/lib/lead-sources";
+
+/** Рядок джерела нових лідів у щоденному звіті (лише кількість, без IG-юзернеймів). */
+export type DailyOpsLeadSourceCount = {
+  code: string;
+  name: string;
+  mark: string | null;
+  count: number;
+};
 
 export type DailyOpsReportData = {
   kyivDay: string;
+  /** Загалом нових лідів за день (KPI). */
   newLeadsCount: number;
-  /** Нові ліди з серцем (agency_2, Агенція 1). */
-  newLeadsAgency1Count: number;
-  newLeadsAgency1Links: LeadInstagramLink[];
-  /** Нові ліди зі зірочкою (agency_1, Агенція 2). */
-  newLeadsAgency2Count: number;
-  newLeadsAgency2Links: LeadInstagramLink[];
-  /** Нові ліди без знака агенції. Решта офіційного newLeadsCount після двох агенцій. */
-  newLeadsOrganicCount: number;
-  newLeadsOrganicLinks: LeadInstagramLink[];
+  /** Усі активні джерела + їх кількість нових лідів за день (у т.ч. 0). */
+  newLeadSourceCounts: DailyOpsLeadSourceCount[];
+  /** Нові ліди без leadAgency («не визначено»). */
+  newLeadsUndefinedCount: number;
   /** Колонка «Записів» у таблиці «Ліди» (F4 за день). */
   leadsRecordsCount: number;
   consultationCreated: number;
@@ -139,47 +143,38 @@ export async function buildDailyOpsReport(options?: {
 
   const paidCreated = countPaidRecordsCreatedOnKyivDay(clients as DirectClient[], kyivDay);
   const newLeadsCount = today.newLeadsCount ?? 0;
-  const heartRows: Array<LeadInstagramLink & { sortKey: string }> = [];
-  const starRows: Array<LeadInstagramLink & { sortKey: string }> = [];
-  const organicRows: Array<LeadInstagramLink & { sortKey: string }> = [];
+
+  // Розбивка нових лідів по активних джерелах + «не визначено» (без IG-юзернеймів).
+  const countByCode = new Map<string, number>();
+  let newLeadsUndefinedCount = 0;
   for (const client of clients) {
     if (!clientCountsTowardNewLeadsKpi(client)) continue;
     if (toKyivDay(client.firstContactDate) !== kyivDay) continue;
-    const link = leadInstagramLink(client);
-    // Органіка — лише явно проставлене leadAgency=organic (вручну).
-    // Невизначені (null) і кастомні src_* сюди НЕ потрапляють.
-    if (client.leadAgency === "agency_2") heartRows.push(link);
-    else if (client.leadAgency === "agency_1") starRows.push(link);
-    else if (client.leadAgency === "organic") organicRows.push(link);
+    const code = (client.leadAgency || "").trim();
+    if (!code) {
+      newLeadsUndefinedCount += 1;
+      continue;
+    }
+    countByCode.set(code, (countByCode.get(code) || 0) + 1);
   }
-  const newLeadsAgency2Count = Math.min(starRows.length, newLeadsCount);
-  const newLeadsAgency1Count = Math.min(
-    heartRows.length,
-    Math.max(0, newLeadsCount - newLeadsAgency2Count),
-  );
-  // Раніше «органіка» = усі інші нові ліди (залишок). Тепер — лише ручна органіка.
-  const newLeadsOrganicCount = Math.min(
-    organicRows.length,
-    Math.max(0, newLeadsCount - newLeadsAgency2Count - newLeadsAgency1Count),
-  );
-  const takeLeadLinks = (
-    rows: Array<LeadInstagramLink & { sortKey: string }>,
-    count: number,
-  ): LeadInstagramLink[] =>
-    rows
-      .sort((a, b) => a.sortKey.localeCompare(b.sortKey))
-      .slice(0, Math.max(0, count))
-      .map(({ username, href }) => ({ username, href }));
+  const activeSources = (await ensureLeadSources()).filter((source) => source.enabled);
+  const knownCodes = new Set(activeSources.map((source) => source.code));
+  const newLeadSourceCounts: DailyOpsLeadSourceCount[] = activeSources.map((source) => ({
+    code: source.code,
+    name: source.name,
+    mark: source.mark,
+    count: countByCode.get(source.code) || 0,
+  }));
+  // Ліди з кодом вимкненого/видаленого джерела — у «Не визначено», щоб Загалом збігався.
+  for (const [code, count] of countByCode) {
+    if (!knownCodes.has(code)) newLeadsUndefinedCount += count;
+  }
 
   return {
     kyivDay,
     newLeadsCount,
-    newLeadsAgency1Count,
-    newLeadsAgency1Links: takeLeadLinks(heartRows, newLeadsAgency1Count),
-    newLeadsAgency2Count,
-    newLeadsAgency2Links: takeLeadLinks(starRows, newLeadsAgency2Count),
-    newLeadsOrganicCount,
-    newLeadsOrganicLinks: takeLeadLinks(organicRows, newLeadsOrganicCount),
+    newLeadSourceCounts,
+    newLeadsUndefinedCount,
     leadsRecordsCount: countLeadsStatsRecordsOnKyivDay(clients as DirectClient[], kyivDay),
     consultationCreated: today.consultationCreated ?? 0,
     consultationRealized: today.consultationRealized ?? 0,
