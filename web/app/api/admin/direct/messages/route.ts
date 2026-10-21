@@ -131,11 +131,18 @@ function leadWhere(): Prisma.DirectClientWhereInput {
   };
 }
 
+/** ManyChat писав і відповіді салону як incoming, тож пару «місяці тому → перша відповідь» не беремо. */
+const RELIABLE_REPLY_SOURCES = ["instagram_graph", "manual"] as const;
+
 async function loadReplyTimes(ids: string[]): Promise<Map<string, ThreadReplyTime>> {
   const map = new Map<string, ThreadReplyTime>();
   if (!ids.length) return map;
   const messages = await prisma.directMessage.findMany({
-    where: { clientId: { in: ids }, ...sourcesWhereClause("instagram") },
+    where: {
+      clientId: { in: ids },
+      ...sourcesWhereClause("instagram"),
+      source: { in: [...RELIABLE_REPLY_SOURCES] },
+    },
     select: { clientId: true, direction: true, receivedAt: true },
     orderBy: { receivedAt: "asc" },
   });
