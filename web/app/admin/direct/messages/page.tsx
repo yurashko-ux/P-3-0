@@ -127,18 +127,23 @@ function ClientSpendBadge({ spent, altegioClientId }: { spent?: number | null; a
   return <SpendCircleBadge />;
 }
 
+/** Колір кнопки «Очистити» у фільтрах Direct (Tailwind pink-500 / #EC4899). */
+const WAITING_INST_PILL_CLASS = "bg-pink-500 text-white";
+
 function ReplyTimeCell({ row, now }: { row: MessageRow; now: number }) {
   if (row.waitingSince) {
     const since = new Date(row.waitingSince).getTime();
     const clock = formatWaitingClock(waitingElapsedMs(since, now));
     return (
-      <span className="whitespace-nowrap font-medium tabular-nums text-amber-900" title="Клієнт чекає відповіді">
+      <span className="whitespace-nowrap font-medium tabular-nums" title="Клієнт чекає відповіді">
         {clock}
       </span>
     );
   }
   if (typeof row.replyAvgMinutes === "number") {
-    return <span className="tabular-nums">{row.replyAvgMinutes} хв</span>;
+    // Середній час відповіді теж у гг:хх:сс.
+    const clock = formatWaitingClock(Math.max(0, row.replyAvgMinutes) * 60_000);
+    return <span className="tabular-nums">{clock}</span>;
   }
   return null;
 }
@@ -146,6 +151,7 @@ function ReplyTimeCell({ row, now }: { row: MessageRow; now: number }) {
 function useConversationList(audience: Audience) {
   const [rows, setRows] = useState<MessageRow[]>([]);
   const [total, setTotal] = useState(0);
+  const [waitingCount, setWaitingCount] = useState(0);
   const [loading, setLoading] = useState(true);
   const [loadingMore, setLoadingMore] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -170,10 +176,14 @@ function useConversationList(audience: Audience) {
         }
         const next = (data.clients || []) as MessageRow[];
         setTotal(typeof data.total === "number" ? data.total : next.length);
+        if (typeof data.waitingCount === "number") setWaitingCount(data.waitingCount);
         setRows((prev) => (append ? [...prev, ...next] : next));
       } catch (err) {
         setError(err instanceof Error ? err.message : "Помилка завантаження");
-        if (!append) setRows([]);
+        if (!append) {
+          setRows([]);
+          setWaitingCount(0);
+        }
       } finally {
         setLoading(false);
         setLoadingMore(false);
@@ -186,7 +196,7 @@ function useConversationList(audience: Audience) {
     void load(0, false);
   }, [load]);
 
-  return { rows, total, loading, loadingMore, error, load };
+  return { rows, total, waitingCount, loading, loadingMore, error, load };
 }
 
 function ConversationTable({
@@ -194,6 +204,7 @@ function ConversationTable({
   emptyText,
   rows,
   total,
+  waitingCount,
   loading,
   loadingMore,
   error,
@@ -207,6 +218,7 @@ function ConversationTable({
 }: {
   title: string;
   emptyText: string;
+  waitingCount: number;
   rows: MessageRow[];
   total: number;
   loading: boolean;
@@ -243,9 +255,14 @@ function ConversationTable({
 
   return (
     <section className="min-w-0">
-      <div className="mb-1 flex items-baseline gap-1 px-1">
-        <h2 className="text-xs font-semibold leading-none">{title}</h2>
-        <span className="text-[11px] tabular-nums text-gray-500">{total}</span>
+      <div className="mb-1 flex flex-wrap items-baseline gap-x-2 gap-y-0.5 px-1">
+        <div className="inline-flex items-baseline gap-1">
+          <h2 className="text-xs font-semibold leading-none">{title}</h2>
+          <span className="text-[11px] tabular-nums text-gray-500">{total}</span>
+        </div>
+        <span className="text-[11px] leading-none text-gray-600" title="Розмови, де клієнт чекає відповіді">
+          Очікують: <span className="tabular-nums font-semibold text-pink-600">{waitingCount}</span>
+        </span>
       </div>
       {error ? (
         <div className="alert alert-error mb-1 py-1 text-sm">
@@ -282,8 +299,11 @@ function ConversationTable({
                   const totalMessages = typeof c.messagesTotal === "number" ? c.messagesTotal : 0;
                   const needs = Boolean(c.chatNeedsAttention);
                   const hasStatus = Boolean((c.chatStatusId || "").trim());
-                  const countClass =
-                    totalMessages === 0
+                  const waiting = Boolean(c.waitingSince);
+                  // Очікує відповіді — пігулка Inst як кнопка «Очистити» у фільтрах Direct (pink-500).
+                  const countClass = waiting
+                    ? WAITING_INST_PILL_CLASS
+                    : totalMessages === 0
                       ? "bg-gray-200 text-gray-900"
                       : needs || !hasStatus
                         ? "bg-[#2AABEE] text-white"
@@ -297,13 +317,8 @@ function ConversationTable({
                     : usernameRaw === "NO INSTAGRAM" || usernameRaw.startsWith("no_instagram_")
                       ? "NO"
                       : null;
-                  const waiting = Boolean(c.waitingSince);
                   return (
-                    <tr
-                      key={c.id}
-                      className={waiting ? "bg-orange-100 [&_td]:bg-orange-100" : undefined}
-                      title={waiting ? "Клієнт чекає відповіді" : undefined}
-                    >
+                    <tr key={c.id} title={waiting ? "Клієнт чекає відповіді" : undefined}>
                       <td className="w-8 text-right tabular-nums text-gray-400" style={cellStyle}>
                         {index + 1}
                       </td>
@@ -430,6 +445,12 @@ export default function DirectMessagesPage() {
           ← Direct
         </Link>
         <h1 className="px-1 text-sm font-semibold leading-none">Переписки</h1>
+        <Link
+          href="/admin/direct/stats/consultations"
+          className="btn btn-outline btn-xs ml-auto h-6 min-h-6 px-1.5 text-[10px]"
+        >
+          Ліди
+        </Link>
       </div>
 
       <div className="flex flex-wrap items-start gap-2">
@@ -439,6 +460,7 @@ export default function DirectMessagesPage() {
           emptyText="Клієнтів із перепискою немає."
           rows={clients.rows}
           total={clients.total}
+          waitingCount={clients.waitingCount}
           loading={clients.loading}
           loadingMore={clients.loadingMore}
           error={clients.error}
@@ -454,6 +476,7 @@ export default function DirectMessagesPage() {
           emptyText="Лідів без консультації немає."
           rows={leads.rows}
           total={leads.total}
+          waitingCount={leads.waitingCount}
           loading={leads.loading}
           loadingMore={leads.loadingMore}
           error={leads.error}

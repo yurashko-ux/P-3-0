@@ -134,6 +134,45 @@ function leadWhere(): Prisma.DirectClientWhereInput {
 /** ManyChat писав і відповіді салону як incoming, тож пару «місяці тому → перша відповідь» не беремо. */
 const RELIABLE_REPLY_SOURCES = ["instagram_graph", "manual"] as const;
 
+/**
+ * Скільки розмов зараз чекають відповіді: останнє надійне Instagram-повідомлення — incoming.
+ * Та сама логіка, що waitingSince у computeThreadReplyTime (без ManyChat-шуму).
+ */
+async function countWaitingByAudience(audience: "clients" | "leads"): Promise<number> {
+  const audienceSql =
+    audience === "clients"
+      ? Prisma.sql`(
+          (c."consultationBookingDate" IS NOT NULL AND c."consultationDeletedInAltegio" = false)
+          OR c."paidServiceDate" IS NOT NULL
+        )`
+      : Prisma.sql`(
+          c."includeInNewLeadsKpi" = true
+          AND c."paidServiceDate" IS NULL
+          AND (c."consultationBookingDate" IS NULL OR c."consultationDeletedInAltegio" = true)
+        )`;
+  const rows = await prisma.$queryRaw<{ n: bigint | number }[]>(Prisma.sql`
+    SELECT COUNT(*)::int AS n
+    FROM "direct_clients" c
+    WHERE c.state IS DISTINCT FROM 'binotel-lead'
+      AND c."instagramUsername" NOT LIKE 'binotel_%'
+      AND c."instagramUsername" NOT LIKE 'missing_instagram_%'
+      AND c."instagramUsername" NOT LIKE 'no_instagram_%'
+      AND c."instagramUsername" NOT LIKE 'altegio_%'
+      AND c."instagramUsername" NOT LIKE '\\_\\_no_ig\\_%'
+      AND ${audienceSql}
+      AND (
+        SELECT m.direction
+        FROM "direct_messages" m
+        WHERE m."clientId" = c.id
+          AND m.source IN ('instagram_graph', 'manual')
+        ORDER BY m."receivedAt" DESC, m.id DESC
+        LIMIT 1
+      ) = 'incoming'
+  `);
+  const n = rows[0]?.n;
+  return typeof n === "bigint" ? Number(n) : Number(n) || 0;
+}
+
 async function loadReplyTimes(ids: string[]): Promise<Map<string, ThreadReplyTime>> {
   const map = new Map<string, ThreadReplyTime>();
   if (!ids.length) return map;
@@ -182,10 +221,12 @@ export async function GET(req: NextRequest) {
     const audience = audienceParam;
     const where = audience === "clients" ? clientWhere() : leadWhere();
 
-    const [total, orderedIds, sources] = await Promise.all([
+    const [total, orderedIds, sources, waitingCount] = await Promise.all([
       prisma.directClient.count({ where }),
       findIdsByLastInstagramMessage(audience, offset, limit),
       prisma.leadSource.findMany({ select: { code: true, name: true, mark: true } }),
+      // Лічильник «Очікують» лише на першій сторінці — на «завантажити ще» не дублюємо важкий COUNT.
+      offset === 0 ? countWaitingByAudience(audience) : Promise.resolve(null as number | null),
     ]);
     const unordered = orderedIds.length
       ? await prisma.directClient.findMany({
@@ -255,6 +296,7 @@ export async function GET(req: NextRequest) {
       total,
       offset,
       limit,
+      ...(waitingCount != null ? { waitingCount } : {}),
       clients: withReply,
     });
   } catch (err) {

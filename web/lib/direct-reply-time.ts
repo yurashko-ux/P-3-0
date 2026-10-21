@@ -22,15 +22,6 @@ function pad2(n: number): string {
   return String(n).padStart(2, "0");
 }
 
-/** 1 добу, 2–4 доби, 5 діб, 21 добу. */
-export function dayWordAccusative(days: number): string {
-  const mod10 = days % 10;
-  const mod100 = days % 100;
-  if (mod10 === 1 && mod100 !== 11) return "добу";
-  if (mod10 >= 2 && mod10 <= 4 && (mod100 < 12 || mod100 > 14)) return "доби";
-  return "діб";
-}
-
 type KyivParts = { year: number; month: number; day: number; hour: number; minute: number; second: number };
 
 function kyivParts(utcMs: number): KyivParts {
@@ -112,17 +103,13 @@ export function waitingElapsedMs(waitingSinceMs: number, nowMs: number): number 
   return businessReplyMs(waitingSinceMs, nowMs);
 }
 
-/** 2.15.03 або 1 добу 2.15.03. Години — остача після діб. */
+/** гг:хх:сс — години можуть бути > 24. */
 export function formatWaitingClock(elapsedMs: number): string {
   const totalSec = Math.max(0, Math.floor(elapsedMs / 1000));
-  const days = Math.floor(totalSec / 86400);
-  const rest = totalSec % 86400;
-  const hours = Math.floor(rest / 3600);
-  const minutes = Math.floor((rest % 3600) / 60);
-  const seconds = rest % 60;
-  const clock = `${hours}.${pad2(minutes)}.${pad2(seconds)}`;
-  if (days <= 0) return clock;
-  return `${days} ${dayWordAccusative(days)} ${clock}`;
+  const hours = Math.floor(totalSec / 3600);
+  const minutes = Math.floor((totalSec % 3600) / 60);
+  const seconds = totalSec % 60;
+  return `${pad2(hours)}:${pad2(minutes)}:${pad2(seconds)}`;
 }
 
 export function computeThreadReplyTime(messages: ReplyMessage[]): ThreadReplyTime {
