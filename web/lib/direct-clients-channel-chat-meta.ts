@@ -54,6 +54,12 @@ export async function enrichClientsWithChannelChatMeta<T extends { id: string }>
     const checkedField = fields.checkedAt;
     const setField = fields.setAt;
 
+    // Реакції (лайки) лишаються в історії, але не рухають дату/порядок у Переписках.
+    const activityFilter =
+      channel === 'instagram'
+        ? { AND: [sourceFilter, { NOT: { source: 'instagram_reaction' } }] }
+        : sourceFilter;
+
     const [totalCounts, lastIncoming, lastAnyMessage] = await Promise.all([
       prisma.directMessage.groupBy({
         by: ['clientId'],
@@ -62,12 +68,12 @@ export async function enrichClientsWithChannelChatMeta<T extends { id: string }>
       }),
       prisma.directMessage.groupBy({
         by: ['clientId'],
-        where: { clientId: { in: ids }, direction: 'incoming', ...sourceFilter },
+        where: { clientId: { in: ids }, direction: 'incoming', ...activityFilter },
         _max: { receivedAt: true },
       }),
       prisma.directMessage.groupBy({
         by: ['clientId'],
-        where: { clientId: { in: ids }, ...sourceFilter },
+        where: { clientId: { in: ids }, ...activityFilter },
         _max: { receivedAt: true },
       }),
     ]);

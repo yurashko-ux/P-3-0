@@ -112,7 +112,7 @@ async function findIdsByLastInstagramMessage(
       SELECT MAX(m."receivedAt")
       FROM "direct_messages" m
       WHERE m."clientId" = c.id
-        AND LOWER(COALESCE(m.source, 'manychat')) NOT IN ('telegram', 'telegram_campaign')
+        AND LOWER(COALESCE(m.source, 'manychat')) NOT IN ('telegram', 'telegram_campaign', 'instagram_reaction')
     ) DESC NULLS LAST, c.id ASC
     LIMIT ${limit} OFFSET ${offset}
   `);

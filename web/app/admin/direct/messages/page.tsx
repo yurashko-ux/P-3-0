@@ -198,6 +198,22 @@ function useConversationList(audience: Audience) {
     void load(0, false);
   }, [load]);
 
+  // Поки сторінка відкрита — підтягуємо нові повідомлення, щоб картка піднімалась без F5.
+  useEffect(() => {
+    const refresh = () => {
+      if (document.visibilityState === "hidden") return;
+      void load(0, false);
+    };
+    const timer = window.setInterval(refresh, 15_000);
+    window.addEventListener("focus", refresh);
+    document.addEventListener("visibilitychange", refresh);
+    return () => {
+      window.clearInterval(timer);
+      window.removeEventListener("focus", refresh);
+      document.removeEventListener("visibilitychange", refresh);
+    };
+  }, [load]);
+
   return { rows, total, waitingCount, loading, loadingMore, error, load };
 }
 
