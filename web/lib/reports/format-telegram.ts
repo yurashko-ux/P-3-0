@@ -70,9 +70,9 @@ function formatLeadSourceCountLine(name: string, mark: string | null | undefined
 export function formatDailyReportTelegram(data: DailyOpsReportData): string {
   const missedNames = formatNameListForTelegram(data.callsMissedNames);
   const leadSourceLines = [
+    `👤 Ліди Загалом: <b>${data.newLeadsCount}</b>`,
     ...data.newLeadSourceCounts.map((row) => formatLeadSourceCountLine(row.name, row.mark, row.count)),
     formatLeadSourceCountLine("Не визначено", null, data.newLeadsUndefinedCount),
-    `Загалом: <b>${data.newLeadsCount}</b>`,
   ];
 
   return [
