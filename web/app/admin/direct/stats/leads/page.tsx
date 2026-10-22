@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
 import Link from "next/link";
 import { invalidateLeadSourcesMapCache } from "@/app/admin/direct/_components/useLeadSourcesMap";
 
@@ -132,6 +132,51 @@ function MarkField({
   );
 }
 
+function EditorWindow({
+  title,
+  saving,
+  error,
+  onClose,
+  onSave,
+  saveDisabled,
+  children,
+}: {
+  title: string;
+  saving: boolean;
+  error: string;
+  onClose: () => void;
+  onSave: () => void;
+  saveDisabled?: boolean;
+  children: ReactNode;
+}) {
+  return (
+    <div
+      className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4"
+      onMouseDown={onClose}
+    >
+      <div
+        className="w-full max-w-md rounded-lg bg-white p-4 shadow-xl"
+        role="dialog"
+        aria-modal="true"
+        aria-label={title}
+        onMouseDown={(event) => event.stopPropagation()}
+      >
+        <div className="mb-3 text-base font-semibold">{title}</div>
+        {children}
+        {error ? <div className="mt-2 text-sm text-red-600">{error}</div> : null}
+        <div className="mt-4 flex justify-end gap-2">
+          <button className="btn btn-ghost btn-sm" type="button" onClick={onClose} disabled={saving}>
+            Скасувати
+          </button>
+          <button className="btn btn-primary btn-sm" type="button" onClick={onSave} disabled={saving || saveDisabled}>
+            Зберегти
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 /** Знак біля хмарки: зберігаємо після вибору емодзі або коли поле втрачає фокус. */
 function CloudMarkCell({
   sourceId,
@@ -150,7 +195,7 @@ function CloudMarkCell({
   return (
     <MarkField
       value={value}
-      inputClassName="input input-bordered input-xs w-16"
+      inputClassName="input input-bordered input-xs !w-16 shrink-0"
       onChange={(next) => {
         setValue(next);
         if (next === "" || MARK_EMOJI_OPTIONS.includes(next)) onCommit(next);
@@ -168,9 +213,6 @@ function AdIdsPanel({ sources }: { sources: Source[] }) {
   const [error, setError] = useState("");
   const [savingId, setSavingId] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
-  // Згорнуто за замовчуванням: список може розростись, тому ховаємо його під кнопку,
-  // щоб не розтягувати сторінку. Лічильник непризначених показуємо завжди, навіть згорнутим.
-  const [expanded, setExpanded] = useState(false);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -214,89 +256,54 @@ function AdIdsPanel({ sources }: { sources: Source[] }) {
   const resolved = rows.filter((r) => r.sourceCode);
 
   return (
-    <div className="mb-6">
-      <button
-        type="button"
-        className="flex w-full items-center justify-between rounded border px-3 py-2 text-left hover:bg-gray-50"
-        onClick={() => setExpanded((v) => !v)}
-      >
-        <span className="flex items-center gap-2">
-          <span className="text-lg font-semibold">Оголошення Meta (ad_id)</span>
-          {unresolved.length > 0 ? (
-            <span className="badge badge-warning badge-sm">{unresolved.length} нові</span>
-          ) : null}
-          {rows.length > 0 ? <span className="text-xs text-gray-400">всього {rows.length}</span> : null}
-        </span>
-        <span className="text-sm text-gray-500">{expanded ? "Згорнути ▲" : "Показати ▼"}</span>
-      </button>
-      {expanded ? (
-        <div className="mt-2">
-          <p className="mb-3 text-sm text-gray-600">
-            Надійніша прив'язка за фактом конкретного оголошення (referral.ad_id), а не за знаком у тексті.
-            Призначте кабінет один раз для нового оголошення — надалі всі ліди з нього визначаються автоматично,
-            уже отримані теж донараховуються.
-          </p>
-          {error ? <div className="mb-2 text-sm text-red-600">{error}</div> : null}
-          {loading ? (
-            <p className="text-sm text-gray-500">Завантаження…</p>
-          ) : rows.length === 0 ? (
-            <p className="text-sm text-gray-500">Оголошень ще не бачили. З'являться тут після першого ліда з реклами.</p>
-          ) : (
-            <div className="overflow-x-auto rounded border">
-              <table className="table table-sm">
-                <thead>
+    <section className="min-w-0 rounded border p-3">
+      <div className="mb-2 flex items-center gap-2">
+        <h2 className="text-base font-semibold">Оголошення</h2>
+        {unresolved.length > 0 ? <span className="badge badge-warning badge-sm">{unresolved.length} нові</span> : null}
+      </div>
+      {error ? <div className="mb-2 text-sm text-red-600">{error}</div> : null}
+      {loading ? (
+        <p className="text-sm text-gray-500">Завантаження…</p>
+      ) : rows.length === 0 ? (
+        <p className="text-sm text-gray-500">Оголошень ще не бачили.</p>
+      ) : (
+        <div className="max-h-72 overflow-auto">
+          <table className="table table-xs">
+            <thead>
               <tr>
                 <th>ad_id</th>
-                <th>Назва оголошення</th>
-                <th>Лідів</th>
-                <th>Instagram юзернейм</th>
                 <th>Кабінет</th>
               </tr>
             </thead>
             <tbody>
               {[...unresolved, ...resolved].map((row) => (
                 <tr key={row.id} className={!row.sourceCode ? "bg-amber-50" : undefined}>
-                  <td className="font-mono text-xs">{row.adId}</td>
-                  <td className="text-sm">{row.adTitle || <span className="text-gray-400">—</span>}</td>
-                  <td>{row.leadsCount}</td>
-                  <td className="text-sm">
-                    {row.lastUsername ? (
-                      <a
-                        href={`https://instagram.com/${row.lastUsername}`}
-                        target="_blank"
-                        rel="noreferrer"
-                        className="link"
-                      >
-                        @{row.lastUsername}
-                      </a>
-                    ) : (
-                      <span className="text-gray-400">—</span>
-                    )}
+                  <td className="max-w-[14rem] truncate whitespace-nowrap font-mono text-xs" title={row.adTitle || row.adId}>
+                    {row.adTitle || row.adId}
+                    <span className="ml-2 text-[10px] text-gray-400">{row.leadsCount}</span>
                   </td>
                   <td>
-                        <select
-                          className="select select-bordered select-xs"
-                          value={row.sourceCode || ""}
-                          disabled={savingId === row.adId}
-                          onChange={(event) => void assign(row.adId, event.target.value)}
-                        >
-                          <option value="">— не призначено —</option>
-                          {adsSources.map((s) => (
-                            <option key={s.code} value={s.code}>
-                              {s.name}
-                            </option>
-                          ))}
-                        </select>
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          )}
+                    <select
+                      className="select select-bordered select-xs w-full max-w-[9rem]"
+                      value={row.sourceCode || ""}
+                      disabled={savingId === row.adId}
+                      onChange={(event) => void assign(row.adId, event.target.value)}
+                    >
+                      <option value="">— не призначено —</option>
+                      {adsSources.map((source) => (
+                        <option key={source.code} value={source.code}>
+                          {source.name}
+                        </option>
+                      ))}
+                    </select>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
         </div>
-      ) : null}
-    </div>
+      )}
+    </section>
   );
 }
 
@@ -306,7 +313,7 @@ function EmojisPanel({ sources, onChanged }: { sources: Source[]; onChanged: () 
   const [error, setError] = useState("");
   const [savingId, setSavingId] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
-  const [expanded, setExpanded] = useState(false);
+  const [addOpen, setAddOpen] = useState(false);
   const [draft, setDraft] = useState("");
   const [draftSource, setDraftSource] = useState("");
 
@@ -355,27 +362,77 @@ function EmojisPanel({ sources, onChanged }: { sources: Source[]; onChanged: () 
   const resolved = rows.filter((row) => row.sourceCode);
 
   return (
-    <div className="mb-6">
-      <button
-        type="button"
-        className="flex w-full items-center justify-between rounded border px-3 py-2 text-left hover:bg-gray-50"
-        onClick={() => setExpanded((value) => !value)}
-      >
-        <span className="flex items-center gap-2">
-          <span className="text-lg font-semibold">Емодзі першого повідомлення</span>
+    <section className="min-w-0 rounded border p-3">
+      <div className="mb-2 flex items-center justify-between gap-2">
+        <div className="flex items-center gap-2">
+          <h2 className="text-base font-semibold">Емодзі</h2>
           {unresolved.length > 0 ? <span className="badge badge-warning badge-sm">{unresolved.length} нові</span> : null}
-          {rows.length > 0 ? <span className="text-xs text-gray-400">всього {rows.length}</span> : null}
-        </span>
-        <span className="text-sm text-gray-500">{expanded ? "Згорнути ▲" : "Показати ▼"}</span>
-      </button>
-      {expanded ? (
-        <div className="mt-2">
-          <p className="mb-3 text-sm text-gray-600">
-            Будь-який емодзі з першого повідомлення нового ліда потрапляє сюди. Кілька емодзі можна
-            привʼязати до одного джерела — біля хмарки все одно лишається один знак цього джерела.
-            Уже отримані ліди не перераховуються.
-          </p>
-          <div className="mb-3 flex flex-wrap items-end gap-2">
+        </div>
+        <button
+          className="btn btn-primary btn-xs"
+          type="button"
+          onClick={() => {
+            setError("");
+            setAddOpen(true);
+          }}
+        >
+          Додати
+        </button>
+      </div>
+      {error && !addOpen ? <div className="mb-2 text-sm text-red-600">{error}</div> : null}
+      {loading ? (
+        <p className="text-sm text-gray-500">Завантаження…</p>
+      ) : rows.length === 0 ? (
+        <p className="text-sm text-gray-500">Емодзі ще немає.</p>
+      ) : (
+        <div className="flex flex-nowrap gap-2 overflow-x-auto">
+          {[...unresolved, ...resolved].map((row) => (
+            <div
+              key={row.id}
+              className={`flex h-8 items-center gap-1 whitespace-nowrap rounded border px-2 ${
+                row.sourceCode ? "border-gray-200" : "border-amber-300 bg-amber-50"
+              }`}
+            >
+              <span className="text-base leading-none">{row.emoji}</span>
+              <select
+                className="select select-ghost select-xs h-7 min-h-0 w-[7.5rem] px-1"
+                value={row.sourceCode || ""}
+                disabled={savingId === row.emoji}
+                onChange={(event) => void assign(row.emoji, event.target.value)}
+                title={row.lastUsername ? `@${row.lastUsername}` : "Ще без прикладу"}
+              >
+                <option value="">— немає —</option>
+                {adsSources.map((source) => (
+                  <option key={source.code} value={source.code}>
+                    {source.name}
+                  </option>
+                ))}
+              </select>
+            </div>
+          ))}
+        </div>
+      )}
+      {addOpen ? (
+        <EditorWindow
+          title="Емодзі до джерела"
+          saving={savingId === draft}
+          error={error}
+          saveDisabled={!draft.trim() || !draftSource}
+          onClose={() => {
+            setAddOpen(false);
+            setDraft("");
+            setError("");
+          }}
+          onSave={() => {
+            void assign(draft.trim(), draftSource).then((ok) => {
+              if (!ok) return;
+              setDraft("");
+              setDraftSource("");
+              setAddOpen(false);
+            });
+          }}
+        >
+          <div className="flex flex-wrap items-end gap-2">
             <label className="form-control">
               <span className="label-text text-xs">Емодзі</span>
               <MarkField value={draft} onChange={setDraft} />
@@ -396,79 +453,10 @@ function EmojisPanel({ sources, onChanged }: { sources: Source[]; onChanged: () 
                 ))}
               </select>
             </label>
-            <button
-              type="button"
-              className="btn btn-primary btn-sm"
-              disabled={!draft.trim() || !draftSource || savingId === draft}
-              onClick={() => {
-                const emoji = draft.trim();
-                void assign(emoji, draftSource).then((ok) => {
-                  if (ok) setDraft("");
-                });
-              }}
-            >
-              Привʼязати
-            </button>
           </div>
-          {error ? <div className="mb-2 text-sm text-red-600">{error}</div> : null}
-          {loading ? (
-            <p className="text-sm text-gray-500">Завантаження…</p>
-          ) : rows.length === 0 ? (
-            <p className="text-sm text-gray-500">
-              Емодзі ще не бачили. Зʼявляться після першого повідомлення або додайте їх вище.
-            </p>
-          ) : (
-            <div className="overflow-x-auto rounded border">
-              <table className="table table-sm">
-                <thead>
-                  <tr>
-                    <th>Емодзі</th>
-                    <th>Instagram</th>
-                    <th>Джерело</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {[...unresolved, ...resolved].map((row) => (
-                    <tr key={row.id} className={!row.sourceCode ? "bg-amber-50" : undefined}>
-                      <td className="text-lg">{row.emoji}</td>
-                      <td className="text-sm">
-                        {row.lastUsername ? (
-                          <a
-                            href={`https://instagram.com/${row.lastUsername}`}
-                            target="_blank"
-                            rel="noreferrer"
-                            className="link"
-                          >
-                            @{row.lastUsername}
-                          </a>
-                        ) : (
-                          <span className="text-gray-400">—</span>
-                        )}
-                      </td>
-                      <td>
-                        <select
-                          className="select select-bordered select-xs"
-                          value={row.sourceCode || ""}
-                          disabled={savingId === row.emoji}
-                          onChange={(event) => void assign(row.emoji, event.target.value)}
-                        >
-                          <option value="">— не призначено —</option>
-                          {adsSources.map((source) => (
-                            <option key={source.code} value={source.code}>
-                              {source.name}
-                            </option>
-                          ))}
-                        </select>
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          )}
-        </div>
+        </EditorWindow>
       ) : null}
-    </div>
+    </section>
   );
 }
 
@@ -480,6 +468,7 @@ export default function LeadSourcesPage() {
   const [mark, setMark] = useState("");
   const [kind, setKind] = useState<Kind>("ads");
   const [saving, setSaving] = useState(false);
+  const [addOpen, setAddOpen] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editName, setEditName] = useState("");
   const [editMark, setEditMark] = useState("");
@@ -515,12 +504,14 @@ export default function LeadSourcesPage() {
     setSaving(false);
     if (!response.ok || !data?.ok) {
       setError(data?.error || "Не збереглось");
-      return;
+      return false;
     }
     setName("");
     setMark("");
     setKind("ads");
+    setAddOpen(false);
     await load(month);
+    return true;
   }
 
   async function removeSource(id: string) {
@@ -578,6 +569,7 @@ export default function LeadSourcesPage() {
 
   function cancelEdit() {
     setEditingId(null);
+    setError("");
   }
 
   async function saveEdit() {
@@ -599,22 +591,16 @@ export default function LeadSourcesPage() {
     await load(month);
   }
 
+  const editing = sources.find((source) => source.id === editingId) || null;
+
   return (
-    <div className="w-full max-w-3xl px-4 py-6">
-      <div className="mb-4 flex items-center gap-3">
+    <div className="w-full px-4 py-6">
+      <div className="mb-4 flex flex-wrap items-center gap-3">
         <h1 className="text-2xl font-bold">Джерела</h1>
         <Link href="/admin/direct/stats" className="text-sm link">
           Статистика
         </Link>
-      </div>
-      <p className="mb-4 text-sm text-gray-600">
-        Спочатку джерело ставиться за <code className="text-xs">ad_id</code>, якщо кабінет уже призначено
-        оголошенню. Якщо ні — за емодзі в першому повідомленні. Біля хмарки показується один знак джерела,
-        навіть коли до нього привʼязано кілька емодзі. Органіку обираємо вручну.
-      </p>
-
-      <div className="mb-4 flex items-end gap-2">
-        <label className="form-control">
+        <label className="form-control ml-auto">
           <span className="label-text text-xs">Місяць</span>
           <input
             className="input input-bordered input-sm"
@@ -626,165 +612,171 @@ export default function LeadSourcesPage() {
             }}
           />
         </label>
+        <button
+          className="btn btn-primary btn-sm"
+          type="button"
+          onClick={() => {
+            setError("");
+            setAddOpen(true);
+          }}
+        >
+          Додати
+        </button>
       </div>
 
-      {error ? <div className="mb-3 text-sm text-red-600">{error}</div> : null}
+      {error && !addOpen && !editing ? <div className="mb-3 text-sm text-red-600">{error}</div> : null}
 
-      <AdIdsPanel sources={sources} />
-      <EmojisPanel sources={sources} onChanged={() => void load(month || undefined)} />
-
-      <div className="mb-6 overflow-x-auto rounded border">
-        <table className="table table-sm">
-          <thead>
-            <tr>
-              <th>Джерело</th>
-              <th title="Зверху — знак біля хмарки. Знизу — емодзі, які в тексті ведуть у це джерело">Знак</th>
-              <th>Тип</th>
-              <th>Ліди</th>
-              <th>Консультації</th>
-              <th>Оплати</th>
-              <th />
-            </tr>
-          </thead>
-          <tbody>
-            {sources.map((source) => {
-              const canModify = source.kind !== "organic" && source.totalLeads === 0;
-              // Органіку можна редагувати завжди (щоб обрати емодзі біля хмарки), видаляти/ховати — ні.
-              const canEdit = source.kind === "organic" || canModify;
-              if (editingId === source.id) {
+      <section className="mb-4 overflow-x-auto rounded border">
+          <table className="table table-sm w-max min-w-full">
+            <thead>
+              <tr>
+                <th>Джерело</th>
+                <th className="min-w-[22rem]">Знак</th>
+                <th>Тип</th>
+                <th>Ліди</th>
+                <th>Консультації</th>
+                <th>Оплати</th>
+                <th />
+              </tr>
+            </thead>
+            <tbody>
+              {sources.map((source) => {
+                const canModify = source.kind !== "organic" && source.totalLeads === 0;
+                const canEdit = source.kind === "organic" || canModify;
+                const triggers = source.triggerEmojis || [];
                 return (
-                  <tr key={source.id}>
-                    <td>
-                      <input
-                        className="input input-bordered input-xs w-28"
-                        value={editName}
-                        onChange={(event) => setEditName(event.target.value)}
-                      />
+                  <tr key={source.id} className={source.hidden ? "opacity-40" : undefined}>
+                    <td className="whitespace-nowrap">
+                      {source.name}
+                      {source.hidden ? (
+                        <span className="ml-1 text-xs text-gray-400" title="Приховано зі списку вибору в ручному призначенні джерела">
+                          (приховано)
+                        </span>
+                      ) : null}
                     </td>
-                    <td>
-                      <MarkField value={editMark} onChange={setEditMark} inputClassName="input input-bordered input-xs w-16" />
+                    <td className="min-w-[22rem]">
+                      <div className="flex flex-nowrap items-center gap-2 whitespace-nowrap">
+                        <CloudMarkCell
+                          sourceId={source.id}
+                          mark={source.mark || ""}
+                          onCommit={(next) => void saveCloudMark(source.id, next)}
+                        />
+                        {triggers.length > 0 ? (
+                          <span className="text-base leading-none" title="Емодзі в першому повідомленні">
+                            {triggers.join(" ")}
+                          </span>
+                        ) : null}
+                      </div>
                     </td>
-                    <td>
-                      {editKind === "organic" ? (
-                        KIND_LABEL.organic
-                      ) : (
-                        <select
-                          className="select select-bordered select-xs"
-                          value={editKind}
-                          onChange={(event) => setEditKind(event.target.value as Kind)}
-                        >
-                          <option value="ads">Реклама</option>
-                          <option value="website">Сайт</option>
-                        </select>
-                      )}
-                    </td>
+                    <td className="whitespace-nowrap">{KIND_LABEL[source.kind]}</td>
                     <td>{source.leads}</td>
                     <td>{source.consultations}</td>
                     <td>{source.paid}</td>
                     <td>
                       <div className="flex flex-nowrap items-center gap-1 whitespace-nowrap">
-                        <button
-                          className="btn btn-primary btn-xs"
-                          type="button"
-                          disabled={saving || !editName.trim()}
-                          onClick={() => void saveEdit()}
-                        >
-                          зберегти
-                        </button>
-                        <button className="btn btn-ghost btn-xs" type="button" onClick={cancelEdit}>
-                          відміна
-                        </button>
+                        {canEdit ? (
+                          <button className="btn btn-ghost btn-xs" type="button" onClick={() => startEdit(source)}>
+                            редагувати
+                          </button>
+                        ) : null}
+                        {canModify ? (
+                          <button className="btn btn-ghost btn-xs" type="button" onClick={() => void removeSource(source.id)}>
+                            прибрати
+                          </button>
+                        ) : source.kind !== "organic" ? (
+                          <span className="text-xs text-gray-400" title="Є ліди з цим джерелом — видалення заборонено">
+                            є ліди
+                          </span>
+                        ) : null}
+                        {source.kind !== "organic" ? (
+                          <button
+                            className="btn btn-ghost btn-xs"
+                            type="button"
+                            title="Прибрати/повернути зі списку вибору в ручному призначенні джерела (статистику не чіпає)"
+                            onClick={() => void toggleHidden(source)}
+                          >
+                            {source.hidden ? "показати" : "приховати"}
+                          </button>
+                        ) : null}
                       </div>
                     </td>
                   </tr>
                 );
-              }
-              return (
-                <tr key={source.id} className={source.hidden ? "opacity-40" : undefined}>
-                  <td>
-                    {source.name}
-                    {source.hidden ? (
-                      <span className="ml-1 text-xs text-gray-400" title="Приховано зі списку вибору в ручному призначенні джерела">
-                        (приховано)
-                      </span>
-                    ) : null}
-                  </td>
-                  <td>
-                    <CloudMarkCell
-                      sourceId={source.id}
-                      mark={source.mark || ""}
-                      onCommit={(mark) => void saveCloudMark(source.id, mark)}
-                    />
-                    {source.triggerEmojis && source.triggerEmojis.length > 0 ? (
-                      <div className="mt-1 text-[11px] text-gray-500" title="Емодзі в першому повідомленні">
-                        {source.triggerEmojis.join(" ")}
-                      </div>
-                    ) : null}
-                  </td>
-                  <td>{KIND_LABEL[source.kind]}</td>
-                  <td>{source.leads}</td>
-                  <td>{source.consultations}</td>
-                  <td>{source.paid}</td>
-                  <td>
-                    <div className="flex flex-nowrap items-center gap-1 whitespace-nowrap">
-                      {canEdit ? (
-                        <button className="btn btn-ghost btn-xs" type="button" onClick={() => startEdit(source)}>
-                          редагувати
-                        </button>
-                      ) : null}
-                      {canModify ? (
-                        <button className="btn btn-ghost btn-xs" type="button" onClick={() => void removeSource(source.id)}>
-                          прибрати
-                        </button>
-                      ) : source.kind !== "organic" ? (
-                        <span className="text-xs text-gray-400" title="Є ліди з цим джерелом — видалення заборонено">
-                          є ліди
-                        </span>
-                      ) : null}
-                      {source.kind !== "organic" ? (
-                        <button
-                          className="btn btn-ghost btn-xs"
-                          type="button"
-                          title="Прибрати/повернути зі списку вибору в ручному призначенні джерела (статистику не чіпає)"
-                          onClick={() => void toggleHidden(source)}
-                        >
-                          {source.hidden ? "показати" : "приховати"}
-                        </button>
-                      ) : null}
-                    </div>
-                  </td>
-                </tr>
-              );
-            })}
-          </tbody>
-        </table>
+              })}
+            </tbody>
+          </table>
+      </section>
+      <div className="grid items-start gap-3 lg:grid-cols-2">
+        <EmojisPanel sources={sources} onChanged={() => void load(month || undefined)} />
+        <AdIdsPanel sources={sources} />
       </div>
 
-      <div className="rounded border p-3">
-        <div className="mb-2 text-sm font-semibold">Нове джерело</div>
-        <div className="flex flex-wrap items-end gap-2">
-          <label className="form-control">
-            <span className="label-text text-xs">Назва</span>
-            <input className="input input-bordered input-sm" value={name} onChange={(event) => setName(event.target.value)} />
-          </label>
-          <label className="form-control">
-            <span className="label-text text-xs">Тип</span>
-            <select className="select select-bordered select-sm" value={kind} onChange={(event) => setKind(event.target.value as Kind)}>
-              <option value="ads">Реклама</option>
-              <option value="website">Сайт</option>
-            </select>
-          </label>
-          {kind === "ads" ? (
+      {addOpen ? (
+        <EditorWindow
+          title="Нове джерело"
+          saving={saving}
+          error={error}
+          saveDisabled={!name.trim()}
+          onClose={() => {
+            setAddOpen(false);
+            setError("");
+          }}
+          onSave={() => void createSource()}
+        >
+          <div className="flex flex-wrap items-end gap-2">
             <label className="form-control">
-              <span className="label-text text-xs">Знак (клацніть у поле — випаде список значків)</span>
-              <MarkField value={mark} onChange={setMark} />
+              <span className="label-text text-xs">Назва</span>
+              <input className="input input-bordered input-sm" value={name} onChange={(event) => setName(event.target.value)} />
             </label>
-          ) : null}
-          <button className="btn btn-sm btn-primary" type="button" disabled={saving || !name.trim()} onClick={() => void createSource()}>
-            Додати
-          </button>
-        </div>
-      </div>
+            <label className="form-control">
+              <span className="label-text text-xs">Тип</span>
+              <select className="select select-bordered select-sm" value={kind} onChange={(event) => setKind(event.target.value as Kind)}>
+                <option value="ads">Реклама</option>
+                <option value="website">Сайт</option>
+              </select>
+            </label>
+            {kind === "ads" ? (
+              <label className="form-control">
+                <span className="label-text text-xs">Знак біля хмарки</span>
+                <MarkField value={mark} onChange={setMark} />
+              </label>
+            ) : null}
+          </div>
+        </EditorWindow>
+      ) : null}
+
+      {editing ? (
+        <EditorWindow
+          title={editing.name}
+          saving={saving}
+          error={error}
+          saveDisabled={!editName.trim()}
+          onClose={cancelEdit}
+          onSave={() => void saveEdit()}
+        >
+          <div className="flex flex-wrap items-end gap-2">
+            <label className="form-control">
+              <span className="label-text text-xs">Назва</span>
+              <input className="input input-bordered input-sm" value={editName} onChange={(event) => setEditName(event.target.value)} />
+            </label>
+            <label className="form-control">
+              <span className="label-text text-xs">Тип</span>
+              {editKind === "organic" ? (
+                <div className="flex h-8 items-center text-sm">{KIND_LABEL.organic}</div>
+              ) : (
+                <select className="select select-bordered select-sm" value={editKind} onChange={(event) => setEditKind(event.target.value as Kind)}>
+                  <option value="ads">Реклама</option>
+                  <option value="website">Сайт</option>
+                </select>
+              )}
+            </label>
+            <label className="form-control">
+              <span className="label-text text-xs">Знак біля хмарки</span>
+              <MarkField value={editMark} onChange={setEditMark} />
+            </label>
+          </div>
+        </EditorWindow>
+      ) : null}
     </div>
   );
 }
