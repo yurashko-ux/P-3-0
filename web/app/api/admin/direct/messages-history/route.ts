@@ -11,6 +11,7 @@ import { type DirectChatChannel, sourcesWhereClause, isSourceForChannel } from '
 import { isPreviewDeploymentHost } from '@/lib/auth-preview';
 import { verifyUserToken } from '@/lib/auth-rbac';
 import { instagramReplyAvailability } from '@/lib/instagram-direct-send';
+import { syncInstagramSalonReactions } from '@/lib/instagram-salon-reactions';
 
 export const dynamic = 'force-dynamic';
 export const runtime = 'nodejs';
@@ -196,6 +197,17 @@ export async function GET(req: NextRequest) {
           select: { id: true },
         });
         resolvedClientId = client?.id ?? null;
+      }
+    }
+
+    if (resolvedClientId && channel !== 'telegram') {
+      try {
+        await syncInstagramSalonReactions(resolvedClientId);
+      } catch (error) {
+        console.warn(
+          '[direct/messages-history] Реакції салону не підтягнулись',
+          error instanceof Error ? error.message : String(error),
+        );
       }
     }
 
