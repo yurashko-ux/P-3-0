@@ -18,6 +18,16 @@ type Source = {
   consultations: number;
   paid: number;
   totalLeads: number;
+  triggerEmojis?: string[];
+};
+
+type EmojiRow = {
+  id: string;
+  emoji: string;
+  sourceCode: string | null;
+  sourceName: string | null;
+  firstSeenAt: string;
+  lastUsername: string | null;
 };
 
 type AdIdRow = {
@@ -257,6 +267,178 @@ function AdIdsPanel({ sources }: { sources: Source[] }) {
   );
 }
 
+/** Емодзі з першого повідомлення: кілька на одне джерело. Біля хмарки лишається окремий знак. */
+function EmojisPanel({ sources, onChanged }: { sources: Source[]; onChanged: () => void }) {
+  const [rows, setRows] = useState<EmojiRow[]>([]);
+  const [error, setError] = useState("");
+  const [savingId, setSavingId] = useState<string | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [expanded, setExpanded] = useState(false);
+  const [draft, setDraft] = useState("");
+  const [draftSource, setDraftSource] = useState("");
+
+  const load = useCallback(async () => {
+    setLoading(true);
+    const response = await fetch("/api/admin/direct/lead-sources/emojis", { cache: "no-store" });
+    const data = await response.json().catch(() => null);
+    if (!response.ok || !data?.ok) {
+      setError(data?.error || "Не вдалося відкрити емодзі");
+      setLoading(false);
+      return;
+    }
+    setError("");
+    setRows(data.emojis || []);
+    setLoading(false);
+  }, []);
+
+  useEffect(() => {
+    void load();
+  }, [load]);
+
+  async function assign(emoji: string, sourceCode: string): Promise<boolean> {
+    setSavingId(emoji);
+    setError("");
+    try {
+      const response = await fetch("/api/admin/direct/lead-sources/emojis", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ emoji, sourceCode: sourceCode || null }),
+      });
+      const data = await response.json().catch(() => null);
+      if (!response.ok || !data?.ok) throw new Error(data?.error || "Не збереглось");
+      await load();
+      onChanged();
+      return true;
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Помилка");
+      return false;
+    } finally {
+      setSavingId(null);
+    }
+  }
+
+  const adsSources = sources.filter((source) => source.kind === "ads");
+  const unresolved = rows.filter((row) => !row.sourceCode);
+  const resolved = rows.filter((row) => row.sourceCode);
+
+  return (
+    <div className="mb-6">
+      <button
+        type="button"
+        className="flex w-full items-center justify-between rounded border px-3 py-2 text-left hover:bg-gray-50"
+        onClick={() => setExpanded((value) => !value)}
+      >
+        <span className="flex items-center gap-2">
+          <span className="text-lg font-semibold">Емодзі першого повідомлення</span>
+          {unresolved.length > 0 ? <span className="badge badge-warning badge-sm">{unresolved.length} нові</span> : null}
+          {rows.length > 0 ? <span className="text-xs text-gray-400">всього {rows.length}</span> : null}
+        </span>
+        <span className="text-sm text-gray-500">{expanded ? "Згорнути ▲" : "Показати ▼"}</span>
+      </button>
+      {expanded ? (
+        <div className="mt-2">
+          <p className="mb-3 text-sm text-gray-600">
+            Будь-який емодзі з першого повідомлення нового ліда потрапляє сюди. Кілька емодзі можна
+            привʼязати до одного джерела — біля хмарки все одно лишається один знак цього джерела.
+            Уже отримані ліди не перераховуються.
+          </p>
+          <div className="mb-3 flex flex-wrap items-end gap-2">
+            <label className="form-control">
+              <span className="label-text text-xs">Емодзі</span>
+              <MarkField value={draft} onChange={setDraft} />
+            </label>
+            <label className="form-control">
+              <span className="label-text text-xs">Джерело</span>
+              <select
+                className="select select-bordered select-sm"
+                value={draftSource}
+                onChange={(event) => setDraftSource(event.target.value)}
+              >
+                <option value="">— оберіть —</option>
+                {adsSources.map((source) => (
+                  <option key={source.code} value={source.code}>
+                    {source.mark ? `${source.mark} ` : ""}
+                    {source.name}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <button
+              type="button"
+              className="btn btn-primary btn-sm"
+              disabled={!draft.trim() || !draftSource || savingId === draft}
+              onClick={() => {
+                const emoji = draft.trim();
+                void assign(emoji, draftSource).then((ok) => {
+                  if (ok) setDraft("");
+                });
+              }}
+            >
+              Привʼязати
+            </button>
+          </div>
+          {error ? <div className="mb-2 text-sm text-red-600">{error}</div> : null}
+          {loading ? (
+            <p className="text-sm text-gray-500">Завантаження…</p>
+          ) : rows.length === 0 ? (
+            <p className="text-sm text-gray-500">
+              Емодзі ще не бачили. Зʼявляться після першого повідомлення або додайте їх вище.
+            </p>
+          ) : (
+            <div className="overflow-x-auto rounded border">
+              <table className="table table-sm">
+                <thead>
+                  <tr>
+                    <th>Емодзі</th>
+                    <th>Instagram</th>
+                    <th>Джерело</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {[...unresolved, ...resolved].map((row) => (
+                    <tr key={row.id} className={!row.sourceCode ? "bg-amber-50" : undefined}>
+                      <td className="text-lg">{row.emoji}</td>
+                      <td className="text-sm">
+                        {row.lastUsername ? (
+                          <a
+                            href={`https://instagram.com/${row.lastUsername}`}
+                            target="_blank"
+                            rel="noreferrer"
+                            className="link"
+                          >
+                            @{row.lastUsername}
+                          </a>
+                        ) : (
+                          <span className="text-gray-400">—</span>
+                        )}
+                      </td>
+                      <td>
+                        <select
+                          className="select select-bordered select-xs"
+                          value={row.sourceCode || ""}
+                          disabled={savingId === row.emoji}
+                          onChange={(event) => void assign(row.emoji, event.target.value)}
+                        >
+                          <option value="">— не призначено —</option>
+                          {adsSources.map((source) => (
+                            <option key={source.code} value={source.code}>
+                              {source.name}
+                            </option>
+                          ))}
+                        </select>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </div>
+      ) : null}
+    </div>
+  );
+}
+
 export default function LeadSourcesPage() {
   const [month, setMonth] = useState("");
   const [sources, setSources] = useState<Source[]>([]);
@@ -376,10 +558,9 @@ export default function LeadSourcesPage() {
         </Link>
       </div>
       <p className="mb-4 text-sm text-gray-600">
-        Автоматично джерело ставиться лише за <code className="text-xs">ad_id</code> Meta (коли кабінет уже
-        призначено оголошенню). Без <code className="text-xs">ad_id</code> — «не визначено» (хмаринка без значка).
-        Органіку та всі інші джерела обираємо вручну в дропдауні на картці ліда / біля хмарки.
-        Сайт сюди потрапить окремим входом, не з Instagram.
+        Спочатку джерело ставиться за <code className="text-xs">ad_id</code>, якщо кабінет уже призначено
+        оголошенню. Якщо ні — за емодзі в першому повідомленні. Біля хмарки показується один знак джерела,
+        навіть коли до нього привʼязано кілька емодзі. Органіку обираємо вручну.
       </p>
 
       <div className="mb-4 flex items-end gap-2">
@@ -400,13 +581,14 @@ export default function LeadSourcesPage() {
       {error ? <div className="mb-3 text-sm text-red-600">{error}</div> : null}
 
       <AdIdsPanel sources={sources} />
+      <EmojisPanel sources={sources} onChanged={() => void load(month || undefined)} />
 
       <div className="mb-6 overflow-x-auto rounded border">
         <table className="table table-sm">
           <thead>
             <tr>
               <th>Джерело</th>
-              <th>Знак</th>
+              <th title="Зверху — знак біля хмарки. Знизу — емодзі, які в тексті ведуть у це джерело">Знак</th>
               <th>Тип</th>
               <th>Ліди</th>
               <th>Консультації</th>
@@ -477,7 +659,14 @@ export default function LeadSourcesPage() {
                       </span>
                     ) : null}
                   </td>
-                  <td>{source.mark || "—"}</td>
+                  <td>
+                    <div>{source.mark || "—"}</div>
+                    {source.triggerEmojis && source.triggerEmojis.length > 0 ? (
+                      <div className="text-[11px] text-gray-500" title="Емодзі в першому повідомленні">
+                        {source.triggerEmojis.join(" ")}
+                      </div>
+                    ) : null}
+                  </td>
                   <td>{KIND_LABEL[source.kind]}</td>
                   <td>{source.leads}</td>
                   <td>{source.consultations}</td>

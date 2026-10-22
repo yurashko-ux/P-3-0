@@ -858,7 +858,8 @@ model LeadSource {
   id        String   @id @default(uuid())
   code      String   @unique
   name      String
-  /// Знак у тексті першого повідомлення. Порожньо для органіки і сайту.
+  /// Один знак біля хмарки. Порожньо для органіки і сайту.
+  /// Емодзі в тексті першого повідомлення — окремо, їх може бути кілька (LeadSourceEmoji).
   mark      String?
   /// ads | organic | website
   kind      String
@@ -874,7 +875,26 @@ model LeadSource {
   @@index([kind])
   @@map("lead_sources")
 
-  adIds LeadSourceAdId[]
+  adIds  LeadSourceAdId[]
+  emojis LeadSourceEmoji[]
+}
+
+/// Емодзі з першого вхідного повідомлення → джерело.
+/// Один емодзі належить щонайбільше одному джерелу. Біля хмарки показується LeadSource.mark, не цей список.
+/// sourceCode = null — емодзі вже бачили, але ще не привʼязали. Старих лідів не переписуємо.
+model LeadSourceEmoji {
+  id           String   @id @default(uuid())
+  emoji        String   @unique
+  sourceCode   String?
+  /// Instagram-юзернейм останньої людини, у чиєму першому повідомленні був цей емодзі.
+  lastUsername String?
+  firstSeenAt  DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  source LeadSource? @relation(fields: [sourceCode], references: [code], onDelete: SetNull)
+
+  @@index([sourceCode])
+  @@map("lead_source_emojis")
 }
 
 /// ad_id конкретного оголошення Meta (referral з вебхука Instagram) → джерело.

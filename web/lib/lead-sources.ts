@@ -1,9 +1,11 @@
 // Джерело ліда:
 // - спочатку referral.ad_id, якщо кабінет уже привʼязаний до цього ad_id;
-// - якщо ad_id немає або кабінет ще не привʼязаний — знак (мітка) у тексті першого вхідного;
-// - без ad_id і без мітки — leadAgency = null («не визначено», хмаринка без значка);
-// - органіку ставить маркетолог вручну (дропдаун на картці / біля хмарки);
+// - якщо ad_id немає або кабінет ще не привʼязаний — емодзі в тексті першого вхідного
+//   (кілька емодзі можуть вести в одне джерело; біля хмарки лишається один LeadSource.mark);
+// - без ad_id і без привʼязаного емодзі — leadAgency = null («не визначено»);
+// - органіку ставить маркетолог вручну;
 // - Сайт — окремий вхід, з Instagram не ставиться.
+// Старих лідів привʼязка емодзі не переписує.
 
 import { prisma } from "@/lib/prisma";
 import { getDirectManager } from "@/lib/direct-masters/store";
@@ -72,20 +74,75 @@ export async function ensureLeadSources(): Promise<LeadSourceRow[]> {
   return rows.map(toRow);
 }
 
+/** Усі емодзі в тексті, у порядку появи, без повторів. Звичайні літери і «*» сюди не входять. */
+export function extractMessageEmojis(text: string): string[] {
+  const re =
+    /\p{Extended_Pictographic}\uFE0F?(?:\u200D\p{Extended_Pictographic}\uFE0F?)*[\u{1F3FB}-\u{1F3FF}]?/gu;
+  const found: string[] = [];
+  const seen = new Set<string>();
+  for (const match of text.matchAll(re)) {
+    const emoji = match[0];
+    if (!emoji || seen.has(emoji)) continue;
+    seen.add(emoji);
+    found.push(emoji);
+  }
+  return found;
+}
+
+/** Рівно один емодзі, без зайвого тексту. */
+export function asSingleEmoji(value: string): string | null {
+  const trimmed = value.trim();
+  const list = extractMessageEmojis(trimmed);
+  if (list.length !== 1 || list[0] !== trimmed) return null;
+  return list[0];
+}
+
 /**
- * Довший знак перемагає, якщо в тексті збіглось кілька.
- * Органіку сюди більше не підставляємо — її ставлять лише вручну з дропдауна.
- * Повертає null, якщо знака агенції в тексті немає.
+ * Перший привʼязаний емодзі в тексті. Далі — старий знак джерела, якщо це не емодзі (наприклад *).
+ * Органіку не підставляємо.
  */
 export async function matchLeadSourceCode(text: string): Promise<string | null> {
   const sources = await ensureLeadSources();
-  const marks = sources
-    .filter((source) => source.enabled && source.kind === "ads" && source.mark)
+  const ads = sources.filter((source) => source.enabled && source.kind === "ads");
+  const codeByMark = new Map(ads.filter((source) => source.mark).map((source) => [source.mark as string, source.code]));
+  const bound = await prisma.leadSourceEmoji.findMany({
+    where: { sourceCode: { not: null } },
+    select: { emoji: true, sourceCode: true },
+  });
+  const codeByEmoji = new Map(
+    bound.filter((row) => row.sourceCode && ads.some((source) => source.code === row.sourceCode)).map((row) => [row.emoji, row.sourceCode as string]),
+  );
+  for (const emoji of extractMessageEmojis(text)) {
+    const code = codeByEmoji.get(emoji) || codeByMark.get(emoji);
+    if (code) return code;
+  }
+  const symbols = ads
+    .filter((source) => source.mark && extractMessageEmojis(source.mark).length === 0)
     .sort((a, b) => (b.mark || "").length - (a.mark || "").length);
-  for (const source of marks) {
+  for (const source of symbols) {
     if (text.includes(source.mark || "")) return source.code;
   }
   return null;
+}
+
+/** Запамʼятати емодзі першого повідомлення, навіть якщо джерело ще не призначене. Привʼязку не затирає. */
+export async function recordLeadMessageEmojis(text: string, username?: string | null): Promise<void> {
+  const emojis = extractMessageEmojis(text || "");
+  const cleanUsername = username?.trim() || null;
+  for (const emoji of emojis) {
+    try {
+      await prisma.leadSourceEmoji.upsert({
+        where: { emoji },
+        create: { emoji, lastUsername: cleanUsername },
+        update: cleanUsername ? { lastUsername: cleanUsername } : {},
+      });
+    } catch (error) {
+      console.warn("[leads] Не вдалося зберегти емодзі", {
+        emoji,
+        error: error instanceof Error ? error.message : error,
+      });
+    }
+  }
 }
 
 /**
@@ -120,6 +177,7 @@ export async function assignLeadSourceFromFirstIncoming(input: {
   text: string;
   /** ad_id з referral першого вхідного повідомлення (якщо лід прийшов з реклами). */
   adId?: string | null;
+  username?: string | null;
 }): Promise<string | null> {
   if (input.leadAgency) return input.leadAgency;
   const prior = await prisma.directMessage.count({
@@ -127,7 +185,9 @@ export async function assignLeadSourceFromFirstIncoming(input: {
   });
   if (prior > 0) return null;
 
-  // ad_id — основний шлях. Мітка в тексті його доповнює: коли оголошення немає
+  await recordLeadMessageEmojis(input.text, input.username);
+
+  // ad_id — основний шлях. Емодзі в тексті його доповнює: коли оголошення немає
   // або кабінет для цього ad_id ще не привʼязаний. Органіку з тексту не ставимо.
   let code: string | null = null;
   let by: "ad_id" | "мітка" | null = null;
@@ -226,6 +286,56 @@ export async function setLeadAdIdSource(adId: string, sourceCode: string | null)
   return { updatedClients };
 }
 
+export type LeadEmojiRow = {
+  id: string;
+  emoji: string;
+  sourceCode: string | null;
+  sourceName: string | null;
+  firstSeenAt: string;
+  lastUsername: string | null;
+};
+
+export async function listLeadSourceEmojis(): Promise<LeadEmojiRow[]> {
+  const [rows, sources] = await Promise.all([
+    prisma.leadSourceEmoji.findMany({ orderBy: { firstSeenAt: "desc" } }),
+    prisma.leadSource.findMany({ select: { code: true, name: true } }),
+  ]);
+  const nameByCode = new Map(sources.map((source) => [source.code, source.name]));
+  return rows.map((row) => ({
+    id: row.id,
+    emoji: row.emoji,
+    sourceCode: row.sourceCode,
+    sourceName: row.sourceCode ? nameByCode.get(row.sourceCode) || row.sourceCode : null,
+    firstSeenAt: row.firstSeenAt.toISOString(),
+    lastUsername: row.lastUsername,
+  }));
+}
+
+/** Привʼязати або відвʼязати один емодзі. Уже отриманих лідів не чіпає. */
+export async function setLeadSourceEmoji(emoji: string, sourceCode: string | null): Promise<void> {
+  const clean = asSingleEmoji(emoji);
+  if (!clean) throw new Error("Потрібен один емодзі");
+  if (sourceCode) {
+    const source = await prisma.leadSource.findUnique({ where: { code: sourceCode } });
+    if (!source) throw new Error("Невідоме джерело");
+    if (source.kind !== "ads") throw new Error("Емодзі привʼязуємо лише до рекламного джерела");
+    const takenMark = await prisma.leadSource.findFirst({
+      where: { mark: clean, code: { not: sourceCode } },
+      select: { name: true },
+    });
+    if (takenMark) throw new Error(`Цей емодзі вже знак біля хмарки джерела «${takenMark.name}»`);
+  } else {
+    const existing = await prisma.leadSourceEmoji.findUnique({ where: { emoji: clean }, select: { id: true } });
+    if (!existing) throw new Error("Такого емодзі ще не бачили");
+  }
+  await prisma.leadSourceEmoji.upsert({
+    where: { emoji: clean },
+    create: { emoji: clean, sourceCode },
+    update: { sourceCode },
+  });
+  console.log("[leads] емодзі → джерело", { emoji: clean, sourceCode });
+}
+
 export async function ensureDirectLeadClient(input: {
   username: string;
   receivedAt: Date;
@@ -272,11 +382,13 @@ export type LeadSourceStat = LeadSourceRow & {
   // Загальна кількість лідів з цим джерелом за весь час (без фільтра місяця/KPI) —
   // використовується, щоб дозволити видалення/редагування лише порожніх джерел.
   totalLeads: number;
+  /** Емодзі першого повідомлення, привʼязані до цього джерела. Біля хмарки їх не малюємо. */
+  triggerEmojis: string[];
 };
 
 export async function leadSourceStats(monthKey: string): Promise<LeadSourceStat[]> {
   const sources = await ensureLeadSources();
-  const [clients, totalCounts] = await Promise.all([
+  const [clients, totalCounts, emojiRows] = await Promise.all([
     prisma.directClient.findMany({
       where: { leadAgency: { not: null }, includeInNewLeadsKpi: true },
       select: {
@@ -292,8 +404,20 @@ export async function leadSourceStats(monthKey: string): Promise<LeadSourceStat[
       where: { leadAgency: { not: null } },
       _count: { _all: true },
     }),
+    prisma.leadSourceEmoji.findMany({
+      where: { sourceCode: { not: null } },
+      select: { emoji: true, sourceCode: true },
+      orderBy: { firstSeenAt: "asc" },
+    }),
   ]);
   const totalByCode = new Map(totalCounts.map((c) => [c.leadAgency as string, c._count._all]));
+  const emojisByCode = new Map<string, string[]>();
+  for (const row of emojiRows) {
+    if (!row.sourceCode) continue;
+    const list = emojisByCode.get(row.sourceCode) || [];
+    list.push(row.emoji);
+    emojisByCode.set(row.sourceCode, list);
+  }
   return sources.map((source) => {
     const cohort = clients.filter((client) => {
       if (client.leadAgency !== source.code) return false;
@@ -308,6 +432,7 @@ export async function leadSourceStats(monthKey: string): Promise<LeadSourceStat[
       consultations: cohort.filter((client) => client.consultationBookingDate).length,
       paid: cohort.filter((client) => client.paidServiceDate).length,
       totalLeads: totalByCode.get(source.code) || 0,
+      triggerEmojis: emojisByCode.get(source.code) || [],
     };
   });
 }

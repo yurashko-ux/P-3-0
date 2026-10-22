@@ -459,6 +459,7 @@ async function acceptMessage(input: {
           leadAgency: client.leadAgency,
           text: plainText,
           adId: referralAdId,
+          username,
         });
       }
       const scopedId = outgoing ? recipientId : senderId;

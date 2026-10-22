@@ -73,6 +73,15 @@ export async function POST(req: NextRequest) {
   if (mark && sources.some((source) => source.mark === mark)) {
     return NextResponse.json({ ok: false, error: "Такий знак уже є" }, { status: 400 });
   }
+  if (mark) {
+    const takenEmoji = await prisma.leadSourceEmoji.findFirst({
+      where: { emoji: mark, sourceCode: { not: null } },
+      select: { sourceCode: true },
+    });
+    if (takenEmoji?.sourceCode) {
+      return NextResponse.json({ ok: false, error: "Цей емодзі вже привʼязаний до іншого джерела" }, { status: 400 });
+    }
+  }
   const code = `src_${Date.now().toString(36)}`;
   const sortOrder = Math.max(0, ...sources.map((source) => source.sortOrder)) + 10;
   const created = await prisma.leadSource.create({
@@ -119,6 +128,15 @@ export async function PATCH(req: NextRequest) {
   }
   if (mark && sources.some((source) => source.mark === mark && source.id !== id)) {
     return NextResponse.json({ ok: false, error: "Такий знак уже є" }, { status: 400 });
+  }
+  if (mark) {
+    const takenEmoji = await prisma.leadSourceEmoji.findFirst({
+      where: { emoji: mark, sourceCode: { not: current.code } },
+      select: { sourceCode: true },
+    });
+    if (takenEmoji?.sourceCode) {
+      return NextResponse.json({ ok: false, error: "Цей емодзі вже привʼязаний до іншого джерела" }, { status: 400 });
+    }
   }
   await prisma.leadSource.update({
     where: { id },
