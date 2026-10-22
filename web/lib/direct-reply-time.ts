@@ -124,10 +124,13 @@ export function formatWaitingClock(elapsedMs: number): string {
   return `${days}д. ${clock}`;
 }
 
-/** Середній час відповіді для Переписок: «1 хв.», «23 хв.». */
+/** Середній час відповіді для Переписок: «23 хв.», від 61 хв. — «1 год. 01 хв.». */
 export function formatReplyAvgMinutes(minutes: number): string {
   const n = Math.max(0, Math.round(Number(minutes) || 0));
-  return `${n} хв.`;
+  if (n <= 60) return `${n} хв.`;
+  const hours = Math.floor(n / 60);
+  const rest = n % 60;
+  return `${hours} год. ${String(rest).padStart(2, "0")} хв.`;
 }
 
 export function computeThreadReplyTime(messages: ReplyMessage[]): ThreadReplyTime {

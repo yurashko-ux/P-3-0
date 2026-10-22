@@ -169,7 +169,7 @@ function ReplyTimeCell({ row, now }: { row: MessageRow; now: number }) {
   }
   if (typeof row.replyAvgMinutes === "number") {
     return (
-      <span className="tabular-nums" title="Середній час відповіді">
+      <span className="whitespace-nowrap tabular-nums" title="Середній час відповіді">
         {formatReplyAvgMinutes(row.replyAvgMinutes)}
       </span>
     );
