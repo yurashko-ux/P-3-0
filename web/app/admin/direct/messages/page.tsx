@@ -278,7 +278,7 @@ function useConversationList(audience: Audience) {
       if (document.visibilityState === "hidden") return;
       void load(0, false, { silent: true });
     };
-    const timer = window.setInterval(refresh, 5_000);
+    const timer = window.setInterval(refresh, 15_000);
     window.addEventListener("focus", refresh);
     document.addEventListener("visibilitychange", refresh);
     return () => {
