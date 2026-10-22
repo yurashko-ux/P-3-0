@@ -61,10 +61,12 @@ const MARK_EMOJI_OPTIONS = [
 function MarkField({
   value,
   onChange,
+  onBlur,
   inputClassName,
 }: {
   value: string;
   onChange: (mark: string) => void;
+  onBlur?: (value: string) => void;
   inputClassName?: string;
 }) {
   const [open, setOpen] = useState(false);
@@ -85,6 +87,7 @@ function MarkField({
         className={inputClassName || "input input-bordered input-sm w-24"}
         value={value}
         onFocus={() => setOpen(true)}
+        onBlur={(event) => onBlur?.(event.currentTarget.value)}
         onChange={(event) => onChange(event.target.value)}
         placeholder="значок"
       />
@@ -126,6 +129,36 @@ function MarkField({
         </div>
       ) : null}
     </div>
+  );
+}
+
+/** Знак біля хмарки: зберігаємо після вибору емодзі або коли поле втрачає фокус. */
+function CloudMarkCell({
+  sourceId,
+  mark,
+  onCommit,
+}: {
+  sourceId: string;
+  mark: string;
+  onCommit: (mark: string) => void;
+}) {
+  const [value, setValue] = useState(mark);
+  useEffect(() => {
+    setValue(mark);
+  }, [mark, sourceId]);
+
+  return (
+    <MarkField
+      value={value}
+      inputClassName="input input-bordered input-xs w-16"
+      onChange={(next) => {
+        setValue(next);
+        if (next === "" || MARK_EMOJI_OPTIONS.includes(next)) onCommit(next);
+      }}
+      onBlur={(next) => {
+        if (next.trim() !== mark) onCommit(next);
+      }}
+    />
   );
 }
 
@@ -518,6 +551,23 @@ export default function LeadSourcesPage() {
     await load(month);
   }
 
+  async function saveCloudMark(id: string, mark: string) {
+    setError("");
+    const response = await fetch("/api/admin/direct/lead-sources", {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ id, mark, markOnly: true }),
+    });
+    const data = await response.json().catch(() => null);
+    if (!response.ok || !data?.ok) {
+      setError(data?.error || "Не збереглось");
+      await load(month || undefined);
+      return;
+    }
+    setSources((prev) => prev.map((source) => (source.id === id ? { ...source, mark: mark.trim() || null } : source)));
+    invalidateLeadSourcesMapCache();
+  }
+
   function startEdit(source: Source) {
     setEditingId(source.id);
     setEditName(source.name);
@@ -660,9 +710,13 @@ export default function LeadSourcesPage() {
                     ) : null}
                   </td>
                   <td>
-                    <div>{source.mark || "—"}</div>
+                    <CloudMarkCell
+                      sourceId={source.id}
+                      mark={source.mark || ""}
+                      onCommit={(mark) => void saveCloudMark(source.id, mark)}
+                    />
                     {source.triggerEmojis && source.triggerEmojis.length > 0 ? (
-                      <div className="text-[11px] text-gray-500" title="Емодзі в першому повідомленні">
+                      <div className="mt-1 text-[11px] text-gray-500" title="Емодзі в першому повідомленні">
                         {source.triggerEmojis.join(" ")}
                       </div>
                     ) : null}

@@ -101,10 +101,34 @@ export async function PATCH(req: NextRequest) {
     mark?: unknown;
     kind?: unknown;
     enabled?: unknown;
+    markOnly?: unknown;
   } | null;
   const id = typeof body?.id === "string" ? body.id : "";
   const current = id ? await prisma.leadSource.findUnique({ where: { id } }) : null;
   if (!current) return NextResponse.json({ ok: false, error: "Джерело не знайдено" }, { status: 404 });
+  // Лише картинка біля хмарки: джерело лідів не змінюється, тому можна і коли ліди вже є.
+  if (body && "markOnly" in body && body.markOnly === true) {
+    const mark = cleanMark(body.mark);
+    if (current.kind === "ads" && !mark) {
+      return NextResponse.json({ ok: false, error: "Для реклами потрібен знак" }, { status: 400 });
+    }
+    const sources = await ensureLeadSources();
+    if (mark && sources.some((source) => source.mark === mark && source.id !== id)) {
+      return NextResponse.json({ ok: false, error: "Такий знак уже є" }, { status: 400 });
+    }
+    if (mark) {
+      const takenEmoji = await prisma.leadSourceEmoji.findFirst({
+        where: { emoji: mark, sourceCode: { not: current.code } },
+        select: { sourceCode: true },
+      });
+      if (takenEmoji?.sourceCode) {
+        return NextResponse.json({ ok: false, error: "Цей емодзі вже привʼязаний до іншого джерела" }, { status: 400 });
+      }
+    }
+    await prisma.leadSource.update({ where: { id }, data: { mark } });
+    console.log("[leads] Оновлено знак біля хмарки", { code: current.code, mark });
+    return NextResponse.json({ ok: true });
+  }
   if (current.kind !== "organic" && (await leadSourceHasAnyLead(current.code))) {
     return NextResponse.json(
       { ok: false, error: "У цього джерела вже є ліди — редагування заборонено, щоб не зіпсувати статистику" },
