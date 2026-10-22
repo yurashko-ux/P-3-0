@@ -1,7 +1,8 @@
-// Джерело ліда (політика з 19.10.2026):
-// - автоматично ставимо leadAgency ЛИШЕ якщо є referral.ad_id і кабінет уже привʼязаний до цього ad_id;
-// - без ad_id — leadAgency = null («не визначено», хмаринка без значка);
-// - органіку та всі інші джерела ставить маркетолог вручну (дропдаун на картці / біля хмарки);
+// Джерело ліда:
+// - спочатку referral.ad_id, якщо кабінет уже привʼязаний до цього ad_id;
+// - якщо ad_id немає або кабінет ще не привʼязаний — знак (мітка) у тексті першого вхідного;
+// - без ad_id і без мітки — leadAgency = null («не визначено», хмаринка без значка);
+// - органіку ставить маркетолог вручну (дропдаун на картці / біля хмарки);
 // - Сайт — окремий вхід, з Instagram не ставиться.
 
 import { prisma } from "@/lib/prisma";
@@ -126,27 +127,43 @@ export async function assignLeadSourceFromFirstIncoming(input: {
   });
   if (prior > 0) return null;
 
-  // ЄДИНИЙ авто-шлях: ad_id з referral → код кабінету, якщо вже привʼязаний у «Оголошення Meta».
-  // Інакше leadAgency не чіпаємо (лишається null = не визначено). Органіку/агенції/Offline тощо
-  // ставить лише маркетолог вручну (manual-assign / дропдаун біля хмарки).
+  // ad_id — основний шлях. Мітка в тексті його доповнює: коли оголошення немає
+  // або кабінет для цього ad_id ще не привʼязаний. Органіку з тексту не ставимо.
+  let code: string | null = null;
+  let by: "ad_id" | "мітка" | null = null;
   if (input.adId) {
-    const code = await resolveLeadSourceByAdId(input.adId);
-    await prisma.directClient.update({
-      where: { id: input.clientId },
-      data: { leadAdId: input.adId, ...(code ? { leadAgency: code } : {}) },
-    });
-    console.log("[leads] Джерело за першим вхідним (ad_id)", {
-      clientId: input.clientId,
-      code,
-      adId: input.adId,
-    });
-    return code;
+    code = await resolveLeadSourceByAdId(input.adId);
+    if (code) by = "ad_id";
+  }
+  if (!code) {
+    const fromMark = await matchLeadSourceCode(input.text || "");
+    if (fromMark) {
+      code = fromMark;
+      by = "мітка";
+    }
   }
 
-  console.log("[leads] Перше вхідне без ad_id — leadAgency не визначено (очікуємо ручний вибір)", {
-    clientId: input.clientId,
+  if (!input.adId && !code) {
+    console.log("[leads] Перше вхідне без ad_id і без мітки — leadAgency не визначено", {
+      clientId: input.clientId,
+    });
+    return null;
+  }
+
+  await prisma.directClient.update({
+    where: { id: input.clientId },
+    data: {
+      ...(input.adId ? { leadAdId: input.adId } : {}),
+      ...(code ? { leadAgency: code } : {}),
+    },
   });
-  return null;
+  console.log("[leads] Джерело за першим вхідним", {
+    clientId: input.clientId,
+    code,
+    adId: input.adId || null,
+    by,
+  });
+  return code;
 }
 
 export type LeadAdIdRow = {
