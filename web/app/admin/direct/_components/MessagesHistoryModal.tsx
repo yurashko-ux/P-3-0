@@ -50,7 +50,11 @@ interface MessagesHistoryModalProps {
   /** У Переписках: лід → синій кружечок, клієнт → бейдж витрат. */
   contactKind?: 'client' | 'lead';
   /** Після завантаження історії — щоб Переписки одразу підтягнули порядок (вихідні салону). */
-  onHistoryLoaded?: (info: { clientId: string; lastMessageAt: string | null }) => void;
+  onHistoryLoaded?: (info: {
+    clientId: string;
+    lastMessageAt: string | null;
+    newestDirection?: string | null;
+  }) => void;
   onChatStatusUpdated?: (update: {
     clientId: string;
     chatStatusId: string | null;
@@ -410,6 +414,7 @@ export function MessagesHistoryModal({
         onHistoryLoaded?.({
           clientId: client.id,
           lastMessageAt: dbMessages[0]?.receivedAt || null,
+          newestDirection: dbMessages[0]?.direction || null,
         });
       }
 

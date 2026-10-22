@@ -177,6 +177,17 @@ function ReplyTimeCell({ row, now }: { row: MessageRow; now: number }) {
   return null;
 }
 
+function sortRowsByLastMessage(rows: MessageRow[]): MessageRow[] {
+  return [...rows].sort((a, b) => {
+    const ta = a.lastMessageAt ? new Date(a.lastMessageAt).getTime() : 0;
+    const tb = b.lastMessageAt ? new Date(b.lastMessageAt).getTime() : 0;
+    const na = Number.isFinite(ta) ? ta : 0;
+    const nb = Number.isFinite(tb) ? tb : 0;
+    if (nb !== na) return nb - na;
+    return String(a.id).localeCompare(String(b.id));
+  });
+}
+
 function useConversationList(audience: Audience) {
   const [rows, setRows] = useState<MessageRow[]>([]);
   const [total, setTotal] = useState(0);
@@ -209,7 +220,8 @@ function useConversationList(audience: Audience) {
         const next = (data.clients || []) as MessageRow[];
         setTotal(typeof data.total === "number" ? data.total : next.length);
         if (typeof data.waitingCount === "number") setWaitingCount(data.waitingCount);
-        setRows((prev) => (append ? [...prev, ...next] : next));
+        // Страховка: навіть якщо API віддав старий порядок — сортуємо за lastMessageAt.
+        setRows((prev) => (append ? [...prev, ...next] : sortRowsByLastMessage(next)));
         if (silent) setError(null);
       } catch (err) {
         // Тихе оновлення: лишаємо поточний список, без мигання порожнім екраном.
@@ -228,6 +240,34 @@ function useConversationList(audience: Audience) {
     [audience]
   );
 
+  /** Миттєво підняти картку в UI (історія вже бачить нове повідомлення, список ще ні). */
+  const bumpClient = useCallback(
+    (info: { clientId: string; lastMessageAt: string | null; newestDirection?: string | null }) => {
+      const at = info.lastMessageAt;
+      const atMs = at ? new Date(at).getTime() : NaN;
+      if (!info.clientId || !Number.isFinite(atMs)) return;
+      setRows((prev) => {
+        const idx = prev.findIndex((row) => row.id === info.clientId);
+        if (idx < 0) return prev;
+        const prevAt = prev[idx].lastMessageAt ? new Date(prev[idx].lastMessageAt!).getTime() : 0;
+        if (Number.isFinite(prevAt) && prevAt >= atMs && idx === 0) return prev;
+        const direction = String(info.newestDirection || "").toLowerCase();
+        const updated: MessageRow = {
+          ...prev[idx],
+          lastMessageAt: at,
+          waitingSince:
+            direction === "outgoing"
+              ? null
+              : direction === "incoming"
+                ? prev[idx].waitingSince || at
+                : prev[idx].waitingSince,
+        };
+        return sortRowsByLastMessage([updated, ...prev.filter((row) => row.id !== info.clientId)]);
+      });
+    },
+    []
+  );
+
   useEffect(() => {
     void load(0, false);
   }, [load]);
@@ -238,7 +278,7 @@ function useConversationList(audience: Audience) {
       if (document.visibilityState === "hidden") return;
       void load(0, false, { silent: true });
     };
-    const timer = window.setInterval(refresh, 15_000);
+    const timer = window.setInterval(refresh, 5_000);
     window.addEventListener("focus", refresh);
     document.addEventListener("visibilitychange", refresh);
     return () => {
@@ -248,7 +288,7 @@ function useConversationList(audience: Audience) {
     };
   }, [load]);
 
-  return { rows, total, waitingCount, loading, loadingMore, error, load };
+  return { rows, total, waitingCount, loading, loadingMore, error, load, bumpClient };
 }
 
 function ConversationTable({
@@ -559,14 +599,15 @@ export default function DirectMessagesPage() {
         isOpen={messagesClient != null}
         channel="instagram"
         contactKind={messagesContactKind === "leads" ? "lead" : "client"}
-        onHistoryLoaded={() => {
-          // Щойно історія показала нове (у т.ч. вихідне салону) — підтягнути порядок у списках.
+        onHistoryLoaded={(info) => {
+          // Миттєво підняти картку в UI, потім підтвердити з API.
+          clients.bumpClient(info);
+          leads.bumpClient(info);
           void clients.load(0, false, { silent: true });
           void leads.load(0, false, { silent: true });
         }}
         onClose={() => {
           setMessagesClient(null);
-          // Після відповіді салону в історії — одразу оновити «Очікують» і пігулки (без мигання).
           void clients.load(0, false, { silent: true });
           void leads.load(0, false, { silent: true });
         }}

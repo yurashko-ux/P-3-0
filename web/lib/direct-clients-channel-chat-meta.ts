@@ -57,7 +57,7 @@ export async function enrichClientsWithChannelChatMeta<T extends { id: string }>
     // Реакції (лайки) лишаються в історії, але не рухають дату/порядок у Переписках.
     const activityFilter =
       channel === 'instagram'
-        ? { AND: [sourceFilter, { NOT: { source: 'instagram_reaction' } }] }
+        ? { NOT: { source: { in: ['telegram', 'telegram_campaign', 'instagram_reaction'] } } }
         : sourceFilter;
 
     const [totalCounts, lastIncoming, lastAnyMessage] = await Promise.all([
@@ -134,12 +134,27 @@ export async function enrichClientsWithChannelChatMeta<T extends { id: string }>
       })();
 
       const lastMessage = lastMessageMap.get(c.id) ?? null;
+      // Беремо пізніше з повідомлень і з поля клієнта — щоб дата Inst не відставала від сортування.
+      const clientLastRaw = (c as { lastMessageAt?: string | Date | null }).lastMessageAt;
+      const clientLast =
+        clientLastRaw instanceof Date
+          ? clientLastRaw
+          : typeof clientLastRaw === 'string' && clientLastRaw
+            ? new Date(clientLastRaw)
+            : null;
+      const clientLastOk = clientLast && !Number.isNaN(clientLast.getTime()) ? clientLast : null;
+      const bestLast =
+        lastMessage && clientLastOk
+          ? lastMessage.getTime() >= clientLastOk.getTime()
+            ? lastMessage
+            : clientLastOk
+          : lastMessage || clientLastOk;
       const meta: ChannelChatMetaPatch = {
         messagesTotal,
         chatNeedsAttention,
         chatStatusName: st?.name,
         chatStatusBadgeKey: (st as { badgeKey?: string })?.badgeKey,
-        lastMessageAt: lastMessage ? lastMessage.toISOString() : undefined,
+        lastMessageAt: bestLast ? bestLast.toISOString() : undefined,
       };
 
       return { ...c, ...prefixKeys(meta, channel) } as T;
