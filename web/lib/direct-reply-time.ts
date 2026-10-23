@@ -158,6 +158,7 @@ export function computeThreadReplyTime(messages: ReplyMessage[]): ThreadReplyTim
         if (RELIABLE_REPLY_SOURCES.has(message.source)) {
           samples.push(businessReplyMs(waitStart, message.at));
         }
+        // Реакція салону теж закриває (samples не додаємо — це не текстова відповідь).
         waitStart = null;
       }
     }

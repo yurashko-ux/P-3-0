@@ -281,18 +281,41 @@ export async function GET(req: NextRequest) {
           };
         });
         const newest = messages[0];
+        const clientRow = await prisma.directClient.findFirst({
+          where: { id: resolvedClientId },
+          select: { lastMessageAt: true },
+        });
+        const clientLastMessageAt = clientRow?.lastMessageAt?.toISOString() ?? null;
+        // Після sync реакцій lastMessageAt на клієнті може бути новіший за «найсвіжіший» текст.
+        const liftAt =
+          clientLastMessageAt &&
+          (!newest?.receivedAt || clientLastMessageAt > newest.receivedAt)
+            ? clientLastMessageAt
+            : newest?.receivedAt ?? clientLastMessageAt;
+        const newestReaction = messages.find(
+          (m) => String(m.source || '').toLowerCase() === 'instagram_reaction',
+        );
+        const liftDirection =
+          liftAt && clientLastMessageAt && liftAt === clientLastMessageAt && newestReaction
+            ? newestReaction.direction
+            : newest?.direction ?? null;
         console.log('[direct/messages-history] відповідь з бази', {
           clientId: resolvedClientId,
           total: messages.length,
           newestAt: newest?.receivedAt ?? null,
           newestDirection: newest?.direction ?? null,
           newestText: (newest?.text || '').slice(0, 40),
+          clientLastMessageAt,
+          liftAt,
         });
         return historyJson({
           ok: true,
           total: messages.length,
           messages,
           source: 'database',
+          clientLastMessageAt,
+          liftAt,
+          liftDirection,
           ...(await replyPayload(resolvedClientId, channel)),
         });
       }

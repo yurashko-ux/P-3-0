@@ -437,79 +437,110 @@ async function acceptMessage(input: {
   }
 
   let status = "отримано";
-  if (username) {
-    let client = await prisma.directClient.findFirst({
+  // Реакція салону: клієнта надійніше брати з mid повідомлення, на яке лайкнули
+  // (у вихідній реакції sender = салон, нік клієнта в payload часто відсутній).
+  let client: { id: string; lastMessageAt: Date | null; leadAgency: string | null } | null = null;
+  if (reaction && reactedMessageId) {
+    const target = await prisma.directMessage.findFirst({
+      where: {
+        messageId: reactedMessageId,
+        NOT: { source: "instagram_reaction" },
+      },
+      select: {
+        clientId: true,
+        client: { select: { id: true, lastMessageAt: true, leadAgency: true, instagramUsername: true } },
+      },
+    });
+    if (target?.client) {
+      client = target.client;
+      if (!username) username = normalizeInstagram(target.client.instagramUsername);
+      console.log("[instagram/webhook] Реакцію привʼязано до клієнта за mid", {
+        reactedMessageId: reactedMessageId.slice(0, 24),
+        username,
+        outgoing,
+      });
+    }
+  }
+  if (!client && username) {
+    client = await prisma.directClient.findFirst({
       where: { instagramUsername: username },
       select: { id: true, lastMessageAt: true, leadAgency: true },
     });
     if (!client) {
       client = await ensureDirectLeadClient({ username, receivedAt });
     }
-    if (!client) {
-      status = "отримано, клієнта в таблиці немає";
-    } else {
-      // Реакції не вважаємо першим вхідним для джерела ліда.
-      if (!outgoing && !reaction) {
-        const referralAdId = input.item.referral?.adId || null;
-        if (referralAdId) {
-          await recordLeadAdReferral(referralAdId, input.item.referral?.adTitle || null, username);
-        }
-        await assignLeadSourceFromFirstIncoming({
-          clientId: client.id,
-          leadAgency: client.leadAgency,
-          text: plainText,
-          adId: referralAdId,
-          username,
-        });
+  }
+  if (!client) {
+    status = "отримано, клієнта в таблиці немає";
+  } else {
+    // Реакції не вважаємо першим вхідним для джерела ліда.
+    if (!outgoing && !reaction) {
+      const referralAdId = input.item.referral?.adId || null;
+      if (referralAdId) {
+        await recordLeadAdReferral(referralAdId, input.item.referral?.adTitle || null, username);
       }
-      const scopedId = outgoing ? recipientId : senderId;
-      if (scopedId && !salonIds.has(scopedId)) {
-        await prisma.directClient.update({
-          where: { id: client.id },
-          data: { instagramScopedId: scopedId },
-        }).catch((error) => {
-          console.warn(
-            "[instagram/webhook] Не збережено id співрозмовника",
-            sanitizeMeta(error instanceof Error ? error.message : String(error)),
-          );
-        });
-      }
-      let dbMessageId: string | null = null;
-      if (messageId) {
-        const sameId = await prisma.directMessage.findFirst({
-          where: { messageId },
-          select: { id: true },
-        });
-        if (sameId) {
-          dbMessageId = sameId.id;
-          status = "вже було";
-        }
-      }
-      if (!dbMessageId) {
-        const saved = await saveIfNew(
-          client.id,
-          client.lastMessageAt,
-          outgoing,
-          text,
-          messageId,
-          username,
-          receivedAt,
-          reaction
-            ? {
-                kind: "reaction",
-                action: reaction.action,
-                emoji: reaction.emoji || null,
-                reaction: reaction.reaction || null,
-                reactedMessageId,
-              }
-            : undefined,
+      await assignLeadSourceFromFirstIncoming({
+        clientId: client.id,
+        leadAgency: client.leadAgency,
+        text: plainText,
+        adId: referralAdId,
+        username: username || "",
+      });
+    }
+    const scopedId = outgoing ? recipientId : senderId;
+    if (scopedId && !salonIds.has(scopedId)) {
+      await prisma.directClient.update({
+        where: { id: client.id },
+        data: { instagramScopedId: scopedId },
+      }).catch((error) => {
+        console.warn(
+          "[instagram/webhook] Не збережено id співрозмовника",
+          sanitizeMeta(error instanceof Error ? error.message : String(error)),
         );
-        status = saved.status;
-        dbMessageId = saved.id;
+      });
+    }
+    let dbMessageId: string | null = null;
+    if (messageId) {
+      const sameId = await prisma.directMessage.findFirst({
+        where: { messageId },
+        select: { id: true },
+      });
+      if (sameId) {
+        dbMessageId = sameId.id;
+        status = "вже було";
+        // Повтор вебхука реакції — все одно підняти картку / закрити очікування за часом події.
+        if (reaction && (!client.lastMessageAt || receivedAt > client.lastMessageAt)) {
+          await prisma.directClient.update({
+            where: { id: client.id },
+            data: { lastMessageAt: receivedAt },
+          });
+        }
       }
-      if (dbMessageId && files.length > 0) {
-        text = await rememberMedia(dbMessageId, client.id, username, plainText, files, text);
-      }
+    }
+    if (!dbMessageId) {
+      const saved = await saveIfNew(
+        client.id,
+        client.lastMessageAt,
+        outgoing,
+        text,
+        messageId,
+        username || "unknown",
+        receivedAt,
+        reaction
+          ? {
+              kind: "reaction",
+              action: reaction.action,
+              emoji: reaction.emoji || null,
+              reaction: reaction.reaction || null,
+              reactedMessageId,
+            }
+          : undefined,
+      );
+      status = saved.status;
+      dbMessageId = saved.id;
+    }
+    if (dbMessageId && files.length > 0) {
+      text = await rememberMedia(dbMessageId, client.id, username || "", plainText, files, text);
     }
   }
 

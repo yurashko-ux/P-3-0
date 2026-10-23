@@ -411,11 +411,20 @@ export function MessagesHistoryModal({
       if (dbMessages.length > 0) {
         setMessages(dbMessages);
         setError(null);
-        // Реакції теж піднімають картку і (якщо вихідні) закривають «очікує».
+        // Після sync реакцій салону API віддає liftAt (може бути newer за текст «Сонце»).
+        const liftAt =
+          (typeof dbData.liftAt === 'string' && dbData.liftAt) ||
+          (typeof dbData.clientLastMessageAt === 'string' && dbData.clientLastMessageAt) ||
+          dbMessages[0]?.receivedAt ||
+          null;
+        const liftDirection =
+          (typeof dbData.liftDirection === 'string' && dbData.liftDirection) ||
+          dbMessages[0]?.direction ||
+          null;
         onHistoryLoaded?.({
           clientId: client.id,
-          lastMessageAt: dbMessages[0]?.receivedAt || null,
-          newestDirection: dbMessages[0]?.direction || null,
+          lastMessageAt: liftAt,
+          newestDirection: liftDirection,
         });
       }
 

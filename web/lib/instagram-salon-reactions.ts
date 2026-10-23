@@ -1,4 +1,4 @@
-// Лайк самого салону Meta не присилає вебхуком (message_reactions — лише від клієнта).
+// Лайк самого салону Meta часто не присилає вебхуком (message_reactions — здебільшого від клієнта).
 // Коли відкривають історію, читаємо reactions останніх повідомлень і зберігаємо лайк салону.
 
 import { prisma } from "@/lib/prisma";
@@ -10,7 +10,7 @@ import {
   resolveInstagramReactionEmoji,
 } from "@/lib/instagram-webhook";
 
-const RECENT_MESSAGES = 8;
+const RECENT_MESSAGES = 20;
 
 function asRecord(value: unknown): Record<string, unknown> | null {
   if (!value || typeof value !== "object" || Array.isArray(value)) return null;
@@ -72,6 +72,16 @@ function splitReaction(value: string): { emoji: string | null; reaction: string 
   return { emoji: text, reaction: null };
 }
 
+async function bumpClientLastMessage(clientId: string, at: Date): Promise<void> {
+  await prisma.directClient.updateMany({
+    where: {
+      id: clientId,
+      OR: [{ lastMessageAt: null }, { lastMessageAt: { lt: at } }],
+    },
+    data: { lastMessageAt: at },
+  });
+}
+
 /** Підтягує лайк салону на останні повідомлення діалогу. Помилка Meta не ламає історію. */
 export async function syncInstagramSalonReactions(clientId: string): Promise<number> {
   const userToken = (process.env.INSTAGRAM_ACCESS_TOKEN || "").trim();
@@ -80,7 +90,7 @@ export async function syncInstagramSalonReactions(clientId: string): Promise<num
 
   const client = await prisma.directClient.findFirst({
     where: { id: clientId },
-    select: { instagramUsername: true, instagramScopedId: true },
+    select: { instagramUsername: true, instagramScopedId: true, lastMessageAt: true },
   });
   if (!client) return 0;
 
@@ -90,18 +100,38 @@ export async function syncInstagramSalonReactions(clientId: string): Promise<num
     return 0;
   }
 
-  const recent = await prisma.directMessage.findMany({
+  // Спочатку свіжі вхідні (салон лайкає саме їх), потім інші Graph-повідомлення.
+  const recentIncoming = await prisma.directMessage.findMany({
     where: {
       clientId,
       source: "instagram_graph",
+      direction: "incoming",
       messageId: { not: null },
     },
     orderBy: { receivedAt: "desc" },
     take: RECENT_MESSAGES,
-    select: { messageId: true },
+    select: { messageId: true, receivedAt: true },
   });
-  const mids = recent.map((row) => (row.messageId || "").trim()).filter((mid) => mid && !mid.startsWith("reaction:"));
-  if (!mids.length) return 0;
+  const recentOther = await prisma.directMessage.findMany({
+    where: {
+      clientId,
+      source: "instagram_graph",
+      messageId: { not: null },
+      NOT: { direction: "incoming" },
+    },
+    orderBy: { receivedAt: "desc" },
+    take: Math.max(4, RECENT_MESSAGES - recentIncoming.length),
+    select: { messageId: true, receivedAt: true },
+  });
+  const seen = new Set<string>();
+  const recent: Array<{ messageId: string; receivedAt: Date }> = [];
+  for (const row of [...recentIncoming, ...recentOther]) {
+    const mid = (row.messageId || "").trim();
+    if (!mid || mid.startsWith("reaction:") || seen.has(mid)) continue;
+    seen.add(mid);
+    recent.push({ messageId: mid, receivedAt: row.receivedAt });
+  }
+  if (!recent.length) return 0;
 
   const salon = {
     igId: loaded.igId,
@@ -115,21 +145,41 @@ export async function syncInstagramSalonReactions(clientId: string): Promise<num
 
   let saved = 0;
   await Promise.all(
-    mids.map(async (mid) => {
-      const result = await graphCall(encodeURIComponent(mid), loaded.pageToken, { fields: "reactions" });
+    recent.map(async (row) => {
+      const mid = row.messageId;
+      // Розширені поля: без users Meta інколи все одно віддає reaction (лайк сторінки).
+      const result = await graphCall(encodeURIComponent(mid), loaded.pageToken, {
+        fields: "id,reactions{reaction,users{id,username}}",
+      });
       if (graphCallFailed(result)) {
-        console.warn("[instagram/reactions] Не прочитано реакції повідомлення", result.message);
+        console.warn("[instagram/reactions] Не прочитано реакції повідомлення", {
+          mid: mid.slice(0, 24),
+          message: result.message,
+        });
         return;
       }
-      if (mid === mids[0] && result.data.reactions == null) {
-        console.log("[instagram/reactions] У відповіді немає reactions", {
+      if (mid === recent[0]?.messageId) {
+        console.log("[instagram/reactions] Відповідь Graph для свіжого mid", {
+          mid: mid.slice(0, 24),
+          hasReactions: result.data.reactions != null,
           keys: Object.keys(result.data).slice(0, 12),
         });
       }
       const groups = reactionUsers(result.data.reactions);
-      const salonReaction = groups.find((group) =>
-        group.users.some((user) => isSalonUser(user, salon, clientWho)),
-      );
+      let salonReaction =
+        groups.find((group) => group.users.some((user) => isSalonUser(user, salon, clientWho))) ||
+        null;
+      // Graph часто віддає лайк акаунта сторінки без users — тоді вважаємо його салонним.
+      if (!salonReaction) {
+        const orphan = groups.find((group) => group.reaction && group.users.length === 0);
+        if (orphan) {
+          salonReaction = orphan;
+          console.log("[instagram/reactions] Реакція без users → салон", {
+            mid: mid.slice(0, 24),
+            reaction: orphan.reaction,
+          });
+        }
+      }
       const key = salonReactionKey(mid);
       const users = groups.flatMap((group) => group.users);
       const everyoneKnown =
@@ -143,7 +193,10 @@ export async function syncInstagramSalonReactions(clientId: string): Promise<num
       if (!salonReaction) {
         // Порожня відповідь або всі люди впізнані і салону серед них немає — лайк знято.
         // Якщо Meta повернула невідомих людей, запис не чіпаємо.
-        if (everyoneKnown) {
+        // orphan-випадок (users=[]) уже оброблено вище як салон.
+        if (everyoneKnown && groups.every((g) => g.users.length > 0)) {
+          await prisma.directMessage.deleteMany({ where: { clientId, messageId: key } });
+        } else if (groups.length === 0) {
           await prisma.directMessage.deleteMany({ where: { clientId, messageId: key } });
         }
         return;
@@ -161,18 +214,35 @@ export async function syncInstagramSalonReactions(clientId: string): Promise<num
       }).slice(0, 2000);
       const existing = await prisma.directMessage.findFirst({
         where: { clientId, messageId: key },
-        select: { id: true, text: true },
+        select: { id: true, text: true, receivedAt: true },
       });
+      // Якщо lastMessageAt ще на рівні тексту (на який лайкнули) — реакція не підняла картку.
+      const clientFresh = await prisma.directClient.findFirst({
+        where: { id: clientId },
+        select: { lastMessageAt: true },
+      });
+      const neverLifted =
+        !clientFresh?.lastMessageAt || clientFresh.lastMessageAt.getTime() <= row.receivedAt.getTime() + 2000;
       if (existing) {
+        const data: { text?: string; rawData?: string; receivedAt?: Date } = {};
         if (existing.text !== text) {
-          await prisma.directMessage.update({
-            where: { id: existing.id },
-            data: { text, rawData },
-          });
+          data.text = text;
+          data.rawData = rawData;
+        }
+        if (neverLifted) {
+          data.receivedAt = new Date();
+        }
+        if (Object.keys(data).length > 0) {
+          await prisma.directMessage.update({ where: { id: existing.id }, data });
           saved += 1;
         }
+        await bumpClientLastMessage(
+          clientId,
+          data.receivedAt || existing.receivedAt,
+        );
         return;
       }
+      // Нова реакція — час «зараз», щоб картка піднялась вище за «Сонце».
       const receivedAt = new Date();
       await prisma.directMessage.create({
         data: {
@@ -185,16 +255,14 @@ export async function syncInstagramSalonReactions(clientId: string): Promise<num
           rawData,
         },
       });
-      // Реакція салону піднімає картку і закриває «очікує».
-      await prisma.directClient.updateMany({
-        where: {
-          id: clientId,
-          OR: [{ lastMessageAt: null }, { lastMessageAt: { lt: receivedAt } }],
-        },
-        data: { lastMessageAt: receivedAt },
-      });
+      await bumpClientLastMessage(clientId, receivedAt);
       saved += 1;
-      console.log("[instagram/reactions] Лайк салону збережено", { clientId, emoji });
+      console.log("[instagram/reactions] Лайк салону збережено", {
+        clientId,
+        emoji,
+        mid: mid.slice(0, 24),
+        lifted: true,
+      });
     }),
   );
   return saved;
