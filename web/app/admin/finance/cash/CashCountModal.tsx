@@ -52,6 +52,10 @@ type Props = {
   currency: CashCountCurrency;
   /** Останнє збережене «Пораховані» — підставляємо, щоб не вводити скріплену пачку знову. */
   initialBundledAmount?: number | null;
+  /** Баланс плитки до проведення платежів. */
+  book?: number | null;
+  /** Сума ще непроведених платежів. Від'ємна, якщо виходів більше. */
+  openNet?: number;
   onClose: () => void;
   onSaved: () => void;
 };
@@ -61,6 +65,8 @@ export function CashCountModal({
   accountTitle,
   currency,
   initialBundledAmount = null,
+  book = null,
+  openNet = 0,
   onClose,
   onSaved,
 }: Props) {
@@ -93,6 +99,8 @@ export function CashCountModal({
   const bundledAmount = parseAmountInput(bundled);
   const looseTotal = denoms.reduce((sum, denomination, index) => sum + lineQty(index) * denomination, 0);
   const total = Math.round((bundledAmount + looseTotal) * 100) / 100;
+  const expected = book == null ? null : Math.round((book + openNet) * 100) / 100;
+  const showFormula = expected != null && book != null && Math.abs(openNet) >= 0.005;
 
   async function submit() {
     setBusy(true);
@@ -140,6 +148,19 @@ export function CashCountModal({
         </div>
 
         <div className="space-y-2 p-3">
+          {expected != null ? (
+            <div className="rounded-2xl border border-slate-200/80 bg-white px-3 py-2.5 text-center shadow-[0_1px_2px_rgba(15,23,42,0.05),0_8px_18px_-10px_rgba(15,23,42,0.25)]">
+              <div className="text-[11px] font-medium text-gray-500">Очікуємо в касі</div>
+              <div className="text-xl font-semibold tabular-nums text-gray-900">
+                {money(expected)} {unit}
+              </div>
+              {showFormula ? (
+                <div className="mt-0.5 text-[10px] tabular-nums text-gray-400">
+                  {money(book || 0)} {openNet < 0 ? "−" : "+"} {money(Math.abs(openNet))} = {money(expected)}
+                </div>
+              ) : null}
+            </div>
+          ) : null}
           <div className="rounded-2xl border border-slate-200/80 bg-white px-3 py-2.5 text-center shadow-[0_1px_2px_rgba(15,23,42,0.05),0_8px_18px_-10px_rgba(15,23,42,0.25)]">
             <div className="text-[11px] font-medium text-gray-500">Загальна сума</div>
             <div className="text-xl font-semibold tabular-nums text-gray-900">

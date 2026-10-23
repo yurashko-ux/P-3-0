@@ -18,6 +18,7 @@ type CashTile = {
   openPaymentsCount: number;
   openPaymentsFromKyivDay: string | null;
   lastBundledAmount: number | null;
+  variance: number | null;
 };
 
 type LedgerApiRow = {
@@ -85,6 +86,21 @@ function bookAmount(tile: CashTile): number | null {
   return tile.balanceFx;
 }
 
+function VarianceLine({ tile }: { tile: CashTile }) {
+  const variance = tile.variance;
+  if (variance == null || Math.abs(Math.round(variance)) < 1) return null;
+  const unit = tile.currency === "UAH" ? "грн" : fxSymbol(tile.currency);
+  const shortage = variance < 0;
+  return (
+    <span
+      className={`mt-0.5 text-[11px] font-medium leading-tight tabular-nums ${shortage ? "text-red-600" : "text-amber-700"}`}
+      title={shortage ? "У касі менше, ніж за проведеними платежами" : "У касі більше, ніж за проведеними платежами"}
+    >
+      {shortage ? "недостача" : "надлишок"} {money(Math.abs(variance))} {unit}
+    </span>
+  );
+}
+
 function OpenPaymentsLine({ tile }: { tile: CashTile }) {
   if (!tile.cash || !tile.openPaymentsCount) return null;
   const count = tile.openPaymentsCount;
@@ -120,11 +136,13 @@ function TileFace({ tile }: { tile: CashTile }) {
             {money(tile.balanceFx)} {fxSymbol(tile.currency)}
           </span>
           <OpenPaymentsLine tile={tile} />
+          <VarianceLine tile={tile} />
         </>
       ) : (
         <>
           <span className="mt-1 text-lg font-semibold tabular-nums text-gray-900">{money(book || 0)} грн</span>
           <OpenPaymentsLine tile={tile} />
+          <VarianceLine tile={tile} />
         </>
       )}
     </>
@@ -234,6 +252,8 @@ export default function CashBalancesPage() {
           accountTitle={countTile.title}
           currency={countTile.currency}
           initialBundledAmount={countTile.lastBundledAmount}
+          book={bookAmount(countTile)}
+          openNet={countTile.openPaymentsNet || 0}
           onClose={() => setCountTile(null)}
           onSaved={() => {
             setCountTile(null);

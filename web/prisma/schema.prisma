@@ -1945,8 +1945,14 @@ model CashTillCount {
   bundledAmount Float    @default(0)
   /// UAH | USD | EUR
   currency     String   @default("UAH")
-  /// Факт збігся з балансом за документами — ця касовка є проводкою.
+  /// Факт збігся з балансом за документами — розбіжності немає.
   matchedBook  Boolean  @default(false)
+  /// Очікувана каса до збереження: попередній баланс + непроведені платежі.
+  expectedUah  Float?
+  /// Факт мінус очікувана. Більше нуля — надлишок, менше — недостача.
+  varianceUah  Float?
+  /// Баланс плитки після цієї касовки. Надлишок у нього не входить, непроведений прихід теж.
+  bookUah      Float?
   lines        Json
   createdAt    DateTime @default(now())
   createdBy    String?

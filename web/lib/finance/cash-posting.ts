@@ -1,5 +1,6 @@
-// Готівкові рухи каси і проводка збіжною касовкою.
-// Плитка показує останню касовку, якою платежі проведено. Не проведені в неї не входять.
+// Готівкові рухи каси і проводка касовкою.
+// Збіг і надлишок проводять усі очікуючі платежі. Недостача лишає непроведеними приходи,
+// які покривають різницю. Плитка показує баланс після проведення, не факт у шухляді.
 // Старі рядки Altegio до 09.10 у проводку не беремо: вони вже в початковому залишку.
 
 import { Prisma } from "@prisma/client";
@@ -10,6 +11,7 @@ import { isDepositTopUpPaymentPurpose } from "@/lib/altegio/payment-purpose-labe
 import { isEurCashAccountTitle, isUsdCashAccountTitle } from "@/lib/journal/checkout";
 import { CASH_OPENING_KYIV_DAY, CASH_RECONCILE_FROM_KYIV_DAY } from "@/lib/finance/cash-openings";
 import { summarizeOpenCashForAccount } from "@/lib/finance/cash-ledger-aggregate";
+import { selectInflowsToHold } from "@/lib/finance/cash-shortage-hold";
 
 type CashCurrency = "UAH" | "USD" | "EUR";
 
@@ -93,8 +95,9 @@ function signedCashAmountFromAltegio(
   return money(sign * foreign);
 }
 
+/** Розбіжність менша за 5 копійок — той самий баланс, не надлишок і не недостача. */
 export function cashAmountsEqual(a: number, b: number): boolean {
-  return Math.abs(money(a) - money(b)) < 0.009;
+  return Math.abs(money(a) - money(b)) < 0.05;
 }
 
 export async function loadCashBookMovements(
@@ -241,22 +244,25 @@ export async function openCashNetsForAccounts(
   return out;
 }
 
-export async function postCashMovementsIfMatched(input: {
+type FreshCashMovement = {
+  key: string;
+  sourceType: string;
+  sourceId: string;
+  accountId: number;
+  direction: "in" | "out";
+  amount: number;
+  kyivDay: string;
+};
+
+export async function postCashCount(input: {
   countId: string;
   accountId: number;
   accountTitle: string;
   currency: CashCurrency;
   counted: number;
-  book: number;
-}): Promise<{ matched: boolean; posted: number }> {
-  const matched = cashAmountsEqual(input.counted, input.book);
-  if (!matched) {
-    console.log(
-      `[finance/cash-posting] Каса ${input.accountId} «${input.accountTitle}»: факт ${input.counted} ≠ очікувана касовка ${input.book}, проводки немає`,
-    );
-    return { matched: false, posted: 0 };
-  }
-
+  /** Баланс плитки до цієї касовки, без непроведених платежів. */
+  previous: number;
+}): Promise<{ matched: boolean; posted: number; expected: number; variance: number; book: number; held: number }> {
   const movements = await loadCashBookMovements([
     { id: input.accountId, title: input.accountTitle, currency: input.currency },
   ]);
@@ -265,23 +271,62 @@ export async function postCashMovementsIfMatched(input: {
     select: { sourceType: true, sourceId: true, accountId: true },
   });
   const postedKeys = new Set(existing.map((row) => postingKey(row.sourceType, row.sourceId, row.accountId)));
-  const fresh = movements.filter(
-    (movement) =>
-      movement.currency === input.currency
-      && !postedKeys.has(postingKey(movement.sourceType, movement.sourceId, movement.accountId)),
-  );
+  const fresh: FreshCashMovement[] = movements
+    .filter(
+      (movement) =>
+        movement.currency === input.currency
+        && !postedKeys.has(postingKey(movement.sourceType, movement.sourceId, movement.accountId)),
+    )
+    .map((movement) => ({
+      key: postingKey(movement.sourceType, movement.sourceId, movement.accountId),
+      sourceType: movement.sourceType,
+      sourceId: movement.sourceId,
+      accountId: movement.accountId,
+      direction: movement.direction,
+      amount: movement.amount,
+      kyivDay: movement.kyivDay,
+    }));
   const mirroredAltegioIds = new Set(
     movements.map((movement) => movement.altegioTransactionId).filter((id): id is number => id != null && id > 0),
   );
   const altegioFresh = await loadUnpostedAltegioCash(input.accountId, input.accountTitle, postedKeys, mirroredAltegioIds);
+  for (const movement of altegioFresh) {
+    fresh.push({
+      key: postingKey("altegio", movement.sourceId, movement.accountId),
+      sourceType: "altegio",
+      sourceId: movement.sourceId,
+      accountId: movement.accountId,
+      direction: movement.direction,
+      amount: movement.amount,
+      kyivDay: movement.kyivDay,
+    });
+  }
+
+  const movementNet = money(fresh.reduce((sum, movement) => sum + signed(movement), 0));
+  const expected = money(input.previous + movementNet);
+  const rawVariance = money(input.counted - expected);
+  const matched = cashAmountsEqual(input.counted, expected);
+  const variance = matched ? 0 : rawVariance;
+  const shortage = variance < 0 ? money(-variance) : 0;
+  const heldKeys = new Set(shortage > 0 ? selectInflowsToHold(fresh, shortage) : []);
+  const held = money(
+    fresh.reduce((sum, movement) => (heldKeys.has(movement.key) ? sum + movement.amount : sum), 0),
+  );
+  const book = money(expected - held);
 
   await prisma.cashTillCount.update({
     where: { id: input.countId },
-    data: { matchedBook: true },
+    data: {
+      matchedBook: matched,
+      expectedUah: expected,
+      varianceUah: variance,
+      bookUah: book,
+    },
   });
 
-  const toPost = [
-    ...fresh.map((movement) => ({
+  const toPost = fresh
+    .filter((movement) => !heldKeys.has(movement.key))
+    .map((movement) => ({
       countId: input.countId,
       accountId: movement.accountId,
       sourceType: movement.sourceType,
@@ -289,17 +334,7 @@ export async function postCashMovementsIfMatched(input: {
       direction: movement.direction,
       amount: movement.amount,
       kyivDay: movement.kyivDay,
-    })),
-    ...altegioFresh.map((movement) => ({
-      countId: input.countId,
-      accountId: movement.accountId,
-      sourceType: "altegio",
-      sourceId: movement.sourceId,
-      direction: movement.direction,
-      amount: movement.amount,
-      kyivDay: movement.kyivDay,
-    })),
-  ];
+    }));
   if (toPost.length > 0) {
     await prisma.cashTillPosting.createMany({
       data: toPost,
@@ -307,10 +342,11 @@ export async function postCashMovementsIfMatched(input: {
     });
   }
 
+  const gapLabel = matched ? "збіг" : variance > 0 ? `надлишок ${variance}` : `недостача ${shortage}, лишили приходи ${held}`;
   console.log(
-    `[finance/cash-posting] Касовка ${input.countId} провела ${toPost.length} платежів каси ${input.accountId} «${input.accountTitle}» (${input.counted} ${input.currency})`,
+    `[finance/cash-posting] Касовка ${input.countId} каси ${input.accountId} «${input.accountTitle}»: факт ${input.counted}, очікувано ${expected}, ${gapLabel}. Проведено ${toPost.length} з ${fresh.length}, баланс плитки ${book} ${input.currency}`,
   );
-  return { matched: true, posted: toPost.length };
+  return { matched, posted: toPost.length, expected, variance, book, held };
 }
 
 type AltegioPostingRow = {

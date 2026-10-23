@@ -11,7 +11,7 @@ import {
   type CashCountCurrency,
   type CashCountLine,
 } from "@/lib/finance/cash-denominations";
-import { postCashMovementsIfMatched } from "@/lib/finance/cash-posting";
+import { postCashCount } from "@/lib/finance/cash-posting";
 
 export type CashSnapshotLine = {
   accountId: number;
@@ -87,7 +87,6 @@ export async function saveCashTillCount(input: {
   const previous = bookAmount(tile);
   if (previous == null) throw new Error("Немає балансу каси");
   const openNet = tile.openPaymentsNet || 0;
-  const expected = Math.round((previous + openNet) * 100) / 100;
   const kyivDay = kyivCalendarTodayYmd();
   const saved = await prisma.cashTillCount.create({
     data: {
@@ -101,16 +100,16 @@ export async function saveCashTillCount(input: {
       createdBy: input.createdBy || null,
     },
   });
-  const posting = await postCashMovementsIfMatched({
+  const posting = await postCashCount({
     countId: saved.id,
     accountId,
     accountTitle: tile.title,
     currency: tile.currency,
     counted: countedUah,
-    book: expected,
+    previous,
   });
   console.log(
-    `[finance/cash-count] ${kyivDay} каса ${accountId} «${tile.title}»: попередня ${previous}, не проведено ${openNet}, очікувано ${expected}, пораховані ${bundledAmount}, купюри ${looseTotal}, факт ${countedUah} ${currency}${posting.matched ? `, проведено ${posting.posted}` : ", проведення немає"}`,
+    `[finance/cash-count] ${kyivDay} каса ${accountId} «${tile.title}»: попередня ${previous}, не проведено ${openNet}, очікувано ${posting.expected}, пораховані ${bundledAmount}, купюри ${looseTotal}, факт ${countedUah} ${currency}, розбіжність ${posting.variance}, проведено ${posting.posted}, лишили ${posting.held}`,
   );
   return { countedUah, bundledAmount, kyivDay };
 }
