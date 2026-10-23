@@ -96,7 +96,7 @@ function VarianceLine({ tile }: { tile: CashTile }) {
       className={`mt-0.5 text-[11px] font-medium leading-tight tabular-nums ${shortage ? "text-red-600" : "text-amber-700"}`}
       title={shortage ? "У касі менше, ніж за проведеними платежами" : "У касі більше, ніж за проведеними платежами"}
     >
-      {shortage ? "недостача" : "надлишок"} {money(Math.abs(variance))} {unit}
+      {shortage ? "недостача −" : "надлишок"} {money(Math.abs(variance))} {unit}
     </span>
   );
 }
