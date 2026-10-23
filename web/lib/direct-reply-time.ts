@@ -153,7 +153,9 @@ export function computeThreadReplyTime(messages: ReplyMessage[]): ThreadReplyTim
       continue;
     }
     if (message.direction === "outgoing") {
-      // Будь-яка вихідна IG (Graph/manual/іноді manychat) знімає очікування — салон відповів.
+      // Лайк/реакція — не відповідь текстом, очікування не знімаємо.
+      if (message.source === "instagram_reaction") continue;
+      // Вихідна IG (Graph/manual/іноді manychat) знімає очікування — салон відповів.
       if (waitStart != null) {
         if (RELIABLE_REPLY_SOURCES.has(message.source)) {
           samples.push(businessReplyMs(waitStart, message.at));

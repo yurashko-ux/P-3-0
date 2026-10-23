@@ -5,7 +5,6 @@ import { NextRequest, NextResponse } from "next/server";
 import { Prisma } from "@prisma/client";
 import { getAuthContext, hasPermission, verifyUserToken } from "@/lib/auth-rbac";
 import { isPreviewDeploymentHost } from "@/lib/auth-preview";
-import { sourcesWhereClause } from "@/lib/direct-channel-chat";
 import { enrichClientsWithChannelChatMeta } from "@/lib/direct-clients-channel-chat-meta";
 import { computeThreadReplyTime, type ThreadReplyTime } from "@/lib/direct-reply-time";
 import { prisma } from "@/lib/prisma";
@@ -88,7 +87,7 @@ async function findIdsByLastInstagramMessage(
   audience: "clients" | "leads",
   offset: number,
   limit: number
-): Promise<string[]> {
+): Promise<Array<{ id: string; sortAt: Date | null }>> {
   const audienceSql =
     audience === "clients"
       ? Prisma.sql`(
@@ -100,8 +99,17 @@ async function findIdsByLastInstagramMessage(
           AND c."paidServiceDate" IS NULL
           AND (c."consultationBookingDate" IS NULL OR c."consultationDeletedInAltegio" = true)
         )`;
-  const rows = await prisma.$queryRaw<{ id: string }[]>(Prisma.sql`
-    SELECT c.id
+  const rows = await prisma.$queryRaw<{ id: string; sort_at: Date | null }[]>(Prisma.sql`
+    SELECT c.id,
+      GREATEST(
+        COALESCE(c."lastMessageAt", TIMESTAMPTZ 'epoch'),
+        COALESCE((
+          SELECT MAX(m."receivedAt")
+          FROM "direct_messages" m
+          WHERE m."clientId" = c.id
+            AND LOWER(COALESCE(m.source, 'manychat')) NOT IN ('telegram', 'telegram_campaign', 'instagram_reaction')
+        ), TIMESTAMPTZ 'epoch')
+      ) AS sort_at
     FROM "direct_clients" c
     WHERE c.state IS DISTINCT FROM 'binotel-lead'
       AND c."instagramUsername" NOT LIKE 'binotel_%'
@@ -110,18 +118,13 @@ async function findIdsByLastInstagramMessage(
       AND c."instagramUsername" NOT LIKE 'altegio_%'
       AND c."instagramUsername" NOT LIKE '\\_\\_no_ig\\_%'
       AND ${audienceSql}
-    ORDER BY GREATEST(
-      COALESCE(c."lastMessageAt", TIMESTAMPTZ 'epoch'),
-      COALESCE((
-        SELECT MAX(m."receivedAt")
-        FROM "direct_messages" m
-        WHERE m."clientId" = c.id
-          AND LOWER(COALESCE(m.source, 'manychat')) NOT IN ('telegram', 'telegram_campaign', 'instagram_reaction')
-      ), TIMESTAMPTZ 'epoch')
-    ) DESC, c.id ASC
+    ORDER BY sort_at DESC, c.id ASC
     LIMIT ${limit} OFFSET ${offset}
   `);
-  return rows.map((row) => row.id);
+  return rows.map((row) => ({
+    id: row.id,
+    sortAt: row.sort_at && row.sort_at.getTime() > 0 ? row.sort_at : null,
+  }));
 }
 
 /** Лід без живої консультації і без платної послуги, щоб не дублюватись у клієнтах. */
@@ -169,10 +172,7 @@ async function countWaitingByAudience(audience: "clients" | "leads"): Promise<nu
         SELECT m.direction
         FROM "direct_messages" m
         WHERE m."clientId" = c.id
-          AND (
-            m.source IN ('instagram_graph', 'manual')
-            OR (m.source = 'instagram_reaction' AND LOWER(m.direction) = 'outgoing')
-          )
+          AND m.source IN ('instagram_graph', 'manual')
         ORDER BY m."receivedAt" DESC, m.id DESC
         LIMIT 1
       )) = 'incoming'
@@ -184,12 +184,11 @@ async function countWaitingByAudience(audience: "clients" | "leads"): Promise<nu
 async function loadReplyTimes(ids: string[]): Promise<Map<string, ThreadReplyTime>> {
   const map = new Map<string, ThreadReplyTime>();
   if (!ids.length) return map;
-  // Усі IG-повідомлення (не Telegram): вихідні з будь-якого source знімають «очікує»;
-  // старт очікування — лише instagram_graph/manual (див. computeThreadReplyTime).
+  // IG без реакцій: лайки не знімають і не стартують «очікує» (див. computeThreadReplyTime).
   const messages = await prisma.directMessage.findMany({
     where: {
       clientId: { in: ids },
-      ...sourcesWhereClause("instagram"),
+      NOT: { source: { in: ["telegram", "telegram_campaign", "instagram_reaction"] } },
     },
     select: { clientId: true, direction: true, receivedAt: true, source: true },
     orderBy: [{ receivedAt: "asc" }, { id: "asc" }],
@@ -234,13 +233,15 @@ export async function GET(req: NextRequest) {
     const audience = audienceParam;
     const where = audience === "clients" ? clientWhere() : leadWhere();
 
-    const [total, orderedIds, sources, waitingCount] = await Promise.all([
+    const [total, ordered, sources, waitingCount] = await Promise.all([
       prisma.directClient.count({ where }),
       findIdsByLastInstagramMessage(audience, offset, limit),
       prisma.leadSource.findMany({ select: { code: true, name: true, mark: true } }),
       // Лічильник «Очікують» лише на першій сторінці — на «завантажити ще» не дублюємо важкий COUNT.
       offset === 0 ? countWaitingByAudience(audience) : Promise.resolve(null as number | null),
     ]);
+    const orderedIds = ordered.map((row) => row.id);
+    const sortAtById = new Map(ordered.map((row) => [row.id, row.sortAt]));
     const unordered = orderedIds.length
       ? await prisma.directClient.findMany({
           where: { id: { in: orderedIds } },
@@ -249,8 +250,8 @@ export async function GET(req: NextRequest) {
             firstName: true,
             lastName: true,
             instagramUsername: true,
-            firstContactDate: true,
             lastMessageAt: true,
+            firstContactDate: true,
             chatStatusId: true,
             chatStatusSetAt: true,
             chatStatusCheckedAt: true,
@@ -267,34 +268,46 @@ export async function GET(req: NextRequest) {
 
     const sourceNameByCode = new Map(sources.map((source) => [source.code, source.name]));
     const sourceMarkByCode = new Map(sources.map((source) => [source.code, source.mark]));
-    const mapped = rows.map((row) => ({
-      id: row.id,
-      firstName: row.firstName,
-      lastName: row.lastName,
-      instagramUsername: row.instagramUsername,
-      firstContactDate: row.firstContactDate.toISOString(),
-      lastMessageAt: row.lastMessageAt ? row.lastMessageAt.toISOString() : null,
-      chatStatusId: row.chatStatusId,
-      chatStatusSetAt: row.chatStatusSetAt ? row.chatStatusSetAt.toISOString() : null,
-      chatStatusCheckedAt: row.chatStatusCheckedAt ? row.chatStatusCheckedAt.toISOString() : null,
-      leadAgency: row.leadAgency,
-      leadAdId: row.leadAdId,
-      spent: row.spent,
-      visits: row.visits,
-      altegioClientId: row.altegioClientId,
-      sourceName: row.leadAgency
-        ? sourceNameByCode.get(row.leadAgency) || SOURCE_NAME_FALLBACK[row.leadAgency] || row.leadAgency
-        : null,
-      sourceMark: row.leadAgency ? sourceMarkByCode.get(row.leadAgency) || null : null,
-    }));
+    const mapped = rows.map((row) => {
+      // Дата/порядок Inst = той самий ключ сортування (не відстає від «очікує»).
+      const sortAt = sortAtById.get(row.id);
+      const lastMessageAt = sortAt
+        ? sortAt.toISOString()
+        : row.lastMessageAt
+          ? row.lastMessageAt.toISOString()
+          : null;
+      return {
+        id: row.id,
+        firstName: row.firstName,
+        lastName: row.lastName,
+        instagramUsername: row.instagramUsername,
+        firstContactDate: row.firstContactDate.toISOString(),
+        lastMessageAt,
+        chatStatusId: row.chatStatusId,
+        chatStatusSetAt: row.chatStatusSetAt ? row.chatStatusSetAt.toISOString() : null,
+        chatStatusCheckedAt: row.chatStatusCheckedAt ? row.chatStatusCheckedAt.toISOString() : null,
+        leadAgency: row.leadAgency,
+        leadAdId: row.leadAdId,
+        spent: row.spent,
+        visits: row.visits,
+        altegioClientId: row.altegioClientId,
+        sourceName: row.leadAgency
+          ? sourceNameByCode.get(row.leadAgency) || SOURCE_NAME_FALLBACK[row.leadAgency] || row.leadAgency
+          : null,
+        sourceMark: row.leadAgency ? sourceMarkByCode.get(row.leadAgency) || null : null,
+      };
+    });
     const [withChat, replyTimes] = await Promise.all([
       enrichClientsWithChannelChatMeta(mapped, "instagram"),
       loadReplyTimes(orderedIds),
     ]);
     const withReply = withChat.map((client) => {
       const reply = replyTimes.get(client.id);
+      const sortAt = sortAtById.get(client.id);
       return {
         ...client,
+        // Після enrich знову фіксуємо дату сортування — щоб пігулка Inst збігалась з порядком.
+        lastMessageAt: sortAt ? sortAt.toISOString() : client.lastMessageAt ?? null,
         replyAvgMinutes: reply?.replyAvgMinutes ?? null,
         waitingSince: reply?.waitingSince ?? null,
       };
