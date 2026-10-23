@@ -54,10 +54,10 @@ export async function enrichClientsWithChannelChatMeta<T extends { id: string }>
     const checkedField = fields.checkedAt;
     const setField = fields.setAt;
 
-    // Реакції (лайки) лишаються в історії, але не рухають дату/порядок у Переписках.
+    // Реакції теж рухають дату/порядок у Переписках (піднімають картку).
     const activityFilter =
       channel === 'instagram'
-        ? { NOT: { source: { in: ['telegram', 'telegram_campaign', 'instagram_reaction'] } } }
+        ? { NOT: { source: { in: ['telegram', 'telegram_campaign'] } } }
         : sourceFilter;
 
     const [totalCounts, lastIncoming, lastAnyMessage] = await Promise.all([

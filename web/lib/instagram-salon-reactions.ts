@@ -173,6 +173,7 @@ export async function syncInstagramSalonReactions(clientId: string): Promise<num
         }
         return;
       }
+      const receivedAt = new Date();
       await prisma.directMessage.create({
         data: {
           clientId,
@@ -180,9 +181,17 @@ export async function syncInstagramSalonReactions(clientId: string): Promise<num
           text,
           messageId: key,
           source: "instagram_reaction",
-          receivedAt: new Date(),
+          receivedAt,
           rawData,
         },
+      });
+      // Реакція салону піднімає картку і закриває «очікує».
+      await prisma.directClient.updateMany({
+        where: {
+          id: clientId,
+          OR: [{ lastMessageAt: null }, { lastMessageAt: { lt: receivedAt } }],
+        },
+        data: { lastMessageAt: receivedAt },
       });
       saved += 1;
       console.log("[instagram/reactions] Лайк салону збережено", { clientId, emoji });

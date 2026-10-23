@@ -107,7 +107,7 @@ async function findIdsByLastInstagramMessage(
           SELECT MAX(m."receivedAt")
           FROM "direct_messages" m
           WHERE m."clientId" = c.id
-            AND LOWER(COALESCE(m.source, 'manychat')) NOT IN ('telegram', 'telegram_campaign', 'instagram_reaction')
+            AND LOWER(COALESCE(m.source, 'manychat')) NOT IN ('telegram', 'telegram_campaign')
         ), TIMESTAMPTZ 'epoch')
       ) AS sort_at
     FROM "direct_clients" c
@@ -172,7 +172,10 @@ async function countWaitingByAudience(audience: "clients" | "leads"): Promise<nu
         SELECT m.direction
         FROM "direct_messages" m
         WHERE m."clientId" = c.id
-          AND m.source IN ('instagram_graph', 'manual')
+          AND (
+            m.source IN ('instagram_graph', 'manual')
+            OR (m.source = 'instagram_reaction' AND LOWER(m.direction) = 'outgoing')
+          )
         ORDER BY m."receivedAt" DESC, m.id DESC
         LIMIT 1
       )) = 'incoming'
@@ -184,11 +187,11 @@ async function countWaitingByAudience(audience: "clients" | "leads"): Promise<nu
 async function loadReplyTimes(ids: string[]): Promise<Map<string, ThreadReplyTime>> {
   const map = new Map<string, ThreadReplyTime>();
   if (!ids.length) return map;
-  // IG без реакцій: лайки не знімають і не стартують «очікує» (див. computeThreadReplyTime).
+  // IG включно з реакціями: вихідний лайк салону закриває «очікує» і піднімає картку.
   const messages = await prisma.directMessage.findMany({
     where: {
       clientId: { in: ids },
-      NOT: { source: { in: ["telegram", "telegram_campaign", "instagram_reaction"] } },
+      NOT: { source: { in: ["telegram", "telegram_campaign"] } },
     },
     select: { clientId: true, direction: true, receivedAt: true, source: true },
     orderBy: [{ receivedAt: "asc" }, { id: "asc" }],

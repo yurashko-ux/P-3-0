@@ -633,8 +633,8 @@ async function saveIfNew(
     },
     select: { id: true },
   });
-  // Реакції не піднімають картку в Переписках — лише звичайні повідомлення.
-  if (!isReaction && (!lastMessageAt || receivedAt > lastMessageAt)) {
+  // Реакції теж піднімають картку (оновлюють lastMessageAt).
+  if (!lastMessageAt || receivedAt > lastMessageAt) {
     await prisma.directClient.update({
       where: { id: clientId },
       data: { lastMessageAt: receivedAt },

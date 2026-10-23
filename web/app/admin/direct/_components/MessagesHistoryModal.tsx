@@ -411,14 +411,11 @@ export function MessagesHistoryModal({
       if (dbMessages.length > 0) {
         setMessages(dbMessages);
         setError(null);
-        // Реакції не рухають картку і не знімають «очікує» — беремо останнє звичайне повідомлення.
-        const newestActivity =
-          dbMessages.find((m) => String(m.source || '').toLowerCase() !== 'instagram_reaction') ||
-          dbMessages[0];
+        // Реакції теж піднімають картку і (якщо вихідні) закривають «очікує».
         onHistoryLoaded?.({
           clientId: client.id,
-          lastMessageAt: newestActivity?.receivedAt || null,
-          newestDirection: newestActivity?.direction || null,
+          lastMessageAt: dbMessages[0]?.receivedAt || null,
+          newestDirection: dbMessages[0]?.direction || null,
         });
       }
 

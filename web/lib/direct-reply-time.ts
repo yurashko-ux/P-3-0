@@ -153,9 +153,7 @@ export function computeThreadReplyTime(messages: ReplyMessage[]): ThreadReplyTim
       continue;
     }
     if (message.direction === "outgoing") {
-      // Лайк/реакція — не відповідь текстом, очікування не знімаємо.
-      if (message.source === "instagram_reaction") continue;
-      // Вихідна IG (Graph/manual/іноді manychat) знімає очікування — салон відповів.
+      // Вихідна відповідь або реакція салону знімає очікування (закриває розмову).
       if (waitStart != null) {
         if (RELIABLE_REPLY_SOURCES.has(message.source)) {
           samples.push(businessReplyMs(waitStart, message.at));
@@ -165,10 +163,12 @@ export function computeThreadReplyTime(messages: ReplyMessage[]): ThreadReplyTim
     }
   }
 
-  // Страховка: останнє надійне повідомлення вихідне → точно не чекаємо.
+  // Страховка: останнє вихідне (текст Graph/manual або реакція салону) → не чекаємо.
   for (let i = sorted.length - 1; i >= 0; i -= 1) {
     const message = sorted[i];
-    if (!RELIABLE_REPLY_SOURCES.has(message.source)) continue;
+    const closesWait =
+      RELIABLE_REPLY_SOURCES.has(message.source) || message.source === "instagram_reaction";
+    if (!closesWait) continue;
     if (message.direction === "outgoing") waitStart = null;
     break;
   }
