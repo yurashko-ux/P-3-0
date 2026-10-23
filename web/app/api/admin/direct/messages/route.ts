@@ -78,10 +78,10 @@ function clientWhere(): Prisma.DirectClientWhereInput {
 }
 
 /**
- * Сторінка в порядку останньої Instagram-активності (вхідні + вихідні салону).
+ * Сторінка в порядку останньої Instagram-активності (вхідні + вихідні + реакції салону).
  * GREATEST з lastMessageAt на клієнті — страховка, якщо луна (echo) уже оновила поле,
  * а підзапит по messages ще «не бачить» рядок (лаг репліки / гонка з вебхуком).
- * Реакції (лайки) навмисно не рухають картку.
+ * Вихідний лайк салону теж піднімає картку (source instagram_reaction у MAX).
  */
 async function findIdsByLastInstagramMessage(
   audience: "clients" | "leads",

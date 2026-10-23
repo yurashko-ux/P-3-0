@@ -11,7 +11,10 @@ import { type DirectChatChannel, sourcesWhereClause, isSourceForChannel } from '
 import { isPreviewDeploymentHost } from '@/lib/auth-preview';
 import { verifyUserToken } from '@/lib/auth-rbac';
 import { instagramReplyAvailability } from '@/lib/instagram-direct-send';
-import { syncInstagramSalonReactions } from '@/lib/instagram-salon-reactions';
+import {
+  ensureSalonReactionLiftsCard,
+  syncInstagramSalonReactions,
+} from '@/lib/instagram-salon-reactions';
 
 export const dynamic = 'force-dynamic';
 export const runtime = 'nodejs';
@@ -203,6 +206,8 @@ export async function GET(req: NextRequest) {
     if (resolvedClientId && channel !== 'telegram') {
       try {
         await syncInstagramSalonReactions(resolvedClientId);
+        // Навіть якщо Graph нічого не змінив — лайк у БД на останнє вхідне має підняти картку.
+        await ensureSalonReactionLiftsCard(resolvedClientId);
       } catch (error) {
         console.warn(
           '[direct/messages-history] Реакції салону не підтягнулись',

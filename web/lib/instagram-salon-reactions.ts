@@ -82,6 +82,73 @@ async function bumpClientLastMessage(clientId: string, at: Date): Promise<void> 
   });
 }
 
+/**
+ * Страховка: якщо на найсвіжішому вхідному вже є лайк салону в БД —
+ * піднімаємо картку навіть коли Graph sync нічого не змінив (лайк уже був).
+ * Викликати після sync при відкритті історії.
+ */
+export async function ensureSalonReactionLiftsCard(clientId: string): Promise<boolean> {
+  const latestIn = await prisma.directMessage.findFirst({
+    where: {
+      clientId,
+      direction: "incoming",
+      source: "instagram_graph",
+      messageId: { not: null },
+    },
+    orderBy: { receivedAt: "desc" },
+    select: { messageId: true, receivedAt: true },
+  });
+  const mid = (latestIn?.messageId || "").trim();
+  if (!mid) return false;
+
+  const reaction = await prisma.directMessage.findFirst({
+    where: {
+      clientId,
+      source: "instagram_reaction",
+      direction: "outgoing",
+      messageId: salonReactionKey(mid),
+    },
+    select: { id: true },
+  });
+  if (!reaction) return false;
+
+  // Після лайка не має бути новішого текстового outgoing — інакше піднімає текст, не лайк.
+  const newerOutgoingText = await prisma.directMessage.findFirst({
+    where: {
+      clientId,
+      direction: "outgoing",
+      source: { in: ["instagram_graph", "manual"] },
+      receivedAt: { gt: latestIn!.receivedAt },
+    },
+    select: { id: true },
+  });
+  if (newerOutgoingText) return false;
+
+  const client = await prisma.directClient.findFirst({
+    where: { id: clientId },
+    select: { lastMessageAt: true },
+  });
+  // Уже підняті вище за текст повідомлення — не смикаємо lastMessageAt на кожне відкриття історії.
+  // Піднімаємо лише якщо картка «застрягла» на часі самого вхідного (лайк не оновив порядок).
+  const stuck =
+    !client?.lastMessageAt ||
+    client.lastMessageAt.getTime() <= latestIn!.receivedAt.getTime() + 5000;
+  if (!stuck) return false;
+
+  const liftAt = new Date();
+  await prisma.directMessage.update({
+    where: { id: reaction.id },
+    data: { receivedAt: liftAt },
+  });
+  await bumpClientLastMessage(clientId, liftAt);
+  console.log("[instagram/reactions] Страховка: картку піднято за наявним лайком на останнє вхідне", {
+    clientId,
+    mid: mid.slice(0, 24),
+    liftAt: liftAt.toISOString(),
+  });
+  return true;
+}
+
 /** Підтягує лайк салону на останні повідомлення діалогу. Помилка Meta не ламає історію. */
 export async function syncInstagramSalonReactions(clientId: string): Promise<number> {
   const userToken = (process.env.INSTAGRAM_ACCESS_TOKEN || "").trim();
@@ -216,21 +283,17 @@ export async function syncInstagramSalonReactions(clientId: string): Promise<num
         where: { clientId, messageId: key },
         select: { id: true, text: true, receivedAt: true },
       });
-      // Якщо lastMessageAt ще на рівні тексту (на який лайкнули) — реакція не підняла картку.
-      const clientFresh = await prisma.directClient.findFirst({
-        where: { id: clientId },
-        select: { lastMessageAt: true },
-      });
-      const neverLifted =
-        !clientFresh?.lastMessageAt || clientFresh.lastMessageAt.getTime() <= row.receivedAt.getTime() + 2000;
+      // Реакція на найсвіжіше вхідне = відповідь салону → час «зараз», картка завжди вгору.
+      const isLatestIncoming = mid === recentIncoming[0]?.messageId;
+      const liftAt = new Date();
       if (existing) {
         const data: { text?: string; rawData?: string; receivedAt?: Date } = {};
         if (existing.text !== text) {
           data.text = text;
           data.rawData = rawData;
         }
-        if (neverLifted) {
-          data.receivedAt = new Date();
+        if (isLatestIncoming) {
+          data.receivedAt = liftAt;
         }
         if (Object.keys(data).length > 0) {
           await prisma.directMessage.update({ where: { id: existing.id }, data });
@@ -238,12 +301,18 @@ export async function syncInstagramSalonReactions(clientId: string): Promise<num
         }
         await bumpClientLastMessage(
           clientId,
-          data.receivedAt || existing.receivedAt,
+          isLatestIncoming ? liftAt : existing.receivedAt,
         );
+        if (isLatestIncoming) {
+          console.log("[instagram/reactions] Картку піднято за лайком на останнє вхідне", {
+            clientId,
+            emoji,
+            mid: mid.slice(0, 24),
+          });
+        }
         return;
       }
-      // Нова реакція — час «зараз», щоб картка піднялась вище за «Сонце».
-      const receivedAt = new Date();
+      const receivedAt = liftAt;
       await prisma.directMessage.create({
         data: {
           clientId,
@@ -262,6 +331,7 @@ export async function syncInstagramSalonReactions(clientId: string): Promise<num
         emoji,
         mid: mid.slice(0, 24),
         lifted: true,
+        latestIncoming: isLatestIncoming,
       });
     }),
   );

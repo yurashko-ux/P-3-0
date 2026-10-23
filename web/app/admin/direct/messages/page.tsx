@@ -195,10 +195,13 @@ function useConversationList(audience: Audience) {
   const [loading, setLoading] = useState(true);
   const [loadingMore, setLoadingMore] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  // Ігноруємо відповіді «тихого» poll, які стартували до sync реакції / bump.
+  const loadGenRef = useRef(0);
 
   const load = useCallback(
     async (offset: number, append: boolean, opts?: { silent?: boolean }) => {
       const silent = Boolean(opts?.silent);
+      const gen = ++loadGenRef.current;
       if (append) setLoadingMore(true);
       else if (!silent) setLoading(true);
       if (!silent) setError(null);
@@ -214,6 +217,7 @@ function useConversationList(audience: Audience) {
           headers: { "Cache-Control": "no-cache", Pragma: "no-cache" },
         });
         const data = await res.json().catch(() => ({}));
+        if (gen !== loadGenRef.current) return;
         if (!res.ok || !data.ok) {
           throw new Error(data.error || "Не вдалося завантажити переписки");
         }
@@ -224,6 +228,7 @@ function useConversationList(audience: Audience) {
         setRows((prev) => (append ? [...prev, ...next] : sortRowsByLastMessage(next)));
         if (silent) setError(null);
       } catch (err) {
+        if (gen !== loadGenRef.current) return;
         // Тихе оновлення: лишаємо поточний список, без мигання порожнім екраном.
         if (!silent) {
           setError(err instanceof Error ? err.message : "Помилка завантаження");
@@ -233,8 +238,10 @@ function useConversationList(audience: Audience) {
           }
         }
       } finally {
-        if (!silent) setLoading(false);
-        setLoadingMore(false);
+        if (gen === loadGenRef.current) {
+          if (!silent) setLoading(false);
+          setLoadingMore(false);
+        }
       }
     },
     [audience]
@@ -246,6 +253,8 @@ function useConversationList(audience: Audience) {
       const at = info.lastMessageAt;
       const atMs = at ? new Date(at).getTime() : NaN;
       if (!info.clientId || !Number.isFinite(atMs)) return;
+      // Скасовуємо in-flight poll, щоб стара відповідь не затерла підняття.
+      loadGenRef.current += 1;
       setRows((prev) => {
         const idx = prev.findIndex((row) => row.id === info.clientId);
         if (idx < 0) return prev;
