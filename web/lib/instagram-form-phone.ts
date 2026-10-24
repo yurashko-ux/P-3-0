@@ -3,6 +3,26 @@
 const PHONE_LABEL_RE =
   /(?:Phone number|Номер телефону|Телефон)\s*:\s*([+\d][\d\s\-()]{6,22}\d)/i;
 
+const FULL_NAME_RE =
+  /(?:Full name|Повне ім['’`]?я)\s*:\s*(.+?)(?=\s+(?:Phone number|Номер телефону|Телефон|Email|Ел\.?\s*пошта)\s*:|$)/i;
+
+/** Імʼя з форми Meta. Перше слово — імʼя, решта — прізвище. */
+export function extractFullNameFromInstagramFormText(
+  text: string | null | undefined,
+): { firstName: string; lastName: string | null } | null {
+  const raw = (text || "").replace(/\s+/g, " ").trim();
+  if (!raw) return null;
+  const match = raw.match(FULL_NAME_RE);
+  const full = (match?.[1] || "").trim().replace(/[.,;]+$/, "");
+  if (full.length < 2 || full.length > 80) return null;
+  const parts = full.split(/\s+/).filter(Boolean);
+  if (parts.length === 0) return null;
+  return {
+    firstName: parts[0].slice(0, 80),
+    lastName: parts.length > 1 ? parts.slice(1).join(" ").slice(0, 80) : null,
+  };
+}
+
 /** Витягує номер з тексту форми Meta. Повертає нормалізований рядок або null. */
 export function extractPhoneFromInstagramFormText(text: string | null | undefined): string | null {
   const raw = (text || "").trim();
@@ -33,23 +53,43 @@ export function normalizeUaPhoneForStorage(input: string): string | null {
   return null;
 }
 
+export type InstagramFormCardPatch = {
+  phone?: string;
+  firstName?: string;
+  lastName?: string | null;
+};
+
 /**
- * Якщо в тексті форми є телефон і в клієнта ще немає phone — записуємо в Direct.
- * Не перезаписує вже заповнений телефон.
+ * Дописує в картку телефон і імʼя з форми Meta, якщо цих полів ще немає.
+ * Уже заповнені телефон і імʼя не перезаписує.
  */
 export async function maybeSavePhoneFromInstagramForm(params: {
   clientId: string;
   text: string | null | undefined;
   currentPhone?: string | null;
-  update: (phone: string) => Promise<unknown>;
-}): Promise<string | null> {
-  if ((params.currentPhone || "").trim()) return null;
-  const phone = extractPhoneFromInstagramFormText(params.text);
-  if (!phone) return null;
-  await params.update(phone);
-  console.log("[instagram/form-phone] Телефон з форми Meta збережено в Direct", {
+  currentFirstName?: string | null;
+  currentLastName?: string | null;
+  update: (data: InstagramFormCardPatch) => Promise<unknown>;
+}): Promise<InstagramFormCardPatch | null> {
+  const data: InstagramFormCardPatch = {};
+  if (!(params.currentPhone || "").trim()) {
+    const phone = extractPhoneFromInstagramFormText(params.text);
+    if (phone) data.phone = phone;
+  }
+  const hasName = Boolean((params.currentFirstName || "").trim() || (params.currentLastName || "").trim());
+  if (!hasName) {
+    const name = extractFullNameFromInstagramFormText(params.text);
+    if (name) {
+      data.firstName = name.firstName;
+      data.lastName = name.lastName;
+    }
+  }
+  if (!data.phone && !data.firstName) return null;
+  await params.update(data);
+  console.log("[instagram/form-phone] Дані форми Meta дописано в картку", {
     clientId: params.clientId,
-    phone,
+    phone: Boolean(data.phone),
+    name: Boolean(data.firstName),
   });
-  return phone;
+  return data;
 }

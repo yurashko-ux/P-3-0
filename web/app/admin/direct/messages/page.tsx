@@ -18,12 +18,14 @@ import { formatDateDDMMYY } from "../_components/direct-client-table-formatters"
 import { LeadAgencyMark, LeadAgencyPending, StateIcon } from "../_components/StateIcon";
 import { formatReplyAvgMinutes, formatWaitingClock, waitingElapsedMs } from "@/lib/direct-reply-time";
 import { MessagesHistoryModal } from "../_components/MessagesHistoryModal";
+import { PhoneCopyButton } from "../_components/PhoneCopyButton";
 
 type MessageRow = {
   id: string;
   firstName: string | null;
   lastName: string | null;
   instagramUsername: string;
+  phone?: string | null;
   firstContactDate: string;
   lastMessageAt?: string | null;
   messagesTotal?: number;
@@ -413,6 +415,9 @@ function ConversationTable({
                   <th className="w-8 text-right">№</th>
                   <th className="w-8" />
                   <th>Ім&apos;я</th>
+                  <th className="text-center" title="Телефон">
+                    Тел.
+                  </th>
                   <th className="text-center">Inst</th>
                   <th>Відповідь</th>
                   <th className="text-center">Стан</th>
@@ -490,6 +495,9 @@ function ConversationTable({
                             ) : null}
                           </span>
                         </span>
+                      </td>
+                      <td className="text-center" style={cellStyle}>
+                        {(c.phone || "").trim() ? <PhoneCopyButton phone={c.phone!.trim()} /> : null}
                       </td>
                       <td className="text-center" style={cellStyle}>
                         <span className="inline-flex flex-col items-center gap-0.5">

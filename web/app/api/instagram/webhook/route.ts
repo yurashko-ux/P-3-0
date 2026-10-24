@@ -445,6 +445,8 @@ async function acceptMessage(input: {
     lastMessageAt: Date | null;
     leadAgency: string | null;
     phone?: string | null;
+    firstName?: string | null;
+    lastName?: string | null;
   } | null = null;
   if (reaction && reactedMessageId) {
     const target = await prisma.directMessage.findFirst({
@@ -461,6 +463,8 @@ async function acceptMessage(input: {
             leadAgency: true,
             instagramUsername: true,
             phone: true,
+            firstName: true,
+            lastName: true,
           },
         },
       },
@@ -478,7 +482,7 @@ async function acceptMessage(input: {
   if (!client && username) {
     client = await prisma.directClient.findFirst({
       where: { instagramUsername: username },
-      select: { id: true, lastMessageAt: true, leadAgency: true, phone: true },
+      select: { id: true, lastMessageAt: true, leadAgency: true, phone: true, firstName: true, lastName: true },
     });
     if (!client) {
       client = await ensureDirectLeadClient({ username, receivedAt });
@@ -556,18 +560,25 @@ async function acceptMessage(input: {
     if (dbMessageId && files.length > 0) {
       text = await rememberMedia(dbMessageId, client.id, username || "", plainText, files, text);
     }
-    // Instant Form Meta: «Phone number: …» → колонка телефон у Direct (якщо ще порожня).
+    // Instant Form Meta: телефон і імʼя дописуємо в картку, якщо їх ще немає.
     if (!outgoing && !reaction) {
-      await maybeSavePhoneFromInstagramForm({
+      const saved = await maybeSavePhoneFromInstagramForm({
         clientId: client.id,
         text,
         currentPhone: client.phone,
-        update: (phone) =>
+        currentFirstName: client.firstName,
+        currentLastName: client.lastName,
+        update: (data) =>
           prisma.directClient.update({
             where: { id: client.id },
-            data: { phone },
+            data,
           }),
       });
+      if (saved?.phone) client.phone = saved.phone;
+      if (saved?.firstName) {
+        client.firstName = saved.firstName;
+        client.lastName = saved.lastName;
+      }
     }
   }
 
