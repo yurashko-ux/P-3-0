@@ -43,6 +43,8 @@ type MessageRow = {
 type Audience = "clients" | "leads";
 
 const PAGE_SIZE = 40;
+/** Має збігатися з PAGE_SIZE_MAX на /api/admin/direct/messages. */
+const PAGE_SIZE_MAX = 200;
 const TODAY_ROW_SEPARATOR = "inset 0 -3px 0 #111111";
 
 function getClientName(c: MessageRow): string {
@@ -197,6 +199,8 @@ function useConversationList(audience: Audience) {
   const [error, setError] = useState<string | null>(null);
   // Ігноруємо відповіді «тихого» poll, які стартували до sync реакції / bump.
   const loadGenRef = useRef(0);
+  // Скільки рядків уже відкрито («Завантажити ще») — silent poll не повинен скидати до 40.
+  const loadedCountRef = useRef(PAGE_SIZE);
 
   const load = useCallback(
     async (offset: number, append: boolean, opts?: { silent?: boolean }) => {
@@ -209,7 +213,12 @@ function useConversationList(audience: Audience) {
         const params = new URLSearchParams();
         params.set("audience", audience);
         params.set("offset", String(offset));
-        params.set("limit", String(PAGE_SIZE));
+        // Тихий refresh з offset=0: беремо весь уже відкритий обсяг, не лише першу сторінку.
+        const limit =
+          silent && !append && offset === 0
+            ? Math.min(Math.max(PAGE_SIZE, loadedCountRef.current), PAGE_SIZE_MAX)
+            : PAGE_SIZE;
+        params.set("limit", String(limit));
         params.set("_t", String(Date.now()));
         const res = await fetch(`/api/admin/direct/messages?${params.toString()}`, {
           cache: "no-store",
@@ -224,8 +233,24 @@ function useConversationList(audience: Audience) {
         const next = (data.clients || []) as MessageRow[];
         setTotal(typeof data.total === "number" ? data.total : next.length);
         if (typeof data.waitingCount === "number") setWaitingCount(data.waitingCount);
-        // Страховка: навіть якщо API віддав старий порядок — сортуємо за lastMessageAt.
-        setRows((prev) => (append ? [...prev, ...next] : sortRowsByLastMessage(next)));
+        setRows((prev) => {
+          if (append) {
+            const seen = new Set(prev.map((row) => row.id));
+            const merged = [...prev, ...next.filter((row) => !seen.has(row.id))];
+            loadedCountRef.current = merged.length;
+            return merged;
+          }
+          // Якщо відкрито більше за ліміт API — лишаємо «хвіст», щоб не згортати список.
+          if (silent && prev.length > next.length) {
+            const topIds = new Set(next.map((row) => row.id));
+            const tail = prev.filter((row) => !topIds.has(row.id));
+            const merged = sortRowsByLastMessage([...next, ...tail]);
+            loadedCountRef.current = merged.length;
+            return merged;
+          }
+          loadedCountRef.current = next.length;
+          return sortRowsByLastMessage(next);
+        });
         if (silent) setError(null);
       } catch (err) {
         if (gen !== loadGenRef.current) return;
@@ -235,6 +260,7 @@ function useConversationList(audience: Audience) {
           if (!append) {
             setRows([]);
             setWaitingCount(0);
+            loadedCountRef.current = PAGE_SIZE;
           }
         }
       } finally {

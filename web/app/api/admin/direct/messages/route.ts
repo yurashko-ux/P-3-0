@@ -15,7 +15,8 @@ export const runtime = "nodejs";
 const ADMIN_PASS = process.env.ADMIN_PASS || "";
 const CRON_SECRET = process.env.CRON_SECRET || "";
 const PAGE_SIZE_DEFAULT = 40;
-const PAGE_SIZE_MAX = 100;
+/** Тихий poll Переписок підтягує вже відкритий обсяг («Завантажити ще»), не лише перші 40. */
+const PAGE_SIZE_MAX = 200;
 
 const TECHNICAL_USERNAME_PREFIXES = [
   "binotel_",
