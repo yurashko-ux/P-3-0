@@ -868,7 +868,7 @@ export function DirectClientTable({
   // Фільтр дзвінків Binotel виконується на сервері (API); клієнти вже відфільтровані
   const filteredClients = filteredByClientType;
 
-  // У активному режимі: спочатку рядки з тригером (updatedAt/createdAt сьогодні, повідомлення, консультація/запис сьогодні, статус), потім за ефективним часом.
+  // У активному режимі: спочатку рядки з тригером (оновлення, повідомлення, консультація, оплата, статус, передзвонити на сьогодні), потім за ефективним часом.
   // Та сама перевірка календарного дня, що й для товстої лінії (isKyivCalendarDayEqualToReference).
   const clientsForTable = useMemo(() => {
     const isCallbackReminderSort = sortBy === 'callbackReminderKyivDay';
@@ -902,6 +902,7 @@ export function DirectClientTable({
       if (isKyivCalendarDayEqualToReference(c.consultationBookingDate ?? undefined, todayKyivDay)) return true;
       if (isKyivCalendarDayEqualToReference(c.paidServiceDate ?? undefined, todayKyivDay)) return true;
       if (isKyivCalendarDayEqualToReference(c.statusSetAt ?? undefined, todayKyivDay)) return true;
+      if ((c.callbackReminderKyivDay || "").toString().trim() === todayKyivDay) return true;
       return false;
     };
 
