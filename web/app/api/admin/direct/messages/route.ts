@@ -78,52 +78,29 @@ function clientWhere(): Prisma.DirectClientWhereInput {
 }
 
 /**
- * Сторінка в порядку останньої Instagram-активності (вхідні + вихідні + реакції салону).
- * GREATEST з lastMessageAt на клієнті — страховка, якщо луна (echo) уже оновила поле,
- * а підзапит по messages ще «не бачить» рядок (лаг репліки / гонка з вебхуком).
- * Вихідний лайк салону теж піднімає картку (source instagram_reaction у MAX).
+ * Той самий ключ, що піднімає рядок у таблиці Direct: c.lastMessageAt.
+ * (Раніше складний GREATEST+MAX по messages на проді розходився з Direct —
+ * дата під Inst уже була нова, а порядок лишався старим.)
  */
 async function findIdsByLastInstagramMessage(
   audience: "clients" | "leads",
   offset: number,
   limit: number
 ): Promise<Array<{ id: string; sortAt: Date | null }>> {
-  const audienceSql =
-    audience === "clients"
-      ? Prisma.sql`(
-          (c."consultationBookingDate" IS NOT NULL AND c."consultationDeletedInAltegio" = false)
-          OR c."paidServiceDate" IS NOT NULL
-        )`
-      : Prisma.sql`(
-          c."includeInNewLeadsKpi" = true
-          AND c."paidServiceDate" IS NULL
-          AND (c."consultationBookingDate" IS NULL OR c."consultationDeletedInAltegio" = true)
-        )`;
-  const rows = await prisma.$queryRaw<{ id: string; sort_at: Date | null }[]>(Prisma.sql`
-    SELECT c.id,
-      GREATEST(
-        COALESCE(c."lastMessageAt", TIMESTAMPTZ 'epoch'),
-        COALESCE((
-          SELECT MAX(m."receivedAt")
-          FROM "direct_messages" m
-          WHERE m."clientId" = c.id
-            AND LOWER(COALESCE(m.source, 'manychat')) NOT IN ('telegram', 'telegram_campaign')
-        ), TIMESTAMPTZ 'epoch')
-      ) AS sort_at
-    FROM "direct_clients" c
-    WHERE c.state IS DISTINCT FROM 'binotel-lead'
-      AND c."instagramUsername" NOT LIKE 'binotel_%'
-      AND c."instagramUsername" NOT LIKE 'missing_instagram_%'
-      AND c."instagramUsername" NOT LIKE 'no_instagram_%'
-      AND c."instagramUsername" NOT LIKE 'altegio_%'
-      AND c."instagramUsername" NOT LIKE '\\_\\_no_ig\\_%'
-      AND ${audienceSql}
-    ORDER BY sort_at DESC, c.id ASC
-    LIMIT ${limit} OFFSET ${offset}
-  `);
+  const where = audience === "clients" ? clientWhere() : leadWhere();
+  const rows = await prisma.directClient.findMany({
+    where,
+    orderBy: [
+      { lastMessageAt: { sort: "desc", nulls: "last" } },
+      { id: "asc" },
+    ],
+    skip: offset,
+    take: limit,
+    select: { id: true, lastMessageAt: true },
+  });
   return rows.map((row) => ({
     id: row.id,
-    sortAt: row.sort_at && row.sort_at.getTime() > 0 ? row.sort_at : null,
+    sortAt: row.lastMessageAt,
   }));
 }
 
@@ -326,6 +303,7 @@ export async function GET(req: NextRequest) {
         total,
         offset,
         limit,
+        sortBy: "lastMessageAt",
         ...(waitingCount != null ? { waitingCount } : {}),
         clients: withReply,
       },
@@ -333,6 +311,7 @@ export async function GET(req: NextRequest) {
         headers: {
           "Cache-Control": "no-store, no-cache, must-revalidate",
           Pragma: "no-cache",
+          "X-Messages-Sort": "lastMessageAt",
         },
       }
     );
