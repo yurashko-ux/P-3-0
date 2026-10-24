@@ -27,6 +27,7 @@ import {
   type IncomingMedia,
 } from "@/lib/instagram-direct-media";
 import { assignLeadSourceFromFirstIncoming, ensureDirectLeadClient, recordLeadAdReferral } from "@/lib/lead-sources";
+import { maybeSavePhoneFromInstagramForm } from "@/lib/instagram-form-phone";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
@@ -439,7 +440,12 @@ async function acceptMessage(input: {
   let status = "отримано";
   // Реакція салону: клієнта надійніше брати з mid повідомлення, на яке лайкнули
   // (у вихідній реакції sender = салон, нік клієнта в payload часто відсутній).
-  let client: { id: string; lastMessageAt: Date | null; leadAgency: string | null } | null = null;
+  let client: {
+    id: string;
+    lastMessageAt: Date | null;
+    leadAgency: string | null;
+    phone?: string | null;
+  } | null = null;
   if (reaction && reactedMessageId) {
     const target = await prisma.directMessage.findFirst({
       where: {
@@ -448,7 +454,15 @@ async function acceptMessage(input: {
       },
       select: {
         clientId: true,
-        client: { select: { id: true, lastMessageAt: true, leadAgency: true, instagramUsername: true } },
+        client: {
+          select: {
+            id: true,
+            lastMessageAt: true,
+            leadAgency: true,
+            instagramUsername: true,
+            phone: true,
+          },
+        },
       },
     });
     if (target?.client) {
@@ -464,7 +478,7 @@ async function acceptMessage(input: {
   if (!client && username) {
     client = await prisma.directClient.findFirst({
       where: { instagramUsername: username },
-      select: { id: true, lastMessageAt: true, leadAgency: true },
+      select: { id: true, lastMessageAt: true, leadAgency: true, phone: true },
     });
     if (!client) {
       client = await ensureDirectLeadClient({ username, receivedAt });
@@ -541,6 +555,19 @@ async function acceptMessage(input: {
     }
     if (dbMessageId && files.length > 0) {
       text = await rememberMedia(dbMessageId, client.id, username || "", plainText, files, text);
+    }
+    // Instant Form Meta: «Phone number: …» → колонка телефон у Direct (якщо ще порожня).
+    if (!outgoing && !reaction) {
+      await maybeSavePhoneFromInstagramForm({
+        clientId: client.id,
+        text,
+        currentPhone: client.phone,
+        update: (phone) =>
+          prisma.directClient.update({
+            where: { id: client.id },
+            data: { phone },
+          }),
+      });
     }
   }
 

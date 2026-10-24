@@ -47,6 +47,8 @@ type ConsultationClient = {
   masterDisplayName: string | null;
   consultationListComment: string | null;
   consultationListOutcomeOverride: string | null;
+  /** Телефон з Direct (форма Meta / Altegio). У таблиці — іконка, не текст. */
+  phone?: string | null;
   signedUpForPaidService?: boolean;
   signedUpForPaidServiceAfterConsultation?: boolean;
   rowColorKey: ConsultationRowColorKey;
@@ -70,7 +72,52 @@ const COLOR_LEGEND: Array<{ key: ConsultationRowColorKey; label: string; classNa
   { key: "no_show", label: "Не з'явилась", className: "bg-purple-200" },
 ];
 
-const COL_COUNT = 12;
+const COL_COUNT = 13;
+
+function formatPhoneTooltip(phone: string): string {
+  const d = phone.replace(/\D/g, "");
+  if (d.length === 10 && d.startsWith("0")) {
+    return `${d.slice(0, 3)} ${d.slice(3, 6)} ${d.slice(6, 8)} ${d.slice(8)}`;
+  }
+  if (d.length === 12 && d.startsWith("380")) {
+    return `+380 ${d.slice(3, 5)} ${d.slice(5, 8)} ${d.slice(8, 10)} ${d.slice(10)}`;
+  }
+  return phone.trim();
+}
+
+function LeadPhoneCopyButton({ phone }: { phone: string }) {
+  const [copied, setCopied] = useState(false);
+  const display = formatPhoneTooltip(phone);
+  return (
+    <button
+      type="button"
+      className="inline-flex h-5 w-5 items-center justify-center rounded text-emerald-600 hover:bg-emerald-50 hover:text-emerald-700"
+      title={copied ? "Скопійовано" : display}
+      aria-label={`Скопіювати телефон ${display}`}
+      onClick={async (e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        try {
+          await navigator.clipboard.writeText(display);
+          setCopied(true);
+          window.setTimeout(() => setCopied(false), 1200);
+        } catch {
+          /* ignore */
+        }
+      }}
+    >
+      <svg
+        xmlns="http://www.w3.org/2000/svg"
+        viewBox="0 0 24 24"
+        fill="currentColor"
+        className="h-3.5 w-3.5"
+        aria-hidden
+      >
+        <path d="M6.62 10.79a15.05 15.05 0 006.59 6.59l2.2-2.2a1 1 0 011.01-.24c1.12.37 2.33.57 3.58.57a1 1 0 011 1V20a1 1 0 01-1 1C10.4 21 3 13.6 3 4a1 1 0 011-1h3.5a1 1 0 011 1c0 1.25.2 2.46.57 3.58a1 1 0 01-.25 1.02l-2.2 2.19z" />
+      </svg>
+    </button>
+  );
+}
 
 /** Нативний select/input — daisyUI select-xs обрізає текст при малій висоті. */
 const COMPACT_SELECT_BASE =
@@ -406,6 +453,7 @@ function ConsultationsPageContent() {
                 <col className="w-[8rem]" />
                 <col className="w-[3.2rem]" />
                 <col className="w-[2.75rem]" />
+                <col className="w-6" />
                 <col className="w-[5.5rem]" />
                 <col className="w-[7.5rem]" />
                 <col className="w-[8rem]" />
@@ -421,6 +469,9 @@ function ConsultationsPageContent() {
                   <th>Ім&apos;я</th>
                   <th>Inst</th>
                   <th className="text-center">Стан</th>
+                  <th className="text-center" title="Телефон">
+                    Тел.
+                  </th>
                   <th>Дата консультації</th>
                   <th>Результат</th>
                   <th>Коментар</th>
@@ -538,6 +589,9 @@ function ConsultationsPageContent() {
                           leadAdId={c.leadAdId}
                           onAgencyChange={(leadAgency) => updateClientLocal(c.id, { leadAgency })}
                         />
+                      </td>
+                      <td className="text-center align-middle">
+                        {(c.phone || "").trim() ? <LeadPhoneCopyButton phone={c.phone!.trim()} /> : null}
                       </td>
                       <td className="whitespace-nowrap tabular-nums">
                         {formatKyivDate(c.consultationBookingDate)}
