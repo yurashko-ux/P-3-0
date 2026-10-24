@@ -85,6 +85,29 @@ function formatPhoneTooltip(phone: string): string {
   return phone.trim();
 }
 
+function showCopiedToast(): void {
+  if (typeof document === "undefined") return;
+  const toast = document.createElement("div");
+  toast.textContent = "скопійовано";
+  toast.style.cssText = [
+    "position: fixed",
+    "top: 16px",
+    "right: 16px",
+    "z-index: 10050",
+    "padding: 10px 14px",
+    "border-radius: 10px",
+    "color: #fff",
+    "background: #16a34a",
+    "font-size: 13px",
+    "font-weight: 600",
+    "box-shadow: 0 8px 24px rgba(0,0,0,0.16)",
+  ].join(";");
+  document.body.appendChild(toast);
+  window.setTimeout(() => {
+    toast.remove();
+  }, 1500);
+}
+
 function LeadPhoneCopyButton({ phone }: { phone: string }) {
   const [copied, setCopied] = useState(false);
   const display = formatPhoneTooltip(phone);
@@ -92,7 +115,7 @@ function LeadPhoneCopyButton({ phone }: { phone: string }) {
     <button
       type="button"
       className="inline-flex h-5 w-5 items-center justify-center rounded text-emerald-600 hover:bg-emerald-50 hover:text-emerald-700"
-      title={copied ? "Скопійовано" : display}
+      title={copied ? "скопійовано" : display}
       aria-label={`Скопіювати телефон ${display}`}
       onClick={async (e) => {
         e.preventDefault();
@@ -100,6 +123,7 @@ function LeadPhoneCopyButton({ phone }: { phone: string }) {
         try {
           await navigator.clipboard.writeText(display);
           setCopied(true);
+          showCopiedToast();
           window.setTimeout(() => setCopied(false), 1200);
         } catch {
           /* ignore */
