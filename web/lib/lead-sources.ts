@@ -74,10 +74,14 @@ export async function ensureLeadSources(): Promise<LeadSourceRow[]> {
   return rows.map(toRow);
 }
 
-/** Усі емодзі в тексті, у порядку появи, без повторів. Звичайні літери і «*» сюди не входять. */
+/**
+ * Усі емодзі в тексті, у порядку появи, без повторів.
+ * Окремо ловимо «класичні» сердечка ♥ / ❤(+FE0F): вони не завжди в \p{Extended_Pictographic},
+ * а Meta / клієнти часто шлють саме U+2665 замість 💙 / ❤️.
+ */
 export function extractMessageEmojis(text: string): string[] {
   const re =
-    /\p{Extended_Pictographic}\uFE0F?(?:\u200D\p{Extended_Pictographic}\uFE0F?)*[\u{1F3FB}-\u{1F3FF}]?/gu;
+    /\p{Extended_Pictographic}\uFE0F?(?:\u200D\p{Extended_Pictographic}\uFE0F?)*[\u{1F3FB}-\u{1F3FF}]?|[♥❤]\uFE0F?/gu;
   const found: string[] = [];
   const seen = new Set<string>();
   for (const match of text.matchAll(re)) {
