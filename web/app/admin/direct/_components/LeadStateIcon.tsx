@@ -16,6 +16,7 @@ export function LeadStateIcon({
   firstContactDate,
   leadAgency,
   leadAdId,
+  sourceMark: sourceMarkProp = null,
   onAgencyChange,
   compact = false,
 }: {
@@ -23,6 +24,8 @@ export function LeadStateIcon({
   firstContactDate?: string | null;
   leadAgency?: string | null;
   leadAdId?: string | null;
+  /** Знак з API (Ліди) — щоб мітка була одразу, без очікування кешу джерел. */
+  sourceMark?: string | null;
   onAgencyChange?: (leadAgency: string | null) => void;
   /** Не розтягує рядок: хмарка 28px малюється поверх комірки висотою 20px. */
   compact?: boolean;
@@ -124,7 +127,9 @@ export function LeadStateIcon({
     </span>
   );
   const sourceMark =
-    (leadAgency && (sourcesMap[leadAgency]?.mark || sources.find((s) => s.code === leadAgency)?.mark)) || null;
+    (sourceMarkProp || "").trim() ||
+    (leadAgency && (sourcesMap[leadAgency]?.mark || sources.find((s) => s.code === leadAgency)?.mark)) ||
+    null;
   const marked =
     leadAgency && sourceMark
       ? <LeadAgencyMark mark={sourceMark}>{icon}</LeadAgencyMark>

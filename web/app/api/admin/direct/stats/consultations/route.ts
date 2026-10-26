@@ -135,6 +135,11 @@ export async function GET(req: NextRequest) {
     });
     const hiddenStaff = await loadHiddenStaffIndex();
     const visibleMasters = masters.filter((m) => !isHiddenDirectMaster(hiddenStaff, m));
+    const leadSources = await prisma.leadSource.findMany({
+      select: { code: true, mark: true, name: true },
+    });
+    const sourceMarkByCode = new Map(leadSources.map((s) => [s.code, s.mark]));
+    const sourceNameByCode = new Map(leadSources.map((s) => [s.code, s.name]));
 
     const clients = await prisma.directClient.findMany({
       where: {
@@ -240,6 +245,8 @@ export async function GET(req: NextRequest) {
         chatStatusCheckedAt: c.chatStatusCheckedAt,
         leadAgency: c.leadAgency,
         leadAdId: c.leadAdId,
+        sourceMark: c.leadAgency ? sourceMarkByCode.get(c.leadAgency) || null : null,
+        sourceName: c.leadAgency ? sourceNameByCode.get(c.leadAgency) || null : null,
       };
     });
 

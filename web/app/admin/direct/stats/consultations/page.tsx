@@ -62,6 +62,9 @@ type ConsultationClient = {
   lastMessageAt?: string | null;
   leadAgency?: string | null;
   leadAdId?: string | null;
+  /** Знак джерела з API — одразу на хмарці в колонці «Стан». */
+  sourceMark?: string | null;
+  sourceName?: string | null;
 };
 
 const COLOR_LEGEND: Array<{ key: ConsultationRowColorKey; label: string; className: string }> = [
@@ -543,7 +546,10 @@ function ConsultationsPageContent() {
                           firstContactDate={c.firstContactDate}
                           leadAgency={c.leadAgency}
                           leadAdId={c.leadAdId}
-                          onAgencyChange={(leadAgency) => updateClientLocal(c.id, { leadAgency })}
+                          sourceMark={c.sourceMark}
+                          onAgencyChange={(leadAgency) =>
+                            updateClientLocal(c.id, { leadAgency, sourceMark: null })
+                          }
                         />
                       </td>
                       <td className="text-center align-middle">
