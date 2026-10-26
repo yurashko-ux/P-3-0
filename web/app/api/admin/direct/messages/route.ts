@@ -287,13 +287,68 @@ export async function GET(req: NextRequest) {
     const withReply = withChat.map((client) => {
       const reply = replyTimes.get(client.id);
       const sortAt = sortAtById.get(client.id);
+      // Дата Inst = найсвіжіше з поля клієнта / enrich / реальних повідомлень у треді.
+      // Інакше відсталий DirectClient.lastMessageAt лишає таймер «Відповідь» на першому
+      // вхідному (як у Sofia: 12:11 замість поточного очікування після відповідей салону).
+      const candidates = [sortAt?.getTime() ?? NaN];
+      if (client.lastMessageAt) {
+        const enrichMs = new Date(client.lastMessageAt).getTime();
+        if (Number.isFinite(enrichMs)) candidates.push(enrichMs);
+      }
+      if (reply?.lastActivityAt) {
+        const activityMs = new Date(reply.lastActivityAt).getTime();
+        if (Number.isFinite(activityMs)) candidates.push(activityMs);
+      }
+      const bestMs = candidates.reduce((max, ms) => (Number.isFinite(ms) && ms > max ? ms : max), 0);
+      const lastMessageAt = bestMs > 0 ? new Date(bestMs).toISOString() : null;
       return {
         ...client,
-        // Після enrich знову фіксуємо дату сортування — щоб пігулка Inst збігалась з порядком.
-        lastMessageAt: sortAt ? sortAt.toISOString() : client.lastMessageAt ?? null,
+        lastMessageAt,
         replyAvgMinutes: reply?.replyAvgMinutes ?? null,
         waitingSince: reply?.waitingSince ?? null,
       };
+    });
+
+    // Підтягуємо DirectClient.lastMessageAt, якщо в історії вже є новіші повідомлення.
+    const staleRepairs = withReply.flatMap((client) => {
+      if (!client.lastMessageAt) return [];
+      const shown = new Date(client.lastMessageAt).getTime();
+      const stored = sortAtById.get(client.id)?.getTime() ?? 0;
+      if (!Number.isFinite(shown) || shown <= stored + 1000) return [];
+      return [
+        prisma.directClient.updateMany({
+          where: {
+            id: client.id,
+            OR: [{ lastMessageAt: null }, { lastMessageAt: { lt: new Date(shown) } }],
+          },
+          data: { lastMessageAt: new Date(shown) },
+        }),
+      ];
+    });
+    if (staleRepairs.length > 0) {
+      void Promise.all(staleRepairs)
+        .then((results) => {
+          const fixed = results.reduce((sum, row) => sum + row.count, 0);
+          if (fixed > 0) {
+            console.log(`[direct/messages] Підтягнуто lastMessageAt у ${fixed} карток (відставав від історії)`);
+          }
+        })
+        .catch((error) => {
+          console.warn(
+            "[direct/messages] Не вдалося підтягнути lastMessageAt",
+            error instanceof Error ? error.message : String(error)
+          );
+        });
+    }
+
+    // Порядок на сторінці — за фактичною активністю, не за відсталим полем клієнта.
+    withReply.sort((a, b) => {
+      const ta = a.lastMessageAt ? new Date(a.lastMessageAt).getTime() : 0;
+      const tb = b.lastMessageAt ? new Date(b.lastMessageAt).getTime() : 0;
+      const na = Number.isFinite(ta) ? ta : 0;
+      const nb = Number.isFinite(tb) ? tb : 0;
+      if (nb !== na) return nb - na;
+      return String(a.id).localeCompare(String(b.id));
     });
 
     console.log(

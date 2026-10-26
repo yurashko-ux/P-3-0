@@ -526,8 +526,8 @@ async function acceptMessage(input: {
       if (sameId) {
         dbMessageId = sameId.id;
         status = "вже було";
-        // Повтор вебхука реакції — все одно підняти картку / закрити очікування за часом події.
-        if (reaction && (!client.lastMessageAt || receivedAt > client.lastMessageAt)) {
+        // Повтор вебхука (текст або реакція) — підтягуємо lastMessageAt, якщо поле відстало від історії.
+        if (!client.lastMessageAt || receivedAt > client.lastMessageAt) {
           await prisma.directClient.update({
             where: { id: client.id },
             data: { lastMessageAt: receivedAt },

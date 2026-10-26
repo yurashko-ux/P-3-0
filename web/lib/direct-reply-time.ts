@@ -21,6 +21,8 @@ export type ThreadReplyTime = {
   replyAvgMinutes: number | null;
   /** Початок поточного очікування: перше повідомлення клієнта після нашої останньої відповіді. */
   waitingSince: string | null;
+  /** Найсвіжіше IG-повідомлення в треді (для дати Inst, якщо DirectClient.lastMessageAt відстає). */
+  lastActivityAt: string | null;
 };
 
 function pad2(n: number): string {
@@ -145,7 +147,9 @@ export function computeThreadReplyTime(messages: ReplyMessage[]): ThreadReplyTim
 
   const samples: number[] = [];
   let waitStart: number | null = null;
+  let lastActivityAt: number | null = null;
   for (const message of sorted) {
+    if (lastActivityAt == null || message.at > lastActivityAt) lastActivityAt = message.at;
     if (message.direction === "incoming") {
       // ManyChat інколи дублює/плутає вхідні — для старту очікування лише Graph/manual.
       if (!RELIABLE_REPLY_SOURCES.has(message.source)) continue;
@@ -180,5 +184,6 @@ export function computeThreadReplyTime(messages: ReplyMessage[]): ThreadReplyTim
   return {
     replyAvgMinutes,
     waitingSince: waitStart != null ? new Date(waitStart).toISOString() : null,
+    lastActivityAt: lastActivityAt != null ? new Date(lastActivityAt).toISOString() : null,
   };
 }
