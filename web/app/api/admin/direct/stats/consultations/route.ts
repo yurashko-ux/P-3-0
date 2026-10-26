@@ -2,6 +2,7 @@
 // Список нових лідів і консультацій за місяць Kyiv — вкладка з блоку «Ліди».
 
 import { NextRequest, NextResponse } from "next/server";
+import { Prisma } from "@prisma/client";
 import { enrichClientsWithChannelChatMeta } from "@/lib/direct-clients-channel-chat-meta";
 import { prisma } from "@/lib/prisma";
 import { isHiddenDirectMaster, loadHiddenStaffIndex } from "@/lib/team/hidden-staff";
@@ -255,6 +256,43 @@ export async function GET(req: NextRequest) {
       const sb = b.consultationBookingDate || b.firstContactDate;
       return sb.localeCompare(sa);
     });
+
+    // Сирий SQL по id: великий OR-findMany на проді інколи віддає leadAgency=null,
+    // хоча findUnique / Direct по тому ж id бачать agency_2 (Алла, Тетяна — серце в Direct є).
+    if (mapped.length > 0) {
+      const ids = mapped.map((m) => m.id);
+      const agencyRows = await prisma.$queryRaw<
+        Array<{ id: string; leadAgency: string | null; leadAdId: string | null }>
+      >`
+        SELECT id, "leadAgency", "leadAdId"
+        FROM direct_clients
+        WHERE id IN (${Prisma.join(ids)})
+      `;
+      const agencyById = new Map(agencyRows.map((r) => [r.id, r]));
+      let patched = 0;
+      for (const row of mapped) {
+        const fresh = agencyById.get(row.id);
+        if (!fresh) continue;
+        if (row.leadAgency !== fresh.leadAgency || row.leadAdId !== fresh.leadAdId) {
+          if (row.leadAgency !== fresh.leadAgency) {
+            console.warn("[stats/consultations] leadAgency розійшовся з SQL по id", {
+              id: row.id,
+              username: row.instagramUsername,
+              fromBigQuery: row.leadAgency,
+              fromSql: fresh.leadAgency,
+            });
+          }
+          row.leadAgency = fresh.leadAgency;
+          row.leadAdId = fresh.leadAdId;
+          row.sourceMark = fresh.leadAgency ? sourceMarkByCode.get(fresh.leadAgency) || null : null;
+          row.sourceName = fresh.leadAgency ? sourceNameByCode.get(fresh.leadAgency) || null : null;
+          patched += 1;
+        }
+      }
+      if (patched > 0) {
+        console.log("[stats/consultations] Підтягнуто leadAgency/leadAdId з SQL:", patched);
+      }
+    }
 
     const withChat = await enrichClientsWithChannelChatMeta(mapped, "instagram");
 
