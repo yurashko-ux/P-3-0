@@ -79,29 +79,53 @@ function clientWhere(): Prisma.DirectClientWhereInput {
 }
 
 /**
- * Той самий ключ, що піднімає рядок у таблиці Direct: c.lastMessageAt.
- * (Раніше складний GREATEST+MAX по messages на проді розходився з Direct —
- * дата під Inst уже була нова, а порядок лишався старим.)
+ * Порядок Переписок = час останнього IG-повідомлення або реакції (не лише c.lastMessageAt).
+ * Поле клієнта інколи відстає → картка не піднімається (Тетяна о 14:26 лишалась під J U L I).
+ * MAX по messages рахуємо одним GROUP BY (не correlated subquery на кожного клієнта).
  */
 async function findIdsByLastInstagramMessage(
   audience: "clients" | "leads",
   offset: number,
   limit: number
 ): Promise<Array<{ id: string; sortAt: Date | null }>> {
-  const where = audience === "clients" ? clientWhere() : leadWhere();
-  const rows = await prisma.directClient.findMany({
-    where,
-    orderBy: [
-      { lastMessageAt: { sort: "desc", nulls: "last" } },
-      { id: "asc" },
-    ],
-    skip: offset,
-    take: limit,
-    select: { id: true, lastMessageAt: true },
-  });
+  const audienceSql =
+    audience === "clients"
+      ? Prisma.sql`(
+          (c."consultationBookingDate" IS NOT NULL AND c."consultationDeletedInAltegio" = false)
+          OR c."paidServiceDate" IS NOT NULL
+        )`
+      : Prisma.sql`(
+          c."includeInNewLeadsKpi" = true
+          AND c."paidServiceDate" IS NULL
+          AND (c."consultationBookingDate" IS NULL OR c."consultationDeletedInAltegio" = true)
+        )`;
+  const rows = await prisma.$queryRaw<Array<{ id: string; sortAt: Date | null }>>(Prisma.sql`
+    WITH ig_last AS (
+      SELECT m."clientId", MAX(m."receivedAt") AS "maxAt"
+      FROM "direct_messages" m
+      WHERE m.source IS DISTINCT FROM 'telegram'
+        AND m.source IS DISTINCT FROM 'telegram_campaign'
+      GROUP BY m."clientId"
+    )
+    SELECT
+      c.id,
+      GREATEST(c."lastMessageAt", ig."maxAt") AS "sortAt"
+    FROM "direct_clients" c
+    LEFT JOIN ig_last ig ON ig."clientId" = c.id
+    WHERE c.state IS DISTINCT FROM 'binotel-lead'
+      AND c."instagramUsername" NOT LIKE 'binotel_%'
+      AND c."instagramUsername" NOT LIKE 'missing_instagram_%'
+      AND c."instagramUsername" NOT LIKE 'no_instagram_%'
+      AND c."instagramUsername" NOT LIKE 'altegio_%'
+      AND c."instagramUsername" NOT LIKE '\\_\\_no_ig\\_%'
+      AND ${audienceSql}
+    ORDER BY "sortAt" DESC NULLS LAST, c.id ASC
+    LIMIT ${limit}
+    OFFSET ${offset}
+  `);
   return rows.map((row) => ({
     id: row.id,
-    sortAt: row.lastMessageAt,
+    sortAt: row.sortAt instanceof Date ? row.sortAt : row.sortAt ? new Date(row.sortAt) : null,
   }));
 }
 

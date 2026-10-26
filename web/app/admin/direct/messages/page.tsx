@@ -199,17 +199,22 @@ function useConversationList(audience: Audience) {
   const [loading, setLoading] = useState(true);
   const [loadingMore, setLoadingMore] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  // Ігноруємо відповіді «тихого» poll, які стартували до sync реакції / bump.
+  // Ігноруємо застарілі відповіді, якщо вже пішов новіший load.
   const loadGenRef = useRef(0);
   // Скільки рядків уже відкрито («Завантажити ще») — silent poll не повинен скидати до 40.
   const loadedCountRef = useRef(PAGE_SIZE);
+  // Щоб спінер не зависав, коли старий non-silent load скасовано новішим.
+  const pendingLoadsRef = useRef(0);
 
   const load = useCallback(
     async (offset: number, append: boolean, opts?: { silent?: boolean }) => {
       const silent = Boolean(opts?.silent);
       const gen = ++loadGenRef.current;
       if (append) setLoadingMore(true);
-      else if (!silent) setLoading(true);
+      else if (!silent) {
+        pendingLoadsRef.current += 1;
+        setLoading(true);
+      }
       if (!silent) setError(null);
       try {
         const params = new URLSearchParams();
@@ -242,13 +247,37 @@ function useConversationList(audience: Audience) {
             loadedCountRef.current = merged.length;
             return merged;
           }
-          // Якщо відкрито більше за ліміт API — лишаємо «хвіст», щоб не згортати список.
+          // Тихий poll: API — джерело правди для карток з відповіді; хвіст «Завантажити ще» лишаємо.
           if (silent && prev.length > next.length) {
-            const topIds = new Set(next.map((row) => row.id));
-            const tail = prev.filter((row) => !topIds.has(row.id));
-            const merged = sortRowsByLastMessage([...next, ...tail]);
+            const byId = new Map(next.map((row) => [row.id, row]));
+            const merged = prev.map((row) => byId.get(row.id) || row);
+            for (const row of next) {
+              if (!prev.some((p) => p.id === row.id)) merged.push(row);
+            }
+            const sorted = sortRowsByLastMessage(merged);
+            loadedCountRef.current = sorted.length;
+            return sorted;
+          }
+          // Тихий poll тієї ж/меншої сторінки: не відкатуємо новішу локальну дату після bump.
+          if (silent && prev.length > 0) {
+            const prevById = new Map(prev.map((row) => [row.id, row]));
+            const merged = next.map((row) => {
+              const old = prevById.get(row.id);
+              if (!old?.lastMessageAt || !row.lastMessageAt) return row;
+              const oldMs = new Date(old.lastMessageAt).getTime();
+              const nextMs = new Date(row.lastMessageAt).getTime();
+              if (Number.isFinite(oldMs) && Number.isFinite(nextMs) && oldMs > nextMs) {
+                return {
+                  ...row,
+                  lastMessageAt: old.lastMessageAt,
+                  waitingSince:
+                    row.waitingSince != null ? row.waitingSince : old.waitingSince,
+                };
+              }
+              return row;
+            });
             loadedCountRef.current = merged.length;
-            return merged;
+            return sortRowsByLastMessage(merged);
           }
           loadedCountRef.current = next.length;
           return sortRowsByLastMessage(next);
@@ -266,9 +295,11 @@ function useConversationList(audience: Audience) {
           }
         }
       } finally {
-        if (gen === loadGenRef.current) {
-          if (!silent) setLoading(false);
-          setLoadingMore(false);
+        if (append) {
+          if (gen === loadGenRef.current) setLoadingMore(false);
+        } else if (!silent) {
+          pendingLoadsRef.current = Math.max(0, pendingLoadsRef.current - 1);
+          if (pendingLoadsRef.current === 0) setLoading(false);
         }
       }
     },
@@ -281,8 +312,6 @@ function useConversationList(audience: Audience) {
       const at = info.lastMessageAt;
       const atMs = at ? new Date(at).getTime() : NaN;
       if (!info.clientId || !Number.isFinite(atMs)) return;
-      // Скасовуємо in-flight poll, щоб стара відповідь не затерла підняття.
-      loadGenRef.current += 1;
       setRows((prev) => {
         const idx = prev.findIndex((row) => row.id === info.clientId);
         if (idx < 0) return prev;
