@@ -27,10 +27,18 @@ export function LeadAgencyMark({ children, mark }: { children: ReactNode; mark?:
   return (
     <span className="relative inline-flex overflow-visible">
       {children}
-      {/* Трохи нижче (top-0), щоб не вилазити над хмаркою і не розтягувати рядок по висоті */}
+      {/*
+        z-10 обовʼязково: у Лідах хмарка з scale-[1.4] створює stacking context і
+        накриває знак без z-index (🌸 ледь видно з краю, 💙 ховалось під синьою хмаркою).
+        Білий ореол — щоб синє серце читалось на синій обводці.
+      */}
       <span
-        className="pointer-events-none absolute -right-1 top-0 leading-none"
-        style={{ fontSize: "10px" }}
+        className="pointer-events-none absolute -right-1.5 -top-0.5 z-10 leading-none"
+        style={{
+          fontSize: "11px",
+          textShadow:
+            "0 0 2px #fff, 0 0 2px #fff, 1px 0 0 #fff, -1px 0 0 #fff, 0 1px 0 #fff, 0 -1px 0 #fff",
+        }}
         aria-hidden
       >
         {m}
