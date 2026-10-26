@@ -27,12 +27,9 @@ export function LeadAgencyMark({ children, mark }: { children: ReactNode; mark?:
   return (
     <span className="relative inline-flex overflow-visible">
       {children}
-      {/*
-        Білий кружок + z-10: 💙 на синій хмарці «новий лід» зливався з обводкою
-        (у Наді хмарка зелена — серце було видно; у Алли/Тетяни — ні, хоча mark у DOM був).
-      */}
+      {/* Трохи нижче (top-0), щоб не вилазити над хмаркою і не розтягувати рядок по висоті */}
       <span
-        className="pointer-events-none absolute -right-2 -bottom-0.5 z-10 flex h-[14px] min-w-[14px] items-center justify-center rounded-full bg-white leading-none shadow-sm ring-1 ring-black/10"
+        className="pointer-events-none absolute -right-1 top-0 leading-none"
         style={{ fontSize: "10px" }}
         aria-hidden
       >

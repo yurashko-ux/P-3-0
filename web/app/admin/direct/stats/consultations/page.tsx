@@ -28,8 +28,8 @@ import { AvatarSlot } from "../../_components/DirectClientTableAvatar";
 import { formatDateDDMMYY } from "../../_components/direct-client-table-formatters";
 import { LeadStateIcon } from "../../_components/LeadStateIcon";
 import { PhoneCopyButton } from "../../_components/PhoneCopyButton";
-import { invalidateLeadSourcesMapCache } from "../../_components/useLeadSourcesMap";
 import { MessagesHistoryModal } from "../../_components/MessagesHistoryModal";
+import { useLeadSourcesMap } from "../../_components/useLeadSourcesMap";
 
 type MasterOption = { id: string; name: string };
 
@@ -178,6 +178,8 @@ function ConsultationsPageContent() {
     null
   );
   const commentTimers = useRef<Map<string, ReturnType<typeof setTimeout>>>(new Map());
+  // Одна мапа на сторінку (як у Direct), без скидання кешу на кожен load.
+  const leadSourcesMap = useLeadSourcesMap();
 
   const clientsById = useMemo(() => {
     const map = new Map<string, ConsultationClient>();
@@ -214,8 +216,6 @@ function ConsultationsPageContent() {
     async function load() {
       setLoading(true);
       setError(null);
-      // Свіжа мапа джерел (знаки біля хмарки) — без застарілого кешу після змін у «Джерела».
-      invalidateLeadSourcesMapCache();
       try {
         const params = new URLSearchParams();
         params.set("month", selectedMonth);
@@ -546,9 +546,18 @@ function ConsultationsPageContent() {
                           firstContactDate={c.firstContactDate}
                           leadAgency={c.leadAgency}
                           leadAdId={c.leadAdId}
-                          sourceMark={c.sourceMark}
+                          sourceMark={
+                            (c.sourceMark || "").trim() ||
+                            (c.leadAgency ? leadSourcesMap[c.leadAgency]?.mark : null) ||
+                            null
+                          }
                           onAgencyChange={(leadAgency) =>
-                            updateClientLocal(c.id, { leadAgency, sourceMark: null })
+                            updateClientLocal(c.id, {
+                              leadAgency,
+                              sourceMark: leadAgency
+                                ? leadSourcesMap[leadAgency]?.mark || null
+                                : null,
+                            })
                           }
                         />
                       </td>

@@ -39,9 +39,14 @@ function loadLeadSourcesMap(): Promise<LeadSourcesMap> {
   return inflight;
 }
 
-/** Скинути кеш після змін на сторінці «Джерела» (опційно). */
+/**
+ * Скинути кеш після змін на сторінці «Джерела».
+ * Не чіпати inflight/cachedMap «на порожньо» перед рендером таблиць Ліди/Direct —
+ * інакше знаки зникають, доки не завершиться новий fetch.
+ */
 export function invalidateLeadSourcesMapCache() {
   cachedMap = null;
+  inflight = null;
 }
 
 /** code → джерело (з mark для емодзі біля хмарки). */

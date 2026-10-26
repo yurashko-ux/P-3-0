@@ -121,19 +121,18 @@ export function LeadStateIcon({
     }
   }
 
-  const icon = (
-    <span className={compact ? "inline-flex origin-center scale-[1.4]" : undefined}>
-      <StateIcon state={isNewToday ? "new-lead" : "message"} size={compact ? 20 : ICON_SIZE} />
-    </span>
-  );
+  // Як у Direct: 28px без scale — CSS transform на хмарці створював stacking context
+  // і міг накривати знак без z-index (у Direct знаки на тих самих лідах видно).
+  const icon = <StateIcon state={isNewToday ? "new-lead" : "message"} size={ICON_SIZE} />;
+  const agency = (leadAgency || "").trim();
   const sourceMark =
     (sourceMarkProp || "").trim() ||
-    (leadAgency && (sourcesMap[leadAgency]?.mark || sources.find((s) => s.code === leadAgency)?.mark)) ||
+    (agency && (sourcesMap[agency]?.mark || sources.find((s) => s.code === agency)?.mark)) ||
     null;
   const marked =
-    leadAgency && sourceMark
+    agency && sourceMark
       ? <LeadAgencyMark mark={sourceMark}>{icon}</LeadAgencyMark>
-      : !leadAgency && leadAdId
+      : !agency && leadAdId
         ? <LeadAgencyPending>{icon}</LeadAgencyPending>
         : icon;
   const menuSources = sources.length > 0 ? sources : Object.values(sourcesMap);
