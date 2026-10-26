@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import {
   formatJournalBoldDate,
+  formatJournalShortDate,
   kyivTodayYmd,
   shiftYmd,
   useJournalDay,
@@ -57,7 +58,7 @@ export function JournalTopToolbar() {
   }, [day]);
 
   return (
-    <header className="sticky top-0 z-10 bg-white border-b px-3 py-2 flex flex-wrap items-center gap-2 min-h-11">
+    <header className="sticky top-0 z-10 bg-white/95 backdrop-blur-md border-b px-3 py-2 flex flex-wrap items-center gap-1.5 sm:gap-2 min-h-11">
       <button
         type="button"
         className="btn btn-sm btn-ghost min-h-0 h-8"
@@ -84,10 +85,11 @@ export function JournalTopToolbar() {
         </button>
       </div>
 
-      <h1 className="text-lg font-bold capitalize tracking-tight ml-1 flex items-baseline gap-2 flex-wrap">
-        <span>{formatJournalBoldDate(day)}</span>
+      <h1 className="text-[15px] sm:text-lg font-bold capitalize tracking-tight ml-0.5 sm:ml-1 flex items-baseline gap-2 flex-wrap min-w-0">
+        <span className="sm:hidden">{formatJournalShortDate(day)}</span>
+        <span className="hidden sm:inline">{formatJournalBoldDate(day)}</span>
         <span
-          className="text-sm font-semibold normal-case tracking-normal text-gray-600 tabular-nums"
+          className="hidden sm:inline text-sm font-semibold normal-case tracking-normal text-gray-600 tabular-nums"
           title="Робочий курс дня (Monobank sell → ceil+1)"
         >
           {fx
@@ -96,7 +98,7 @@ export function JournalTopToolbar() {
         </span>
       </h1>
 
-      <div className="join ml-auto">
+      <div className="join ml-auto hidden sm:flex">
         <button
           type="button"
           className={`btn btn-sm join-item min-h-0 h-8 ${viewMode === "day" ? "btn-neutral" : "btn-ghost"}`}

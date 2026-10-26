@@ -931,16 +931,16 @@ export function JournalAppointmentForm({
 
   return (
     <div
-      className="fixed inset-0 z-40 bg-black/40 flex items-stretch justify-center p-2 md:p-4 overflow-y-auto"
+      className="fixed inset-0 z-50 bg-black/40 flex items-stretch justify-center p-0 sm:p-2 md:p-4 overflow-y-auto"
       onClick={onClose}
     >
       <div
-        className="bg-[#f3f4f6] rounded-xl border w-full max-w-[76rem] my-2 flex flex-col max-h-[96vh] overflow-hidden"
+        className="bg-[#f3f4f6] border w-full max-w-[76rem] my-0 sm:my-2 flex flex-col h-[100dvh] sm:h-auto sm:max-h-[96vh] sm:rounded-xl overflow-hidden"
         onClick={(e) => e.stopPropagation()}
       >
         <div className="bg-white border-b px-3 py-2 flex flex-wrap items-center gap-2 shrink-0">
           <p className="font-bold text-base">{draft?.id ? "Запис" : "Новий запис"}</p>
-          <span className="text-[11px] text-gray-500">Kresco ↔ Altegio</span>
+          <span className="hidden sm:inline text-[11px] text-gray-500">Kresco ↔ Altegio</span>
           <div className="flex-1" />
           {draft?.id && (
             <button
@@ -953,6 +953,7 @@ export function JournalAppointmentForm({
               <TrashIcon className="w-5 h-5" />
             </button>
           )}
+          <div className="hidden sm:flex items-center gap-2">
           {onCheckout && (draft?.id || dueTotal > 0) && (
             <button
               className="btn btn-sm border-0 text-white"
@@ -973,6 +974,7 @@ export function JournalAppointmentForm({
           <button className="btn btn-sm btn-primary" disabled={saving} onClick={() => void submit()}>
             {saving ? "…" : draft?.id ? "Зберегти зміни" : "Записати"}
           </button>
+          </div>
           <button className="btn btn-sm btn-ghost" onClick={onClose}>
             ✕
           </button>
@@ -981,9 +983,9 @@ export function JournalAppointmentForm({
         {error && <div className="alert alert-error text-sm py-2 mx-3 mt-2 shrink-0">{error}</div>}
 
         {/* Ліва вужча · центр · права трохи ширша (ПІБ + visits в один рядок) */}
-        <div className="flex-1 min-h-0 overflow-hidden p-3 grid grid-cols-1 lg:grid-cols-12 gap-3">
+        <div className="flex-1 min-h-0 overflow-y-auto lg:overflow-hidden p-3 pb-4 grid grid-cols-1 lg:grid-cols-12 gap-3">
           {/* Ліва: команда + логістика */}
-          <div className="space-y-2 lg:col-span-3 overflow-y-auto min-h-0">
+          <div className="space-y-2 lg:col-span-3 lg:overflow-y-auto min-h-0 order-3 lg:order-none">
             <div className="bg-white rounded-xl border p-3 space-y-3">
               <div className="flex items-center justify-between gap-2">
                 <span className="text-xs font-semibold text-gray-700">Команда запису</span>
@@ -1143,8 +1145,8 @@ export function JournalAppointmentForm({
           </div>
 
           {/* Центр: статус + обрані + каталог */}
-          <div className="lg:col-span-5 flex flex-col min-h-0 gap-2 overflow-hidden">
-            <div className="flex flex-nowrap gap-1.5 overflow-x-auto pb-0.5 shrink-0">
+          <div className="lg:col-span-5 flex flex-col min-h-0 gap-2 lg:overflow-hidden order-2 lg:order-none">
+            <div className="flex flex-wrap sm:flex-nowrap gap-1.5 sm:overflow-x-auto pb-0.5 shrink-0">
               {JOURNAL_ATTENDANCE_OPTIONS.map((opt) => {
                 const active = attendance === opt.value;
                 return (
@@ -1441,7 +1443,7 @@ export function JournalAppointmentForm({
             </div>
 
             <div className="bg-white rounded-xl border p-3 space-y-2 flex-1 min-h-0 flex flex-col">
-              <div className="flex gap-1 p-1 rounded-xl bg-gray-100 shrink-0">
+              <div className="hidden lg:flex gap-1 p-1 rounded-xl bg-gray-100 shrink-0">
                 <button
                   type="button"
                   className={`flex-1 inline-flex items-center justify-center gap-1.5 py-2 rounded-lg text-xs font-medium transition-colors ${
@@ -1461,7 +1463,7 @@ export function JournalAppointmentForm({
                 </button>
                 <button
                   type="button"
-                  className={`flex-1 inline-flex items-center justify-center gap-1.5 py-2 rounded-lg text-xs font-medium transition-colors ${
+                  className={`hidden lg:inline-flex flex-1 items-center justify-center gap-1.5 py-2 rounded-lg text-xs font-medium transition-colors ${
                     catalogTab === "products" ? "bg-white shadow-sm text-gray-900" : "text-gray-500"
                   }`}
                   onClick={() => setCatalogTab("products")}
@@ -1486,7 +1488,7 @@ export function JournalAppointmentForm({
                     value={serviceFilter}
                     onChange={(e) => setServiceFilter(e.target.value)}
                   />
-                  <div className="flex-1 min-h-0 overflow-auto space-y-1">
+                  <div className="flex-1 min-h-[40vh] lg:min-h-0 overflow-auto space-y-1">
                     {servicesByKind.map((group) => (
                       <details
                         key={group.kind}
@@ -1546,7 +1548,7 @@ export function JournalAppointmentForm({
                     value={productQuery}
                     onChange={(e) => setProductQuery(e.target.value)}
                   />
-                  <div className="flex-1 min-h-0 overflow-auto space-y-1">
+                  <div className="flex-1 min-h-[40vh] lg:min-h-0 overflow-auto space-y-1">
                     {productsByCategory.map((group) => (
                       <details
                         key={group.title}
@@ -1616,7 +1618,7 @@ export function JournalAppointmentForm({
           </div>
 
           {/* Права: клієнт */}
-          <div className="space-y-2 lg:col-span-4 overflow-y-auto min-h-0">
+          <div className="space-y-2 lg:col-span-4 lg:overflow-y-auto min-h-0 order-1 lg:order-none">
             <div className="bg-white rounded-xl border p-3 space-y-2">
               <div className="text-xs font-semibold text-gray-700">Клієнт</div>
               {directClientId ? (
@@ -1784,6 +1786,27 @@ export function JournalAppointmentForm({
               </button>
             </div>
           </div>
+        </div>
+        <div className="sm:hidden shrink-0 border-t bg-white px-3 pt-2 pb-[max(0.75rem,env(safe-area-inset-bottom))] flex gap-2">
+          {onCheckout && (draft?.id || dueTotal > 0) ? (
+            <button
+              type="button"
+              className="btn btn-sm border-0 text-white flex-1"
+              style={{ background: "#f59e0b" }}
+              disabled={saving || !(dueTotal > 0) || !directClientId}
+              onClick={() => void submit({ thenCheckout: true })}
+            >
+              {fullyPaid ? "Оплачено" : "Оплатити"}
+            </button>
+          ) : null}
+          <button
+            type="button"
+            className="btn btn-sm btn-primary flex-1"
+            disabled={saving}
+            onClick={() => void submit()}
+          >
+            {saving ? "…" : draft?.id ? "Зберегти" : "Записати"}
+          </button>
         </div>
       </div>
     </div>

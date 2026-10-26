@@ -4,7 +4,7 @@
 // Накладання як у Altegio — зсув + шар, без звуження колонки на N смуг.
 // Верхня смуга: hover (затримка) / long-press / клік → попап перегляду.
 
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState, type TouchEvent } from "react";
 import type { JournalMaster } from "./JournalAppointmentForm";
 import { attendanceBlockStyle, normalizeAttendance } from "@/lib/journal/attendance";
 import { JournalAppointmentPeek, type PeekState } from "./JournalAppointmentPeek";
@@ -218,6 +218,168 @@ function peekAnchor(el: HTMLElement): { x: number; y: number } {
   return { x: r.right + 6, y: r.top };
 }
 
+function shortMasterName(name: string) {
+  const first = String(name || "").trim().split(/\s+/)[0] || name;
+  return first.length > 8 ? `${first.slice(0, 7)}…` : first;
+}
+
+function StaffDayColumn({
+  master,
+  rows,
+  day,
+  className,
+  onEmptySlot,
+  onStripEnter,
+  onStripLeave,
+  showPeek,
+  closePeek,
+  onAppointment,
+  onTouchStart,
+  onTouchEnd,
+  onTouchMove,
+}: {
+  master: JournalMaster;
+  rows: JournalGridAppointment[];
+  day: string;
+  className: string;
+  onEmptySlot: (masterId: string, datetimeLocal: string) => void;
+  onStripEnter: (row: JournalGridAppointment, el: HTMLElement) => void;
+  onStripLeave: () => void;
+  showPeek: (row: JournalGridAppointment, el: HTMLElement, pinned: boolean) => void;
+  closePeek: () => void;
+  onAppointment: (row: JournalGridAppointment) => void;
+  onTouchStart: (row: JournalGridAppointment, el: HTMLElement) => void;
+  onTouchEnd: (e: TouchEvent) => void;
+  onTouchMove: () => void;
+}) {
+  const laid = layoutColumn(rows);
+  return (
+    <div
+      className={`relative border-l border-gray-100 cursor-pointer ${className}`}
+      style={{ height: BODY_HEIGHT }}
+      onClick={(e) => {
+        const rect = (e.currentTarget as HTMLDivElement).getBoundingClientRect();
+        const y = e.clientY - rect.top;
+        const rawMin = START_HOUR * 60 + y / PX_PER_MIN;
+        const snapped = Math.min(
+          (END_HOUR - 1) * 60 + 45,
+          Math.max(START_HOUR * 60, Math.round(rawMin / 15) * 15),
+        );
+        const hm = minutesToHm(snapped);
+        onEmptySlot(master.id, `${day}T${hm}`);
+      }}
+    >
+      {Array.from({ length: (END_HOUR - START_HOUR) * 2 + 1 }, (_, i) => (
+        <div
+          key={i}
+          className={`absolute left-0 right-0 pointer-events-none ${i % 2 === 0 ? "border-t border-gray-200" : "border-t border-gray-100"}`}
+          style={{ top: i * (HOUR_PX / 2) }}
+        />
+      ))}
+      {laid.map((item) => {
+        const { row, top, height, lane, startMin, endMin } = item;
+        const startHm = minutesToHm(startMin);
+        const endHm = minutesToHm(endMin);
+        const titles = row.lines.map((l) => l.title).filter(Boolean);
+        const phone = phoneOf(row);
+        const att = normalizeAttendance(row.attendance);
+        const colors = attendanceBlockStyle(att);
+        const leftPx = 3 + lane * OVERLAP_OFFSET_PX;
+        return (
+          <div
+            key={row.id}
+            className={`absolute overflow-hidden rounded-md border text-left shadow-sm flex flex-col ${
+              row.status === "sync_error" ? "ring-2 ring-red-500" : ""
+            }`}
+            style={{
+              top: Math.max(0, top),
+              height,
+              left: leftPx,
+              right: 3,
+              zIndex: 10 + lane,
+              backgroundColor: colors.bg,
+              borderColor: colors.border,
+              color: colors.text,
+            }}
+            title={row.syncError || undefined}
+          >
+            <div
+              className="shrink-0 flex items-center justify-between gap-1 px-1.5 text-white cursor-default select-none"
+              style={{ backgroundColor: colors.strip, height: STRIP_PX }}
+              data-journal-strip="1"
+              onMouseEnter={(e) => {
+                e.stopPropagation();
+                onStripEnter(row, e.currentTarget);
+              }}
+              onMouseLeave={(e) => {
+                e.stopPropagation();
+                onStripLeave();
+              }}
+              onClick={(e) => {
+                e.stopPropagation();
+                showPeek(row, e.currentTarget, true);
+              }}
+              onTouchStart={(e) => onTouchStart(row, e.currentTarget)}
+              onTouchEnd={onTouchEnd}
+              onTouchMove={() => onTouchMove()}
+              onContextMenu={(e) => e.preventDefault()}
+            >
+              <span className="text-[10px] font-semibold tabular-nums leading-none truncate">
+                {startHm}—{endHm}
+              </span>
+              <span
+                className="w-3.5 h-3.5 rounded-full bg-white/25 text-[10px] leading-none flex items-center justify-center shrink-0"
+                aria-hidden
+              >
+                +
+              </span>
+            </div>
+            <button
+              type="button"
+              className="min-h-0 flex-1 overflow-hidden px-1.5 py-px flex flex-col justify-center items-stretch gap-0 text-left w-full"
+              style={{ color: colors.text }}
+              onClick={(e) => {
+                e.stopPropagation();
+                closePeek();
+                onAppointment(row);
+              }}
+            >
+              {height >= 58 && titles.length > 0 ? (
+                <div className="truncate text-[10px] font-medium leading-tight opacity-90">
+                  {titles.join(" — ")}
+                </div>
+              ) : null}
+              <div className="truncate text-[11px] font-semibold leading-tight min-h-[14px]">
+                <ClientNameWithLoyalty
+                  name={clientLabelOf(row)}
+                  spent={row.directClient?.spent}
+                  visits={row.directClient?.visits}
+                  nameClassName="text-[11px] font-semibold leading-tight whitespace-nowrap"
+                  className="gap-1 items-center max-w-full"
+                  showBadge={height >= 52}
+                />
+              </div>
+              {height >= 70 && phone ? (
+                <div className="truncate text-[10px] font-medium leading-tight">{phone}</div>
+              ) : null}
+              {height >= 84 &&
+              row.checkout?.status === "synced" &&
+              Number(row.checkout.paidAmount) > 0 ? (
+                <div className="truncate text-[10px] font-medium leading-tight">
+                  оплачено {Number(row.checkout.paidAmount).toLocaleString("uk-UA")} грн
+                </div>
+              ) : null}
+              {row.status === "sync_error" ? (
+                <div className="text-[10px] text-red-800 font-semibold leading-tight">помилка sync</div>
+              ) : null}
+            </button>
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
 export function JournalDayGrid({
   day,
   masters,
@@ -236,6 +398,7 @@ export function JournalDayGrid({
   onAttendanceChange?: (appointmentId: string, attendance: number) => void;
 }) {
   const [peek, setPeek] = useState<PeekState | null>(null);
+  const [phoneMasterId, setPhoneMasterId] = useState<string | null>(null);
   const hoverTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const leaveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const longPressTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -312,6 +475,13 @@ export function JournalDayGrid({
     };
   }, []);
 
+  useEffect(() => {
+    if (masters.length === 0) return;
+    if (!phoneMasterId || !masters.some((m) => m.id === phoneMasterId)) {
+      setPhoneMasterId(masters[0].id);
+    }
+  }, [masters, phoneMasterId]);
+
   const byStaff = new Map<string, JournalGridAppointment[]>();
   for (const row of appointments) {
     const key = staffKey(row);
@@ -320,185 +490,118 @@ export function JournalDayGrid({
     byStaff.set(key, list);
   }
 
+  const phoneMaster = masters.find((m) => m.id === phoneMasterId) || masters[0] || null;
+  const columnProps = {
+    day,
+    onEmptySlot,
+    onStripEnter,
+    onStripLeave,
+    showPeek,
+    closePeek,
+    onAppointment,
+    onTouchStart: (row: JournalGridAppointment, el: HTMLElement) => {
+      longPressFired.current = false;
+      clearLongPress();
+      longPressTimer.current = setTimeout(() => {
+        longPressFired.current = true;
+        showPeek(row, el, true);
+      }, LONG_PRESS_MS);
+    },
+    onTouchEnd: (e: TouchEvent) => {
+      clearLongPress();
+      if (longPressFired.current) {
+        e.preventDefault();
+        e.stopPropagation();
+      }
+    },
+    onTouchMove: () => clearLongPress(),
+  };
+
   return (
-    <div className="bg-white border border-gray-200 rounded-xl overflow-x-auto">
-      <div className="min-w-[720px]">
-        <div className="flex border-b border-gray-100">
-          <div className="w-10 shrink-0" />
-          {masters.map((m) => (
-            <div key={m.id} className="flex-1 min-w-[180px] px-3 py-2.5 flex items-center gap-2 border-l border-gray-100">
-              <MasterColumnAvatar name={m.name} instagramUsername={m.instagramUsername} />
-              <div className="min-w-0">
-                <div className="text-[13px] font-medium leading-tight truncate">{m.name}</div>
-                <div className="text-[11px] text-gray-400 leading-tight">{m.positionTitle || "Майстер"}</div>
-              </div>
+    <div>
+      <div className="md:hidden bg-white border border-gray-200 rounded-2xl overflow-hidden shadow-sm">
+        {masters.length === 0 ? (
+          <div className="px-4 py-8 text-sm text-gray-500 text-center">Немає майстрів у штаті Altegio</div>
+        ) : (
+          <>
+            <div className="flex gap-1 overflow-x-auto px-2 py-2 border-b border-gray-100">
+              {masters.map((m) => {
+                const active = phoneMaster?.id === m.id;
+                return (
+                  <button
+                    key={m.id}
+                    type="button"
+                    id={`journal-master-${m.id}`}
+                    className={`shrink-0 flex flex-col items-center gap-1 w-[4.5rem] rounded-xl px-1 py-1.5 ${
+                      active ? "bg-[#eef0f4] shadow-sm" : "opacity-70"
+                    }`}
+                    onClick={() => {
+                      setPhoneMasterId(m.id);
+                      document.getElementById(`journal-master-${m.id}`)?.scrollIntoView({
+                        inline: "center",
+                        block: "nearest",
+                      });
+                    }}
+                  >
+                    <span className={active ? "rounded-full ring-2 ring-gray-900 ring-offset-2" : ""}>
+                      <MasterColumnAvatar name={m.name} instagramUsername={m.instagramUsername} />
+                    </span>
+                    <span className={`text-[11px] leading-none truncate max-w-full ${active ? "font-semibold text-gray-900" : "text-gray-500"}`}>
+                      {shortMasterName(m.name)}
+                    </span>
+                  </button>
+                );
+              })}
             </div>
-          ))}
-          {masters.length === 0 && (
-            <div className="flex-1 px-3 py-3 text-sm text-gray-500">Немає майстрів у штаті Altegio</div>
-          )}
-          <div className="w-10 shrink-0" />
-        </div>
-
-        <div className="flex relative">
-          <TimeGutter />
-          {masters.map((m) => {
-            const rows = byStaff.get(String(m.altegioStaffId || m.id)) || [];
-            const laid = layoutColumn(rows);
-            return (
-              <div
-                key={m.id}
-                className="relative flex-1 min-w-[180px] border-l border-gray-100 cursor-pointer"
-                style={{ height: BODY_HEIGHT }}
-                onClick={(e) => {
-                  const rect = (e.currentTarget as HTMLDivElement).getBoundingClientRect();
-                  const y = e.clientY - rect.top;
-                  const rawMin = START_HOUR * 60 + y / PX_PER_MIN;
-                  const snapped = Math.min(
-                    (END_HOUR - 1) * 60 + 45,
-                    Math.max(START_HOUR * 60, Math.round(rawMin / 15) * 15),
-                  );
-                  const hm = minutesToHm(snapped);
-                  onEmptySlot(m.id, `${day}T${hm}`);
-                }}
-              >
-                {Array.from({ length: (END_HOUR - START_HOUR) * 2 + 1 }, (_, i) => (
-                  <div
-                    key={i}
-                    className={`absolute left-0 right-0 pointer-events-none ${i % 2 === 0 ? "border-t border-gray-200" : "border-t border-gray-100"}`}
-                    style={{ top: i * (HOUR_PX / 2) }}
-                  />
-                ))}
-                {laid.map((item) => {
-                  const { row, top, height, lane, startMin, endMin } = item;
-                  const startHm = minutesToHm(startMin);
-                  const endHm = minutesToHm(endMin);
-                  const titles = row.lines.map((l) => l.title).filter(Boolean);
-                  const phone = phoneOf(row);
-                  const att = normalizeAttendance(row.attendance);
-                  const colors = attendanceBlockStyle(att);
-                  const leftPx = 3 + lane * OVERLAP_OFFSET_PX;
-                  const rightPad = 3;
-                  const bodyLines: string[] = [];
-                  if (titles.length > 0) bodyLines.push(titles.join(" — "));
-                  if (phone) bodyLines.push(phone);
-                  if (row.checkout?.status === "synced" && Number(row.checkout.paidAmount) > 0) {
-                    bodyLines.push(
-                      `оплачено ${Number(row.checkout.paidAmount).toLocaleString("uk-UA")} грн`,
-                    );
-                  }
-
-                  return (
-                    <div
-                      key={row.id}
-                      className={`absolute overflow-hidden rounded-md border text-left shadow-sm flex flex-col ${
-                        row.status === "sync_error" ? "ring-2 ring-red-500" : ""
-                      }`}
-                      style={{
-                        top: Math.max(0, top),
-                        height,
-                        left: leftPx,
-                        right: rightPad,
-                        zIndex: 10 + lane,
-                        backgroundColor: colors.bg,
-                        borderColor: colors.border,
-                        color: colors.text,
-                      }}
-                      title={row.syncError || undefined}
-                    >
-                      <div
-                        className="shrink-0 flex items-center justify-between gap-1 px-1.5 text-white cursor-default select-none"
-                        style={{ backgroundColor: colors.strip, height: STRIP_PX }}
-                        data-journal-strip="1"
-                        onMouseEnter={(e) => {
-                          e.stopPropagation();
-                          onStripEnter(row, e.currentTarget);
-                        }}
-                        onMouseLeave={(e) => {
-                          e.stopPropagation();
-                          onStripLeave();
-                        }}
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          showPeek(row, e.currentTarget, true);
-                        }}
-                        onTouchStart={(e) => {
-                          longPressFired.current = false;
-                          clearLongPress();
-                          const target = e.currentTarget;
-                          longPressTimer.current = setTimeout(() => {
-                            longPressFired.current = true;
-                            showPeek(row, target, true);
-                          }, LONG_PRESS_MS);
-                        }}
-                        onTouchEnd={(e) => {
-                          clearLongPress();
-                          if (longPressFired.current) {
-                            e.preventDefault();
-                            e.stopPropagation();
-                          }
-                        }}
-                        onTouchMove={() => clearLongPress()}
-                        onContextMenu={(e) => e.preventDefault()}
-                      >
-                        <span className="text-[10px] font-semibold tabular-nums leading-none truncate">
-                          {startHm}—{endHm}
-                        </span>
-                        <span
-                          className="w-3.5 h-3.5 rounded-full bg-white/25 text-[10px] leading-none flex items-center justify-center shrink-0"
-                          aria-hidden
-                        >
-                          +
-                        </span>
-                      </div>
-                      <button
-                        type="button"
-                        className="min-h-0 flex-1 overflow-hidden px-1.5 py-px flex flex-col justify-center items-stretch gap-0 text-left w-full"
-                        style={{ color: colors.text }}
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          closePeek();
-                          onAppointment(row);
-                        }}
-                      >
-                        {/* Короткі слоти: лише клієнт; довші — послуги + телефон під імʼям */}
-                        {height >= 58 && titles.length > 0 ? (
-                          <div className="truncate text-[10px] font-medium leading-tight opacity-90">
-                            {titles.join(" — ")}
-                          </div>
-                        ) : null}
-                        <div className="truncate text-[11px] font-semibold leading-tight min-h-[14px]">
-                          <ClientNameWithLoyalty
-                            name={clientLabelOf(row)}
-                            spent={row.directClient?.spent}
-                            visits={row.directClient?.visits}
-                            nameClassName="text-[11px] font-semibold leading-tight whitespace-nowrap"
-                            className="gap-1 items-center max-w-full"
-                            showBadge={height >= 52}
-                          />
-                        </div>
-                        {height >= 70 && phone ? (
-                          <div className="truncate text-[10px] font-medium leading-tight">{phone}</div>
-                        ) : null}
-                        {height >= 84 &&
-                        row.checkout?.status === "synced" &&
-                        Number(row.checkout.paidAmount) > 0 ? (
-                          <div className="truncate text-[10px] font-medium leading-tight">
-                            оплачено {Number(row.checkout.paidAmount).toLocaleString("uk-UA")} грн
-                          </div>
-                        ) : null}
-                        {row.status === "sync_error" ? (
-                          <div className="text-[10px] text-red-800 font-semibold leading-tight">помилка sync</div>
-                        ) : null}
-                      </button>
-                    </div>
-                  );
-                })}
+            {phoneMaster ? (
+              <div className="flex relative">
+                <TimeGutter />
+                <StaffDayColumn
+                  master={phoneMaster}
+                  rows={byStaff.get(String(phoneMaster.altegioStaffId || phoneMaster.id)) || []}
+                  className="flex-1 min-w-0"
+                  {...columnProps}
+                />
+                {loading && <div className="absolute inset-0 bg-white/40 pointer-events-none" />}
               </div>
-            );
-          })}
-          <TimeGutter />
-          {loading && <div className="absolute inset-0 bg-white/40 pointer-events-none" />}
+            ) : null}
+          </>
+        )}
+      </div>
+
+      <div className="hidden md:block bg-white border border-gray-200 rounded-xl overflow-x-auto snap-x snap-mandatory">
+        <div className="w-max min-w-full">
+          <div className="flex border-b border-gray-100">
+            <div className="w-10 shrink-0" />
+            {masters.map((m) => (
+              <div key={m.id} className="flex-1 min-w-[180px] md:min-w-[210px] snap-start px-3 py-2.5 flex items-center gap-2 border-l border-gray-100">
+                <MasterColumnAvatar name={m.name} instagramUsername={m.instagramUsername} />
+                <div className="min-w-0">
+                  <div className="text-[13px] font-medium leading-tight truncate">{m.name}</div>
+                  <div className="text-[11px] text-gray-400 leading-tight">{m.positionTitle || "Майстер"}</div>
+                </div>
+              </div>
+            ))}
+            {masters.length === 0 && (
+              <div className="flex-1 px-3 py-3 text-sm text-gray-500">Немає майстрів у штаті Altegio</div>
+            )}
+            <div className="w-10 shrink-0" />
+          </div>
+
+          <div className="flex relative">
+            <TimeGutter />
+            {masters.map((m) => (
+              <StaffDayColumn
+                key={m.id}
+                master={m}
+                rows={byStaff.get(String(m.altegioStaffId || m.id)) || []}
+                className="flex-1 min-w-[180px] md:min-w-[210px] snap-start"
+                {...columnProps}
+              />
+            ))}
+            <TimeGutter />
+            {loading && <div className="absolute inset-0 bg-white/40 pointer-events-none" />}
+          </div>
         </div>
       </div>
 

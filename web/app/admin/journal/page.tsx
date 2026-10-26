@@ -295,6 +295,15 @@ export default function JournalDayPage() {
   };
 
   useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    if (params.get("book") !== "1") return;
+    openBookForm();
+    params.delete("book");
+    const q = params.toString();
+    window.history.replaceState(null, "", q ? `${window.location.pathname}?${q}` : window.location.pathname);
+  }, [openBookForm]);
+
+  useEffect(() => {
     if (openedFromUrl.current) return;
     const params = new URLSearchParams(window.location.search);
     const appointmentId = params.get("appointment");
@@ -342,7 +351,7 @@ export default function JournalDayPage() {
   return (
     <>
       <JournalTopToolbar />
-      <main className="p-2 space-y-2 flex-1 min-h-0">
+      <main className="p-2 sm:p-3 space-y-2 flex-1 min-h-0">
         {notice && (
           <div className="fixed top-4 left-1/2 -translate-x-1/2 z-[70] alert alert-success shadow-lg text-sm py-2 px-4 max-w-md">
             {notice}

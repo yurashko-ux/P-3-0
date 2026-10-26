@@ -47,6 +47,16 @@ export function shiftYmd(day: string, delta: number): string {
   return `${dt.getUTCFullYear()}-${pad(dt.getUTCMonth() + 1)}-${pad(dt.getUTCDate())}`;
 }
 
+export function formatJournalShortDate(ymd: string): string {
+  const [y, m, d] = ymd.split("-").map(Number);
+  const dt = new Date(Date.UTC(y, m - 1, d, 12));
+  return new Intl.DateTimeFormat("uk-UA", {
+    timeZone: "Europe/Kyiv",
+    day: "numeric",
+    month: "long",
+  }).format(dt);
+}
+
 export function formatJournalBoldDate(ymd: string): string {
   const [y, m, d] = ymd.split("-").map(Number);
   const dt = new Date(Date.UTC(y, m - 1, d, 12));

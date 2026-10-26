@@ -32,7 +32,13 @@ function mondayBasedWeekday(jsDay: number) {
   return (jsDay + 6) % 7;
 }
 
-export function JournalSidebarCalendar() {
+export function JournalSidebarCalendar({
+  touch = false,
+  onPicked,
+}: {
+  touch?: boolean;
+  onPicked?: () => void;
+} = {}) {
   const { day, setDay } = useJournalDay();
   const pathname = usePathname();
   const router = useRouter();
@@ -42,6 +48,7 @@ export function JournalSidebarCalendar() {
 
   function selectDay(ymd: string) {
     setDay(ymd);
+    onPicked?.();
     if (pathname !== "/admin/journal") {
       router.push("/admin/journal");
     }
@@ -73,7 +80,7 @@ export function JournalSidebarCalendar() {
   }
 
   return (
-    <div className="rounded-xl border bg-white px-2 py-2">
+    <div className={`rounded-xl border bg-white ${touch ? "px-3 py-3" : "px-2 py-2"}`}>
       <div className="flex items-center gap-1 mb-2">
         <button
           type="button"
@@ -83,7 +90,7 @@ export function JournalSidebarCalendar() {
         >
           ‹
         </button>
-        <div className="flex-1 text-center text-xs font-semibold capitalize truncate">
+        <div className={`flex-1 text-center font-semibold capitalize truncate ${touch ? "text-base" : "text-xs"}`}>
           {monthLabel(cursor.y, cursor.m)}
         </div>
         <button
@@ -95,16 +102,16 @@ export function JournalSidebarCalendar() {
           ›
         </button>
       </div>
-      <div className="grid grid-cols-7 gap-0.5 text-[10px] text-center text-gray-500 mb-1">
+      <div className={`grid grid-cols-7 text-center text-gray-500 mb-1 ${touch ? "gap-1 text-xs" : "gap-0.5 text-[10px]"}`}>
         {WEEKDAYS.map((w) => (
           <div key={w} className="py-0.5">
             {w}
           </div>
         ))}
       </div>
-      <div className="grid grid-cols-7 gap-0.5">
+      <div className={`grid grid-cols-7 ${touch ? "gap-1" : "gap-0.5"}`}>
         {cells.map((cell, idx) => {
-          if (!cell) return <div key={`e-${idx}`} className="h-7" />;
+          if (!cell) return <div key={`e-${idx}`} className={touch ? "h-11" : "h-7"} />;
           const isSelected = cell.ymd === day;
           const isToday = cell.ymd === today;
           return (
@@ -112,7 +119,7 @@ export function JournalSidebarCalendar() {
               key={cell.ymd}
               type="button"
               className={[
-                "h-7 rounded-full text-xs leading-none",
+                touch ? "h-11 rounded-full text-sm leading-none" : "h-7 rounded-full text-xs leading-none",
                 isSelected
                   ? "bg-neutral text-neutral-content font-semibold"
                   : isToday

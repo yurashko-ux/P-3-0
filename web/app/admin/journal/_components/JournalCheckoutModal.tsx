@@ -535,7 +535,7 @@ export function JournalCheckoutModal({
 
   return (
     <div
-      className="fixed inset-0 z-[60] bg-black/40 flex items-start justify-center p-3 overflow-y-auto"
+      className="fixed inset-0 z-[60] bg-black/40 flex items-start justify-center p-3 pt-[max(0.75rem,env(safe-area-inset-top))] pb-[max(0.75rem,env(safe-area-inset-bottom))] overflow-y-auto"
       onClick={onClose}
     >
       <div
