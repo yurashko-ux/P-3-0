@@ -79,8 +79,8 @@ export type JournalGridAppointment = {
 };
 
 const START_HOUR = 9;
-/** Шкала щонайменше до 22:00. Якщо запис довший — шкала росте разом із ним. */
-const END_HOUR = 22;
+/** Кінець шкали. Довший запис обрізається тут, унизу картки лишається його справжній час. */
+const END_HOUR = 20;
 /** Висота години на планшеті й десктопі. */
 const HOUR_PX = 64;
 /** На телефоні година ще нижча, щоб довгі записи не розтягувались. */
@@ -156,6 +156,8 @@ type LayoutAppt = {
   height: number;
   lane: number;
   laneCount: number;
+  /** Запис іде далі за кінець шкали — блок обрізаний. */
+  clipped: boolean;
 };
 
 /** Накладання як у Altegio: колонка повної ширини, зсув вправо + шар зверху. */
@@ -165,14 +167,22 @@ function layoutColumn(rows: JournalGridAppointment[], pxPerMin = PX_PER_MIN): La
       const startHm = kyivHm(row.datetime);
       const durationMin = Math.max(15, Math.round((row.seanceLength || 3600) / 60));
       const startMin = hmToMinutes(startHm);
+      const endMin = startMin + durationMin;
+      const gridEnd = END_HOUR * 60;
+      const visibleMin = Math.max(0, Math.min(endMin, gridEnd) - startMin);
+      const top = (startMin - START_HOUR * 60) * pxPerMin;
+      const gridPx = (END_HOUR - START_HOUR) * pxPerMin;
+      let height = Math.max(MIN_EVENT_PX, visibleMin * pxPerMin - 2);
+      if (top + height > gridPx) height = Math.max(22, gridPx - top);
       return {
         row,
         startMin,
-        endMin: startMin + durationMin,
-        top: (startMin - START_HOUR * 60) * pxPerMin,
-        height: Math.max(MIN_EVENT_PX, durationMin * pxPerMin - 2),
+        endMin,
+        top,
+        height,
         lane: 0,
         laneCount: 1,
+        clipped: endMin > gridEnd && startMin < gridEnd,
       };
     })
     .sort((a, b) => a.startMin - b.startMin || b.endMin - a.endMin);
@@ -238,16 +248,6 @@ function TimeGutter({
       ))}
     </div>
   );
-}
-
-function gridEndHour(rows: JournalGridAppointment[]) {
-  let end = END_HOUR;
-  for (const row of rows) {
-    const start = hmToMinutes(kyivHm(row.datetime));
-    const durationMin = Math.max(15, Math.round((row.seanceLength || 3600) / 60));
-    end = Math.max(end, Math.ceil((start + durationMin) / 60));
-  }
-  return Math.min(24, end);
 }
 
 function kyivNowMinutes() {
@@ -341,7 +341,7 @@ function StaffDayColumn({
         />
       ) : null}
       {laid.map((item) => {
-        const { row, top, height, lane, startMin, endMin } = item;
+        const { row, top, height, lane, startMin, endMin, clipped } = item;
         const startHm = minutesToHm(startMin);
         const endHm = minutesToHm(endMin);
         const titles = row.lines.map((l) => l.title).filter(Boolean);
@@ -435,6 +435,14 @@ function StaffDayColumn({
                 <div className="text-[10px] text-red-800 font-semibold leading-tight">помилка sync</div>
               ) : null}
             </button>
+            {clipped ? (
+              <div
+                className="shrink-0 px-1.5 text-[11px] font-semibold tabular-nums text-white flex items-center"
+                style={{ backgroundColor: colors.strip, height: 18 }}
+              >
+                до {endHm}
+              </div>
+            ) : null}
           </div>
         );
       })}
@@ -544,9 +552,8 @@ export function JournalDayGrid({
     byStaff.set(key, list);
   }
 
-  const endHour = gridEndHour(appointments);
   const nowMin = day === kyivTodayYmd() ? kyivNowMinutes() : null;
-  const nowVisible = nowMin != null && nowMin >= START_HOUR * 60 && nowMin <= endHour * 60;
+  const nowVisible = nowMin != null && nowMin >= START_HOUR * 60 && nowMin <= END_HOUR * 60;
   const phoneNowTop = nowVisible ? (nowMin - START_HOUR * 60) * (PHONE_HOUR_PX / 60) : null;
   const deskNowTop = nowVisible ? (nowMin - START_HOUR * 60) * PX_PER_MIN : null;
   const nowLabel = nowMin != null ? minutesToHm(nowMin) : "";
@@ -607,7 +614,7 @@ export function JournalDayGrid({
                   </button>
                 </div>
                 <div className="relative">
-                  <TimeGutter hourPx={PHONE_HOUR_PX} endHour={endHour} full />
+                  <TimeGutter hourPx={PHONE_HOUR_PX} full />
                   {phoneNowTop != null ? (
                     <div
                       className="absolute right-0 z-30 -translate-y-1/2"
@@ -638,7 +645,6 @@ export function JournalDayGrid({
                     className="w-full"
                     hourPx={PHONE_HOUR_PX}
                     stripPx={PHONE_STRIP_PX}
-                    endHour={endHour}
                     nowTop={phoneNowTop}
                     {...columnProps}
                   />
@@ -679,19 +685,18 @@ export function JournalDayGrid({
           </div>
 
           <div className="flex relative">
-            <TimeGutter endHour={endHour} />
+            <TimeGutter />
             {masters.map((m) => (
               <StaffDayColumn
                 key={m.id}
                 master={m}
                 rows={byStaff.get(String(m.altegioStaffId || m.id)) || []}
                 className="flex-1 min-w-[180px] md:min-w-[210px]"
-                endHour={endHour}
                 nowTop={deskNowTop}
                 {...columnProps}
               />
             ))}
-            <TimeGutter endHour={endHour} />
+            <TimeGutter />
             {loading && <div className="absolute inset-0 bg-white/40 pointer-events-none" />}
           </div>
         </div>
