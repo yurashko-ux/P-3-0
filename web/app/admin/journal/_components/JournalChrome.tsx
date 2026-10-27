@@ -8,6 +8,7 @@ import { JournalSidebarCalendar } from "./JournalSidebarCalendar";
 
 const JOURNAL_LINKS = [
   { href: "/admin/journal", label: "Календар", exact: true },
+  { href: "/admin/journal/schedule", label: "Графік" },
   { href: "/admin/journal/services", label: "Послуги" },
   { href: "/admin/journal/staff", label: "Працівники" },
 ];
@@ -114,7 +115,7 @@ function MobileDock() {
   return (
     <>
       <nav className="lg:hidden fixed bottom-0 inset-x-0 z-30 border-t border-gray-200/80 bg-white/95 backdrop-blur-md pb-[env(safe-area-inset-bottom)]">
-        <div className="grid grid-cols-3 items-stretch h-[3.75rem] px-2">
+        <div className="grid grid-cols-4 items-stretch h-[3.75rem] px-1">
           <Link
             href="/admin/journal"
             className={`flex flex-col items-center justify-center gap-0.5 text-[11px] ${
@@ -123,6 +124,19 @@ function MobileDock() {
           >
             <span className={`h-1 w-6 rounded-full ${onJournal ? "bg-gray-900" : "bg-transparent"}`} />
             Журнал
+          </Link>
+          <Link
+            href="/admin/journal/schedule"
+            className={`flex flex-col items-center justify-center gap-0.5 text-[11px] ${
+              pathname.startsWith("/admin/journal/schedule") ? "text-gray-900 font-semibold" : "text-gray-500"
+            }`}
+          >
+            <span
+              className={`h-1 w-6 rounded-full ${
+                pathname.startsWith("/admin/journal/schedule") ? "bg-gray-900" : "bg-transparent"
+              }`}
+            />
+            Графік
           </Link>
           <button
             type="button"

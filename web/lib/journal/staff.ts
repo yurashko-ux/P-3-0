@@ -12,6 +12,7 @@ export type JournalStaff = {
   altegioStaffId: number;
   positionTitle: string;
   positionKind: JournalStaffKind;
+  avatarUrl?: string | null;
 };
 
 const KIND_ORDER: Record<JournalStaffKind, number> = {
@@ -106,7 +107,18 @@ function mapStaff(item: any, positions: Map<number, string>): JournalStaff | nul
     altegioStaffId: id,
     positionTitle: positionTitle || "без посади",
     positionKind: classifyStaffPosition(positionTitle),
+    avatarUrl: staffAvatarUrl(item),
   };
+}
+
+function staffAvatarUrl(item: any): string | null {
+  const raw = item?.avatar_big || item?.avatar || item?.image_url || item?.photo || item?.image;
+  if (typeof raw === "string" && /^https?:\/\//i.test(raw)) return raw;
+  if (raw && typeof raw === "object") {
+    const nested = raw.url || raw.big || raw.origin;
+    if (typeof nested === "string" && /^https?:\/\//i.test(nested)) return nested;
+  }
+  return null;
 }
 
 async function listPositions(companyId: number): Promise<Map<number, string>> {
