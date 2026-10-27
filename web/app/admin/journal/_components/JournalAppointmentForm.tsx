@@ -41,6 +41,8 @@ export type JournalClient = {
   spent?: number | null;
   visits?: number | null;
   lastVisitAt?: string | Date | null;
+  /** Фото вже є в кеші. Пошук не ходить в ManyChat. */
+  hasAvatar?: boolean;
 };
 
 export type ServiceLineDraft = {
@@ -146,6 +148,21 @@ function avatarUrl(instagram?: string | null) {
   const u = (instagram || "").replace(/^@/, "").trim();
   if (!u) return null;
   return `/api/admin/direct/instagram-avatar?username=${encodeURIComponent(u)}`;
+}
+
+function SearchHitAvatar({ username }: { username: string }) {
+  const [hidden, setHidden] = useState(false);
+  const src = avatarUrl(username);
+  if (!src || hidden) return null;
+  return (
+    // eslint-disable-next-line @next/next/no-img-element
+    <img
+      src={src}
+      alt=""
+      className="w-6 h-6 rounded-full object-cover shrink-0 bg-[#e8edf5]"
+      onError={() => setHidden(true)}
+    />
+  );
 }
 
 function formatLastVisitUa(iso?: string | Date | null) {
@@ -1726,7 +1743,7 @@ export function JournalAppointmentForm({
                         <li key={c.id}>
                           <button
                             type="button"
-                            className="w-full text-left px-3 py-3 min-h-[2.75rem] text-sm font-medium hover:bg-gray-50"
+                            className="w-full text-left px-3 py-2 min-h-[2.75rem] text-sm font-medium hover:bg-gray-50 flex items-center gap-2"
                             onClick={() => {
                               setDirectClientId(c.id);
                               setClientPicked(clientLabel(c));
@@ -1746,7 +1763,10 @@ export function JournalAppointmentForm({
                               setClientQuery("");
                             }}
                           >
-                            {clientLabel(c)}
+                            {c.hasAvatar && c.instagramUsername ? (
+                              <SearchHitAvatar username={c.instagramUsername} />
+                            ) : null}
+                            <span className="truncate">{clientLabel(c)}</span>
                           </button>
                         </li>
                       ))}
