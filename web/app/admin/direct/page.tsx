@@ -2441,11 +2441,11 @@ function DirectPageContent() {
         <div className="flex items-start gap-0.5 min-h-[20px] w-full md:max-w-[420px]">
           <Link
             href="/admin/direct"
-            className="btn btn-ghost min-h-0 py-0.5 text-[10px] px-1 leading-tight"
-            title="Дірект"
-            aria-label="Дірект"
+            className="mt-0.5 flex h-8 w-8 shrink-0 items-center justify-center"
+            title="CreSco"
+            aria-label="CreSco"
           >
-            🏠
+            <img src="/icon-192.png" alt="" width={32} height={32} className="h-8 w-8 rounded-md" />
           </Link>
           <div className="flex flex-1 flex-col md:flex-row items-stretch md:items-center gap-1">
             <input
