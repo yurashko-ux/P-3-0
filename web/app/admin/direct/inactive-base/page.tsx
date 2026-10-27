@@ -882,13 +882,29 @@ function InactiveBasePageContent() {
           <h1 className="text-sm font-semibold leading-none px-1">Клієнти</h1>
           <div className="inline-flex flex-col gap-0.5 shrink-0">
             <div className="flex gap-0.5">
-              <ClientsMenuTile
-                label="Активна"
-                count={baseCounts?.active}
-                active={baseView === "active"}
-                title={BASE_VIEW_LABELS.active}
-                onClick={() => switchBaseView("active")}
-              />
+              <div className="relative">
+                <ClientsMenuTile
+                  label="Активна"
+                  count={baseCounts?.active}
+                  active={baseView === "active"}
+                  title={BASE_VIEW_LABELS.active}
+                  onClick={() => switchBaseView("active")}
+                />
+                {isDeveloper ? (
+                  <button
+                    type="button"
+                    title="Завантажити активну базу для Facebook"
+                    aria-label="Завантажити активну базу для Facebook"
+                    disabled={fbExporting}
+                    onClick={() => void downloadFacebookAudience()}
+                    className="absolute bottom-[1px] right-[1px] z-10 flex h-3.5 w-3.5 items-center justify-center disabled:opacity-50"
+                  >
+                    <svg width="7" height="5" viewBox="0 0 7 5" aria-hidden="true">
+                      <path d="M0 0h7L3.5 5z" fill="#000" />
+                    </svg>
+                  </button>
+                ) : null}
+              </div>
               <ClientsMenuTile
                 label="Відбулись"
                 count={baseCounts?.consultationAttended}
@@ -944,17 +960,6 @@ function InactiveBasePageContent() {
               ) : null}
             </div>
           </div>
-          {isDeveloper ? (
-            <button
-              type="button"
-              title="Завантажити активну базу у файл для кабінету Facebook. Доступ лише у розробника."
-              disabled={fbExporting}
-              onClick={() => void downloadFacebookAudience()}
-              className="shrink-0 h-8 px-2.5 rounded-md text-[12px] font-semibold text-white bg-slate-900 hover:bg-slate-700 disabled:opacity-60"
-            >
-              {fbExporting ? "Завантаження…" : "Файл для Facebook"}
-            </button>
-          ) : null}
           <div>
             <label className="text-[10px] block mb-0.5 leading-none">Пошук</label>
             <div className="relative w-40">

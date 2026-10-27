@@ -1,6 +1,7 @@
 // Файл клієнтської аудиторії для кабінету Facebook (Ads Manager).
 // Без хешування: кабінет хешує сам під час завантаження. Попередній SHA-256 зіпсував би збіги.
-// Колонки лише з офіційних заголовків Meta: phone, fn, ln, country, value.
+// Колонки лише з офіційних заголовків Meta: phone, fn, ln, zip, st, country, value.
+// zip і st — локація салону: індекс Львова 79000 і регіон Львів. Кабінет зводить по них таргет.
 
 export type FacebookCustomerSource = {
   firstName: string | null;
@@ -18,6 +19,10 @@ export type FacebookCustomerListResult = {
 };
 
 type PhoneHit = { phone: string; country: string };
+
+/** Індекс Львова і регіон для кожної строки файлу. */
+const LVIV_ZIP = "79000";
+const LVIV_REGION = "Львів";
 
 type CsvRow = { phone: string; fn: string; ln: string; country: string; value: number };
 
@@ -155,10 +160,12 @@ export function buildFacebookCustomerListCsv(
     return a.phone.localeCompare(b.phone);
   });
 
-  const lines = ["phone,fn,ln,country,value"];
+  const lines = ["phone,fn,ln,zip,st,country,value"];
   for (const row of rows) {
     lines.push(
-      [row.phone, csvCell(row.fn), csvCell(row.ln), row.country, String(row.value)].join(",")
+      [row.phone, csvCell(row.fn), csvCell(row.ln), LVIV_ZIP, csvCell(LVIV_REGION), row.country, String(row.value)].join(
+        ","
+      )
     );
   }
 
