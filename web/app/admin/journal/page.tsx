@@ -400,7 +400,7 @@ export default function JournalDayPage() {
   return (
     <>
       <JournalTopToolbar />
-      <main className="p-2 sm:p-3 pb-16 md:pb-3 space-y-2 md:flex-1 md:min-h-0">
+      <main className="p-2 sm:p-3 pb-16 md:pb-3 space-y-2">
         {notice && (
           <div className="fixed top-4 left-1/2 -translate-x-1/2 z-[70] alert alert-success shadow-lg text-sm py-2 px-4 max-w-md">
             {notice}

@@ -79,16 +79,16 @@ export type JournalGridAppointment = {
 };
 
 const START_HOUR = 9;
-const END_HOUR = 20;
+/** Шкала щонайменше до 22:00. Якщо запис довший — шкала росте разом із ним. */
+const END_HOUR = 22;
 /** Висота години на планшеті й десктопі. */
-const HOUR_PX = 88;
-/** На телефоні година нижча, щоб довгі записи не розтягувались на весь екран. */
-const PHONE_HOUR_PX = 80;
+const HOUR_PX = 64;
+/** На телефоні година ще нижча, щоб довгі записи не розтягувались. */
+const PHONE_HOUR_PX = 56;
 const PX_PER_MIN = HOUR_PX / 60;
-function bodyHeight(hourPx: number) {
-  return (END_HOUR - START_HOUR) * hourPx + 10;
+function bodyHeight(hourPx: number, endHour = END_HOUR) {
+  return (endHour - START_HOUR) * hourPx + 10;
 }
-const BODY_HEIGHT = bodyHeight(HOUR_PX);
 const HOVER_DELAY_MS = 400;
 const LONG_PRESS_MS = 500;
 const OVERLAP_OFFSET_PX = 16;
@@ -204,21 +204,29 @@ function layoutColumn(rows: JournalGridAppointment[], pxPerMin = PX_PER_MIN): La
   return items;
 }
 
-function TimeGutter({ hourPx = HOUR_PX, full = false }: { hourPx?: number; full?: boolean }) {
-  const hours = Array.from({ length: END_HOUR - START_HOUR + 1 }, (_, i) => START_HOUR + i);
-  const height = bodyHeight(hourPx);
+function TimeGutter({
+  hourPx = HOUR_PX,
+  full = false,
+  endHour = END_HOUR,
+}: {
+  hourPx?: number;
+  full?: boolean;
+  endHour?: number;
+}) {
+  const hours = Array.from({ length: endHour - START_HOUR + 1 }, (_, i) => START_HOUR + i);
+  const height = bodyHeight(hourPx, endHour);
   return (
     <div className={`relative shrink-0 select-none ${full ? "w-12 text-[11px]" : "w-10 text-[11px]"}`} style={{ height }}>
       {hours.map((hour) => (
         <div key={hour} className="absolute left-0 right-0" style={{ top: (hour - START_HOUR) * hourPx }}>
           <span
             className={`block text-right pr-1 tabular-nums text-gray-400 leading-none ${
-              hour === START_HOUR ? "" : hour === END_HOUR ? "-translate-y-full" : "-translate-y-1/2"
+              hour === START_HOUR ? "" : hour === endHour ? "-translate-y-full" : "-translate-y-1/2"
             }`}
           >
             {full ? `${hour}:00` : hour}
           </span>
-          {!full && hour < END_HOUR && (
+          {!full && hour < endHour && (
             <span
               className="absolute right-1.5 tabular-nums text-gray-300 leading-none"
               style={{ top: hourPx / 2, transform: "translateY(-50%)" }}
@@ -230,6 +238,16 @@ function TimeGutter({ hourPx = HOUR_PX, full = false }: { hourPx?: number; full?
       ))}
     </div>
   );
+}
+
+function gridEndHour(rows: JournalGridAppointment[]) {
+  let end = END_HOUR;
+  for (const row of rows) {
+    const start = hmToMinutes(kyivHm(row.datetime));
+    const durationMin = Math.max(15, Math.round((row.seanceLength || 3600) / 60));
+    end = Math.max(end, Math.ceil((start + durationMin) / 60));
+  }
+  return Math.min(24, end);
 }
 
 function kyivNowMinutes() {
@@ -261,6 +279,7 @@ function StaffDayColumn({
   className,
   hourPx = HOUR_PX,
   stripPx = STRIP_PX,
+  endHour = END_HOUR,
   nowTop = null,
   onEmptySlot,
   onStripEnter,
@@ -278,6 +297,7 @@ function StaffDayColumn({
   className: string;
   hourPx?: number;
   stripPx?: number;
+  endHour?: number;
   nowTop?: number | null;
   onEmptySlot: (masterId: string, datetimeLocal: string) => void;
   onStripEnter: (row: JournalGridAppointment, el: HTMLElement) => void;
@@ -294,20 +314,20 @@ function StaffDayColumn({
   return (
     <div
       className={`relative border-l border-gray-100 cursor-pointer ${className}`}
-      style={{ height: bodyHeight(hourPx) }}
+      style={{ height: bodyHeight(hourPx, endHour) }}
       onClick={(e) => {
         const rect = (e.currentTarget as HTMLDivElement).getBoundingClientRect();
         const y = e.clientY - rect.top;
         const rawMin = START_HOUR * 60 + y / pxPerMin;
         const snapped = Math.min(
-          (END_HOUR - 1) * 60 + 45,
+          endHour * 60 - 15,
           Math.max(START_HOUR * 60, Math.round(rawMin / 15) * 15),
         );
         const hm = minutesToHm(snapped);
         onEmptySlot(master.id, `${day}T${hm}`);
       }}
     >
-      {Array.from({ length: (END_HOUR - START_HOUR) * 2 + 1 }, (_, i) => (
+      {Array.from({ length: (endHour - START_HOUR) * 2 + 1 }, (_, i) => (
         <div
           key={i}
           className={`absolute left-0 right-0 pointer-events-none ${i % 2 === 0 ? "border-t border-gray-200" : "border-t border-gray-100"}`}
@@ -524,8 +544,9 @@ export function JournalDayGrid({
     byStaff.set(key, list);
   }
 
+  const endHour = gridEndHour(appointments);
   const nowMin = day === kyivTodayYmd() ? kyivNowMinutes() : null;
-  const nowVisible = nowMin != null && nowMin >= START_HOUR * 60 && nowMin <= END_HOUR * 60;
+  const nowVisible = nowMin != null && nowMin >= START_HOUR * 60 && nowMin <= endHour * 60;
   const phoneNowTop = nowVisible ? (nowMin - START_HOUR * 60) * (PHONE_HOUR_PX / 60) : null;
   const deskNowTop = nowVisible ? (nowMin - START_HOUR * 60) * PX_PER_MIN : null;
   const nowLabel = nowMin != null ? minutesToHm(nowMin) : "";
@@ -586,7 +607,7 @@ export function JournalDayGrid({
                   </button>
                 </div>
                 <div className="relative">
-                  <TimeGutter hourPx={PHONE_HOUR_PX} full />
+                  <TimeGutter hourPx={PHONE_HOUR_PX} endHour={endHour} full />
                   {phoneNowTop != null ? (
                     <div
                       className="absolute right-0 z-30 -translate-y-1/2"
@@ -617,6 +638,7 @@ export function JournalDayGrid({
                     className="w-full"
                     hourPx={PHONE_HOUR_PX}
                     stripPx={PHONE_STRIP_PX}
+                    endHour={endHour}
                     nowTop={phoneNowTop}
                     {...columnProps}
                   />
@@ -628,7 +650,16 @@ export function JournalDayGrid({
         )}
       </div>
 
-      <div className="hidden md:block bg-white border border-gray-200 rounded-xl overflow-x-auto snap-x snap-mandatory">
+      <div
+        className="hidden md:block bg-white border border-gray-200 rounded-xl"
+        style={{
+          overflowX: "auto",
+          overflowY: "hidden",
+          touchAction: "pan-x pan-y",
+          overscrollBehaviorX: "contain",
+          overscrollBehaviorY: "auto",
+        }}
+      >
         <div className="w-max min-w-full">
           <div className="flex border-b border-gray-100">
             <div className="w-10 shrink-0" />
@@ -648,18 +679,19 @@ export function JournalDayGrid({
           </div>
 
           <div className="flex relative">
-            <TimeGutter />
+            <TimeGutter endHour={endHour} />
             {masters.map((m) => (
               <StaffDayColumn
                 key={m.id}
                 master={m}
                 rows={byStaff.get(String(m.altegioStaffId || m.id)) || []}
-                className="flex-1 min-w-[180px] md:min-w-[210px] snap-start"
+                className="flex-1 min-w-[180px] md:min-w-[210px]"
+                endHour={endHour}
                 nowTop={deskNowTop}
                 {...columnProps}
               />
             ))}
-            <TimeGutter />
+            <TimeGutter endHour={endHour} />
             {loading && <div className="absolute inset-0 bg-white/40 pointer-events-none" />}
           </div>
         </div>
