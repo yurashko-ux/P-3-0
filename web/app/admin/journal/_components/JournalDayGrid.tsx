@@ -92,9 +92,8 @@ function bodyHeight(hourPx: number, endHour = END_HOUR) {
 const HOVER_DELAY_MS = 400;
 const LONG_PRESS_MS = 500;
 const OVERLAP_OFFSET_PX = 16;
-/** Верхня зелена смуга з часом запису. */
-const STRIP_PX = 22;
-const PHONE_STRIP_PX = 30;
+/** Верхня смуга з часом — компактна, щоб більше місця під текст. */
+const STRIP_PX = 15;
 /** Мінімальна висота блоку запису (короткі сеанси все одно читабельні). */
 const MIN_EVENT_PX = 46;
 
@@ -169,11 +168,10 @@ function layoutColumn(rows: JournalGridAppointment[], pxPerMin = PX_PER_MIN): La
       const startMin = hmToMinutes(startHm);
       const endMin = startMin + durationMin;
       const gridEnd = END_HOUR * 60;
-      const visibleMin = Math.max(0, Math.min(endMin, gridEnd) - startMin);
       const top = (startMin - START_HOUR * 60) * pxPerMin;
       const gridPx = (END_HOUR - START_HOUR) * pxPerMin;
-      let height = Math.max(MIN_EVENT_PX, visibleMin * pxPerMin - 2);
-      if (top + height > gridPx) height = Math.max(22, gridPx - top);
+      let height = Math.max(MIN_EVENT_PX, durationMin * pxPerMin - 2);
+      if (top + height > gridPx) height = Math.max(STRIP_PX + 16, gridPx - Math.max(0, top));
       return {
         row,
         startMin,
@@ -259,12 +257,6 @@ function kyivNowMinutes() {
   }).formatToParts(new Date());
   const get = (t: string) => Number(parts.find((p) => p.type === t)?.value || "0");
   return get("hour") * 60 + get("minute");
-}
-
-function stripMark(attendance: number) {
-  if (attendance === 1 || attendance === 2) return "✓";
-  if (attendance === -1) return "–";
-  return "◷";
 }
 
 function peekAnchor(el: HTMLElement): { x: number; y: number } {
@@ -388,19 +380,19 @@ function StaffDayColumn({
               onTouchMove={() => onTouchMove()}
               onContextMenu={(e) => e.preventDefault()}
             >
-              <span className="text-[11px] font-semibold tabular-nums leading-none truncate">
-                {startHm}-{endHm}
+              <span className="text-[10px] font-semibold tabular-nums leading-none truncate">
+                {startHm}—{endHm}
               </span>
               <span
-                className="w-4 h-4 rounded-full bg-white/30 text-[11px] leading-none flex items-center justify-center shrink-0"
+                className="w-3.5 h-3.5 rounded-full bg-white/25 text-[10px] leading-none flex items-center justify-center shrink-0"
                 aria-hidden
               >
-                {stripMark(att)}
+                +
               </span>
             </div>
             <button
               type="button"
-              className="min-h-0 flex-1 overflow-hidden px-1.5 pt-1 pb-1 flex flex-col justify-start items-stretch gap-0.5 text-left w-full"
+              className="min-h-0 flex-1 overflow-hidden px-1.5 py-px flex flex-col justify-center items-stretch gap-0 text-left w-full"
               style={{ color: colors.text }}
               onClick={(e) => {
                 e.stopPropagation();
@@ -408,21 +400,23 @@ function StaffDayColumn({
                 onAppointment(row);
               }}
             >
-              <div className="text-[12px] font-semibold leading-tight line-clamp-2">
+              {height >= 58 && titles.length > 0 ? (
+                <div className="truncate text-[10px] font-medium leading-tight opacity-90">
+                  {titles.join(" — ")}
+                </div>
+              ) : null}
+              <div className="truncate text-[11px] font-semibold leading-tight min-h-[14px]">
                 <ClientNameWithLoyalty
                   name={clientLabelOf(row)}
                   spent={row.directClient?.spent}
                   visits={row.directClient?.visits}
-                  nameClassName="text-[12px] font-semibold leading-tight"
+                  nameClassName="text-[11px] font-semibold leading-tight whitespace-nowrap"
                   className="gap-1 items-center max-w-full"
-                  showBadge={height >= 70}
+                  showBadge={height >= 52}
                 />
               </div>
-              {height >= 64 && phone ? (
-                <div className="text-[11px] font-medium leading-tight line-clamp-1">{phone}</div>
-              ) : null}
-              {height >= 80 && titles.length > 0 ? (
-                <div className="text-[11px] font-medium leading-snug line-clamp-6">{titles.join(" — ")}</div>
+              {height >= 70 && phone ? (
+                <div className="truncate text-[10px] font-medium leading-tight">{phone}</div>
               ) : null}
               {height >= 84 &&
               row.checkout?.status === "synced" &&
@@ -436,11 +430,9 @@ function StaffDayColumn({
               ) : null}
             </button>
             {clipped ? (
-              <div
-                className="shrink-0 px-1.5 text-[11px] font-semibold tabular-nums text-white flex items-center"
-                style={{ backgroundColor: colors.strip, height: 18 }}
-              >
-                до {endHm}
+              <div className="shrink-0 flex items-center justify-center gap-1 pb-0.5 text-[10px] font-semibold leading-none tabular-nums">
+                <span aria-hidden>↓</span>
+                <span>{endHm}</span>
               </div>
             ) : null}
           </div>
@@ -644,7 +636,6 @@ export function JournalDayGrid({
                     rows={byStaff.get(String(m.altegioStaffId || m.id)) || []}
                     className="w-full"
                     hourPx={PHONE_HOUR_PX}
-                    stripPx={PHONE_STRIP_PX}
                     nowTop={phoneNowTop}
                     {...columnProps}
                   />
