@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { usePathname, useRouter } from "next/navigation";
+import { WORKLOAD_COLORS, type DayWorkload } from "@/lib/journal/day-workload";
 import { kyivTodayYmd, useJournalDay } from "./JournalDayContext";
 
 const WEEKDAYS = ["пн", "вт", "ср", "чт", "пт", "сб", "нд"];
@@ -45,6 +46,24 @@ export function JournalSidebarCalendar({
   const selected = parseYmd(day);
   const today = kyivTodayYmd();
   const [cursor, setCursor] = useState({ y: selected.y, m: selected.m });
+  const [workload, setWorkload] = useState<Record<string, DayWorkload>>({});
+
+  useEffect(() => {
+    const month = `${cursor.y}-${pad(cursor.m)}`;
+    const ac = new AbortController();
+    setWorkload({});
+    fetch(`/api/admin/journal/workload?month=${month}`, { credentials: "include", signal: ac.signal })
+      .then((res) => res.json())
+      .then((json) => {
+        if (ac.signal.aborted || !json?.ok || !json.days) return;
+        setWorkload(json.days);
+      })
+      .catch((err) => {
+        if (ac.signal.aborted) return;
+        console.warn("[journal/calendar] Не вдалось прочитати завантаженість", err);
+      });
+    return () => ac.abort();
+  }, [cursor.y, cursor.m]);
 
   function selectDay(ymd: string) {
     setDay(ymd);
@@ -114,21 +133,45 @@ export function JournalSidebarCalendar({
           if (!cell) return <div key={`e-${idx}`} className={touch ? "h-11" : "h-7"} />;
           const isSelected = cell.ymd === day;
           const isToday = cell.ymd === today;
+          const load = workload[cell.ymd];
+          const ring = load
+            ? `conic-gradient(from -90deg, ${WORKLOAD_COLORS[load.color]} ${load.percent}%, #e4e7ee 0)`
+            : undefined;
           return (
             <button
               key={cell.ymd}
               type="button"
+              title={load ? `Завантаженість ${load.percent}%` : undefined}
               className={[
-                touch ? "h-11 rounded-full text-sm leading-none" : "h-7 rounded-full text-xs leading-none",
-                isSelected
+                "mx-auto flex items-center justify-center rounded-full leading-none",
+                touch ? "h-11 w-11 text-sm" : "h-7 w-7 text-xs",
+                ring ? "p-[2px]" : "",
+                !ring && isSelected
                   ? "bg-neutral text-neutral-content font-semibold"
-                  : isToday
+                  : !ring && isToday
                     ? "border border-neutral/40 font-medium hover:bg-gray-100"
-                    : "hover:bg-gray-100",
+                    : !ring
+                      ? "hover:bg-gray-100"
+                      : "",
               ].join(" ")}
+              style={ring ? { background: ring } : undefined}
               onClick={() => selectDay(cell.ymd)}
             >
-              {cell.label}
+              {ring ? (
+                <span
+                  className={[
+                    "flex h-full w-full items-center justify-center rounded-full",
+                    isSelected
+                      ? "bg-neutral text-neutral-content font-semibold"
+                      : "bg-white text-gray-900",
+                    isToday && !isSelected ? "font-medium" : "",
+                  ].join(" ")}
+                >
+                  {cell.label}
+                </span>
+              ) : (
+                cell.label
+              )}
             </button>
           );
         })}
