@@ -547,7 +547,11 @@ export async function confirmEncashmentByOwner(params: {
 
 const DEVELOPER_FUNCTION_NAME = "розробник";
 
-export async function canRevokeEncashmentConfirmation(auth: AuthContext): Promise<boolean> {
+/**
+ * Розробник: вхід паролем адміністратора, логін mykolay або посада «розробник».
+ * Прев’ю-хост і CRON сюди не входять — викликач має передати справжній auth.
+ */
+export async function isDeveloperActor(auth: AuthContext): Promise<boolean> {
   if (auth.type === "superadmin") return true;
   if (auth.type !== "user" || !auth.userId) return false;
 
@@ -560,6 +564,10 @@ export async function canRevokeEncashmentConfirmation(auth: AuthContext): Promis
   const login = String(user.login || "").trim().toLowerCase();
   const fn = String(user.function?.name || "").trim().toLowerCase();
   return login === "mykolay" || fn === DEVELOPER_FUNCTION_NAME;
+}
+
+export async function canRevokeEncashmentConfirmation(auth: AuthContext): Promise<boolean> {
+  return isDeveloperActor(auth);
 }
 
 export async function revokeEncashmentConfirmation(params: {

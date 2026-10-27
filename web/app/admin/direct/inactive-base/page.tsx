@@ -213,6 +213,8 @@ function InactiveBasePageContent() {
     null
   );
   const [permissions, setPermissions] = useState<Record<string, string> | null>(null);
+  const [isDeveloper, setIsDeveloper] = useState(false);
+  const [fbExporting, setFbExporting] = useState(false);
   const [binotelHistoryClient, setBinotelHistoryClient] = useState<DirectClient | null>(null);
   const [callbackReminderClient, setCallbackReminderClient] = useState<DirectClient | null>(null);
   const [linkHistoryClient, setLinkHistoryClient] = useState<InactiveBaseClientRow | null>(null);
@@ -486,6 +488,69 @@ function InactiveBasePageContent() {
     setSortBy("daysSinceLastVisit");
     setSortOrder("asc");
   }, [baseView]);
+
+  useEffect(() => {
+    let cancelled = false;
+    fetch("/api/admin/direct/inactive-base/facebook-audience?check=1", {
+      credentials: "include",
+      cache: "no-store",
+    })
+      .then((res) => {
+        if (!cancelled) setIsDeveloper(res.ok);
+      })
+      .catch(() => {
+        if (!cancelled) setIsDeveloper(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  const downloadFacebookAudience = useCallback(async () => {
+    setFbExporting(true);
+    try {
+      const res = await fetch("/api/admin/direct/inactive-base/facebook-audience", {
+        credentials: "include",
+        cache: "no-store",
+      });
+      if (res.status === 401 || res.status === 403) {
+        setIsDeveloper(false);
+        alert("Цей файл доступний лише розробнику.");
+        return;
+      }
+      if (!res.ok) {
+        alert("Не вдалося зібрати файл для Facebook.");
+        return;
+      }
+      const blob = await res.blob();
+      const cd = res.headers.get("Content-Disposition") || "";
+      const match = /filename="([^"]+)"/.exec(cd);
+      const filename = match?.[1] || "aktyvna-baza-facebook.csv";
+      const rows = Number(res.headers.get("X-Audience-Rows") || "0");
+      const ua = Number(res.headers.get("X-Audience-Ua") || "0");
+      const skipped = Number(res.headers.get("X-Audience-Skipped") || "0");
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = filename;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      URL.revokeObjectURL(url);
+      const small =
+        ua < 100
+          ? "\nУ файлі менше ніж 100 номерів України — Facebook може не зібрати схожу аудиторію."
+          : "";
+      alert(
+        `Файл для Facebook завантажено.\nКлієнтів у файлі: ${rows} (Україна: ${ua}).\nБез придатного телефону: ${skipped}.\nУ кабінеті оберіть «так»: у файлі є колонка цінності value.${small}`
+      );
+    } catch (err) {
+      console.warn("[inactive-base] Не вдалося завантажити файл Facebook:", err);
+      alert("Не вдалося завантажити файл.");
+    } finally {
+      setFbExporting(false);
+    }
+  }, []);
 
   useEffect(() => {
     let cancelled = false;
@@ -824,6 +889,18 @@ function InactiveBasePageContent() {
                 title={BASE_VIEW_LABELS.active}
                 onClick={() => switchBaseView("active")}
               />
+              {isDeveloper ? (
+                <button
+                  type="button"
+                  title="Завантажити активну базу у файл для кабінету Facebook. Доступ лише у розробника."
+                  disabled={fbExporting}
+                  onClick={() => void downloadFacebookAudience()}
+                  className="flex flex-col items-center justify-center w-[92px] h-[40px] px-1 rounded-[4px] text-[11px] leading-none font-medium text-slate-800 bg-white border border-slate-300 hover:bg-slate-50 disabled:opacity-60"
+                >
+                  <span className="truncate max-w-full">Файл FB</span>
+                  <span className="mt-0.5 text-[10px] text-slate-500">{fbExporting ? "…" : "активна"}</span>
+                </button>
+              ) : null}
               <ClientsMenuTile
                 label="Відбулись"
                 count={baseCounts?.consultationAttended}
