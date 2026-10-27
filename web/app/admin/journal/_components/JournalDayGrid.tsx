@@ -7,6 +7,7 @@
 import { useCallback, useEffect, useRef, useState, type TouchEvent } from "react";
 import type { JournalMaster } from "./JournalAppointmentForm";
 import { attendanceBlockStyle, normalizeAttendance } from "@/lib/journal/attendance";
+import { classifyServiceKind } from "@/lib/journal/kind";
 import { JournalAppointmentPeek, type PeekState } from "./JournalAppointmentPeek";
 import { ClientNameWithLoyalty } from "@/app/admin/_components/ClientNameWithLoyalty";
 import { kyivTodayYmd } from "./JournalDayContext";
@@ -182,6 +183,8 @@ function layoutColumn(rows: JournalGridAppointment[], pxPerMin = PX_PER_MIN): La
       const gridPx = (END_HOUR - START_HOUR) * 60 * pxPerMin;
       const headerPx = 30 * pxPerMin;
       let height = Math.max(MIN_EVENT_PX, durationMin * pxPerMin - 2);
+      // Короткий запис: смуга часу з'їдає тіло. Додаємо пів години, щоб ім'я було видно.
+      if (durationMin <= 30) height += headerPx;
       if (top + height > gridPx) height = Math.max(headerPx + 8, gridPx - Math.max(0, top));
       return {
         row,
@@ -347,8 +350,9 @@ function StaffDayColumn({
         const endHm = minutesToHm(endMin);
         const titles = row.lines.map((l) => l.title).filter(Boolean);
         const phone = phoneOf(row);
+        const consultation = titles.some((title) => classifyServiceKind(title) === "consultation");
         const att = normalizeAttendance(row.attendance);
-        const colors = attendanceBlockStyle(att);
+        const colors = attendanceBlockStyle(consultation ? 2 : att);
         const leftPx = 3 + lane * OVERLAP_OFFSET_PX;
         const topPx = Math.max(0, top);
         const columnPx = bodyHeight(hourPx, endHour);
@@ -392,7 +396,7 @@ function StaffDayColumn({
               onTouchMove={() => onTouchMove()}
               onContextMenu={(e) => e.preventDefault()}
             >
-              <span className="text-[9px] font-normal tabular-nums leading-none truncate">
+              <span className="text-[9px] font-bold tabular-nums leading-none truncate">
                 {startHm}—{endHm}
               </span>
               <span
@@ -412,7 +416,7 @@ function StaffDayColumn({
                 onAppointment(row);
               }}
             >
-              {height >= 58 && titles.length > 0 ? (
+              {(consultation || height >= 58) && titles.length > 0 ? (
                 <div className="truncate text-[10px] font-medium leading-tight opacity-90">
                   {titles.join(" — ")}
                 </div>

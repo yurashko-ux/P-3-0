@@ -28,11 +28,11 @@ export function attendanceBlockStyle(attendance: number | null | undefined): {
   const strip = "#1ab394";
   switch (attendance) {
     case 1:
-      return { bg: "#ffad79", border: "#ff9958", text: "#854e0e", strip };
+      return { bg: "#ffe3cc", border: "#f0c4a0", text: "#5c3208", strip };
     case 2:
       return { bg: "#b3bdfd", border: "#a0acfd", text: "#1a6290", strip };
     case -1:
-      return { bg: "#ff8989", border: "#ff6b6b", text: "#922626", strip };
+      return { bg: "#ffd6d6", border: "#f0b4b4", text: "#6e1c1c", strip };
     case 0:
     default:
       return { bg: "#9ee5d7", border: "#86dfcd", text: "#3d6b63", strip };
@@ -43,11 +43,11 @@ export function attendanceBlockStyle(attendance: number | null | undefined): {
 export function attendanceBlockClass(attendance: number | null | undefined): string {
   switch (attendance) {
     case 1:
-      return "bg-[#ffad79] text-[#854e0e] border-[#ff9958]";
+      return "bg-[#ffe3cc] text-[#5c3208] border-[#f0c4a0]";
     case 2:
       return "bg-[#b3bdfd] text-[#1a6290] border-[#a0acfd]";
     case -1:
-      return "bg-[#ff8989] text-[#922626] border-[#ff6b6b]";
+      return "bg-[#ffd6d6] text-[#6e1c1c] border-[#f0b4b4]";
     case 0:
     default:
       return "bg-[#9ee5d7] text-[#3d6b63] border-[#86dfcd]";

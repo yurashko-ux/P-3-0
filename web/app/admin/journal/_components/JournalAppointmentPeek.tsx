@@ -317,7 +317,7 @@ export function JournalAppointmentPeek({
         </div>
         <button
           type="button"
-          className="mt-1.5 btn btn-xs btn-outline h-6 min-h-0 w-full border-blue-300 text-blue-700 text-[11px] font-normal hover:bg-blue-50"
+          className="mt-1.5 h-6 w-full rounded-lg text-[11px] font-medium bg-[#ebedf2] text-gray-800 disabled:opacity-70"
           disabled
           title="Скоро: історія відвідувань клієнта"
         >
