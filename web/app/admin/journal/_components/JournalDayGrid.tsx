@@ -159,7 +159,15 @@ type LayoutAppt = {
   clipped: boolean;
 };
 
-/** Накладання як у Altegio: колонка повної ширини, зсув вправо + шар зверху. */
+/**
+ * Запис зсуваємо вправо лише якщо він закриває заголовок (смугу з часом) іншого.
+ * Якщо він починається нижче цієї смуги — заголовок лишається видимим, зсув не потрібен.
+ */
+function coversHeader(under: LayoutAppt, over: LayoutAppt): boolean {
+  return over.top < under.top + STRIP_PX && over.startMin < under.endMin;
+}
+
+/** Накладання: колонка повної ширини, зсув вправо тільки поверх чужого заголовка. */
 function layoutColumn(rows: JournalGridAppointment[], pxPerMin = PX_PER_MIN): LayoutAppt[] {
   const items = rows
     .map((row) => {
@@ -188,9 +196,8 @@ function layoutColumn(rows: JournalGridAppointment[], pxPerMin = PX_PER_MIN): La
   for (let i = 0; i < items.length; i++) {
     const overlaps: LayoutAppt[] = [];
     for (let j = 0; j < i; j++) {
-      if (items[j].startMin < items[i].endMin && items[i].startMin < items[j].endMin) {
-        overlaps.push(items[j]);
-      }
+      const timeOverlap = items[j].startMin < items[i].endMin && items[i].startMin < items[j].endMin;
+      if (timeOverlap && coversHeader(items[j], items[i])) overlaps.push(items[j]);
     }
     const used = new Set(overlaps.map((o) => o.lane));
     let lane = 0;
@@ -332,7 +339,7 @@ function StaffDayColumn({
           style={{ top: nowTop }}
         />
       ) : null}
-      {laid.map((item) => {
+      {laid.map((item, stack) => {
         const { row, top, height, lane, startMin, endMin, clipped } = item;
         const startHm = minutesToHm(startMin);
         const endHm = minutesToHm(endMin);
@@ -355,7 +362,7 @@ function StaffDayColumn({
               bottom: bottomPx,
               left: leftPx,
               right: 3,
-              zIndex: 10 + lane,
+              zIndex: 10 + stack,
               backgroundColor: colors.bg,
               borderColor: colors.border,
               color: colors.text,
