@@ -11,7 +11,16 @@ const inter = Inter({
 export const metadata = {
   title: "P-3-0",
   description: "Admin console",
-  icons: { icon: "/icon.svg", type: "image/svg+xml" },
+  applicationName: "CreSco",
+  appleWebApp: {
+    capable: true,
+    title: "CreSco",
+    statusBarStyle: "default",
+  },
+  icons: {
+    icon: "/icon.svg",
+    apple: "/apple-touch-icon.png",
+  },
 };
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
