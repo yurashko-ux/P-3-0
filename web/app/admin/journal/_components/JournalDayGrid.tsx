@@ -92,8 +92,10 @@ function bodyHeight(hourPx: number, endHour = END_HOUR) {
 const HOVER_DELAY_MS = 400;
 const LONG_PRESS_MS = 500;
 const OVERLAP_OFFSET_PX = 16;
-/** Верхня смуга з часом — компактна, щоб більше місця під текст. */
-const STRIP_PX = 15;
+/** Верхня смуга з часом — рівно пів години на шкалі. */
+function stripPxFor(hourPx: number) {
+  return hourPx / 2;
+}
 /** Мінімальна висота блоку запису (короткі сеанси все одно читабельні). */
 const MIN_EVENT_PX = 46;
 
@@ -163,8 +165,8 @@ type LayoutAppt = {
  * Запис зсуваємо вправо лише якщо він закриває заголовок (смугу з часом) іншого.
  * Якщо він починається нижче цієї смуги — заголовок лишається видимим, зсув не потрібен.
  */
-function coversHeader(under: LayoutAppt, over: LayoutAppt): boolean {
-  return over.top < under.top + STRIP_PX && over.startMin < under.endMin;
+function coversHeader(under: LayoutAppt, over: LayoutAppt, headerPx: number): boolean {
+  return over.top < under.top + headerPx && over.startMin < under.endMin;
 }
 
 /** Накладання: колонка повної ширини, зсув вправо тільки поверх чужого заголовка. */
@@ -178,8 +180,9 @@ function layoutColumn(rows: JournalGridAppointment[], pxPerMin = PX_PER_MIN): La
       const gridEnd = END_HOUR * 60;
       const top = (startMin - START_HOUR * 60) * pxPerMin;
       const gridPx = (END_HOUR - START_HOUR) * 60 * pxPerMin;
+      const headerPx = 30 * pxPerMin;
       let height = Math.max(MIN_EVENT_PX, durationMin * pxPerMin - 2);
-      if (top + height > gridPx) height = Math.max(STRIP_PX + 16, gridPx - Math.max(0, top));
+      if (top + height > gridPx) height = Math.max(headerPx + 8, gridPx - Math.max(0, top));
       return {
         row,
         startMin,
@@ -197,7 +200,7 @@ function layoutColumn(rows: JournalGridAppointment[], pxPerMin = PX_PER_MIN): La
     const overlaps: LayoutAppt[] = [];
     for (let j = 0; j < i; j++) {
       const timeOverlap = items[j].startMin < items[i].endMin && items[i].startMin < items[j].endMin;
-      if (timeOverlap && coversHeader(items[j], items[i])) overlaps.push(items[j]);
+      if (timeOverlap && coversHeader(items[j], items[i], 30 * pxPerMin)) overlaps.push(items[j]);
     }
     const used = new Set(overlaps.map((o) => o.lane));
     let lane = 0;
@@ -277,7 +280,6 @@ function StaffDayColumn({
   day,
   className,
   hourPx = HOUR_PX,
-  stripPx = STRIP_PX,
   endHour = END_HOUR,
   nowTop = null,
   onEmptySlot,
@@ -295,7 +297,6 @@ function StaffDayColumn({
   day: string;
   className: string;
   hourPx?: number;
-  stripPx?: number;
   endHour?: number;
   nowTop?: number | null;
   onEmptySlot: (masterId: string, datetimeLocal: string) => void;
@@ -309,6 +310,7 @@ function StaffDayColumn({
   onTouchMove: () => void;
 }) {
   const pxPerMin = hourPx / 60;
+  const stripPx = stripPxFor(hourPx);
   const laid = layoutColumn(rows, pxPerMin);
   return (
     <div
@@ -390,11 +392,11 @@ function StaffDayColumn({
               onTouchMove={() => onTouchMove()}
               onContextMenu={(e) => e.preventDefault()}
             >
-              <span className="text-[10px] font-semibold tabular-nums leading-none truncate">
+              <span className="text-[13px] font-semibold tabular-nums leading-none truncate">
                 {startHm}—{endHm}
               </span>
               <span
-                className="w-3.5 h-3.5 rounded-full bg-white/25 text-[10px] leading-none flex items-center justify-center shrink-0"
+                className="w-5 h-5 rounded-full bg-white/25 text-[12px] leading-none flex items-center justify-center shrink-0"
                 aria-hidden
               >
                 +
