@@ -192,6 +192,7 @@ function staffAltegioId(m: JournalMaster): number {
 function StaffPhotoFrame({
   name,
   instagramUsername,
+  photoUrl,
   size = "md",
   round = false,
 }: {
