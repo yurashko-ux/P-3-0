@@ -93,7 +93,7 @@ export default function JournalSchedulePage() {
   const [staff, setStaff] = useState<Staff[]>([]);
   const [slots, setSlots] = useState<Record<string, Slot[]>>({});
   const [visibleIds, setVisibleIds] = useState<number[] | null>(null);
-  const [selectedDay, setSelectedDay] = useState<string | null>(null);
+  const [selected, setSelected] = useState<{ staffId: number; day: string } | null>(null);
   const [filterOpen, setFilterOpen] = useState(false);
   const [editOpen, setEditOpen] = useState(false);
   const [editStaff, setEditStaff] = useState<number[]>([]);
@@ -131,7 +131,6 @@ export default function JournalSchedulePage() {
   }, [month, load]);
 
   function openEdit(day: string, staffId?: number) {
-    setSelectedDay(day);
     const current = staffId ? slots[`${staffId}|${day}`] || [] : [];
     setEditStaff(staffId ? [staffId] : []);
     setFrom(current[0]?.from || "10:00");
@@ -147,7 +146,7 @@ export default function JournalSchedulePage() {
   }
 
   async function save(off = false) {
-    if (!selectedDay || editStaff.length === 0) return;
+    if (!selected || editStaff.length === 0) return;
     setSaving(true);
     setError(null);
     try {
@@ -157,7 +156,7 @@ export default function JournalSchedulePage() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           staffIds: editStaff,
-          dates: [selectedDay],
+          dates: [selected.day],
           from,
           to,
           breakFrom: breakOn ? breakFrom : "",
@@ -195,37 +194,19 @@ export default function JournalSchedulePage() {
       </header>
 
       {error ? <div className="mx-3 mt-2 alert alert-error text-sm py-2">{error}</div> : null}
-      {selectedDay ? (
-        <button
-          type="button"
-          className="fixed z-30 right-3 top-14 inline-flex items-center gap-1 rounded-full bg-[#7c3aed] text-white text-[12px] font-medium px-2.5 h-7 shadow-sm"
-          onClick={() => setSelectedDay(null)}
-        >
-          Вибрано 1 день
-          <span aria-hidden>×</span>
-        </button>
-      ) : null}
 
-      <div className="flex-1 min-h-0 overflow-auto">
+      <div className="flex-1 min-h-0 overflow-auto bg-white">
         <div className="min-w-max">
           <div className="sticky top-0 z-10 flex bg-white border-b">
             <div className="sticky left-0 z-20 w-[4.6rem] shrink-0 bg-white" />
-            {days.map((day) => {
-              const selected = day === selectedDay;
-              return (
-                <button
-                  key={day}
-                  type="button"
-                  className={`w-[4.4rem] shrink-0 py-1.5 text-center border-l border-gray-100 ${
-                    selected ? "bg-[#f3e8ff]" : day === today ? "bg-amber-50" : ""
-                  }`}
-                  onClick={() => setSelectedDay((prev) => (prev === day ? null : day))}
-                >
-                  <div className="text-[15px] font-medium leading-none tabular-nums">{dayNumber(day)}</div>
-                  <div className="text-[10px] text-gray-400 mt-0.5">{weekdayOf(day)}</div>
-                </button>
-              );
-            })}
+            {days.map((day) => (
+              <div key={day} className="w-[4.75rem] shrink-0 py-1.5 text-center">
+                <div className={`text-[15px] font-medium leading-none tabular-nums ${day === today ? "text-amber-600" : ""}`}>
+                  {dayNumber(day)}
+                </div>
+                <div className="text-[10px] text-gray-400 mt-0.5">{weekdayOf(day)}</div>
+              </div>
+            ))}
           </div>
 
           {loading && staff.length === 0 ? (
@@ -234,8 +215,8 @@ export default function JournalSchedulePage() {
             <p className="px-4 py-8 text-sm text-gray-500">Немає майстрів у графіку</p>
           ) : (
             shown.map((person) => (
-              <div key={person.id} className="flex border-b border-gray-100 bg-white">
-                <div className="sticky left-0 z-10 w-[4.6rem] shrink-0 bg-white px-1 py-2 flex flex-col items-center gap-1 border-r border-gray-50">
+              <div key={person.id} className="flex items-stretch bg-white">
+                <div className="sticky left-0 z-10 w-[4.6rem] shrink-0 bg-white px-1 py-1.5 flex flex-col items-center justify-center gap-1">
                   <StaffFace name={person.name} src={person.avatarUrl} />
                   <span className="text-[10px] leading-none text-gray-700 text-center truncate w-full">
                     {shortName(person.name)}
@@ -243,22 +224,27 @@ export default function JournalSchedulePage() {
                 </div>
                 {days.map((day) => {
                   const cell = slots[`${person.id}|${day}`] || [];
-                  const selected = day === selectedDay;
+                  const active = selected?.staffId === person.id && selected.day === day;
                   return (
-                    <button
-                      key={day}
-                      type="button"
-                      className={`w-[4.4rem] shrink-0 min-h-[4.2rem] border-l border-gray-100 px-0.5 flex items-center justify-center ${
-                        selected ? "bg-[#f6f0ff]" : "bg-[#f7f8fb]"
-                      }`}
-                      onClick={() => openEdit(day, person.id)}
-                    >
-                      {cell.length > 0 ? (
-                        <span className="text-[10px] leading-tight text-gray-700 tabular-nums whitespace-pre-line">
-                          {cell.map((slot) => `${slot.from}-${slot.to}`).join("\n")}
-                        </span>
-                      ) : null}
-                    </button>
+                    <div key={day} className="w-[4.75rem] shrink-0 p-1">
+                      <button
+                        type="button"
+                        className={`w-full min-h-[3.7rem] rounded-lg px-0.5 flex items-center justify-center ${
+                          active ? "bg-[#d4c2f5]" : "bg-[#d5deee]"
+                        }`}
+                        onClick={() =>
+                          setSelected((prev) =>
+                            prev?.staffId === person.id && prev.day === day ? null : { staffId: person.id, day },
+                          )
+                        }
+                      >
+                        {cell.length > 0 ? (
+                          <span className="text-[10px] leading-tight text-gray-800 tabular-nums whitespace-pre-line">
+                            {cell.map((slot) => `${slot.from}-${slot.to}`).join("\n")}
+                          </span>
+                        ) : null}
+                      </button>
+                    </div>
                   );
                 })}
               </div>
@@ -270,11 +256,11 @@ export default function JournalSchedulePage() {
       <div className="shrink-0 bg-[#f7f8fa] px-3 pt-2 pb-2 space-y-2">
         <button
           type="button"
-          disabled={!selectedDay}
+          disabled={!selected}
           className={`w-full h-12 rounded-full text-[16px] font-semibold ${
-            selectedDay ? "bg-[#f5c400] text-gray-900" : "bg-[#f3e7a1] text-[#c4b56a]"
+            selected ? "bg-[#f5c400] text-gray-900" : "bg-[#f3e7a1] text-[#c4b56a]"
           }`}
-          onClick={() => selectedDay && openEdit(selectedDay)}
+          onClick={() => selected && openEdit(selected.day, selected.staffId)}
         >
           Редагувати розклад
         </button>
@@ -291,7 +277,7 @@ export default function JournalSchedulePage() {
                 }`}
                 onClick={() => {
                   setMonth(key);
-                  setSelectedDay(null);
+                  setSelected(null);
                 }}
               >
                 <span className="block leading-none">{MONTHS[mon - 1]}</span>
@@ -335,7 +321,7 @@ export default function JournalSchedulePage() {
         </Sheet>
       ) : null}
 
-      {editOpen && selectedDay ? (
+      {editOpen && selected ? (
         <div className="fixed inset-0 z-50 bg-white flex flex-col">
           <header className="h-12 px-3 flex items-center gap-2 border-b">
             <button type="button" className="text-2xl leading-none px-1" onClick={() => setEditOpen(false)} aria-label="Назад">
@@ -344,7 +330,7 @@ export default function JournalSchedulePage() {
             <h2 className="font-semibold">Редагування графіка на день</h2>
           </header>
           <div className="flex-1 overflow-y-auto px-4 py-3 space-y-4">
-            <p className="text-lg font-semibold">{formatDayTitle(selectedDay)}</p>
+            <p className="text-lg font-semibold">{formatDayTitle(selected.day)}</p>
             <p className="text-sm font-medium">Співробітники</p>
             <div className="space-y-1">
               {staff.map((person) => {
