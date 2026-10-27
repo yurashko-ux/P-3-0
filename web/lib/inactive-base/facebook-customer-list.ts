@@ -1,7 +1,8 @@
 // Файл клієнтської аудиторії для кабінету Facebook (Ads Manager).
 // Без хешування: кабінет хешує сам під час завантаження. Попередній SHA-256 зіпсував би збіги.
 // Колонки лише з офіційних заголовків Meta: phone, fn, ln, zip, st, country, value.
-// zip і st — локація салону: індекс Львова 79000 і регіон Львів. Кабінет зводить по них таргет.
+// zip і st — локація салону: індекс 79000 і регіон lviv.
+// st лише латиницею: Facebook не зіставляє «Львів» з регіоном у профілі.
 
 export type FacebookCustomerSource = {
   firstName: string | null;
@@ -22,7 +23,7 @@ type PhoneHit = { phone: string; country: string };
 
 /** Індекс Львова і регіон для кожної строки файлу. */
 const LVIV_ZIP = "79000";
-const LVIV_REGION = "Львів";
+const LVIV_REGION = "lviv";
 
 type CsvRow = { phone: string; fn: string; ln: string; country: string; value: number };
 
