@@ -5,7 +5,9 @@ export default function manifest(): MetadataRoute.Manifest {
   return {
     name: "CreSco",
     short_name: "CreSco",
-    start_url: "/admin/direct",
+    id: "/admin/journal",
+    start_url: "/admin/journal",
+    scope: "/",
     display: "standalone",
     background_color: "#103e3b",
     theme_color: "#103e3b",
