@@ -9,6 +9,7 @@ import {
 import { listJournalStaffFromAltegio, hasAssignedPosition, isCalendarColumn } from "@/lib/journal/staff";
 import { isHiddenJournalStaff, loadHiddenStaffIndex } from "@/lib/team/hidden-staff";
 import { readTeamMemberAvatar } from "@/lib/team/avatar";
+import { hasCachedClientAvatar } from "@/lib/journal/cached-client-avatar";
 import { ensureCanonicalServicesSeeded } from "@/lib/journal/services";
 
 export const dynamic = "force-dynamic";
@@ -109,6 +110,22 @@ export async function GET(req: NextRequest) {
         if (g.directClientId) noShowByClient.set(g.directClientId, g._count._all);
       }
     }
+    const avatarClients = new Map<string, { id: string; instagramUsername: string | null }>();
+    for (const appointment of appointments) {
+      const client = appointment.directClient;
+      if (!client || avatarClients.has(client.id)) continue;
+      avatarClients.set(client.id, {
+        id: client.id,
+        instagramUsername: client.instagramUsername,
+      });
+    }
+    const avatarIds = [...avatarClients.values()];
+    const avatarFlags = await Promise.all(avatarIds.map((client) => hasCachedClientAvatar(client)));
+    const hasAvatarByClient = new Map(avatarIds.map((client, index) => [client.id, avatarFlags[index]]));
+    console.log(
+      `[journal/appointments] Кешоване фото клієнта: ${avatarFlags.filter(Boolean).length} з ${avatarIds.length}`,
+    );
+
     const appointmentsWithStats = appointments.map((a) => {
       if (!a.directClient) return a;
       return {
@@ -116,6 +133,7 @@ export async function GET(req: NextRequest) {
         directClient: {
           ...a.directClient,
           noShowCount: noShowByClient.get(a.directClientId || "") ?? 0,
+          hasAvatar: hasAvatarByClient.get(a.directClient.id) ?? false,
         },
       };
     });

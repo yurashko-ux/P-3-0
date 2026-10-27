@@ -88,6 +88,8 @@ export type JournalGridAppointment = {
     visits?: number | null;
     lastVisitAt?: string | Date | null;
     noShowCount?: number | null;
+    /** Фото вже є в кеші. Картка не ходить в ManyChat. */
+    hasAvatar?: boolean;
   } | null;
 };
 

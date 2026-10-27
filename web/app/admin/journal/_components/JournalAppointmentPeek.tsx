@@ -37,6 +37,7 @@ export type PeekAppointment = {
     visits?: number | null;
     lastVisitAt?: string | Date | null;
     noShowCount?: number | null;
+    hasAvatar?: boolean;
   } | null;
 };
 
@@ -81,6 +82,27 @@ function kyivRange(iso: string, seanceLength: number) {
   const endMin = (h || 0) * 60 + (m || 0) + Math.max(0, Math.round((seanceLength || 0) / 60));
   const end = `${String(Math.floor(endMin / 60) % 24).padStart(2, "0")}:${String(endMin % 60).padStart(2, "0")}`;
   return { label: `${start}–${end} · ${formatDuration(seanceLength)}` };
+}
+
+function avatarSrc(instagram?: string | null) {
+  const username = (instagram || "").replace(/^@/, "").trim();
+  if (!username) return null;
+  return `/api/admin/direct/instagram-avatar?username=${encodeURIComponent(username)}`;
+}
+
+function PeekClientAvatar({ username }: { username: string }) {
+  const [hidden, setHidden] = useState(false);
+  const src = avatarSrc(username);
+  if (!src || hidden) return null;
+  return (
+    // eslint-disable-next-line @next/next/no-img-element
+    <img
+      src={src}
+      alt=""
+      className="w-6 h-6 rounded-full object-cover shrink-0 bg-[#e8edf5]"
+      onError={() => setHidden(true)}
+    />
+  );
 }
 
 function directClientHref(clientId: string, label: string) {
@@ -259,13 +281,16 @@ export function JournalAppointmentPeek({
       <div className="px-3 pt-3 pb-2 border-b border-gray-100">
         <div className="flex items-start justify-between gap-2">
           <div className="min-w-0">
-            <p className="font-semibold text-sm text-gray-900 leading-snug">
+            <p className="font-semibold text-sm text-gray-900 leading-snug flex items-center gap-1.5 min-w-0">
+              {row.directClient?.hasAvatar && row.directClient.instagramUsername ? (
+                <PeekClientAvatar username={row.directClient.instagramUsername} />
+              ) : null}
               {row.directClient?.id ? (
                 <a
                   href={directClientHref(row.directClient.id, displayName)}
                   target="_blank"
                   rel="noopener noreferrer"
-                  className="link link-hover"
+                  className="link link-hover min-w-0"
                   title="Відкрити клієнта в Direct"
                   onClick={(e) => e.stopPropagation()}
                 >
