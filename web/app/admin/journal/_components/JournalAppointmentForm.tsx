@@ -15,6 +15,8 @@ export type JournalMaster = {
   positionTitle?: string;
   positionKind?: string;
   instagramUsername?: string | null;
+  /** Власне фото з розділу Команда, якщо його завантажили. */
+  photoUrl?: string | null;
 };
 
 export type JournalService = {
@@ -195,11 +197,14 @@ function StaffPhotoFrame({
 }: {
   name: string;
   instagramUsername?: string | null;
+  photoUrl?: string | null;
   size?: "sm" | "md";
   round?: boolean;
 }) {
+  const [useFallback, setUseFallback] = useState(false);
   const [broken, setBroken] = useState(false);
-  const src = avatarUrl(instagramUsername);
+  const custom = (photoUrl || "").trim();
+  const src = !useFallback && custom ? custom : avatarUrl(instagramUsername);
   const initials = name
     .split(/\s+/)
     .filter(Boolean)
@@ -215,7 +220,15 @@ function StaffPhotoFrame({
     >
       {src && !broken ? (
         // eslint-disable-next-line @next/next/no-img-element
-        <img src={src} alt="" className="w-full h-full object-cover" onError={() => setBroken(true)} />
+        <img
+          src={src}
+          alt=""
+          className="w-full h-full object-cover"
+          onError={() => {
+            if (!useFallback && custom) setUseFallback(true);
+            else setBroken(true);
+          }}
+        />
       ) : (
         initials || "?"
       )}
@@ -908,6 +921,7 @@ export function JournalAppointmentForm({
             <StaffPhotoFrame
               name={m?.name || "?"}
               instagramUsername={m?.instagramUsername}
+              photoUrl={m?.photoUrl}
               size="sm"
               round={round}
             />
@@ -1038,7 +1052,7 @@ export function JournalAppointmentForm({
                       style={{ background: idx === 0 ? "#eef2f7" : "#f7f8fa" }}
                     >
                       <div className="flex items-start gap-2">
-                        <StaffPhotoFrame name={m.name} instagramUsername={m.instagramUsername} />
+                        <StaffPhotoFrame name={m.name} instagramUsername={m.instagramUsername} photoUrl={m.photoUrl} />
                         <div className="min-w-0 flex-1">
                           <p className="font-semibold text-sm text-gray-900 leading-snug break-words">
                             {m.name}
@@ -1214,6 +1228,7 @@ export function JournalAppointmentForm({
                                 key={id}
                                 name={m?.name || "?"}
                                 instagramUsername={m?.instagramUsername}
+                                photoUrl={m?.photoUrl}
                                 size="sm"
                                 round
                               />
@@ -1363,6 +1378,7 @@ export function JournalAppointmentForm({
                                 key={id}
                                 name={m?.name || "?"}
                                 instagramUsername={m?.instagramUsername}
+                                photoUrl={m?.photoUrl}
                                 size="sm"
                                 round={false}
                               />

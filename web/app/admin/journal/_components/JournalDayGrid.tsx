@@ -21,14 +21,18 @@ function masterAvatarUrl(instagram?: string | null) {
 function MasterColumnAvatar({
   name,
   instagramUsername,
+  photoUrl,
   className,
 }: {
   name: string;
   instagramUsername?: string | null;
+  photoUrl?: string | null;
   className?: string;
 }) {
+  const [useIg, setUseIg] = useState(false);
   const [broken, setBroken] = useState(false);
-  const src = masterAvatarUrl(instagramUsername);
+  const custom = (photoUrl || "").trim();
+  const src = !useIg && custom ? custom : masterAvatarUrl(instagramUsername);
   const letters = initials(name);
   return (
     <div
@@ -38,7 +42,15 @@ function MasterColumnAvatar({
     >
       {src && !broken ? (
         // eslint-disable-next-line @next/next/no-img-element
-        <img src={src} alt="" className="w-full h-full object-cover" onError={() => setBroken(true)} />
+        <img
+          src={src}
+          alt=""
+          className="w-full h-full object-cover"
+          onError={() => {
+            if (!useIg && custom) setUseIg(true);
+            else setBroken(true);
+          }}
+        />
       ) : (
         letters
       )}
@@ -641,9 +653,13 @@ export function JournalDayGrid({
                     <MasterColumnAvatar
                       name={m.name}
                       instagramUsername={m.instagramUsername}
+                      photoUrl={m.photoUrl}
                       className="w-10 h-10 text-[12px]"
                     />
-                    <span className="text-[11px] leading-tight text-center text-gray-800 line-clamp-2 w-full">
+                    <span
+                      className="block min-w-0 w-full truncate text-[11px] leading-tight text-center text-gray-800"
+                      title={m.name}
+                    >
                       {m.name}
                     </span>
                   </div>
@@ -678,7 +694,7 @@ export function JournalDayGrid({
             <div className="w-10 shrink-0" />
             {masters.map((m) => (
               <div key={m.id} className="flex-1 min-w-[180px] md:min-w-[210px] snap-start px-3 py-2.5 flex items-center gap-2 border-l border-gray-100">
-                <MasterColumnAvatar name={m.name} instagramUsername={m.instagramUsername} />
+                <MasterColumnAvatar name={m.name} instagramUsername={m.instagramUsername} photoUrl={m.photoUrl} />
                 <div className="min-w-0">
                   <div className="text-[13px] font-medium leading-tight truncate">{m.name}</div>
                   <div className="text-[11px] text-gray-400 leading-tight">{m.positionTitle || "Майстер"}</div>

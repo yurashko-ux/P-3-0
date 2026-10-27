@@ -53,25 +53,109 @@ const emptyForm = {
   order: 0,
 };
 
-function TeamIgAvatar({ username }: { username: string }) {
-  const [broken, setBroken] = useState(false);
-  const src = `/api/admin/direct/instagram-avatar?username=${encodeURIComponent(username)}`;
-  if (broken) {
-    return (
-      <div className="w-8 h-8 rounded-lg bg-gray-100 border border-gray-200 flex items-center justify-center text-[10px] font-semibold text-gray-500 shrink-0">
-        IG
-      </div>
-    );
+function TeamPhotoButton({
+  memberId,
+  instagramUsername,
+}: {
+  memberId: string;
+  instagramUsername: string | null;
+}) {
+  const inputRef = useRef<HTMLInputElement | null>(null);
+  const [rev, setRev] = useState(0);
+  const [source, setSource] = useState<"custom" | "ig" | "empty">("custom");
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const ig = (instagramUsername || "").replace(/^@/, "").trim();
+  const customSrc = `/api/admin/team/members/${memberId}/avatar?v=${rev}`;
+  const igSrc = ig ? `/api/admin/direct/instagram-avatar?username=${encodeURIComponent(ig)}` : null;
+  const src = source === "custom" ? customSrc : source === "ig" ? igSrc : null;
+
+  async function onFile(file: File | undefined) {
+    if (!file) return;
+    setBusy(true);
+    setError(null);
+    try {
+      const image = await shrinkImageFile(file);
+      const res = await fetch(`/api/admin/team/members/${memberId}/avatar`, {
+        method: "POST",
+        credentials: "include",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ image }),
+      });
+      const json = await res.json().catch(() => ({}));
+      if (!res.ok || !json.ok) throw new Error(json.error || "Не вдалось зберегти фото");
+      setSource("custom");
+      setRev((n) => n + 1);
+      console.log("[team] Фото співробітника оновлено", memberId);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Не вдалось зберегти фото");
+    } finally {
+      setBusy(false);
+      if (inputRef.current) inputRef.current.value = "";
+    }
   }
+
   return (
-    // eslint-disable-next-line @next/next/no-img-element
-    <img
-      src={src}
-      alt=""
-      className="w-8 h-8 rounded-lg object-cover border border-gray-200 shrink-0 bg-gray-50"
-      onError={() => setBroken(true)}
-    />
+    <div className="relative shrink-0">
+      <button
+        type="button"
+        className="w-8 h-8 rounded-lg overflow-hidden border border-gray-200 bg-gray-50 flex items-center justify-center disabled:opacity-60"
+        title={src ? "Змінити фото" : "Додати фото"}
+        disabled={busy}
+        onClick={() => inputRef.current?.click()}
+      >
+        {src ? (
+          // eslint-disable-next-line @next/next/no-img-element
+          <img
+            src={src}
+            alt=""
+            className="w-8 h-8 object-cover"
+            onError={() => setSource((cur) => (cur === "custom" && igSrc ? "ig" : "empty"))}
+          />
+        ) : (
+          <span className="text-[10px] font-semibold text-gray-400" aria-hidden>
+            +
+          </span>
+        )}
+      </button>
+      <input
+        ref={inputRef}
+        type="file"
+        accept="image/jpeg,image/png,image/webp,image/*"
+        className="hidden"
+        onChange={(e) => void onFile(e.target.files?.[0])}
+      />
+      {error ? <span className="absolute left-0 top-9 z-10 w-40 text-[10px] text-red-600">{error}</span> : null}
+    </div>
   );
+}
+
+function shrinkImageFile(file: File): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const url = URL.createObjectURL(file);
+    const img = new Image();
+    img.onload = () => {
+      const max = 256;
+      const scale = Math.min(1, max / Math.max(img.width, img.height));
+      const canvas = document.createElement("canvas");
+      canvas.width = Math.max(1, Math.round(img.width * scale));
+      canvas.height = Math.max(1, Math.round(img.height * scale));
+      const ctx = canvas.getContext("2d");
+      if (!ctx) {
+        URL.revokeObjectURL(url);
+        reject(new Error("Не вдалось обробити фото"));
+        return;
+      }
+      ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+      URL.revokeObjectURL(url);
+      resolve(canvas.toDataURL("image/jpeg", 0.85));
+    };
+    img.onerror = () => {
+      URL.revokeObjectURL(url);
+      reject(new Error("Оберіть jpg або png"));
+    };
+    img.src = url;
+  });
 }
 
 /**
@@ -701,16 +785,16 @@ export default function TeamPeoplePage() {
                 <td>{m.name}</td>
                 <td>{ROLE_LABEL[m.salonRole] || m.salonRole}</td>
                 <td>
-                  {m.instagramUsername ? (
-                    <div className="flex items-center gap-2 min-w-[8rem]">
-                      <TeamIgAvatar username={m.instagramUsername} />
+                  <div className="flex items-center gap-2 min-w-[8rem]">
+                    <TeamPhotoButton memberId={m.id} instagramUsername={m.instagramUsername} />
+                    {m.instagramUsername ? (
                       <span className="text-xs truncate" title={m.instagramUsername}>
                         {m.instagramUsername}
                       </span>
-                    </div>
-                  ) : (
-                    <span className="text-gray-400">—</span>
-                  )}
+                    ) : (
+                      <span className="text-gray-400">—</span>
+                    )}
+                  </div>
                 </td>
                 <td>
                   {(() => {

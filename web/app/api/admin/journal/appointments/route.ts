@@ -8,6 +8,7 @@ import {
 } from "@/lib/journal";
 import { listJournalStaffFromAltegio, hasAssignedPosition, isCalendarColumn } from "@/lib/journal/staff";
 import { isHiddenJournalStaff, loadHiddenStaffIndex } from "@/lib/team/hidden-staff";
+import { readTeamMemberAvatar } from "@/lib/team/avatar";
 import { ensureCanonicalServicesSeeded } from "@/lib/journal/services";
 
 export const dynamic = "force-dynamic";
@@ -61,16 +62,27 @@ export async function GET(req: NextRequest) {
       staffIds.length > 0
         ? await prisma.teamMember.findMany({
             where: { altegioStaffId: { in: staffIds }, isActive: true },
-            select: { altegioStaffId: true, instagramUsername: true },
+            select: { id: true, altegioStaffId: true, instagramUsername: true },
           })
         : [];
     const igByStaff = new Map<number, string | null>();
-    for (const t of teamRows) {
-      if (t.altegioStaffId != null) igByStaff.set(t.altegioStaffId, t.instagramUsername || null);
-    }
+    const photoByStaff = new Map<number, string>();
+    await Promise.all(
+      teamRows.map(async (t) => {
+        if (t.altegioStaffId == null) return;
+        igByStaff.set(t.altegioStaffId, t.instagramUsername || null);
+        try {
+          const photo = await readTeamMemberAvatar(t.id);
+          if (photo) photoByStaff.set(t.altegioStaffId, `/api/admin/team/members/${t.id}/avatar`);
+        } catch (err) {
+          console.warn("[journal] Не вдалось прочитати фото співробітника", t.id, err);
+        }
+      }),
+    );
     const staff = staffBase.map((s) => ({
       ...s,
       instagramUsername: igByStaff.get(s.altegioStaffId) || null,
+      photoUrl: photoByStaff.get(s.altegioStaffId) || null,
     }));
     const masters = staff.filter(isCalendarColumn);
 
