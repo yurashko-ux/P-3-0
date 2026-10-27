@@ -889,18 +889,6 @@ function InactiveBasePageContent() {
                 title={BASE_VIEW_LABELS.active}
                 onClick={() => switchBaseView("active")}
               />
-              {isDeveloper ? (
-                <button
-                  type="button"
-                  title="Завантажити активну базу у файл для кабінету Facebook. Доступ лише у розробника."
-                  disabled={fbExporting}
-                  onClick={() => void downloadFacebookAudience()}
-                  className="flex flex-col items-center justify-center w-[92px] h-[40px] px-1 rounded-[4px] text-[11px] leading-none font-medium text-slate-800 bg-white border border-slate-300 hover:bg-slate-50 disabled:opacity-60"
-                >
-                  <span className="truncate max-w-full">Файл FB</span>
-                  <span className="mt-0.5 text-[10px] text-slate-500">{fbExporting ? "…" : "активна"}</span>
-                </button>
-              ) : null}
               <ClientsMenuTile
                 label="Відбулись"
                 count={baseCounts?.consultationAttended}
@@ -956,6 +944,17 @@ function InactiveBasePageContent() {
               ) : null}
             </div>
           </div>
+          {isDeveloper ? (
+            <button
+              type="button"
+              title="Завантажити активну базу у файл для кабінету Facebook. Доступ лише у розробника."
+              disabled={fbExporting}
+              onClick={() => void downloadFacebookAudience()}
+              className="shrink-0 h-8 px-2.5 rounded-md text-[12px] font-semibold text-white bg-slate-900 hover:bg-slate-700 disabled:opacity-60"
+            >
+              {fbExporting ? "Завантаження…" : "Файл для Facebook"}
+            </button>
+          ) : null}
           <div>
             <label className="text-[10px] block mb-0.5 leading-none">Пошук</label>
             <div className="relative w-40">
