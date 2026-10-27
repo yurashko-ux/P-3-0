@@ -562,7 +562,6 @@ export function JournalDayGrid({
         {masters.length === 0 ? (
           <div className="px-4 py-8 text-sm text-gray-500 text-center">Немає майстрів у штаті Altegio</div>
         ) : (
-          {/* Лише горизонтальний скрол колонок. Вгору-вниз їде сама сторінка, без вкладеного контейнера. */}
           <div
             className="relative"
             style={{
