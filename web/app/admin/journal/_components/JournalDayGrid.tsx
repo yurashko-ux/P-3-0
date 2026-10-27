@@ -169,7 +169,7 @@ function layoutColumn(rows: JournalGridAppointment[], pxPerMin = PX_PER_MIN): La
       const endMin = startMin + durationMin;
       const gridEnd = END_HOUR * 60;
       const top = (startMin - START_HOUR * 60) * pxPerMin;
-      const gridPx = (END_HOUR - START_HOUR) * pxPerMin;
+      const gridPx = (END_HOUR - START_HOUR) * 60 * pxPerMin;
       let height = Math.max(MIN_EVENT_PX, durationMin * pxPerMin - 2);
       if (top + height > gridPx) height = Math.max(STRIP_PX + 16, gridPx - Math.max(0, top));
       return {
