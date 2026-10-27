@@ -404,7 +404,7 @@ function StaffDayColumn({
             </div>
             <button
               type="button"
-              className="min-h-0 flex-1 overflow-hidden px-1.5 py-px flex flex-col justify-center items-stretch gap-0 text-left w-full"
+              className="min-h-0 flex-1 overflow-hidden px-1.5 pt-0.5 pb-px flex flex-col justify-start items-stretch gap-0 text-left w-full"
               style={{ color: colors.text }}
               onClick={(e) => {
                 e.stopPropagation();
