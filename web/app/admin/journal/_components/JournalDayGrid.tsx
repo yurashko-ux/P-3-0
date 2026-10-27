@@ -82,8 +82,8 @@ const START_HOUR = 9;
 const END_HOUR = 20;
 /** Висота години на планшеті й десктопі. */
 const HOUR_PX = 88;
-/** На телефоні година вища, щоб картка дихала як у Altegio. */
-const PHONE_HOUR_PX = 132;
+/** На телефоні година нижча, щоб довгі записи не розтягувались на весь екран. */
+const PHONE_HOUR_PX = 80;
 const PX_PER_MIN = HOUR_PX / 60;
 function bodyHeight(hourPx: number) {
   return (END_HOUR - START_HOUR) * hourPx + 10;
@@ -562,7 +562,18 @@ export function JournalDayGrid({
         {masters.length === 0 ? (
           <div className="px-4 py-8 text-sm text-gray-500 text-center">Немає майстрів у штаті Altegio</div>
         ) : (
-          <div className="overflow-x-auto relative">
+          {/* Лише горизонтальний скрол колонок. Вгору-вниз їде сама сторінка, без вкладеного контейнера. */}
+          <div
+            className="relative"
+            style={{
+              overflowX: "auto",
+              overflowY: "hidden",
+              touchAction: "pan-x pan-y",
+              overscrollBehaviorX: "contain",
+              overscrollBehaviorY: "auto",
+              WebkitOverflowScrolling: "auto",
+            }}
+          >
             <div className="flex w-max min-w-full">
               <div className="sticky left-0 z-20 bg-white shrink-0">
                 <div className="h-[4.75rem] flex items-center justify-center">
