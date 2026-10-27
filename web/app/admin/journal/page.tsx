@@ -4,7 +4,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { JournalAppointmentForm, type JournalAppointmentDraft, type JournalMaster, type JournalService } from "./_components/JournalAppointmentForm";
 import { JournalCheckoutModal } from "./_components/JournalCheckoutModal";
 import { JournalDayGrid, clientLabelOf, type JournalGridAppointment } from "./_components/JournalDayGrid";
-import { useJournalDay } from "./_components/JournalDayContext";
+import { shiftYmd, useJournalDay } from "./_components/JournalDayContext";
 import { JournalTopToolbar } from "./_components/JournalTopToolbar";
 
 function kyivParts(iso: string) {
@@ -24,6 +24,55 @@ function kyivParts(iso: string) {
     hm: `${get("hour")}:${get("minute")}`,
     datetimeLocal: `${get("year")}-${get("month")}-${get("day")}T${get("hour")}:${get("minute")}`,
   };
+}
+
+const WEEKDAYS = ["пн", "вт", "ср", "чт", "пт", "сб", "нд"];
+
+function mondayOf(ymd: string) {
+  const [y, m, d] = ymd.split("-").map(Number);
+  const dt = new Date(Date.UTC(y, m - 1, d, 12));
+  const wd = dt.getUTCDay();
+  const delta = wd === 0 ? -6 : 1 - wd;
+  return shiftYmd(ymd, delta);
+}
+
+function MobileWeekBar({ day, onPick }: { day: string; onPick: (ymd: string) => void }) {
+  const start = mondayOf(day);
+  const days = Array.from({ length: 7 }, (_, i) => shiftYmd(start, i));
+  return (
+    <div className="md:hidden fixed inset-x-0 z-30 px-3 bottom-[calc(3.75rem+env(safe-area-inset-bottom))]">
+      <div className="flex bg-[#2a2e33] rounded-2xl px-1 py-1">
+        {days.map((ymd, i) => {
+          const active = ymd === day;
+          const weekend = i >= 5;
+          const num = Number(ymd.slice(8, 10));
+          return (
+            <button
+              key={ymd}
+              type="button"
+              className={`flex-1 flex flex-col items-center rounded-xl py-1 ${active ? "bg-[#f5c400] text-gray-900" : ""}`}
+              onClick={() => onPick(ymd)}
+            >
+              <span
+                className={`text-[10px] uppercase leading-none ${
+                  active ? "text-gray-900" : weekend ? "text-[#ff8a7a]" : "text-white/75"
+                }`}
+              >
+                {WEEKDAYS[i]}
+              </span>
+              <span
+                className={`text-[16px] font-semibold leading-tight tabular-nums ${
+                  active ? "text-gray-900" : weekend ? "text-[#ff8a7a]" : "text-white"
+                }`}
+              >
+                {num}
+              </span>
+            </button>
+          );
+        })}
+      </div>
+    </div>
+  );
 }
 
 export default function JournalDayPage() {
@@ -351,7 +400,7 @@ export default function JournalDayPage() {
   return (
     <>
       <JournalTopToolbar />
-      <main className="p-2 sm:p-3 space-y-2 flex-1 min-h-0">
+      <main className="p-2 sm:p-3 pb-16 md:pb-3 space-y-2 flex-1 min-h-0">
         {notice && (
           <div className="fixed top-4 left-1/2 -translate-x-1/2 z-[70] alert alert-success shadow-lg text-sm py-2 px-4 max-w-md">
             {notice}
@@ -379,6 +428,8 @@ export default function JournalDayPage() {
             }}
           />
         )}
+
+        {viewMode !== "week" ? <MobileWeekBar day={day} onPick={setDay} /> : null}
 
         <JournalAppointmentForm
           open={formOpen}

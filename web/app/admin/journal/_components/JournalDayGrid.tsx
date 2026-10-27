@@ -9,6 +9,7 @@ import type { JournalMaster } from "./JournalAppointmentForm";
 import { attendanceBlockStyle, normalizeAttendance } from "@/lib/journal/attendance";
 import { JournalAppointmentPeek, type PeekState } from "./JournalAppointmentPeek";
 import { ClientNameWithLoyalty } from "@/app/admin/_components/ClientNameWithLoyalty";
+import { kyivTodayYmd } from "./JournalDayContext";
 
 function masterAvatarUrl(instagram?: string | null) {
   const u = (instagram || "").replace(/^@/, "").trim();
@@ -16,12 +17,24 @@ function masterAvatarUrl(instagram?: string | null) {
   return `/api/admin/direct/instagram-avatar?username=${encodeURIComponent(u)}`;
 }
 
-function MasterColumnAvatar({ name, instagramUsername }: { name: string; instagramUsername?: string | null }) {
+function MasterColumnAvatar({
+  name,
+  instagramUsername,
+  className,
+}: {
+  name: string;
+  instagramUsername?: string | null;
+  className?: string;
+}) {
   const [broken, setBroken] = useState(false);
   const src = masterAvatarUrl(instagramUsername);
   const letters = initials(name);
   return (
-    <div className="w-8 h-8 rounded-full bg-gray-100 text-gray-600 text-[11px] font-semibold flex items-center justify-center shrink-0 overflow-hidden">
+    <div
+      className={`rounded-full bg-gray-100 text-gray-600 font-semibold flex items-center justify-center shrink-0 overflow-hidden ${
+        className || "w-8 h-8 text-[11px]"
+      }`}
+    >
       {src && !broken ? (
         // eslint-disable-next-line @next/next/no-img-element
         <img src={src} alt="" className="w-full h-full object-cover" onError={() => setBroken(true)} />
@@ -67,16 +80,21 @@ export type JournalGridAppointment = {
 
 const START_HOUR = 9;
 const END_HOUR = 20;
-/** Висота години: 30-хв консультації мають читабельне тіло картки (імʼя клієнта). */
+/** Висота години на планшеті й десктопі. */
 const HOUR_PX = 88;
+/** На телефоні година вища, щоб картка дихала як у Altegio. */
+const PHONE_HOUR_PX = 132;
 const PX_PER_MIN = HOUR_PX / 60;
-const GRID_MINUTES = (END_HOUR - START_HOUR) * 60;
-const BODY_HEIGHT = GRID_MINUTES * PX_PER_MIN + 10;
+function bodyHeight(hourPx: number) {
+  return (END_HOUR - START_HOUR) * hourPx + 10;
+}
+const BODY_HEIGHT = bodyHeight(HOUR_PX);
 const HOVER_DELAY_MS = 400;
 const LONG_PRESS_MS = 500;
 const OVERLAP_OFFSET_PX = 16;
-/** Верхня смуга з часом — компактна, щоб більше місця під текст. */
-const STRIP_PX = 15;
+/** Верхня зелена смуга з часом запису. */
+const STRIP_PX = 22;
+const PHONE_STRIP_PX = 30;
 /** Мінімальна висота блоку запису (короткі сеанси все одно читабельні). */
 const MIN_EVENT_PX = 46;
 
@@ -141,7 +159,7 @@ type LayoutAppt = {
 };
 
 /** Накладання як у Altegio: колонка повної ширини, зсув вправо + шар зверху. */
-function layoutColumn(rows: JournalGridAppointment[]): LayoutAppt[] {
+function layoutColumn(rows: JournalGridAppointment[], pxPerMin = PX_PER_MIN): LayoutAppt[] {
   const items = rows
     .map((row) => {
       const startHm = kyivHm(row.datetime);
@@ -151,8 +169,8 @@ function layoutColumn(rows: JournalGridAppointment[]): LayoutAppt[] {
         row,
         startMin,
         endMin: startMin + durationMin,
-        top: (startMin - START_HOUR * 60) * PX_PER_MIN,
-        height: Math.max(MIN_EVENT_PX, durationMin * PX_PER_MIN - 2),
+        top: (startMin - START_HOUR * 60) * pxPerMin,
+        height: Math.max(MIN_EVENT_PX, durationMin * pxPerMin - 2),
         lane: 0,
         laneCount: 1,
       };
@@ -186,23 +204,24 @@ function layoutColumn(rows: JournalGridAppointment[]): LayoutAppt[] {
   return items;
 }
 
-function TimeGutter() {
+function TimeGutter({ hourPx = HOUR_PX, full = false }: { hourPx?: number; full?: boolean }) {
   const hours = Array.from({ length: END_HOUR - START_HOUR + 1 }, (_, i) => START_HOUR + i);
+  const height = bodyHeight(hourPx);
   return (
-    <div className="relative shrink-0 w-10 text-[11px] select-none" style={{ height: BODY_HEIGHT }}>
+    <div className={`relative shrink-0 select-none ${full ? "w-12 text-[11px]" : "w-10 text-[11px]"}`} style={{ height }}>
       {hours.map((hour) => (
-        <div key={hour} className="absolute left-0 right-0" style={{ top: (hour - START_HOUR) * HOUR_PX }}>
+        <div key={hour} className="absolute left-0 right-0" style={{ top: (hour - START_HOUR) * hourPx }}>
           <span
-            className={`block text-right pr-1.5 tabular-nums text-gray-500 leading-none ${
+            className={`block text-right pr-1 tabular-nums text-gray-400 leading-none ${
               hour === START_HOUR ? "" : hour === END_HOUR ? "-translate-y-full" : "-translate-y-1/2"
             }`}
           >
-            {hour}
+            {full ? `${hour}:00` : hour}
           </span>
-          {hour < END_HOUR && (
+          {!full && hour < END_HOUR && (
             <span
-              className="absolute right-1.5 tabular-nums text-gray-400 leading-none"
-              style={{ top: HOUR_PX / 2, transform: "translateY(-50%)" }}
+              className="absolute right-1.5 tabular-nums text-gray-300 leading-none"
+              style={{ top: hourPx / 2, transform: "translateY(-50%)" }}
             >
               30
             </span>
@@ -213,14 +232,26 @@ function TimeGutter() {
   );
 }
 
+function kyivNowMinutes() {
+  const parts = new Intl.DateTimeFormat("sv-SE", {
+    timeZone: "Europe/Kyiv",
+    hour: "2-digit",
+    minute: "2-digit",
+    hour12: false,
+  }).formatToParts(new Date());
+  const get = (t: string) => Number(parts.find((p) => p.type === t)?.value || "0");
+  return get("hour") * 60 + get("minute");
+}
+
+function stripMark(attendance: number) {
+  if (attendance === 1 || attendance === 2) return "✓";
+  if (attendance === -1) return "–";
+  return "◷";
+}
+
 function peekAnchor(el: HTMLElement): { x: number; y: number } {
   const r = el.getBoundingClientRect();
   return { x: r.right + 6, y: r.top };
-}
-
-function shortMasterName(name: string) {
-  const first = String(name || "").trim().split(/\s+/)[0] || name;
-  return first.length > 8 ? `${first.slice(0, 7)}…` : first;
 }
 
 function StaffDayColumn({
@@ -228,6 +259,9 @@ function StaffDayColumn({
   rows,
   day,
   className,
+  hourPx = HOUR_PX,
+  stripPx = STRIP_PX,
+  nowTop = null,
   onEmptySlot,
   onStripEnter,
   onStripLeave,
@@ -242,6 +276,9 @@ function StaffDayColumn({
   rows: JournalGridAppointment[];
   day: string;
   className: string;
+  hourPx?: number;
+  stripPx?: number;
+  nowTop?: number | null;
   onEmptySlot: (masterId: string, datetimeLocal: string) => void;
   onStripEnter: (row: JournalGridAppointment, el: HTMLElement) => void;
   onStripLeave: () => void;
@@ -252,15 +289,16 @@ function StaffDayColumn({
   onTouchEnd: (e: TouchEvent) => void;
   onTouchMove: () => void;
 }) {
-  const laid = layoutColumn(rows);
+  const pxPerMin = hourPx / 60;
+  const laid = layoutColumn(rows, pxPerMin);
   return (
     <div
       className={`relative border-l border-gray-100 cursor-pointer ${className}`}
-      style={{ height: BODY_HEIGHT }}
+      style={{ height: bodyHeight(hourPx) }}
       onClick={(e) => {
         const rect = (e.currentTarget as HTMLDivElement).getBoundingClientRect();
         const y = e.clientY - rect.top;
-        const rawMin = START_HOUR * 60 + y / PX_PER_MIN;
+        const rawMin = START_HOUR * 60 + y / pxPerMin;
         const snapped = Math.min(
           (END_HOUR - 1) * 60 + 45,
           Math.max(START_HOUR * 60, Math.round(rawMin / 15) * 15),
@@ -273,9 +311,15 @@ function StaffDayColumn({
         <div
           key={i}
           className={`absolute left-0 right-0 pointer-events-none ${i % 2 === 0 ? "border-t border-gray-200" : "border-t border-gray-100"}`}
-          style={{ top: i * (HOUR_PX / 2) }}
+          style={{ top: i * (hourPx / 2) }}
         />
       ))}
+      {nowTop != null ? (
+        <div
+          className="absolute left-0 right-0 z-20 pointer-events-none border-t-2 border-[#ff7a18]"
+          style={{ top: nowTop }}
+        />
+      ) : null}
       {laid.map((item) => {
         const { row, top, height, lane, startMin, endMin } = item;
         const startHm = minutesToHm(startMin);
@@ -305,7 +349,7 @@ function StaffDayColumn({
           >
             <div
               className="shrink-0 flex items-center justify-between gap-1 px-1.5 text-white cursor-default select-none"
-              style={{ backgroundColor: colors.strip, height: STRIP_PX }}
+              style={{ backgroundColor: colors.strip, height: stripPx }}
               data-journal-strip="1"
               onMouseEnter={(e) => {
                 e.stopPropagation();
@@ -324,19 +368,19 @@ function StaffDayColumn({
               onTouchMove={() => onTouchMove()}
               onContextMenu={(e) => e.preventDefault()}
             >
-              <span className="text-[10px] font-semibold tabular-nums leading-none truncate">
-                {startHm}—{endHm}
+              <span className="text-[11px] font-semibold tabular-nums leading-none truncate">
+                {startHm}-{endHm}
               </span>
               <span
-                className="w-3.5 h-3.5 rounded-full bg-white/25 text-[10px] leading-none flex items-center justify-center shrink-0"
+                className="w-4 h-4 rounded-full bg-white/30 text-[11px] leading-none flex items-center justify-center shrink-0"
                 aria-hidden
               >
-                +
+                {stripMark(att)}
               </span>
             </div>
             <button
               type="button"
-              className="min-h-0 flex-1 overflow-hidden px-1.5 py-px flex flex-col justify-center items-stretch gap-0 text-left w-full"
+              className="min-h-0 flex-1 overflow-hidden px-1.5 pt-1 pb-1 flex flex-col justify-start items-stretch gap-0.5 text-left w-full"
               style={{ color: colors.text }}
               onClick={(e) => {
                 e.stopPropagation();
@@ -344,23 +388,21 @@ function StaffDayColumn({
                 onAppointment(row);
               }}
             >
-              {height >= 58 && titles.length > 0 ? (
-                <div className="truncate text-[10px] font-medium leading-tight opacity-90">
-                  {titles.join(" — ")}
-                </div>
-              ) : null}
-              <div className="truncate text-[11px] font-semibold leading-tight min-h-[14px]">
+              <div className="text-[12px] font-semibold leading-tight line-clamp-2">
                 <ClientNameWithLoyalty
                   name={clientLabelOf(row)}
                   spent={row.directClient?.spent}
                   visits={row.directClient?.visits}
-                  nameClassName="text-[11px] font-semibold leading-tight whitespace-nowrap"
+                  nameClassName="text-[12px] font-semibold leading-tight"
                   className="gap-1 items-center max-w-full"
-                  showBadge={height >= 52}
+                  showBadge={height >= 70}
                 />
               </div>
-              {height >= 70 && phone ? (
-                <div className="truncate text-[10px] font-medium leading-tight">{phone}</div>
+              {height >= 64 && phone ? (
+                <div className="text-[11px] font-medium leading-tight line-clamp-1">{phone}</div>
+              ) : null}
+              {height >= 80 && titles.length > 0 ? (
+                <div className="text-[11px] font-medium leading-snug line-clamp-6">{titles.join(" — ")}</div>
               ) : null}
               {height >= 84 &&
               row.checkout?.status === "synced" &&
@@ -398,7 +440,6 @@ export function JournalDayGrid({
   onAttendanceChange?: (appointmentId: string, attendance: number) => void;
 }) {
   const [peek, setPeek] = useState<PeekState | null>(null);
-  const [phoneMasterId, setPhoneMasterId] = useState<string | null>(null);
   const hoverTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const leaveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const longPressTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -475,13 +516,6 @@ export function JournalDayGrid({
     };
   }, []);
 
-  useEffect(() => {
-    if (masters.length === 0) return;
-    if (!phoneMasterId || !masters.some((m) => m.id === phoneMasterId)) {
-      setPhoneMasterId(masters[0].id);
-    }
-  }, [masters, phoneMasterId]);
-
   const byStaff = new Map<string, JournalGridAppointment[]>();
   for (const row of appointments) {
     const key = staffKey(row);
@@ -490,7 +524,12 @@ export function JournalDayGrid({
     byStaff.set(key, list);
   }
 
-  const phoneMaster = masters.find((m) => m.id === phoneMasterId) || masters[0] || null;
+  const nowMin = day === kyivTodayYmd() ? kyivNowMinutes() : null;
+  const nowVisible = nowMin != null && nowMin >= START_HOUR * 60 && nowMin <= END_HOUR * 60;
+  const phoneNowTop = nowVisible ? (nowMin - START_HOUR * 60) * (PHONE_HOUR_PX / 60) : null;
+  const deskNowTop = nowVisible ? (nowMin - START_HOUR * 60) * PX_PER_MIN : null;
+  const nowLabel = nowMin != null ? minutesToHm(nowMin) : "";
+
   const columnProps = {
     day,
     onEmptySlot,
@@ -519,53 +558,63 @@ export function JournalDayGrid({
 
   return (
     <div>
-      <div className="md:hidden bg-white border border-gray-200 rounded-2xl overflow-hidden shadow-sm">
+      <div className="md:hidden bg-white">
         {masters.length === 0 ? (
           <div className="px-4 py-8 text-sm text-gray-500 text-center">Немає майстрів у штаті Altegio</div>
         ) : (
-          <>
-            <div className="flex gap-1 overflow-x-auto px-2 py-2 border-b border-gray-100">
-              {masters.map((m) => {
-                const active = phoneMaster?.id === m.id;
-                return (
+          <div className="overflow-x-auto relative">
+            <div className="flex w-max min-w-full">
+              <div className="sticky left-0 z-20 bg-white shrink-0">
+                <div className="h-[4.75rem] flex items-center justify-center">
                   <button
-                    key={m.id}
                     type="button"
-                    id={`journal-master-${m.id}`}
-                    className={`shrink-0 flex flex-col items-center gap-1 w-[4.5rem] rounded-xl px-1 py-1.5 ${
-                      active ? "bg-[#eef0f4] shadow-sm" : "opacity-70"
-                    }`}
-                    onClick={() => {
-                      setPhoneMasterId(m.id);
-                      document.getElementById(`journal-master-${m.id}`)?.scrollIntoView({
-                        inline: "center",
-                        block: "nearest",
-                      });
-                    }}
+                    className="w-8 h-8 text-[28px] leading-none text-[#f5c400] font-light"
+                    aria-label="Новий запис"
+                    onClick={() => masters[0] && onEmptySlot(masters[0].id, `${day}T10:00`)}
                   >
-                    <span className={active ? "rounded-full ring-2 ring-gray-900 ring-offset-2" : ""}>
-                      <MasterColumnAvatar name={m.name} instagramUsername={m.instagramUsername} />
-                    </span>
-                    <span className={`text-[11px] leading-none truncate max-w-full ${active ? "font-semibold text-gray-900" : "text-gray-500"}`}>
-                      {shortMasterName(m.name)}
-                    </span>
+                    +
                   </button>
-                );
-              })}
-            </div>
-            {phoneMaster ? (
-              <div className="flex relative">
-                <TimeGutter />
-                <StaffDayColumn
-                  master={phoneMaster}
-                  rows={byStaff.get(String(phoneMaster.altegioStaffId || phoneMaster.id)) || []}
-                  className="flex-1 min-w-0"
-                  {...columnProps}
-                />
-                {loading && <div className="absolute inset-0 bg-white/40 pointer-events-none" />}
+                </div>
+                <div className="relative">
+                  <TimeGutter hourPx={PHONE_HOUR_PX} full />
+                  {phoneNowTop != null ? (
+                    <div
+                      className="absolute right-0 z-30 -translate-y-1/2"
+                      style={{ top: phoneNowTop }}
+                    >
+                      <span className="inline-flex rounded-full bg-[#ff7a18] text-white text-[10px] font-semibold px-1.5 py-0.5 tabular-nums">
+                        {nowLabel}
+                      </span>
+                    </div>
+                  ) : null}
+                </div>
               </div>
-            ) : null}
-          </>
+              {masters.map((m) => (
+                <div key={m.id} className="w-[7.1rem] shrink-0">
+                  <div className="h-[4.75rem] px-1 flex flex-col items-center justify-end pb-1.5 gap-1">
+                    <MasterColumnAvatar
+                      name={m.name}
+                      instagramUsername={m.instagramUsername}
+                      className="w-10 h-10 text-[12px]"
+                    />
+                    <span className="text-[11px] leading-tight text-center text-gray-800 line-clamp-2 w-full">
+                      {m.name}
+                    </span>
+                  </div>
+                  <StaffDayColumn
+                    master={m}
+                    rows={byStaff.get(String(m.altegioStaffId || m.id)) || []}
+                    className="w-full"
+                    hourPx={PHONE_HOUR_PX}
+                    stripPx={PHONE_STRIP_PX}
+                    nowTop={phoneNowTop}
+                    {...columnProps}
+                  />
+                </div>
+              ))}
+            </div>
+            {loading && <div className="absolute inset-0 bg-white/40 pointer-events-none" />}
+          </div>
         )}
       </div>
 
@@ -596,6 +645,7 @@ export function JournalDayGrid({
                 master={m}
                 rows={byStaff.get(String(m.altegioStaffId || m.id)) || []}
                 className="flex-1 min-w-[180px] md:min-w-[210px] snap-start"
+                nowTop={deskNowTop}
                 {...columnProps}
               />
             ))}

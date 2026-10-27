@@ -59,14 +59,16 @@ export function JournalTopToolbar() {
 
   return (
     <header className="sticky top-0 z-10 bg-white/95 backdrop-blur-md border-b px-3 py-2 flex flex-wrap items-center gap-1.5 sm:gap-2 min-h-11">
-      <button
-        type="button"
-        className="btn btn-sm btn-ghost min-h-0 h-8"
-        onClick={() => setDay(kyivTodayYmd())}
-      >
-        Сьогодні
-      </button>
-      <div className="flex items-center gap-0.5">
+      <div className="hidden md:block">
+        <button
+          type="button"
+          className="btn btn-sm btn-ghost min-h-0 h-8"
+          onClick={() => setDay(kyivTodayYmd())}
+        >
+          Сьогодні
+        </button>
+      </div>
+      <div className="hidden md:flex items-center gap-0.5">
         <button
           type="button"
           className="btn btn-sm btn-ghost min-h-0 h-8 w-8 px-0"
@@ -86,8 +88,8 @@ export function JournalTopToolbar() {
       </div>
 
       <h1 className="text-[15px] sm:text-lg font-bold capitalize tracking-tight ml-0.5 sm:ml-1 flex items-baseline gap-2 flex-wrap min-w-0">
-        <span className="sm:hidden">{formatJournalShortDate(day)}</span>
-        <span className="hidden sm:inline">{formatJournalBoldDate(day)}</span>
+        <span className="md:hidden text-[22px] font-semibold tracking-tight">{formatJournalShortDate(day)}</span>
+        <span className="hidden md:inline">{formatJournalBoldDate(day)}</span>
         <span
           className="hidden sm:inline text-sm font-semibold normal-case tracking-normal text-gray-600 tabular-nums"
           title="Робочий курс дня (Monobank sell → ceil+1)"
