@@ -392,11 +392,11 @@ function StaffDayColumn({
               onTouchMove={() => onTouchMove()}
               onContextMenu={(e) => e.preventDefault()}
             >
-              <span className="text-[13px] font-semibold tabular-nums leading-none truncate">
+              <span className="text-[9px] font-normal tabular-nums leading-none truncate">
                 {startHm}—{endHm}
               </span>
               <span
-                className="w-5 h-5 rounded-full bg-white/25 text-[12px] leading-none flex items-center justify-center shrink-0"
+                className="w-3.5 h-3.5 rounded-full bg-white/25 text-[10px] leading-none flex items-center justify-center shrink-0"
                 aria-hidden
               >
                 +
