@@ -341,6 +341,9 @@ function StaffDayColumn({
         const att = normalizeAttendance(row.attendance);
         const colors = attendanceBlockStyle(att);
         const leftPx = 3 + lane * OVERLAP_OFFSET_PX;
+        const topPx = Math.max(0, top);
+        const columnPx = bodyHeight(hourPx, endHour);
+        const bottomPx = Math.max(0, columnPx - topPx - height);
         return (
           <div
             key={row.id}
@@ -348,8 +351,8 @@ function StaffDayColumn({
               row.status === "sync_error" ? "ring-2 ring-red-500" : ""
             }`}
             style={{
-              top: Math.max(0, top),
-              height,
+              top: topPx,
+              bottom: bottomPx,
               left: leftPx,
               right: 3,
               zIndex: 10 + lane,
