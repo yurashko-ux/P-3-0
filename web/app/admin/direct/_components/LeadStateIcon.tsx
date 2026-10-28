@@ -112,7 +112,7 @@ export function LeadStateIcon({
         throw new Error(data?.error || "Не вдалося зберегти джерело");
       }
       setValue(code);
-      if (!leadAdId) onAgencyChange?.(code || null);
+      onAgencyChange?.(code || null);
       setOpen(false);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Помилка збереження");

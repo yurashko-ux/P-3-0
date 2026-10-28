@@ -273,8 +273,11 @@ export async function GET(req: NextRequest) {
       for (const row of mapped) {
         const fresh = agencyById.get(row.id);
         if (!fresh) continue;
-        if (row.leadAgency !== fresh.leadAgency || row.leadAdId !== fresh.leadAdId) {
-          if (row.leadAgency !== fresh.leadAgency) {
+        // Порожній SQL не затирає вже прочитане джерело: великий IN інколи віддає null.
+        const nextAgency = fresh.leadAgency || row.leadAgency;
+        const nextAdId = fresh.leadAdId || row.leadAdId;
+        if (row.leadAgency !== nextAgency || row.leadAdId !== nextAdId) {
+          if (row.leadAgency !== nextAgency) {
             console.warn("[stats/consultations] leadAgency розійшовся з SQL по id", {
               id: row.id,
               username: row.instagramUsername,
@@ -282,16 +285,38 @@ export async function GET(req: NextRequest) {
               fromSql: fresh.leadAgency,
             });
           }
-          row.leadAgency = fresh.leadAgency;
-          row.leadAdId = fresh.leadAdId;
-          row.sourceMark = fresh.leadAgency ? sourceMarkByCode.get(fresh.leadAgency) || null : null;
-          row.sourceName = fresh.leadAgency ? sourceNameByCode.get(fresh.leadAgency) || null : null;
+          row.leadAgency = nextAgency;
+          row.leadAdId = nextAdId;
+          row.sourceMark = nextAgency ? sourceMarkByCode.get(nextAgency) || null : null;
+          row.sourceName = nextAgency ? sourceNameByCode.get(nextAgency) || null : null;
           patched += 1;
         }
       }
       if (patched > 0) {
         console.log("[stats/consultations] Підтягнуто leadAgency/leadAdId з SQL:", patched);
       }
+    }
+
+    // Призначене оголошення — джерело правди для знака біля хмарки.
+    // Великий список місяця інколи лишає leadAgency порожнім (naqwe_: ad вже Наталя, на хмарці «?»).
+    const adLinks = await prisma.leadSourceAdId.findMany({
+      where: { sourceCode: { not: null } },
+      select: { adId: true, sourceCode: true },
+    });
+    const sourceByAdId = new Map(
+      adLinks.flatMap((link) => (link.sourceCode ? [[link.adId, link.sourceCode] as const] : []))
+    );
+    let fromAds = 0;
+    for (const row of mapped) {
+      const fromAd = row.leadAdId ? sourceByAdId.get(row.leadAdId) : undefined;
+      if (!fromAd || row.leadAgency === fromAd) continue;
+      row.leadAgency = fromAd;
+      row.sourceMark = sourceMarkByCode.get(fromAd) || null;
+      row.sourceName = sourceNameByCode.get(fromAd) || null;
+      fromAds += 1;
+    }
+    if (fromAds > 0) {
+      console.log("[stats/consultations] Знак хмарки з призначеного ad_id:", fromAds);
     }
 
     const withChat = await enrichClientsWithChannelChatMeta(mapped, "instagram");

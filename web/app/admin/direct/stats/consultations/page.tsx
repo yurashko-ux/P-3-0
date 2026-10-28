@@ -551,14 +551,20 @@ function ConsultationsPageContent() {
                             (c.leadAgency ? leadSourcesMap[c.leadAgency]?.mark : null) ||
                             null
                           }
-                          onAgencyChange={(leadAgency) =>
-                            updateClientLocal(c.id, {
+                          onAgencyChange={(leadAgency) => {
+                            const patch = {
                               leadAgency,
-                              sourceMark: leadAgency
-                                ? leadSourcesMap[leadAgency]?.mark || null
-                                : null,
-                            })
-                          }
+                              sourceMark: leadAgency ? leadSourcesMap[leadAgency]?.mark || null : null,
+                              sourceName: leadAgency ? leadSourcesMap[leadAgency]?.name || null : null,
+                            };
+                            setClients((prev) =>
+                              prev.map((row) => {
+                                const sameLead =
+                                  row.id === c.id || Boolean(c.leadAdId && row.leadAdId === c.leadAdId);
+                                return sameLead ? { ...row, ...patch } : row;
+                              })
+                            );
+                          }}
                         />
                       </td>
                       <td className="text-center align-middle">
