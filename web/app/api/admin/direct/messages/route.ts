@@ -2,6 +2,7 @@
 // Сортування за останнім повідомленням: нове піднімає картку вгору.
 
 import { NextRequest, NextResponse } from "next/server";
+import { unstable_noStore as noStore } from "next/cache";
 import { Prisma } from "@prisma/client";
 import { getAuthContext, hasPermission, verifyUserToken } from "@/lib/auth-rbac";
 import { isPreviewDeploymentHost } from "@/lib/auth-preview";
@@ -10,6 +11,7 @@ import { computeThreadReplyTime, type ThreadReplyTime } from "@/lib/direct-reply
 import { prisma } from "@/lib/prisma";
 
 export const dynamic = "force-dynamic";
+export const revalidate = 0;
 export const runtime = "nodejs";
 
 const ADMIN_PASS = process.env.ADMIN_PASS || "";
@@ -99,8 +101,13 @@ async function findIdsByLastInstagramMessage(
           AND c."paidServiceDate" IS NULL
           AND (c."consultationBookingDate" IS NULL OR c."consultationDeletedInAltegio" = true)
         )`;
+  // LIMIT як літерал: параметризований LIMIT 40 тримав окремий план і віддавав
+  // застарілий зріз (Віра Влодек з повідомленням сьогодні не потрапляла в перші 40).
+  // MATERIALIZED — спочатку MAX по всіх повідомленнях, і лише потім сторінка.
+  const safeLimit = Math.max(1, Math.min(200, Math.floor(Number(limit)) || 1));
+  const safeOffset = Math.max(0, Math.floor(Number(offset)) || 0);
   const rows = await prisma.$queryRaw<Array<{ id: string; sortAt: Date | null }>>(Prisma.sql`
-    WITH ig_last AS (
+    WITH ig_last AS MATERIALIZED (
       SELECT m."clientId", MAX(m."receivedAt") AS "maxAt"
       FROM "direct_messages" m
       WHERE m.source IS DISTINCT FROM 'telegram'
@@ -120,8 +127,8 @@ async function findIdsByLastInstagramMessage(
       AND c."instagramUsername" NOT LIKE '\\_\\_no_ig\\_%'
       AND ${audienceSql}
     ORDER BY "sortAt" DESC NULLS LAST, c.id ASC
-    LIMIT ${limit}
-    OFFSET ${offset}
+    LIMIT ${Prisma.raw(String(safeLimit))}
+    OFFSET ${Prisma.raw(String(safeOffset))}
   `);
   return rows.map((row) => ({
     id: row.id,
@@ -216,6 +223,7 @@ async function loadReplyTimes(ids: string[]): Promise<Map<string, ThreadReplyTim
 }
 
 export async function GET(req: NextRequest) {
+  noStore();
   if (!isAuthorized(req)) {
     return NextResponse.json({ ok: false, error: "Unauthorized" }, { status: 401 });
   }
@@ -393,7 +401,7 @@ export async function GET(req: NextRequest) {
         headers: {
           "Cache-Control": "no-store, no-cache, must-revalidate",
           Pragma: "no-cache",
-          "X-Messages-Sort": "lastMessageAt",
+          "X-Messages-Sort": "lastMessageAt-v2",
         },
       }
     );
