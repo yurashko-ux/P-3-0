@@ -162,9 +162,14 @@ function normalizeDepositBalancesPayload(
   raw: DepositTabDataPayload["depositBalances"],
 ): DepositBalancesPayload | null {
   if (!raw) return null;
-  const accounts = raw.accounts ?? (raw as { deposits?: DepositBalancesPayload["accounts"] }).deposits ?? [];
+  const accounts = (raw.accounts ?? (raw as { deposits?: DepositBalancesPayload["accounts"] }).deposits ?? [])
+    .filter((row) => row.balance > 0);
+  const totalBalance = Math.round(
+    accounts.reduce((sum, row) => sum + row.balance, 0) * 100,
+  ) / 100;
   return {
-    totalBalance: raw.totalBalance ?? 0,
+    // Завжди сума рядків — шапка не може розійтись зі списком.
+    totalBalance,
     source: raw.source ?? "unknown",
     accounts,
   };
@@ -3010,7 +3015,7 @@ function LinkedIncomingDayBody({
   return <>{rows}</>;
 }
 
-/** Вкладка ЗАВДАТКИ: хто реально висить на балансі Altegio (сума рядків = шапка). */
+/** Вкладка ЗАВДАТКИ: хто висить на «Рахунки клієнта» Altegio. Шапка = сума рядків. */
 function DepositsActiveBalancesScroll({
   depositBalances,
   balancesLoading = false,
@@ -3018,7 +3023,7 @@ function DepositsActiveBalancesScroll({
 }: {
   depositBalances?: DepositBalancesPayload | null;
   balancesLoading?: boolean;
-  /** Скільки поповнень-завдатків ще без банку у Вхідних (підказка, не список пар). */
+  /** Скільки поповнень-завдатків ще без банку у Вхідних (підказка). */
   unmatchedDepositCount?: number;
 }) {
   const accounts = useMemo(() => {
@@ -3034,41 +3039,38 @@ function DepositsActiveBalancesScroll({
     () => Math.round(accounts.reduce((sum, row) => sum + row.balance, 0) * 100) / 100,
     [accounts],
   );
-  const headerTotal = depositBalances?.totalBalance ?? 0;
   const totalBalanceLabel = balancesLoading && depositBalances == null
     ? "…"
-    : formatTotalDepositBalanceUah(headerTotal);
-  const sumMismatch =
-    depositBalances != null
-    && Math.abs(headerTotal - rowsSum) >= 0.01;
+    : formatTotalDepositBalanceUah(rowsSum);
 
   return (
     <div className="flex min-h-0 flex-1 flex-col overflow-y-auto">
       <div className="border-b border-amber-200 bg-amber-50/80 px-3 py-1.5 text-xs text-amber-950">
         <span className="font-semibold">На депозитах (Altegio):</span>{" "}
-        <span className="tabular-nums">{totalBalanceLabel}</span>
+        <span className="tabular-nums font-semibold">{totalBalanceLabel}</span>
         {depositBalances != null ? (
           <span className="ml-2 text-amber-800/80">
             · {accounts.length}{" "}
             {accounts.length === 1 ? "клієнт" : accounts.length < 5 ? "клієнти" : "клієнтів"}
+            {" · "}хто висить на рахунку
           </span>
         ) : null}
-        {sumMismatch ? (
-          <span className="ml-2 text-red-700">
-            (сума рядків {formatTotalDepositBalanceUah(rowsSum)} — розбіжність)
-          </span>
+        {balancesLoading && depositBalances != null ? (
+          <span className="ml-2 text-amber-700/70">оновлення…</span>
         ) : null}
       </div>
       {unmatchedDepositCount > 0 ? (
         <div className="border-b border-sky-100 bg-sky-50/70 px-3 py-1 text-[11px] text-sky-950">
-          Незведені поповнення завдатку у Вхідних:{" "}
+          Незведені поповнення у Вхідних:{" "}
           <span className="font-semibold tabular-nums">{unmatchedDepositCount}</span>
           {" — "}
-          дивіться вкладку «Не зведені» (зведення з банком там само, що й інші платежі).
+          зведення з банком у вкладці «Не зведені».
         </div>
       ) : null}
       {balancesLoading && depositBalances == null ? (
-        <div className="px-4 py-10 text-center text-sm text-gray-500">Завантаження залишків Altegio…</div>
+        <div className="px-4 py-10 text-center text-sm text-gray-500">
+          Завантаження залишків «Рахунки клієнта» Altegio…
+        </div>
       ) : accounts.length === 0 ? (
         <div className="px-4 py-10 text-center text-sm text-gray-500">
           Немає клієнтів із залишком на депозиті.
@@ -3103,7 +3105,7 @@ function DepositsActiveBalancesScroll({
           <tfoot>
             <tr className="border-t-2 border-amber-300 bg-amber-50/90">
               <td colSpan={3} className="px-2 py-1.5 text-right text-[10px] font-semibold uppercase text-amber-950">
-                Разом
+                Разом (= шапка)
               </td>
               <td className="px-2 py-1.5 text-right font-bold tabular-nums text-amber-950">
                 {formatTotalDepositBalanceUah(rowsSum)}

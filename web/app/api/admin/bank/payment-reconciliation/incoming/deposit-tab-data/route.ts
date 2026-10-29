@@ -56,6 +56,8 @@ export async function GET(req: NextRequest) {
       accounts: accounts.length,
       totalBalance,
       pagesFetched: result.pagesFetched,
+      clientsChecked: result.clientsChecked,
+      clientsWithAccounts: result.clientsWithAccounts,
     });
 
     return NextResponse.json({
@@ -66,6 +68,7 @@ export async function GET(req: NextRequest) {
         accounts,
         pagesFetched: result.pagesFetched ?? null,
         clientsChecked: result.clientsChecked ?? null,
+        clientsWithAccounts: result.clientsWithAccounts ?? null,
       },
     });
   } catch (error) {
