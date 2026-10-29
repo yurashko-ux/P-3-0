@@ -1041,8 +1041,9 @@ async function fetchPositiveBalancesFromLocationDeposits(params: {
 
 /**
  * Отримує клієнтські рахунки з позитивним балансом.
- * 1) GET /deposits/chain/{chain_id} (пріоритет)
- * 2) Fallback: GET /deposits/company/{location_id}/client/{client_id}
+ * 1) GET /deposits/chain/{chain_id}
+ * 2) POST clients/search з полем balance (швидко, повний список)
+ * 3) Fallback: deposits/company по клієнтах (повільно, часто обривається на 403)
  */
 export async function fetchChainClientDeposits(
   params: FetchChainClientDepositsParams = {},
@@ -1099,6 +1100,49 @@ export async function fetchChainClientDeposits(
       if (!isAltegioAccessDenied(err)) throw err;
       console.warn(
         `[altegio/client-deposits] ⚠️ deposits/chain chain=${workingChainId} заборонено (403/404), fallback`,
+      );
+    }
+  }
+
+  // Швидкий повний список: баланс у clients/search (як у ручному списку ~30 тис.).
+  if (!includeZeroBalance) {
+    try {
+      const searchResult = await fetchPositiveBalancesFromClientsSearch({
+        companyId,
+        balanceFrom,
+        balanceTo,
+        limitPerPage,
+        maxPages,
+      });
+      if (!searchResult.balanceFieldMissing && searchResult.deposits.length > 0) {
+        const totalBalance = searchResult.deposits.reduce((sum, item) => sum + item.balance, 0);
+        console.log(
+          `[altegio/client-deposits] ✅ clients/search (${searchResult.strategy}): рахунків=${searchResult.deposits.length}, сума=${Math.round(totalBalance * 100) / 100} грн`,
+        );
+        return {
+          chainId: workingChainId,
+          companyId,
+          source: "clients_search",
+          chainCandidatesTried: chainCandidates,
+          balanceFrom,
+          balanceTo: balanceTo ?? null,
+          totalDeposits: searchResult.deposits.length,
+          totalBalance: Math.round(totalBalance * 100) / 100,
+          pagesFetched: searchResult.pagesFetched,
+          clientsSearchStrategy: searchResult.strategy,
+          balanceFieldMissingInSearch: false,
+          deposits: searchResult.deposits,
+        };
+      }
+      if (searchResult.balanceFieldMissing) {
+        console.warn(
+          "[altegio/client-deposits] clients/search без поля balance — fallback deposits/company",
+        );
+      }
+    } catch (err) {
+      console.warn(
+        "[altegio/client-deposits] clients/search недоступний, fallback deposits/company:",
+        err instanceof Error ? err.message : String(err),
       );
     }
   }
