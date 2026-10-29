@@ -24,14 +24,13 @@ import {
 } from "@/lib/altegio/web-urls";
 import { buildBankStatementItemUrl } from "@/lib/bank/web-urls";
 import {
-  buildDepositBalanceLookup,
+  type DepositBalanceLookup,
   type DepositBalancesPayload,
 } from "@/lib/altegio/deposit-balance-lookup";
 import { buildCashDepositTabDays } from "@/lib/bank/deposit-tab-cash-rows";
 import {
   buildDepositTabSourceDays,
   depositRowAltegioId,
-  splitReconciledDepositRows,
   type DepositRealizationIndex,
   type DepositRealizationMeta,
   type DepositRealizationStatus,
@@ -2762,7 +2761,7 @@ type LinkedIncomingDayBodyProps = {
   depositRealizationIndex?: DepositRealizationIndex;
   showRecordNumberInZapis?: boolean;
   depositsTabMode?: boolean;
-  depositBalanceLookup?: ReturnType<typeof buildDepositBalanceLookup> | null;
+  depositBalanceLookup?: DepositBalanceLookup | null;
   depositBalances?: DepositBalancesPayload | null;
   balancesLoading?: boolean;
   balancesReady?: boolean;
@@ -2829,11 +2828,11 @@ function LinkedIncomingDayBody({
         ? clientIdByAltegioId?.get(clientAltegioId) ?? null
         : null;
       const rowDepositBalance = depositsTabMode
-        ? depositBalanceLookup.lookup(
+        ? depositBalanceLookup?.lookup(
             depositClientId,
             client?.payerName ?? null,
             group.accountTitle,
-          )
+          ) ?? null
         : null;
 
       const isDepositBankMatch = Boolean(
@@ -3011,117 +3010,108 @@ function LinkedIncomingDayBody({
   return <>{rows}</>;
 }
 
-const DEPOSITS_TABLE_COLUMN_COUNT = 16;
-
-type DepositsLinkedDaysScrollProps = {
-  activeDays: VisibleAlignedDayRow[];
-  realizedDays: VisibleAlignedDayRow[];
-  depositBankIds: Set<string>;
-  bankReviewNotesByItemId: Map<string, string>;
-  depositRealizationIndex?: DepositRealizationIndex;
-  depositBalances?: DepositBalancesPayload | null;
-  depositBalanceLookup: ReturnType<typeof buildDepositBalanceLookup> | null;
-  balancesLoading?: boolean;
-  balancesReady?: boolean;
-  clientIdByAltegioId: Map<number, number>;
-};
-
-function DepositsLinkedDaysScroll({
-  activeDays,
-  realizedDays,
-  depositBankIds,
-  bankReviewNotesByItemId,
-  depositRealizationIndex,
+/** Вкладка ЗАВДАТКИ: хто реально висить на балансі Altegio (сума рядків = шапка). */
+function DepositsActiveBalancesScroll({
   depositBalances,
-  depositBalanceLookup,
   balancesLoading = false,
-  balancesReady = false,
-  clientIdByAltegioId,
-}: DepositsLinkedDaysScrollProps) {
-  const showDivider = activeDays.length > 0 && realizedDays.length > 0;
+  unmatchedDepositCount = 0,
+}: {
+  depositBalances?: DepositBalancesPayload | null;
+  balancesLoading?: boolean;
+  /** Скільки поповнень-завдатків ще без банку у Вхідних (підказка, не список пар). */
+  unmatchedDepositCount?: number;
+}) {
+  const accounts = useMemo(() => {
+    const list = (depositBalances?.accounts ?? []).filter((row) => row.balance > 0);
+    return [...list].sort(
+      (a, b) =>
+        b.balance - a.balance
+        || String(a.clientName || "").localeCompare(String(b.clientName || ""), "uk"),
+    );
+  }, [depositBalances?.accounts]);
+
+  const rowsSum = useMemo(
+    () => Math.round(accounts.reduce((sum, row) => sum + row.balance, 0) * 100) / 100,
+    [accounts],
+  );
+  const headerTotal = depositBalances?.totalBalance ?? 0;
   const totalBalanceLabel = balancesLoading && depositBalances == null
     ? "…"
-    : formatTotalDepositBalanceUah(depositBalances?.totalBalance ?? 0);
-
-  const bodyProps = {
-    depositBankIds,
-    bankReviewNotesByItemId,
-    depositRealizationIndex,
-    depositsTabMode: true as const,
-    depositBalanceLookup,
-    depositBalances,
-    balancesLoading,
-    balancesReady,
-    clientIdByAltegioId,
-  };
+    : formatTotalDepositBalanceUah(headerTotal);
+  const sumMismatch =
+    depositBalances != null
+    && Math.abs(headerTotal - rowsSum) >= 0.01;
 
   return (
     <div className="flex min-h-0 flex-1 flex-col overflow-y-auto">
       <div className="border-b border-amber-200 bg-amber-50/80 px-3 py-1.5 text-xs text-amber-950">
         <span className="font-semibold">На депозитах (Altegio):</span>{" "}
         <span className="tabular-nums">{totalBalanceLabel}</span>
+        {depositBalances != null ? (
+          <span className="ml-2 text-amber-800/80">
+            · {accounts.length}{" "}
+            {accounts.length === 1 ? "клієнт" : accounts.length < 5 ? "клієнти" : "клієнтів"}
+          </span>
+        ) : null}
+        {sumMismatch ? (
+          <span className="ml-2 text-red-700">
+            (сума рядків {formatTotalDepositBalanceUah(rowsSum)} — розбіжність)
+          </span>
+        ) : null}
       </div>
-      <table className={`${LINKED_TABLE_CLASS} text-[10px]`}>
-        <DepositsColGroup />
-        <thead className="sticky top-0 z-10 bg-white shadow-sm">
-          <tr className="border-b border-gray-300 bg-slate-200 text-[9px] uppercase">
-            <th rowSpan={2} className="border-r border-gray-300 px-1 py-1 font-semibold text-gray-700">
-              День
-            </th>
-            <th colSpan={7} className="border-r-2 border-gray-400 px-1 py-1 text-left font-semibold text-emerald-900">
-              Altegio
-            </th>
-            <th colSpan={8} className="px-1 py-1 text-left font-semibold text-blue-900">
-              Банк
-            </th>
-          </tr>
-          <tr className="border-b border-gray-200 bg-gray-50/95 text-[9px] uppercase text-gray-500">
-            <th className="px-1 py-0.5 font-medium">Клієнт</th>
-            <th className="px-1 py-0.5 font-medium">Час</th>
-            <th className="px-1 py-0.5 text-center font-medium">Завдаток</th>
-            <th className="px-1 py-0.5 text-center font-medium">Запис</th>
-            <th className="px-1 py-0.5 font-medium">Рахунок</th>
-            <th className="px-1 py-0.5 text-right font-medium">Баланс</th>
-            <th className="border-r-2 border-gray-400 px-1 py-0.5 text-right font-medium">Сума</th>
-            <th className="px-1 py-0.5 text-right font-semibold text-green-800">Сума</th>
-            <th className="px-1 py-0.5 text-right font-medium">Платіж</th>
-            <th className="px-1 py-0.5 font-medium">Рахунок</th>
-            <th className="px-1 py-0.5 font-medium">Дата</th>
-            <th className="px-1 py-0.5 font-medium">Контрагент</th>
-            <th className="px-1 py-0.5 font-medium">Тип</th>
-            <th className="px-1 py-0.5 text-right font-medium">Ком.</th>
-            <th className="px-1 py-0.5 text-right font-medium">Зарах.</th>
-          </tr>
-        </thead>
-        <tbody>
-          {activeDays.flatMap((day, dayIndex) => (
-            <LinkedIncomingDayBody
-              key={`active|${day.kyivDay}`}
-              day={day}
-              dayBlockIndex={dayIndex}
-              {...bodyProps}
-            />
-          ))}
-          {showDivider ? (
-            <tr key="deposits-active-realized-divider">
-              <td
-                colSpan={DEPOSITS_TABLE_COLUMN_COUNT}
-                className="border-t-4 border-black p-0 leading-none"
-                aria-hidden
-              />
+      {unmatchedDepositCount > 0 ? (
+        <div className="border-b border-sky-100 bg-sky-50/70 px-3 py-1 text-[11px] text-sky-950">
+          Незведені поповнення завдатку у Вхідних:{" "}
+          <span className="font-semibold tabular-nums">{unmatchedDepositCount}</span>
+          {" — "}
+          дивіться вкладку «Не зведені» (зведення з банком там само, що й інші платежі).
+        </div>
+      ) : null}
+      {balancesLoading && depositBalances == null ? (
+        <div className="px-4 py-10 text-center text-sm text-gray-500">Завантаження залишків Altegio…</div>
+      ) : accounts.length === 0 ? (
+        <div className="px-4 py-10 text-center text-sm text-gray-500">
+          Немає клієнтів із залишком на депозиті.
+        </div>
+      ) : (
+        <table className="w-full border-collapse text-[11px]">
+          <thead className="sticky top-0 z-10 bg-white shadow-sm">
+            <tr className="border-b border-gray-300 bg-slate-200 text-[9px] uppercase text-gray-700">
+              <th className="w-8 px-2 py-1.5 text-right font-semibold">№</th>
+              <th className="px-2 py-1.5 text-left font-semibold">Клієнт</th>
+              <th className="px-2 py-1.5 text-left font-semibold">Тип рахунку</th>
+              <th className="px-2 py-1.5 text-right font-semibold">Баланс</th>
             </tr>
-          ) : null}
-          {realizedDays.flatMap((day, dayIndex) => (
-            <LinkedIncomingDayBody
-              key={`realized|${day.kyivDay}`}
-              day={day}
-              dayBlockIndex={activeDays.length + dayIndex}
-              showRecordNumberInZapis
-              {...bodyProps}
-            />
-          ))}
-        </tbody>
-      </table>
+          </thead>
+          <tbody>
+            {accounts.map((row, index) => (
+              <tr
+                key={`${row.depositId}-${row.clientId ?? "x"}`}
+                className={index % 2 === 0 ? "bg-emerald-50/80" : "bg-white"}
+              >
+                <td className="px-2 py-1 text-right tabular-nums text-gray-400">{index + 1}</td>
+                <td className="px-2 py-1 font-medium text-gray-900">
+                  {row.clientName?.trim() || (row.clientId != null ? `ID ${row.clientId}` : "—")}
+                </td>
+                <td className="px-2 py-1 text-gray-600">{row.depositTypeTitle?.trim() || "—"}</td>
+                <td className="px-2 py-1 text-right font-semibold tabular-nums text-emerald-900">
+                  {formatDepositBalanceUah(row.balance)}
+                </td>
+              </tr>
+            ))}
+          </tbody>
+          <tfoot>
+            <tr className="border-t-2 border-amber-300 bg-amber-50/90">
+              <td colSpan={3} className="px-2 py-1.5 text-right text-[10px] font-semibold uppercase text-amber-950">
+                Разом
+              </td>
+              <td className="px-2 py-1.5 text-right font-bold tabular-nums text-amber-950">
+                {formatTotalDepositBalanceUah(rowsSum)}
+              </td>
+            </tr>
+          </tfoot>
+        </table>
+      )}
     </div>
   );
 }
@@ -3358,8 +3348,6 @@ export function IncomingSplitView({
   const [error, setError] = useState<string | null>(null);
   const [expandedAccounts, setExpandedAccounts] = useState<Set<string>>(() => new Set());
   const depositTabFetchSeqRef = useRef(0);
-  const depositTabClientIdsRef = useRef<number[]>([]);
-  const depositTabPayerNamesRef = useRef<string[]>([]);
   const loadingMoreLinkedRef = useRef(false);
   const loadedFromRef = useRef(initialIncomingDataFrom());
 
@@ -3372,21 +3360,19 @@ export function IncomingSplitView({
     });
   }, []);
 
-  const loadDepositTabData = useCallback(async (clientIds: number[], payerNames: string[]) => {
+  /** Повні залишки Altegio (не лише клієнти з рядків зведення). */
+  const loadDepositTabData = useCallback(async () => {
     const seq = ++depositTabFetchSeqRef.current;
     setDepositTabLoading(true);
     try {
-      const uniqueIds = [...new Set(clientIds.filter((id) => Number.isFinite(id) && id > 0))];
-      const uniqueNames = [...new Set(payerNames.map((name) => name.trim()).filter(Boolean))];
-      const params = new URLSearchParams();
-      if (uniqueIds.length > 0) params.set("clientIds", uniqueIds.join(","));
-      if (uniqueNames.length > 0) params.set("payerNames", JSON.stringify(uniqueNames));
-      const qs = params.toString() ? `?${params.toString()}` : "";
-      const res = await fetch(`/api/admin/bank/payment-reconciliation/incoming/deposit-tab-data${qs}`, {
-        cache: "no-store",
-        credentials: "include",
-        signal: AbortSignal.timeout(90_000),
-      });
+      const res = await fetch(
+        `/api/admin/bank/payment-reconciliation/incoming/deposit-tab-data?_t=${Date.now()}`,
+        {
+          cache: "no-store",
+          credentials: "include",
+          signal: AbortSignal.timeout(120_000),
+        },
+      );
       const payload = (await res.json()) as DepositTabDataPayload;
       if (seq !== depositTabFetchSeqRef.current) return;
       if (!res.ok || !payload.ok) {
@@ -3454,8 +3440,8 @@ export function IncomingSplitView({
 
   const refreshAll = useCallback(async () => {
     setDepositTabData(null);
-    await loadData();
-  }, [loadData]);
+    await Promise.all([loadData(), loadDepositTabData()]);
+  }, [loadData, loadDepositTabData]);
 
   const runManualReconcile = useCallback(async () => {
     setReconciling(true);
@@ -3801,102 +3787,45 @@ export function IncomingSplitView({
     [fullyLinkedDays, openVisibleAlignedDays, cashDepositTabDays],
   );
 
-  const depositBalanceLookup = useMemo(
-    () => buildDepositBalanceLookup(depositTabData?.depositBalances ?? null),
-    [depositTabData?.depositBalances],
-  );
-
-  const depositTabClientIds = useMemo(() => {
-    const ids = new Set<number>();
-    for (const match of depositMatches) {
-      if (match.clientId != null) ids.add(match.clientId);
-    }
+  const unmatchedOpenDepositCount = useMemo(() => {
+    let count = 0;
     for (const day of depositTabSourceDays) {
       for (const row of day.accountRows) {
-        const altegioId = depositRowAltegioId(row);
-        if (altegioId == null) continue;
-        const clientId = clientIdByAltegioId.get(altegioId);
-        if (clientId != null) ids.add(clientId);
+        if (!row.bankGroup?.rows?.length) count += 1;
       }
     }
-    return [...ids];
-  }, [depositMatches, depositTabSourceDays, clientIdByAltegioId]);
+    return count;
+  }, [depositTabSourceDays]);
 
-  depositTabClientIdsRef.current = depositTabClientIds;
-
-  const depositTabPayerNames = useMemo(() => {
-    const names = new Set<string>();
-    for (const match of depositMatches) {
-      if (match.payerName?.trim()) names.add(match.payerName.trim());
-    }
-    for (const day of depositTabSourceDays) {
-      for (const row of day.accountRows) {
-        for (const client of row.altegioAccount?.clients ?? []) {
-          if (client.payerName?.trim()) names.add(client.payerName.trim());
-        }
-      }
-    }
-    return [...names];
-  }, [depositMatches, depositTabSourceDays]);
-
-  depositTabPayerNamesRef.current = depositTabPayerNames;
-
-  const depositTabClientIdsKey = useMemo(
-    () => [...depositTabClientIds].sort((a, b) => a - b).join(","),
-    [depositTabClientIds],
+  const activeDepositAccountCount = useMemo(
+    () => (depositTabData?.depositBalances?.accounts ?? []).filter((row) => row.balance > 0).length,
+    [depositTabData?.depositBalances?.accounts],
   );
-  const depositTabPayerNamesKey = useMemo(
-    () => [...depositTabPayerNames].sort().join("|"),
-    [depositTabPayerNames],
-  );
-  const depositTabFetchKey = `${depositTabClientIdsKey}::${depositTabPayerNamesKey}`;
-  const incomingDataReady = Boolean(data?.ok);
 
   useEffect(() => {
-    if (!incomingDataReady || depositTabData != null || depositTabLoading) return;
-    void loadDepositTabData(depositTabClientIdsRef.current, depositTabPayerNamesRef.current);
-  }, [
-    depositTabFetchKey,
-    incomingDataReady,
-    depositTabData,
-    depositTabLoading,
-    loadDepositTabData,
-  ]);
+    if (depositTabData != null || depositTabLoading) return;
+    void loadDepositTabData();
+  }, [depositTabData, depositTabLoading, loadDepositTabData]);
 
   const incomingStatusCounts = useMemo((): IncomingStatusCounts => {
     const linked = countVisibleAlignedAccountRows(fullyLinkedDays);
     const open = countVisibleAlignedAccountRows(openVisibleAlignedDays);
-    let deposits = 0;
-    for (const day of depositTabSourceDays) {
-      deposits += day.accountRows.length;
-    }
-    return { linked, open, all: linked + open, deposits };
-  }, [fullyLinkedDays, openVisibleAlignedDays, depositTabSourceDays]);
+    return {
+      linked,
+      open,
+      all: linked + open,
+      deposits: activeDepositAccountCount,
+    };
+  }, [fullyLinkedDays, openVisibleAlignedDays, activeDepositAccountCount]);
 
   const depositRealizationIndex = useMemo(
     () => ({ byMatchKey: {}, byAltegioId: {} } satisfies DepositRealizationIndex),
     [],
   );
 
-  const depositSplit = useMemo(() => {
-    if (reconciliationStatus !== "deposits" || !data) {
-      return { activeDays: [] as VisibleAlignedDayRow[], realizedDays: [] as VisibleAlignedDayRow[] };
-    }
-    const split = splitReconciledDepositRows(
-      depositTabSourceDays,
-      depositRealizationIndex,
-      depositMatches,
-      depositBalanceLookup ?? undefined,
-      clientIdByAltegioId,
-    );
-    return {
-      activeDays: split.activeDays as VisibleAlignedDayRow[],
-      realizedDays: split.realizedDays as VisibleAlignedDayRow[],
-    };
-  }, [reconciliationStatus, data, depositTabSourceDays, depositRealizationIndex, depositMatches, depositBalanceLookup, clientIdByAltegioId]);
-
   const isDepositsView = reconciliationStatus === "deposits";
-  const showPageLoading = loading && !loadingMoreLinked;
+  const showPageLoading = loading && !loadingMoreLinked && !isDepositsView;
+  const showDepositsLoading = isDepositsView && depositTabLoading && depositTabData == null;
 
   useEffect(() => {
     onControlsReady?.({
@@ -3936,7 +3865,7 @@ export function IncomingSplitView({
     visibleListTotals?.periodDiffAfterCommissionKop ?? periodDiffAfterCommissionKop;
 
   const hasAnyData = isDepositsView
-    ? depositSplit.activeDays.length > 0 || depositSplit.realizedDays.length > 0
+    ? depositTabData != null || depositTabLoading
     : visibleAlignedDays.length > 0;
 
   return (
@@ -3945,31 +3874,24 @@ export function IncomingSplitView({
         <div className="rounded border border-red-200 bg-red-50 px-3 py-2 text-xs text-red-800">{error}</div>
       ) : null}
 
-      {showPageLoading ? (
+      {showPageLoading || showDepositsLoading ? (
         <div className="rounded-xl border border-gray-200 bg-white px-4 py-10 text-center text-sm text-gray-500">
-          Завантаження...
+          {showDepositsLoading ? "Завантаження залишків Altegio…" : "Завантаження..."}
         </div>
       ) : !hasAnyData ? (
         <div className="rounded-xl border border-gray-200 bg-white px-4 py-10 text-center text-sm text-gray-500">
           {isDepositsView
-            ? "Завдатків немає."
+            ? "Немає клієнтів із залишком на депозиті."
             : reconciliationStatus === "linked"
               ? "Зведених вхідних платежів немає."
               : "Немає даних за період."}
         </div>
       ) : isDepositsView ? (
         <div className="flex min-h-0 flex-1 flex-col overflow-hidden rounded-xl border border-gray-200 bg-white shadow-sm">
-          <DepositsLinkedDaysScroll
-            activeDays={depositSplit.activeDays}
-            realizedDays={depositSplit.realizedDays}
-            depositBankIds={depositBankIds}
-            bankReviewNotesByItemId={bankReviewNotesByItemId}
-            depositRealizationIndex={depositRealizationIndex}
+          <DepositsActiveBalancesScroll
             depositBalances={depositTabData?.depositBalances ?? null}
-            depositBalanceLookup={depositBalanceLookup}
             balancesLoading={depositTabLoading}
-            balancesReady={depositTabData?.depositBalances != null}
-            clientIdByAltegioId={clientIdByAltegioId}
+            unmatchedDepositCount={unmatchedOpenDepositCount}
           />
         </div>
       ) : isLinkedView ? (

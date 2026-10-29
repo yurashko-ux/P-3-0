@@ -1,57 +1,27 @@
 import { NextRequest, NextResponse } from "next/server";
 import { requireBankSection } from "@/app/api/bank/require-bank-auth";
 import {
-  fetchDepositsForDepositTab,
+  fetchChainClientDeposits,
   type AltegioClientDeposit,
 } from "@/lib/altegio/client-deposits";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
-export const maxDuration = 60;
-
-function parseClientIds(raw: string | null): number[] {
-  if (!raw?.trim()) return [];
-  return [...new Set(
-    raw
-      .split(",")
-      .map((value) => Number(value.trim()))
-      .filter((id) => Number.isFinite(id) && id > 0),
-  )];
-}
-
-function parsePayerNames(raw: string | null): string[] {
-  if (!raw?.trim()) return [];
-  try {
-    const parsed = JSON.parse(raw) as unknown;
-    if (!Array.isArray(parsed)) return [];
-    return [...new Set(
-      parsed
-        .map((value) => String(value ?? "").trim())
-        .filter(Boolean),
-    )];
-  } catch {
-    return [...new Set(
-      raw
-        .split("|")
-        .map((value) => value.trim())
-        .filter(Boolean),
-    )];
-  }
-}
+/** Повний обхід deposits/chain або fallback по клієнтах може тривати довше хвилини. */
+export const maxDuration = 120;
 
 function mapDepositAccount(item: AltegioClientDeposit) {
   return {
     depositId: item.depositId,
     clientId: item.clientId,
     clientName: item.clientName,
+    clientPhone: item.clientPhone,
     depositTypeTitle: item.depositTypeTitle,
     balance: item.balance,
   };
 }
 
-function sumPositiveBalance(
-  accounts: ReturnType<typeof mapDepositAccount>[],
-): number {
+function sumPositiveBalance(accounts: ReturnType<typeof mapDepositAccount>[]): number {
   const sum = accounts
     .filter((item) => item.balance > 0)
     .reduce((total, item) => total + item.balance, 0);
@@ -59,29 +29,43 @@ function sumPositiveBalance(
 }
 
 /**
- * Баланси депозитів Altegio — лише для вкладки ЗАВДАТКИ (не блокує основне завантаження).
+ * Повні залишки «Рахунки клієнта» Altegio для вкладки ЗАВДАТКИ.
+ * Сума в шапці = сума рядків з balance > 0 (хто реально висить на депозиті).
  */
 export async function GET(req: NextRequest) {
   const auth = await requireBankSection(req);
   if (auth instanceof NextResponse) return auth;
 
   try {
-    const clientIds = parseClientIds(req.nextUrl.searchParams.get("clientIds"));
-    const payerNames = parsePayerNames(req.nextUrl.searchParams.get("payerNames"));
+    const result = await fetchChainClientDeposits({
+      balanceFrom: 0.01,
+      limitPerPage: 200,
+      maxPages: 50,
+      maxClientsToScan: 3000,
+    });
 
-    const result = await fetchDepositsForDepositTab({ clientIds, payerNames });
-    const accounts = result.deposits.map(mapDepositAccount);
+    const accounts = result.deposits
+      .filter((item) => item.balance > 0)
+      .map(mapDepositAccount)
+      .sort((a, b) => b.balance - a.balance || String(a.clientName || "").localeCompare(String(b.clientName || ""), "uk"));
 
-    if (result.errors.length > 0) {
-      console.warn("[payment-reconciliation/incoming/deposit-tab-data]:", result.errors);
-    }
+    const totalBalance = sumPositiveBalance(accounts);
+
+    console.log("[payment-reconciliation/incoming/deposit-tab-data] Повні залишки", {
+      source: result.source,
+      accounts: accounts.length,
+      totalBalance,
+      pagesFetched: result.pagesFetched,
+    });
 
     return NextResponse.json({
       ok: true,
       depositBalances: {
-        totalBalance: sumPositiveBalance(accounts),
+        totalBalance,
         source: result.source,
         accounts,
+        pagesFetched: result.pagesFetched ?? null,
+        clientsChecked: result.clientsChecked ?? null,
       },
     });
   } catch (error) {
