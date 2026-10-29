@@ -3370,7 +3370,7 @@ export function IncomingSplitView({
         {
           cache: "no-store",
           credentials: "include",
-          signal: AbortSignal.timeout(120_000),
+          signal: AbortSignal.timeout(280_000),
         },
       );
       const payload = (await res.json()) as DepositTabDataPayload;

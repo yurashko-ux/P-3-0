@@ -7,8 +7,8 @@ import {
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
-/** Повний обхід deposits/chain або fallback по клієнтах може тривати довше хвилини. */
-export const maxDuration = 120;
+/** Повний обхід deposits/company по клієнтах (clients/search без balance) може зайняти кілька хвилин. */
+export const maxDuration = 300;
 
 function mapDepositAccount(item: AltegioClientDeposit) {
   return {
@@ -39,9 +39,9 @@ export async function GET(req: NextRequest) {
   try {
     const result = await fetchChainClientDeposits({
       balanceFrom: 0.01,
-      limitPerPage: 200,
-      maxPages: 50,
-      maxClientsToScan: 3000,
+      limitPerPage: 100,
+      maxPages: 80,
+      maxClientsToScan: 5000,
     });
 
     const accounts = result.deposits

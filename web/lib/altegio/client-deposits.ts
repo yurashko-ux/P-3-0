@@ -967,8 +967,9 @@ async function fetchPositiveBalancesFromLocationDeposits(params: {
     return true;
   };
 
+  // Не покладаємось на hasMore: Altegio часто віддає < pageSize без meta → раніше зупинялись на ~24 клієнтах.
   for (let page = 1; page <= params.maxPages; page += 1) {
-    const { clients, hasMore } = await getClientsPaginated(
+    const { clients } = await getClientsPaginated(
       params.companyId,
       page,
       params.limitPerPage,
@@ -1026,7 +1027,7 @@ async function fetchPositiveBalancesFromLocationDeposits(params: {
       `[altegio/client-deposits] deposits/company fallback сторінка ${page}: перевірено ${clientsChecked} клієнтів, з рахунками=${clientsWithAccounts}, 403=${forbidden}, без рахунків=${empty}, записів=${byDepositId.size}`,
     );
 
-    if (consecutiveForbidden >= 5 || clientsChecked >= maxClients || !hasMore) break;
+    if (consecutiveForbidden >= 5 || clientsChecked >= maxClients) break;
   }
 
   return {
