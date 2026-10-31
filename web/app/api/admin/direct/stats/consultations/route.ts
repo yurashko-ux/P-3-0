@@ -18,6 +18,8 @@ import type { DirectClient } from "@/lib/direct-types";
 import { getConsultationRowColorKey } from "@/lib/consultation-list-styles";
 
 export const dynamic = "force-dynamic";
+export const revalidate = 0;
+export const fetchCache = "force-no-store";
 export const runtime = "nodejs";
 
 const ADMIN_PASS = process.env.ADMIN_PASS || "";
@@ -142,8 +144,8 @@ export async function GET(req: NextRequest) {
     const sourceMarkByCode = new Map(leadSources.map((s) => [s.code, s.mark]));
     const sourceNameByCode = new Map(leadSources.map((s) => [s.code, s.name]));
 
-    // Два окремі запити замість великого OR: на проді OR інколи відрізав свіжих лідів
-    // (були в Direct/Переписках, але не в /stats/consultations — напр. @lianarumarchyk).
+    // Id через сирий SQL: findMany на проді інколи відстає від Direct після #6
+    // (лід є в /clients?search=, а в /stats/consultations ще немає).
     const consultationSelect = {
       id: true,
       firstName: true,
@@ -177,39 +179,58 @@ export async function GET(req: NextRequest) {
       leadAdId: true,
     } as const;
 
-    const [consultationRows, newLeadRows] = await Promise.all([
-      prisma.directClient.findMany({
-        where: {
-          consultationDeletedInAltegio: false,
-          consultationBookingDate: {
-            gte: monthStartUtc,
-            lt: anchorEndUtc,
-          },
-        },
-        select: consultationSelect,
-      }),
-      prisma.directClient.findMany({
-        where: {
-          firstContactDate: {
-            gte: monthStartUtc,
-            lt: anchorEndUtc,
-          },
-          includeInNewLeadsKpi: true,
-        },
-        select: consultationSelect,
-      }),
+    const [consultationIdRows, newLeadIdRows] = await Promise.all([
+      prisma.$queryRaw<Array<{ id: string }>>`
+        SELECT id
+        FROM direct_clients
+        WHERE "consultationDeletedInAltegio" = false
+          AND "consultationBookingDate" IS NOT NULL
+          AND "consultationBookingDate" >= ${monthStartUtc}
+          AND "consultationBookingDate" < ${anchorEndUtc}
+      `,
+      prisma.$queryRaw<Array<{ id: string }>>`
+        SELECT id
+        FROM direct_clients
+        WHERE "includeInNewLeadsKpi" = true
+          AND "firstContactDate" >= ${monthStartUtc}
+          AND "firstContactDate" < ${anchorEndUtc}
+      `,
     ]);
 
-    const byId = new Map<string, (typeof consultationRows)[number]>();
-    for (const row of consultationRows) byId.set(row.id, row);
-    for (const row of newLeadRows) {
-      if (!byId.has(row.id)) byId.set(row.id, row);
+    const idSet = new Set<string>();
+    for (const row of consultationIdRows) idSet.add(row.id);
+    for (const row of newLeadIdRows) idSet.add(row.id);
+    const allIds = Array.from(idSet);
+
+    let clients =
+      allIds.length === 0
+        ? []
+        : await prisma.directClient.findMany({
+            where: { id: { in: allIds } },
+            select: consultationSelect,
+          });
+
+    if (clients.length < allIds.length) {
+      const have = new Set(clients.map((row) => row.id));
+      const missing = allIds.filter((id) => !have.has(id));
+      console.warn("[stats/consultations] findMany не повернув id зі SQL", {
+        missing: missing.length,
+        sample: missing.slice(0, 8),
+      });
+      for (const id of missing) {
+        const row = await prisma.directClient.findUnique({
+          where: { id },
+          select: consultationSelect,
+        });
+        if (row) clients.push(row);
+      }
     }
-    const clients = Array.from(byId.values());
+
     console.log("[stats/consultations] Вибірка", {
-      consultations: consultationRows.length,
-      newLeads: newLeadRows.length,
-      merged: clients.length,
+      consultationIds: consultationIdRows.length,
+      newLeadIds: newLeadIdRows.length,
+      mergedIds: allIds.length,
+      loaded: clients.length,
       monthStartUtc: monthStartUtc.toISOString(),
       anchorEndUtc: anchorEndUtc.toISOString(),
     });
@@ -376,8 +397,11 @@ export async function GET(req: NextRequest) {
       },
       {
         headers: {
-          "Cache-Control": "no-store, no-cache, must-revalidate",
+          "Cache-Control": "private, no-store, no-cache, max-age=0, must-revalidate",
+          "CDN-Cache-Control": "no-store",
+          "Vercel-CDN-Cache-Control": "no-store",
           Pragma: "no-cache",
+          Expires: "0",
         },
       },
     );

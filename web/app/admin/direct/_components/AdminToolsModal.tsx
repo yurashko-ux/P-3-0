@@ -941,6 +941,13 @@ export function AdminToolsModal({
           method: "POST" as const,
           confirm:
             "Забрати Direct з Instagram за останні 3 дні?\n\nЯкщо лід ще не в таблиці (напр. після даунтайму Vercel) — створить картку. Для лідів лише з вихідними (echo) — додатково шукає діалог за Instagram id. Допише в історію повідомлення, яких ще немає. Нічого в Instagram не надсилається.",
+          onSuccess: () => {
+            try {
+              window.dispatchEvent(new Event("direct-leads-refresh"));
+            } catch {
+              /* ignore */
+            }
+          },
           successMessage: (data: any) => {
             const lines = (data?.preview || [])
               .map((item: {
@@ -969,7 +976,8 @@ export function AdminToolsModal({
               `Вже були: ${data?.duplicates ?? 0}\n` +
               `Без клієнта в таблиці: ${data?.unmatched ?? 0}\n\n` +
               `Превʼю (спочатку нові, до ${data?.preview?.length ?? 0}):\n\n` +
-              (lines || "Повідомлень не знайдено.")
+              (lines || "Повідомлень не знайдено.") +
+              `\n\nВідкрийте «Ліди» або натисніть «Оновити» там — список підтягнеться заново.`
             );
           },
         },
@@ -3043,7 +3051,8 @@ export function AdminToolsModal({
                         item.method,
                         item.confirm,
                         item.successMessage,
-                        (item as any).body
+                        (item as any).body,
+                        (item as { onSuccess?: (data: any) => void }).onSuccess
                       );
                     }
                   };

@@ -211,46 +211,58 @@ function ConsultationsPageContent() {
     }
   }, [monthFromUrl, selectedMonth]);
 
-  useEffect(() => {
-    let cancelled = false;
-    async function load() {
-      setLoading(true);
-      setError(null);
-      try {
-        const params = new URLSearchParams();
-        params.set("month", selectedMonth);
-        params.set("_t", String(Date.now()));
-        const res = await fetch(`/api/admin/direct/stats/consultations?${params.toString()}`, {
-          cache: "no-store",
-          credentials: "include",
-          headers: { "Cache-Control": "no-cache, no-store, must-revalidate", Pragma: "no-cache" },
-        });
-        const data = await res.json();
-        if (cancelled) return;
-        if (!res.ok || !data?.ok) {
-          setClients([]);
-          setMasters([]);
-          setError(typeof data?.error === "string" ? data.error : `HTTP ${res.status}`);
-          return;
-        }
-        setClients(Array.isArray(data.clients) ? data.clients : []);
-        setMasters(Array.isArray(data.masters) ? data.masters : []);
-        if (typeof data.todayKyiv === "string") setTodayKyiv(data.todayKyiv);
-      } catch (e) {
-        if (!cancelled) {
-          setClients([]);
-          setMasters([]);
-          setError(e instanceof Error ? e.message : String(e));
-        }
-      } finally {
-        if (!cancelled) setLoading(false);
+  const loadClients = useCallback(async (opts?: { silent?: boolean }) => {
+    if (!opts?.silent) setLoading(true);
+    setError(null);
+    try {
+      const params = new URLSearchParams();
+      params.set("month", selectedMonth);
+      params.set("_t", String(Date.now()));
+      const res = await fetch(`/api/admin/direct/stats/consultations?${params.toString()}`, {
+        cache: "no-store",
+        credentials: "include",
+        headers: { "Cache-Control": "no-cache, no-store, must-revalidate", Pragma: "no-cache" },
+      });
+      const data = await res.json();
+      if (!res.ok || !data?.ok) {
+        setClients([]);
+        setMasters([]);
+        setError(typeof data?.error === "string" ? data.error : `HTTP ${res.status}`);
+        return;
       }
+      setClients(Array.isArray(data.clients) ? data.clients : []);
+      setMasters(Array.isArray(data.masters) ? data.masters : []);
+      if (typeof data.todayKyiv === "string") setTodayKyiv(data.todayKyiv);
+    } catch (e) {
+      setClients([]);
+      setMasters([]);
+      setError(e instanceof Error ? e.message : String(e));
+    } finally {
+      if (!opts?.silent) setLoading(false);
     }
-    void load();
-    return () => {
-      cancelled = true;
-    };
   }, [selectedMonth]);
+
+  useEffect(() => {
+    void loadClients();
+  }, [loadClients]);
+
+  // Після #6 / повернення на вкладку — підтягнути свіжий список без F5.
+  useEffect(() => {
+    const onVisible = () => {
+      if (document.visibilityState === "visible") void loadClients({ silent: true });
+    };
+    const onRefresh = () => {
+      void loadClients({ silent: true });
+    };
+    document.addEventListener("visibilitychange", onVisible);
+    window.addEventListener("focus", onVisible);
+    window.addEventListener("direct-leads-refresh", onRefresh);
+    return () => {
+      document.removeEventListener("visibilitychange", onVisible);
+      window.removeEventListener("focus", onVisible);
+      window.removeEventListener("direct-leads-refresh", onRefresh);
+    };
+  }, [loadClients]);
 
   const updateClientLocal = useCallback((id: string, patch: Partial<ConsultationClient>) => {
     setClients((prev) => prev.map((c) => (c.id === id ? { ...c, ...patch } : c)));
@@ -359,6 +371,15 @@ function ConsultationsPageContent() {
             </option>
           ))}
         </select>
+        <button
+          type="button"
+          className="btn btn-outline btn-xs min-h-6 h-6 px-1.5 text-[10px]"
+          disabled={loading}
+          onClick={() => void loadClients()}
+          title="Оновити список лідів"
+        >
+          Оновити
+        </button>
         <div className="flex flex-wrap items-center gap-1 text-[11px]">
           {COLOR_LEGEND.map((item) => (
             <span key={item.key} className="inline-flex items-center gap-1 whitespace-nowrap">
