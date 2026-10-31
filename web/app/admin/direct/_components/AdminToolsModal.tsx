@@ -1876,33 +1876,28 @@ export function AdminToolsModal({
     },
     // ВАЖЛИВО: додаємо нові кнопки ТІЛЬКИ в кінець, щоб не зсувати існуючу глобальну нумерацію.
     {
-      category: "Instagram (ManyChat)",
+      category: "Instagram (аватарки)",
       items: [
         {
           icon: "🖼️",
-          label: "Backfill аватарок Instagram (ManyChat → KV)",
+          label: "Backfill аватарок Instagram (Graph → KV)",
           endpoint: "/api/admin/direct/backfill-instagram-avatars?onlyMissing=1&delayMs=150",
           method: "POST" as const,
           confirm:
-            "Запустити backfill аватарок Instagram з ManyChat?\n\nВАЖЛИВО: ми НЕ робимо прямих запитів до Instagram і НЕ скрейпимо сторінки. Беремо avatar URL, який повертає ManyChat API, і зберігаємо в KV для показу в таблиці.\n\nЗа замовчуванням: onlyMissing=1 (пропускаємо валідні URL в KV). Якщо в KV лежать “биті” значення — вони будуть перезаписані.\n\nПідказка: для примусового перезапису всіх — відкрийте endpoint з &force=1.\n\nМоже зайняти кілька хвилин (залежить від кількості клієнтів).",
+            "Запустити backfill аватарок Instagram через Instagram Graph?\n\nManyChat для аватарок вимкнено. Беремо profile_pic з Graph (IGSID / діалог) і зберігаємо в KV.\n\nЗа замовчуванням: onlyMissing=1 (пропускаємо валідні URL в KV).\n\nПідказка: для примусового перезапису — endpoint з &force=1.\n\nМоже зайняти кілька хвилин.",
           successMessage: (data: any) => {
             const s = data?.stats || {};
             const sample = Array.isArray(data?.samples) ? data.samples : [];
             const sampleLines = sample.slice(0, 15).map((x: any) => `  - ${x.username} (${x.action})`).join("\n");
             return (
-              `✅ Backfill завершено!\n\n` +
+              `✅ Backfill завершено (Graph)!\n\n` +
               `Клієнтів у базі: ${s.clientsTotal || 0}\n` +
               `Унікальних username: ${s.usernamesUnique || 0}\n` +
               `Оброблено username: ${s.processed || 0}\n` +
-              `Знайдено subscriber: ${s.foundSubscriber || 0}\n` +
+              `Пропущено (вже в KV): ${s.skippedExisting || 0}\n` +
               `З аватаркою: ${s.withAvatar || 0}\n` +
               `Збережено: ${s.saved || 0}\n` +
-              `Пропущено (вже було в KV): ${s.skippedExists || 0}\n` +
-              `“Биті” значення в KV (перезаписані): ${s.invalidExisting || 0}\n` +
-              `Пропущено (без аватарки): ${s.skippedNoAvatar || 0}\n` +
-              `Пропущено (без Instagram): ${s.skippedNoInstagram || 0}\n` +
-              `Помилок: ${s.errors || 0}\n` +
-              `Час: ${s.ms || 0} ms\n\n` +
+              `Невдало: ${s.failed || 0}\n\n` +
               (sampleLines ? `Приклади:\n${sampleLines}\n\n` : '') +
               `${JSON.stringify(data, null, 2)}`
             );
