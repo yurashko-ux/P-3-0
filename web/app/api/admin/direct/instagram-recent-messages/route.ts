@@ -17,14 +17,16 @@ export const runtime = "nodejs";
 export const maxDuration = 60;
 
 const GRAPH = "https://graph.facebook.com/v21.0";
-const CONVERSATION_LIMIT = 10;
-const MESSAGE_LIMIT = 25;
-const PREVIEW_LIMIT = 40;
+/** Свіжі діалоги зі стрічки (не роздувати — інакше превʼю забивається старою перепискою). */
+const CONVERSATION_LIMIT = 5;
+/** На діалог вистачає ~8: вхідне ліда + кілька echo / відповідей. */
+const MESSAGE_LIMIT = 8;
+const PREVIEW_LIMIT = 20;
 const LOOKBACK_DAYS = 3;
 const LOOKBACK_MS = LOOKBACK_DAYS * 24 * 60 * 60 * 1000;
 const DEDUP_WINDOW_MS = 30 * 60 * 1000;
 /** Додатково тягнемо діалоги лідів без жодного вхідного (після простою залишились лише echo). */
-const ORPHAN_OUTGOING_LIMIT = 12;
+const ORPHAN_OUTGOING_LIMIT = 8;
 
 type Person = { id?: string; username?: string; name?: string };
 type GraphMessage = {
@@ -513,14 +515,17 @@ export async function POST(req: NextRequest) {
     let saved = 0;
     let duplicates = 0;
     let unmatched = 0;
-    const preview: Array<{
+    type PreviewRow = {
       time: string;
       direction: "incoming" | "outgoing";
       username: string | null;
       name: string | null;
       text: string;
       status: string;
-    }> = [];
+      atMs: number;
+      rank: number;
+    };
+    const previewRows: PreviewRow[] = [];
     const newestSaved = new Map<string, Date>();
 
     for (const item of pulled) {
@@ -530,11 +535,14 @@ export async function POST(req: NextRequest) {
       const usernameKey = item.username ? normalizeInstagram(item.username) : null;
       const client = usernameKey ? clientByUsername.get(usernameKey) : undefined;
       let status = "немає в таблиці клієнтів";
+      let rank = 3;
       if (!client) {
         unmatched += 1;
+        rank = 2;
       } else if (knownIds.has(item.graphId)) {
         duplicates += 1;
         status = "вже забрано раніше";
+        rank = 4;
       } else {
         const same = existing.find((row) => {
           if (row.source === "instagram_graph") return false;
@@ -548,6 +556,7 @@ export async function POST(req: NextRequest) {
         if (same) {
           duplicates += 1;
           status = same.source === "manychat" ? "вже є з ManyChat" : "вже є в історії";
+          rank = 4;
         } else {
           await prisma.directMessage.create({
             data: {
@@ -576,20 +585,25 @@ export async function POST(req: NextRequest) {
           if (!prev || item.at > prev) newestSaved.set(client.id, item.at);
           saved += 1;
           status = "записано в історію";
+          rank = 1;
         }
       }
 
-      if (preview.length < PREVIEW_LIMIT) {
-        preview.push({
-          time: kyivStamp(item.at),
-          direction: item.direction,
-          username: item.username,
-          name: item.name,
-          text: item.text.length > 180 ? `${item.text.slice(0, 180)}…` : item.text,
-          status,
-        });
-      }
+      previewRows.push({
+        time: kyivStamp(item.at),
+        direction: item.direction,
+        username: item.username,
+        name: item.name,
+        text: item.text.length > 180 ? `${item.text.slice(0, 180)}…` : item.text,
+        status,
+        atMs: item.at.getTime(),
+        rank,
+      });
     }
+
+    // У вікно — спочатку нові записи, дублікати старої переписки в кінець.
+    previewRows.sort((a, b) => (a.rank !== b.rank ? a.rank - b.rank : b.atMs - a.atMs));
+    const preview = previewRows.slice(0, PREVIEW_LIMIT).map(({ rank: _rank, atMs: _atMs, ...row }) => row);
 
     for (const [clientId, at] of newestSaved) {
       const client = clients.find((row) => row.id === clientId);

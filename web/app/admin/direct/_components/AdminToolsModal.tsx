@@ -968,6 +968,7 @@ export function AdminToolsModal({
               `Записано в історію: ${data?.saved ?? 0}\n` +
               `Вже були: ${data?.duplicates ?? 0}\n` +
               `Без клієнта в таблиці: ${data?.unmatched ?? 0}\n\n` +
+              `Превʼю (спочатку нові, до ${data?.preview?.length ?? 0}):\n\n` +
               (lines || "Повідомлень не знайдено.")
             );
           },
