@@ -56,14 +56,17 @@ export async function warmInstagramAvatarCache(opts: {
   }
   const clientId = (opts.clientId || '').trim() || null;
 
-  // Скидаємо miss-cache (старий ключ без username + новий з username)
+  // Скидаємо miss-cache (v1 + v2; старі ключі без username + з username)
   const missKeys = [
     `direct:ig-avatar-miss:${normalized}`,
+    `direct:ig-avatar-miss-v2:${normalized}`,
     ...(clientId
       ? [
           `direct:ig-avatar-miss-client:${clientId}`,
           `direct:ig-avatar-miss-client:${clientId}:${normalized}`,
           `direct:ig-avatar-miss-client:${clientId}:_`,
+          `direct:ig-avatar-miss-client-v2:${clientId}:${normalized}`,
+          `direct:ig-avatar-miss-client-v2:${clientId}:_`,
         ]
       : []),
   ];

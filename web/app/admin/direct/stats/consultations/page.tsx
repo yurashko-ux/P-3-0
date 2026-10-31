@@ -483,6 +483,9 @@ function ConsultationsPageContent() {
                   rowNumber += 1;
                   const username = (c.instagramUsername || "").replace(/^@/, "");
                   const instagramUrl = username ? `https://instagram.com/${username}` : null;
+                  const avatarSrc = hasNormalInstagramUsername(c.instagramUsername)
+                    ? `/api/admin/direct/instagram-avatar?clientId=${encodeURIComponent(c.id)}&username=${encodeURIComponent(username)}`
+                    : null;
                   const rowBg = CONSULTATION_ROW_BG[c.rowColorKey];
                   const isSaving = savingIds.has(c.id);
 
@@ -492,16 +495,16 @@ function ConsultationsPageContent() {
                       <td className="whitespace-nowrap tabular-nums">{formatKyivDate(c.firstContactDate)}</td>
                       <td>
                         <div className="flex items-center gap-1 min-w-0 h-5 max-h-5">
-                          {hasNormalInstagramUsername(c.instagramUsername) ? (
+                          {avatarSrc ? (
                             <AvatarSlot
                               size="xs"
-                              avatarSrc={`/api/admin/direct/instagram-avatar?username=${encodeURIComponent(username)}`}
+                              avatarSrc={avatarSrc}
                               onError={(e) => {
                                 (e.currentTarget as HTMLImageElement).style.display = "none";
                               }}
                               onClick={() =>
                                 setFullscreenAvatar({
-                                  src: `/api/admin/direct/instagram-avatar?username=${encodeURIComponent(username)}`,
+                                  src: avatarSrc,
                                   username,
                                 })
                               }

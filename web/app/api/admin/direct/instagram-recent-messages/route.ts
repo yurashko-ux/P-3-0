@@ -658,6 +658,23 @@ export async function POST(req: NextRequest) {
       });
     }
 
+    // Прогрів аватарок у KV (ManyChat) — щоб у Лідах одразу були фото, не сірі заглушки
+    let avatarsWarmed = 0;
+    try {
+      const { warmInstagramAvatarCache } = await import("@/lib/direct-instagram-avatar-warm");
+      for (const client of clients) {
+        const uname = normalizeInstagram(client.instagramUsername);
+        if (!uname) continue;
+        const warm = await warmInstagramAvatarCache({ username: uname, clientId: client.id });
+        if (warm.ok) avatarsWarmed += 1;
+      }
+    } catch (warmErr) {
+      console.warn(
+        "[instagram-recent] warm avatars:",
+        warmErr instanceof Error ? warmErr.message : String(warmErr),
+      );
+    }
+
     console.log("[instagram-recent] Готово", {
       threads: recentThreads.length,
       messages: pulled.length,
@@ -669,6 +686,7 @@ export async function POST(req: NextRequest) {
       createdLeads,
       orphanOutgoingRecovered,
       recoveredIncoming,
+      avatarsWarmed,
     });
 
     return NextResponse.json({
@@ -685,6 +703,7 @@ export async function POST(req: NextRequest) {
       createdLeads,
       orphanOutgoingRecovered,
       recoveredIncoming,
+      avatarsWarmed,
       preview,
     });
   } catch (error) {

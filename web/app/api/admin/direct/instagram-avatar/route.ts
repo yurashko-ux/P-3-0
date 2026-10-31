@@ -507,8 +507,8 @@ export async function GET(req: NextRequest) {
     const clientIdParam = String(req.nextUrl.searchParams.get('clientId') || '').trim();
     const debug = req.nextUrl.searchParams.get('debug') === '1';
     const fetchRemote = req.nextUrl.searchParams.get('fetch') === '1';
-    // getInfo / remote — з clientId/fetch; findByName обмежено (див. allowNameSearch)
-    const allowRemoteFetch = debug || fetchRemote || Boolean(clientIdParam);
+    // getInfo / remote — з clientId/fetch; після resolve також з resolvedClientId (розділ Ліди шле лише username)
+    let allowRemoteFetch = debug || fetchRemote || Boolean(clientIdParam);
 
     let normalized =
       (hasNormalInstagramUsername(usernameRaw)
@@ -564,6 +564,11 @@ export async function GET(req: NextRequest) {
       }
     } catch (resolveErr) {
       console.warn('[direct/instagram-avatar] resolve client:', resolveErr);
+    }
+
+    // Ліди/Переписки часто шлють лише username — клієнта вже знайшли вище, дозволяємо ManyChat.
+    if (!allowRemoteFetch && resolvedClientId) {
+      allowRemoteFetch = true;
     }
 
     let usernameKey = normalized && hasNormalInstagramUsername(normalized) ? directAvatarKey(normalized) : null;
@@ -653,10 +658,11 @@ export async function GET(req: NextRequest) {
     }
 
     // 2) subscriber_id → getInfo; або findByName по IG/ПІБ
+    // v2: старі ключі могли бути записані без реального ManyChat-запиту (Лише username з Лідів)
     const missKey = resolvedClientId
-      ? `direct:ig-avatar-miss-client:${resolvedClientId}:${normalized || '_'}`
+      ? `direct:ig-avatar-miss-client-v2:${resolvedClientId}:${normalized || '_'}`
       : normalized
-        ? `direct:ig-avatar-miss:${normalized}`
+        ? `direct:ig-avatar-miss-v2:${normalized}`
         : null;
     // findByName: з нормальним IG — ок; без IG — лише явний fetch/debug і лише з повним ПІБ (див. findAvatarViaManychatNameSearch)
     const allowNameSearch =
@@ -829,10 +835,13 @@ export async function GET(req: NextRequest) {
       }
     };
 
+    const remoteAttempted = allowRemoteFetch;
     await tryRemoteAvatar(false);
 
     if (!url || !/^https?:\/\//i.test(url)) {
-      if (missKey && !debug) {
+      // Miss-cache лише якщо реально ходили в ManyChat — інакше отруюємо ключ
+      // запитами лише з username (розділ Ліди) і потім Direct теж не тягне фото.
+      if (missKey && !debug && remoteAttempted) {
         try {
           // 6 год — щоб таблиця не дергала ManyChat на кожен reload
           await kvWrite.setRaw(missKey, '1');
