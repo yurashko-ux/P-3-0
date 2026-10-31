@@ -177,5 +177,5 @@ export async function getFinanceReportEncashmentTotalUah(
     expenses?.byCategory["Return"] ||
     0;
 
-  return cost + ownerProfit - productPurchase - investments + fopOrekhovskaPayments - returns - deposits;
+  return cost + ownerProfit + rent - productPurchase - investments + fopOrekhovskaPayments - returns - deposits;
 }

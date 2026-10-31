@@ -386,7 +386,7 @@ async function getSummaryForMonth(
   discountDetails: DiscountVisitDetail[]; // Деталізація знижок по клієнтах/датах візитів
   salaryBreakdown: FinanceExpenseBreakdownItem[]; // Деталізація ЗП по працівниках/мітках з фінансових транзакцій Altegio
   rentBreakdown: FinanceExpenseBreakdownItem[]; // Деталізація оренди з фінансових транзакцій або ручного fallback
-  encashment: number; // Інкасація: Собівартість + Чистий прибуток власника - Закуплений товар - Інвестиції [+ ФОП Ореховська до 10.2026] - Повернення - Завдатки
+  encashment: number; // Інкасація: Собівартість + Чистий прибуток власника + Оренда - Закуплений товар - Інвестиції [+ ФОП Ореховська до 10.2026] - Повернення - Завдатки
   encashmentFactAltegio: number; // Сума всіх фінансових операцій Altegio з призначенням "Інкасація" за період
   encashmentFactBreakdown: EncashmentFactBreakdown;
   fopOrekhovskaPayments: number; // Сума платежів з ФОП Ореховська (0 з 10.2026)
@@ -396,6 +396,7 @@ async function getSummaryForMonth(
   encashmentComponents: {
     cost: number; // Собівартість
     ownerProfit: number; // Чистий прибуток власника
+    rent: number; // Оренда
     productPurchase: number; // Закуплений товар
     investments: number; // Інвестиції
     fopPayments: number; // Платежі з ФОП Ореховська (0 з 10.2026)
@@ -586,7 +587,7 @@ async function getSummaryForMonth(
       ? Math.ceil(rawHairPurchaseAmount / 10000) * 10000
       : 0;
     
-    // Розраховуємо інкасацію: Собівартість + Чистий прибуток власника - Закуплений товар - Інвестиції
+    // Розраховуємо інкасацію: Собівартість + Чистий прибуток власника + Оренда - Закуплений товар - Інвестиції
     // (+ Платежі з ФОП Ореховська лише до 01.10.2026) - Повернення - Завдатки
     const cost = goods?.cost || 0;
     // Шукаємо "Закуплений товар" в різних варіантах назв
@@ -685,7 +686,7 @@ async function getSummaryForMonth(
     }
 
     // Розраховуємо інкасацію за формулою:
-    // Собівартість + Чистий прибуток власника - Закуплений товар - Інвестиції
+    // Собівартість + Чистий прибуток власника + Оренда - Закуплений товар - Інвестиції
     // (+ Платежі з ФОП Ореховська лише до 01.10.2026) - Повернення - Завдатки
     // ВАЖЛИВО: Використовуємо той самий ownerProfit, який показується в UI (profit - management)
 
@@ -695,7 +696,7 @@ async function getSummaryForMonth(
                    expenses?.byCategory["Return"] ||
                    0;
     
-    const encashment = cost + ownerProfit - productPurchase - investments + fopOrekhovskaPayments - returns - deposits;
+    const encashment = cost + ownerProfit + rent - productPurchase - investments + fopOrekhovskaPayments - returns - deposits;
     
     // Логуємо для діагностики
     const productPurchaseValue = expenses?.byCategory["Product purchase"] || 
@@ -710,6 +711,7 @@ async function getSummaryForMonth(
     console.log(`[finance-report] 📊 Інкасація розрахунок:`, {
       cost,
       ownerProfit,
+      rent,
       productPurchase,
       productPurchaseValue,
       investments,
@@ -724,8 +726,8 @@ async function getSummaryForMonth(
       management,
       encashment,
       accountingTaxesTotal,
-      calculation: `${cost} + ${ownerProfit} - ${productPurchase} - ${investments} + ${fopOrekhovskaPayments} - ${returns} - ${deposits}`,
-      expected: cost + ownerProfit - productPurchase - investments + fopOrekhovskaPayments - returns - deposits,
+      calculation: `${cost} + ${ownerProfit} + ${rent} - ${productPurchase} - ${investments} + ${fopOrekhovskaPayments} - ${returns} - ${deposits}`,
+      expected: cost + ownerProfit + rent - productPurchase - investments + fopOrekhovskaPayments - returns - deposits,
       actual: encashment,
       // Додаткова діагностика для перевірки, що ownerProfit правильний
       ownerProfitCalculation: `${profit} - ${management} = ${ownerProfit}`,
@@ -792,6 +794,7 @@ async function getSummaryForMonth(
       encashmentComponents: {
         cost,
         ownerProfit: ownerProfit, // Використовуємо той самий ownerProfit, що показується в UI
+        rent,
         productPurchase,
         investments,
         fopPayments: fopOrekhovskaPayments,
@@ -835,6 +838,7 @@ async function getSummaryForMonth(
       encashmentComponents: {
         cost: 0,
         ownerProfit: 0,
+        rent: 0,
         productPurchase: 0,
         investments: 0,
         fopPayments: 0,
@@ -1246,9 +1250,10 @@ export default async function FinanceReportPage({
             
             const includeFopOrekhovska = shouldIncludeFopOrekhovskaInEncashment(selectedYear, selectedMonth);
             const fopOrekhovskaPaymentsLocal = sumFopOrekhovskaPayments(expenses, selectedYear, selectedMonth);
+            const rentLocal = rent;
             
             // Розраховуємо інкасацію
-            const encashmentLocal = costLocal + ownerProfitLocal - productPurchaseLocal - investmentsLocal + fopOrekhovskaPaymentsLocal - returnsLocal - deposits;
+            const encashmentLocal = costLocal + ownerProfitLocal + rentLocal - productPurchaseLocal - investmentsLocal + fopOrekhovskaPaymentsLocal - returnsLocal - deposits;
             const encashmentDifferenceLocal = encashmentFactAltegio - encashmentLocal;
             const ownerConfirmedPayments = encashmentConfirmationSummary.payments.filter(
               (p) => p.status === "owner_confirmed",
@@ -1380,6 +1385,7 @@ export default async function FinanceReportPage({
                         <div className="text-xs text-gray-400 mt-1 space-y-0.5">
                           <p>Собівартість {formatMoney(costLocal)} грн.</p>
                           <p>+ Чистий прибуток власника {formatMoney(ownerProfitLocal)} грн.</p>
+                          <p>+ Оренда {formatMoney(rentLocal)} грн.</p>
                           <p>- Закуплений товар {formatMoney(productPurchaseLocal)} грн.</p>
                           <p>- Інвестиції {formatMoney(investmentsLocal)} грн.</p>
                           {includeFopOrekhovska ? (
@@ -2022,20 +2028,21 @@ export default async function FinanceReportPage({
             const fopOrekhovskaPaymentsLocal = sumFopOrekhovskaPayments(expenses, selectedYear, selectedMonth);
             
             // Перераховуємо інкасацію використовуючи локальні значення
-            const encashmentLocal = costLocal + ownerProfitLocal - productPurchaseLocal - investmentsLocal + fopOrekhovskaPaymentsLocal - returnsLocal - deposits;
+            const encashmentLocal = costLocal + ownerProfitLocal + rent - productPurchaseLocal - investmentsLocal + fopOrekhovskaPaymentsLocal - returnsLocal - deposits;
             
             // Логуємо для діагностики
             console.log(`[finance-report] 📊 Інкасація локальний розрахунок:`, {
               costLocal,
               ownerProfitLocal,
+              rent,
               productPurchaseLocal,
               investmentsLocal,
               fopOrekhovskaPaymentsLocal,
               returnsLocal,
               deposits,
               accountingTaxesTotal,
-              calculation: `${costLocal} + ${ownerProfitLocal} - ${productPurchaseLocal} - ${investmentsLocal} + ${fopOrekhovskaPaymentsLocal} - ${returnsLocal} - ${deposits}`,
-              expected: costLocal + ownerProfitLocal - productPurchaseLocal - investmentsLocal + fopOrekhovskaPaymentsLocal - returnsLocal - deposits,
+              calculation: `${costLocal} + ${ownerProfitLocal} + ${rent} - ${productPurchaseLocal} - ${investmentsLocal} + ${fopOrekhovskaPaymentsLocal} - ${returnsLocal} - ${deposits}`,
+              expected: costLocal + ownerProfitLocal + rent - productPurchaseLocal - investmentsLocal + fopOrekhovskaPaymentsLocal - returnsLocal - deposits,
               actual: encashmentLocal,
             });
             
