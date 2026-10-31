@@ -54,6 +54,10 @@ import {
   sumConfirmedEncashmentUah,
   formatEncashmentReceiptDisplayUah,
 } from "@/lib/finance/encashment-receipt-totals";
+import {
+  shouldIncludeFopOrekhovskaInEncashment,
+  sumFopOrekhovskaPayments,
+} from "@/lib/finance/fop-orekhovska-payments";
 import type { DiscountVisitDetail } from "@/lib/altegio/records";
 import { buildAltegioClientsSearchUrl } from "@/app/admin/direct/_components/direct-client-table-activity";
 import { getAuthContext, hasPermission } from "@/lib/auth-rbac";
@@ -382,10 +386,10 @@ async function getSummaryForMonth(
   discountDetails: DiscountVisitDetail[]; // Деталізація знижок по клієнтах/датах візитів
   salaryBreakdown: FinanceExpenseBreakdownItem[]; // Деталізація ЗП по працівниках/мітках з фінансових транзакцій Altegio
   rentBreakdown: FinanceExpenseBreakdownItem[]; // Деталізація оренди з фінансових транзакцій або ручного fallback
-  encashment: number; // Інкасація: Собівартість + Чистий прибуток власника - Закуплений товар - Інвестиції + Платежі з ФОП Ореховська - Повернення - Завдатки
+  encashment: number; // Інкасація: Собівартість + Чистий прибуток власника - Закуплений товар - Інвестиції [+ ФОП Ореховська до 10.2026] - Повернення - Завдатки
   encashmentFactAltegio: number; // Сума всіх фінансових операцій Altegio з призначенням "Інкасація" за період
   encashmentFactBreakdown: EncashmentFactBreakdown;
-  fopOrekhovskaPayments: number; // Сума платежів з ФОП Ореховська
+  fopOrekhovskaPayments: number; // Сума платежів з ФОП Ореховська (0 з 10.2026)
   ownerProfit: number; // Чистий прибуток власника (profit - management)
   deposits: number; // Завдатки місяця: отримані мінус уже списані в запис у цьому ж місяці
   depositDetails: DepositAttributedItem[];
@@ -394,7 +398,7 @@ async function getSummaryForMonth(
     ownerProfit: number; // Чистий прибуток власника
     productPurchase: number; // Закуплений товар
     investments: number; // Інвестиції
-    fopPayments: number; // Платежі з ФОП Ореховська
+    fopPayments: number; // Платежі з ФОП Ореховська (0 з 10.2026)
     returns: number; // Повернення
     deposits: number; // Завдатки
   };
@@ -582,8 +586,8 @@ async function getSummaryForMonth(
       ? Math.ceil(rawHairPurchaseAmount / 10000) * 10000
       : 0;
     
-    // Розраховуємо інкасацію: Собівартість + Чистий прибуток власника - Закуплений товар - Інвестиції + Платежі з ФОП Ореховська
-    // Спочатку отримуємо дані для розрахунку
+    // Розраховуємо інкасацію: Собівартість + Чистий прибуток власника - Закуплений товар - Інвестиції
+    // (+ Платежі з ФОП Ореховська лише до 01.10.2026) - Повернення - Завдатки
     const cost = goods?.cost || 0;
     // Шукаємо "Закуплений товар" в різних варіантах назв
     const productPurchase = expenses?.byCategory["Product purchase"] || 
@@ -673,54 +677,18 @@ async function getSummaryForMonth(
     const profit = totalIncome - totalExpenses;
     const ownerProfit = profit - management;
     
-    // Знаходимо всі платежі з ФОП Ореховська
-    // Фільтруємо по account.title (як показано в API response)
-    let fopOrekhovskaPayments = 0;
-    if (expenses?.transactions && Array.isArray(expenses.transactions)) {
-      fopOrekhovskaPayments = expenses.transactions
-        .filter((t: any) => {
-          // Перевіряємо account.title (основний спосіб згідно з API)
-          const accountTitle = (t.account?.title || "").toLowerCase();
-          // Також перевіряємо account.name для сумісності
-          const accountName = (t.account?.name || "").toLowerCase();
-          // Додатково перевіряємо comment та expense.title на випадок, якщо account не вказано
-          const comment = (t.comment || "").toLowerCase();
-          const expenseTitle = ((t.expense?.title || t.expense?.name) || "").toLowerCase();
-          
-          // Шукаємо "фоп ореховська" або "ореховська" в account.title (пріоритет)
-          if (accountTitle.includes("фоп ореховська") || accountTitle.includes("фоп ореховская") || 
-              accountTitle.includes("ореховська") || accountTitle.includes("ореховская")) {
-            return true;
-          }
-          
-          // Fallback: перевіряємо інші поля
-          const searchText = (accountName + " " + comment + " " + expenseTitle);
-          return searchText.includes("ореховська") || searchText.includes("ореховская") || 
-                 searchText.includes("фоп ореховська") || searchText.includes("фоп ореховская");
-        })
-        .reduce((sum: number, t: any) => {
-          const amount = Math.abs(Number(t.amount) || 0);
-          return sum + amount;
-        }, 0);
-      
-      // Логуємо для діагностики
-      if (fopOrekhovskaPayments > 0) {
-        const matchingTransactions = expenses.transactions.filter((t: any) => {
-          const accountTitle = (t.account?.title || "").toLowerCase();
-          return accountTitle.includes("ореховська") || accountTitle.includes("ореховская");
-        });
-        console.log(`[finance-report] ✅ Found ${matchingTransactions.length} transactions with ФОП Ореховська account, total: ${fopOrekhovskaPayments} грн.`);
-      }
+    const fopOrekhovskaPayments = sumFopOrekhovskaPayments(expenses, year, month);
+    if (fopOrekhovskaPayments > 0) {
+      console.log(
+        `[finance-report] ✅ ФОП Ореховська у інкасації (${year}-${month}): ${fopOrekhovskaPayments} грн.`,
+      );
     }
-    
+
     // Розраховуємо інкасацію за формулою:
-    // Собівартість + Чистий прибуток власника - Закуплений товар - Інвестиції + Платежі з ФОП Ореховська - Повернення
+    // Собівартість + Чистий прибуток власника - Закуплений товар - Інвестиції
+    // (+ Платежі з ФОП Ореховська лише до 01.10.2026) - Повернення - Завдатки
     // ВАЖЛИВО: Використовуємо той самий ownerProfit, який показується в UI (profit - management)
-    // За формулою користувача потрібно відняти productPurchase, investments та returns,
-    // навіть якщо вони вже включені в totalExpenses (і таким чином в ownerProfit).
-    // Це означає, що ми віднімаємо їх додатково, що може бути навмисним для користувача.
-    // Використовуємо звичайний ownerProfit (той самий, що в UI):
-    
+
     // Знаходимо статтю "Повернення"
     const returns = expenses?.byCategory["Повернення"] || 
                    expenses?.byCategory["Returns"] ||
@@ -979,6 +947,8 @@ export default async function FinanceReportPage({
   const totalIncomeDashboard = summary && goods
     ? goodsRevenueDashboard - goodsCostWithoutHairDashboard - hairGoodsCostDashboard
     : 0;
+  /** Сумарний дохід = Послуги + Дохід (товар) */
+  const combinedIncomeDashboard = servicesDashboard + totalIncomeDashboard;
   // Витрати (ідентично блоку "Прибуток")
   const salaryFromAPI_dashboard = expenses?.byCategory["Зарплата співробітникам"] || expenses?.byCategory["Team salaries"] || 0;
   const rentFromAPI_dashboard = expenses?.byCategory["Оренда"] || expenses?.byCategory["Rent"] || 0;
@@ -1162,6 +1132,11 @@ export default async function FinanceReportPage({
                             <td className="text-right text-xs font-bold text-blue-900 whitespace-nowrap px-1 sm:px-2 py-1">{formatMoney(totalIncomeDashboard)} грн.</td>
                             <td className="text-right text-xs font-semibold whitespace-nowrap px-1 sm:px-2 py-1">{calculatePercent(totalIncomeDashboard)}%</td>
                           </tr>
+                          <tr className="bg-indigo-100">
+                            <td className="font-medium whitespace-nowrap px-1 sm:px-2 py-1">Сумарний дохід</td>
+                            <td className="text-right text-xs font-bold text-indigo-900 whitespace-nowrap px-1 sm:px-2 py-1">{formatMoney(combinedIncomeDashboard)} грн.</td>
+                            <td className="text-right text-xs font-semibold whitespace-nowrap px-1 sm:px-2 py-1">{calculatePercent(combinedIncomeDashboard)}%</td>
+                          </tr>
                           <tr className="bg-red-200">
                             <td className="font-medium whitespace-nowrap px-1 sm:px-2 py-1">Розхід</td>
                             <td className="text-right text-xs font-bold text-red-800 whitespace-nowrap px-1 sm:px-2 py-1">{formatMoney(totalExpensesDashboard)} грн.</td>
@@ -1269,30 +1244,8 @@ export default async function FinanceReportPage({
                                expenses?.byCategory["Return"] ||
                                0;
             
-            // Знаходимо всі платежі з ФОП Ореховська
-            let fopOrekhovskaPaymentsLocal = 0;
-            if (expenses?.transactions && Array.isArray(expenses.transactions)) {
-              fopOrekhovskaPaymentsLocal = expenses.transactions
-                .filter((t: any) => {
-                  const accountTitle = (t.account?.title || "").toLowerCase();
-                  const accountName = (t.account?.name || "").toLowerCase();
-                  const comment = (t.comment || "").toLowerCase();
-                  const expenseTitle = ((t.expense?.title || t.expense?.name) || "").toLowerCase();
-                  
-                  if (accountTitle.includes("фоп ореховська") || accountTitle.includes("фоп ореховская") || 
-                      accountTitle.includes("ореховська") || accountTitle.includes("ореховская")) {
-                    return true;
-                  }
-                  
-                  const searchText = (accountName + " " + comment + " " + expenseTitle);
-                  return searchText.includes("ореховська") || searchText.includes("ореховская") || 
-                         searchText.includes("фоп ореховська") || searchText.includes("фоп ореховская");
-                })
-                .reduce((sum: number, t: any) => {
-                  const amount = Math.abs(Number(t.amount) || 0);
-                  return sum + amount;
-                }, 0);
-            }
+            const includeFopOrekhovska = shouldIncludeFopOrekhovskaInEncashment(selectedYear, selectedMonth);
+            const fopOrekhovskaPaymentsLocal = sumFopOrekhovskaPayments(expenses, selectedYear, selectedMonth);
             
             // Розраховуємо інкасацію
             const encashmentLocal = costLocal + ownerProfitLocal - productPurchaseLocal - investmentsLocal + fopOrekhovskaPaymentsLocal - returnsLocal - deposits;
@@ -1429,7 +1382,9 @@ export default async function FinanceReportPage({
                           <p>+ Чистий прибуток власника {formatMoney(ownerProfitLocal)} грн.</p>
                           <p>- Закуплений товар {formatMoney(productPurchaseLocal)} грн.</p>
                           <p>- Інвестиції {formatMoney(investmentsLocal)} грн.</p>
-                          <p>+ Платежі з ФОП Ореховська {formatMoney(fopOrekhovskaPaymentsLocal)} грн.</p>
+                          {includeFopOrekhovska ? (
+                            <p>+ Платежі з ФОП Ореховська {formatMoney(fopOrekhovskaPaymentsLocal)} грн.</p>
+                          ) : null}
                           <p>- Повернення {formatMoney(returnsLocal)} грн.</p>
                           <p>- Завдатки, отримані і не списані в місяці {formatMoney(deposits)} грн.</p>
                         </div>
@@ -2064,30 +2019,7 @@ export default async function FinanceReportPage({
                                expenses?.byCategory["Return"] ||
                                0;
             
-            // Знаходимо всі платежі з ФОП Ореховська локально
-            let fopOrekhovskaPaymentsLocal = 0;
-            if (expenses?.transactions && Array.isArray(expenses.transactions)) {
-              fopOrekhovskaPaymentsLocal = expenses.transactions
-                .filter((t: any) => {
-                  const accountTitle = (t.account?.title || "").toLowerCase();
-                  const accountName = (t.account?.name || "").toLowerCase();
-                  const comment = (t.comment || "").toLowerCase();
-                  const expenseTitle = ((t.expense?.title || t.expense?.name) || "").toLowerCase();
-                  
-                  if (accountTitle.includes("фоп ореховська") || accountTitle.includes("фоп ореховская") || 
-                      accountTitle.includes("ореховська") || accountTitle.includes("ореховская")) {
-                    return true;
-                  }
-                  
-                  const searchText = (accountName + " " + comment + " " + expenseTitle);
-                  return searchText.includes("ореховська") || searchText.includes("ореховская") || 
-                         searchText.includes("фоп ореховська") || searchText.includes("фоп ореховская");
-                })
-                .reduce((sum: number, t: any) => {
-                  const amount = Math.abs(Number(t.amount) || 0);
-                  return sum + amount;
-                }, 0);
-            }
+            const fopOrekhovskaPaymentsLocal = sumFopOrekhovskaPayments(expenses, selectedYear, selectedMonth);
             
             // Перераховуємо інкасацію використовуючи локальні значення
             const encashmentLocal = costLocal + ownerProfitLocal - productPurchaseLocal - investmentsLocal + fopOrekhovskaPaymentsLocal - returnsLocal - deposits;

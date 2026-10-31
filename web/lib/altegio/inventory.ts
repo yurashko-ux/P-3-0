@@ -49,6 +49,8 @@ const HAIR_CATEGORY_EXACT_TITLES = new Set([
   "шиньйон",
   "шиньйоны",
   "шиньоны",
+  "хвости",
+  "хвосты",
   "накладні хвости",
   "накладные хвосты",
   "преміум хвости",
@@ -103,6 +105,8 @@ const HAIR_CATEGORY_KEYWORDS = [
   "накладные хвосты",
   "преміум хвости",
   "премиум хвосты",
+  "хвости",
+  "хвосты",
   "волосся до",
   "стрічки",
   "стрички",
@@ -358,6 +362,93 @@ function applyHairCategoryMatchesToGoodsMap(
     if ((item.goodId && hairProductIds.has(item.goodId)) || (titleKey && hairProductTitleKeys.has(titleKey))) {
       item.hairCategoryMatch = true;
     }
+  }
+}
+
+/**
+ * Доповнює класифікацію/собівартість волосся з локального складу Kresco
+ * (група «Хвости», isHair, costPerUnit) — коли в Altegio категорія зникла або cost=0.
+ */
+async function enrichSoldGoodsHairFromWarehouse(
+  goodsMap: Map<number | string, SoldGoodItem>,
+  goodsList: SoldGoodItem[],
+): Promise<void> {
+  const ids = new Set<number>();
+  for (const item of goodsMap.values()) {
+    if (item.goodId && item.goodId > 0) ids.add(item.goodId);
+  }
+  for (const item of goodsList) {
+    if (item.goodId && item.goodId > 0) ids.add(item.goodId);
+  }
+  if (ids.size === 0) return;
+
+  try {
+    const { prisma } = await import("@/lib/prisma");
+    const products = await prisma.warehouseProduct.findMany({
+      where: { altegioGoodId: { in: Array.from(ids) } },
+      select: {
+        altegioGoodId: true,
+        isHair: true,
+        costPerUnit: true,
+        category: true,
+        title: true,
+      },
+    });
+    if (products.length === 0) return;
+
+    const byAltegioId = new Map<number, (typeof products)[number]>();
+    for (const product of products) {
+      if (product.altegioGoodId && product.altegioGoodId > 0) {
+        byAltegioId.set(product.altegioGoodId, product);
+      }
+    }
+
+    const markHair = (item: SoldGoodItem) => {
+      if (!item.goodId) return;
+      const warehouseProduct = byAltegioId.get(item.goodId);
+      if (!warehouseProduct) return;
+
+      const warehouseIsHair =
+        warehouseProduct.isHair ||
+        isHairCategoryTitle(warehouseProduct.category) ||
+        matchesHairCategoryText(warehouseProduct.title);
+
+      if (warehouseIsHair) {
+        item.hairCategoryMatch = true;
+        if (!String(item.categoryTitle || "").trim() && warehouseProduct.category) {
+          item.categoryTitle = warehouseProduct.category;
+        }
+      }
+    };
+
+    // Собівартість зі складу підставляємо лише в goodsList (далі align до finalCost),
+    // щоб не роздувати uncapped hairCost з sale documents у goodsMap.
+    const fillMissingCost = (item: SoldGoodItem) => {
+      if (!item.goodId) return;
+      const warehouseProduct = byAltegioId.get(item.goodId);
+      if (!warehouseProduct) return;
+      const qty = Math.abs(Number(item.quantity) || 0);
+      const warehouseUnitCost = Math.max(0, Number(warehouseProduct.costPerUnit) || 0);
+      if (warehouseUnitCost > 0 && qty > 0 && !(Number(item.totalCost) > 0)) {
+        item.costPerUnit = warehouseUnitCost;
+        item.totalCost = Math.round(warehouseUnitCost * qty * 100) / 100;
+      }
+    };
+
+    for (const item of goodsMap.values()) markHair(item);
+    for (const item of goodsList) {
+      markHair(item);
+      fillMissingCost(item);
+    }
+
+    console.log(
+      `[altegio/inventory] 🧶 Warehouse hair enrich: matched=${byAltegioId.size}/${ids.size} sold product IDs`,
+    );
+  } catch (err) {
+    console.warn(
+      `[altegio/inventory] ⚠️ Не вдалося доповнити волосся зі складу Kresco:`,
+      err instanceof Error ? err.message : String(err),
+    );
   }
 }
 
@@ -4640,6 +4731,7 @@ export async function fetchGoodsSalesSummary(params: {
       };
     })
     .sort((a, b) => a.title.localeCompare(b.title, 'uk-UA'));
+  await enrichSoldGoodsHairFromWarehouse(goodsMap, goodsList);
   const hairCostFromSaleDocuments =
     (costSource === "sale_document" || costSource === "sale_document_first") && goodsMap.size > 0
       ? calculateHairGoodsCostFromGoodsMap(goodsMap, hairProductIdsFromCategories, hairProductTitleKeysFromCategories, costSource)

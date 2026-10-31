@@ -10,13 +10,14 @@ function normalizeTitle(title: string): string {
     .trim();
 }
 
-/** Накладки, стрічки, треси — теж «волосся» у фільтрі типу. */
+/** Накладки, стрічки, треси, хвости — теж «волосся» у фільтрі типу. */
 export function isHairAccessoryGroupTitle(title: string): boolean {
   const n = normalizeTitle(title);
   if (!n) return false;
   if (n.includes("накладк")) return true;
   if (n.includes("стрічк") || n.includes("лент")) return true;
   if (n.includes("трес")) return true;
+  if (n.includes("хвост") || n.includes("хвіст")) return true;
   return false;
 }
 

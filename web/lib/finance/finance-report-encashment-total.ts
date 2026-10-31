@@ -8,6 +8,7 @@ import {
 } from "@/lib/altegio";
 import { getDepositsAttributedToMonth } from "@/lib/altegio/deposit-attribution";
 import { fetchFinanceReportDiscountTotal } from "@/lib/finance/finance-report-discounts";
+import { sumFopOrekhovskaPayments } from "@/lib/finance/fop-orekhovska-payments";
 
 function formatDateISO(d: Date): string {
   return d.toISOString().slice(0, 10);
@@ -60,36 +61,6 @@ function getTerminalExpenseFromApi(expenses: ExpensesSummary | null | undefined)
 
 function getHospodarskiMiscExpense(expenses: ExpensesSummary | null | undefined): number {
   return expenses?.byCategory?.["Miscellaneous expenses"] || 0;
-}
-
-function sumFopOrekhovskaPayments(expenses: ExpensesSummary | null | undefined): number {
-  if (!expenses?.transactions || !Array.isArray(expenses.transactions)) return 0;
-
-  return expenses.transactions
-    .filter((t) => {
-      const accountTitle = (t.account?.title || "").toLowerCase();
-      const accountName = (t.account?.name || "").toLowerCase();
-      const comment = (t.comment || "").toLowerCase();
-      const expenseTitle = ((t.expense?.title || t.expense?.name) || "").toLowerCase();
-
-      if (
-        accountTitle.includes("фоп ореховська") ||
-        accountTitle.includes("фоп ореховская") ||
-        accountTitle.includes("ореховська") ||
-        accountTitle.includes("ореховская")
-      ) {
-        return true;
-      }
-
-      const searchText = `${accountName} ${comment} ${expenseTitle}`;
-      return (
-        searchText.includes("ореховська") ||
-        searchText.includes("ореховская") ||
-        searchText.includes("фоп ореховська") ||
-        searchText.includes("фоп ореховская")
-      );
-    })
-    .reduce((sum, t) => sum + Math.abs(Number(t.amount) || 0), 0);
 }
 
 /** Сума з рядка «Інкасація» у фінзвіті за місяць. */
@@ -199,7 +170,7 @@ export async function getFinanceReportEncashmentTotalUah(
 
   const profit = totalIncome - totalExpenses;
   const ownerProfit = profit - management;
-  const fopOrekhovskaPayments = sumFopOrekhovskaPayments(expenses);
+  const fopOrekhovskaPayments = sumFopOrekhovskaPayments(expenses, year, month);
   const returns =
     expenses?.byCategory["Повернення"] ||
     expenses?.byCategory["Returns"] ||
