@@ -16,6 +16,7 @@ import { isPreviewDeploymentHost } from "@/lib/auth-preview";
 import { getConsultationMasterColumnNames } from "@/lib/direct-master-column-names";
 import type { DirectClient } from "@/lib/direct-types";
 import { getConsultationRowColorKey } from "@/lib/consultation-list-styles";
+import { kyivDayFromISO } from "@/lib/altegio/records-grouping";
 
 export const dynamic = "force-dynamic";
 export const revalidate = 0;
@@ -272,30 +273,63 @@ export async function GET(req: NextRequest) {
         isConsultationInMonth(c, monthStartUtc, anchorEndUtc)
     );
 
-    const mapped = filtered.map((c) => {
+    type MappedConsultationRow = {
+      id: string;
+      rowKey: string;
+      firstName: string | null;
+      lastName: string | null;
+      instagramUsername: string;
+      source: string | null;
+      firstContactDate: string;
+      consultationBookingDate: string | null;
+      consultationAttended: boolean | null;
+      consultationCancelled: boolean;
+      isOnlineConsultation: boolean | null;
+      consultationMasterName: string | null;
+      masterId: string | null;
+      masterDisplayName: string | null;
+      consultationListComment: string | null;
+      consultationListOutcomeOverride: string | null;
+      phone: string | null;
+      signedUpForPaidService: boolean | null;
+      signedUpForPaidServiceAfterConsultation: boolean | null;
+      rowColorKey: ReturnType<typeof getConsultationRowColorKey>;
+      outcome: ConsultationOutcome;
+      isLeadOnly: boolean;
+      /** Чи входить у summary консультацій місяця (майбутня копія поза вікном — ні). */
+      countsTowardConsultationSummary: boolean;
+      chatStatusId: string | null;
+      chatStatusSetAt: Date | null;
+      chatStatusCheckedAt: Date | null;
+      leadAgency: string | null;
+      leadAdId: string | null;
+      sourceMark: string | null;
+      sourceName: string | null;
+    };
+
+    const mapped: MappedConsultationRow[] = [];
+
+    for (const c of filtered) {
       const outcome = getConsultationOutcome(c);
       const masterNames = getConsultationMasterColumnNames(c as unknown as DirectClient);
       const masterDisplayName = masterNames.length > 0 ? masterNames.join(", ") : null;
       const inMonth = isConsultationInMonth(c, monthStartUtc, anchorEndUtc);
       const booked = hasConsultationBooking(c);
-      const isLeadOnly = !inMonth;
-      // Колір «Лід», якщо консультація не в цьому місяці (навіть якщо дата бронювання вже є — напр. листопад).
-      const rowColorKey = getConsultationRowColorKey({
-        consultationBookingDate: inMonth ? c.consultationBookingDate?.toISOString() ?? null : null,
-        outcome,
-        consultationListOutcomeOverride: c.consultationListOutcomeOverride,
-        signedUpForPaidService: c.signedUpForPaidService,
-        signedUpForPaidServiceAfterConsultation: c.signedUpForPaidServiceAfterConsultation,
-      });
-      return {
+      const asLead = isNewLeadInMonth(c, monthStartUtc, anchorEndUtc);
+      const firstContactIso = c.firstContactDate.toISOString();
+      const bookingIso = booked ? c.consultationBookingDate!.toISOString() : null;
+      const contactDay = kyivDayFromISO(firstContactIso) || "";
+      const bookingDay = bookingIso ? kyivDayFromISO(bookingIso) || "" : "";
+      // Різні календарні дні Kyiv → лід лишається в дні контакту + копія на день консультації.
+      const splitLeadAndConsultation = Boolean(asLead && booked && contactDay && bookingDay && contactDay !== bookingDay);
+
+      const base = {
         id: c.id,
         firstName: c.firstName,
         lastName: c.lastName,
         instagramUsername: c.instagramUsername,
         source: c.source,
-        firstContactDate: c.firstContactDate.toISOString(),
-        // Дату бронювання показуємо завжди (у т.ч. «Лід» з записом на наступний місяць)
-        consultationBookingDate: booked ? c.consultationBookingDate?.toISOString() ?? null : null,
+        firstContactDate: firstContactIso,
         consultationAttended: c.consultationAttended,
         consultationCancelled: c.consultationCancelled,
         isOnlineConsultation: c.isOnlineConsultation,
@@ -307,9 +341,7 @@ export async function GET(req: NextRequest) {
         phone: c.phone ?? null,
         signedUpForPaidService: c.signedUpForPaidService,
         signedUpForPaidServiceAfterConsultation: c.signedUpForPaidServiceAfterConsultation,
-        rowColorKey,
         outcome,
-        isLeadOnly,
         chatStatusId: c.chatStatusId,
         chatStatusSetAt: c.chatStatusSetAt,
         chatStatusCheckedAt: c.chatStatusCheckedAt,
@@ -318,10 +350,66 @@ export async function GET(req: NextRequest) {
         sourceMark: c.leadAgency ? sourceMarkByCode.get(c.leadAgency) || null : null,
         sourceName: c.leadAgency ? sourceNameByCode.get(c.leadAgency) || null : null,
       };
-    });
+
+      const pushRow = (opts: {
+        rowKey: string;
+        isLeadOnly: boolean;
+        consultationBookingDate: string | null;
+        countsTowardConsultationSummary: boolean;
+      }) => {
+        const rowColorKey = getConsultationRowColorKey({
+          consultationBookingDate: opts.isLeadOnly ? null : opts.consultationBookingDate,
+          outcome,
+          consultationListOutcomeOverride: c.consultationListOutcomeOverride,
+          signedUpForPaidService: c.signedUpForPaidService,
+          signedUpForPaidServiceAfterConsultation: c.signedUpForPaidServiceAfterConsultation,
+        });
+        mapped.push({
+          ...base,
+          rowKey: opts.rowKey,
+          isLeadOnly: opts.isLeadOnly,
+          consultationBookingDate: opts.consultationBookingDate,
+          countsTowardConsultationSummary: opts.countsTowardConsultationSummary,
+          rowColorKey,
+        });
+      };
+
+      if (splitLeadAndConsultation) {
+        // 1) Лід у дні першого контакту — не забираємо.
+        pushRow({
+          rowKey: `${c.id}__lead`,
+          isLeadOnly: true,
+          consultationBookingDate: bookingIso,
+          countsTowardConsultationSummary: false,
+        });
+        // 2) Копія на дату консультації одразу після створення запису.
+        // У summary місяця — лише якщо бронювання в поточному вікні; інакше лише показ (напр. 03.11 у жовтні).
+        pushRow({
+          rowKey: `${c.id}__consultation`,
+          isLeadOnly: false,
+          consultationBookingDate: bookingIso,
+          countsTowardConsultationSummary: inMonth,
+        });
+      } else if (asLead && !inMonth) {
+        // Лід без консультації в цьому місяці (або без запису взагалі).
+        pushRow({
+          rowKey: `${c.id}__lead`,
+          isLeadOnly: true,
+          consultationBookingDate: bookingIso,
+          countsTowardConsultationSummary: false,
+        });
+      } else {
+        // Консультація в місяці (той самий день що контакт, або лід з минулого місяця).
+        pushRow({
+          rowKey: `${c.id}__consultation`,
+          isLeadOnly: !inMonth,
+          consultationBookingDate: bookingIso,
+          countsTowardConsultationSummary: inMonth,
+        });
+      }
+    }
 
     mapped.sort((a, b) => {
-      // Лід без консультації в цьому місяці — сортуємо по firstContact (бронювання може бути в наступному)
       const sa = a.isLeadOnly ? a.firstContactDate : a.consultationBookingDate || a.firstContactDate;
       const sb = b.isLeadOnly ? b.firstContactDate : b.consultationBookingDate || b.firstContactDate;
       return sb.localeCompare(sa);
@@ -391,7 +479,8 @@ export async function GET(req: NextRequest) {
 
     const withChat = await enrichClientsWithChannelChatMeta(mapped, "instagram");
 
-    const withConsultationInMonth = mapped.filter((c) => !c.isLeadOnly);
+    // Майбутня копія поза вікном місяця (напр. 03.11 у жовтневому списку) — лише показ, не в summary.
+    const withConsultationInMonth = mapped.filter((c) => c.countsTowardConsultationSummary);
 
     const summary = {
       newLeadsCount: filtered.filter((c) => isNewLeadInMonth(c, monthStartUtc, anchorEndUtc)).length,

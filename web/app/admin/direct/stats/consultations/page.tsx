@@ -55,6 +55,10 @@ type ConsultationClient = {
   rowColorKey: ConsultationRowColorKey;
   outcome: ConsultationOutcome;
   isLeadOnly: boolean;
+  /** Унікальний ключ рядка (лід і копія консультації одного клієнта). */
+  rowKey: string;
+  /** Майбутня копія поза вікном місяця — не в summary/легенді консультацій. */
+  countsTowardConsultationSummary?: boolean;
   messagesTotal?: number;
   chatNeedsAttention?: boolean;
   chatStatusId?: string | null;
@@ -181,9 +185,9 @@ function ConsultationsPageContent() {
   // Одна мапа на сторінку (як у Direct), без скидання кешу на кожен load.
   const leadSourcesMap = useLeadSourcesMap();
 
-  const clientsById = useMemo(() => {
+  const clientsByRowKey = useMemo(() => {
     const map = new Map<string, ConsultationClient>();
-    for (const c of clients) map.set(c.id, c);
+    for (const c of clients) map.set(c.rowKey || c.id, c);
     return map;
   }, [clients]);
 
@@ -201,7 +205,11 @@ function ConsultationsPageContent() {
       thinking: 0,
       no_show: 0,
     };
-    for (const c of clients) counts[c.rowColorKey] += 1;
+    for (const c of clients) {
+      // Майбутня копія (напр. 03.11 у жовтні) не в легенді консультацій цього місяця.
+      if (c.countsTowardConsultationSummary === false && !c.isLeadOnly) continue;
+      counts[c.rowColorKey] += 1;
+    }
     return counts;
   }, [clients]);
 
@@ -230,7 +238,13 @@ function ConsultationsPageContent() {
         setError(typeof data?.error === "string" ? data.error : `HTTP ${res.status}`);
         return;
       }
-      setClients(Array.isArray(data.clients) ? data.clients : []);
+      const loaded = Array.isArray(data.clients) ? data.clients : [];
+      setClients(
+        loaded.map((c: ConsultationClient) => ({
+          ...c,
+          rowKey: c.rowKey || (c.isLeadOnly ? `${c.id}__lead` : `${c.id}__consultation`),
+        }))
+      );
       setMasters(Array.isArray(data.masters) ? data.masters : []);
       if (typeof data.todayKyiv === "string") setTodayKyiv(data.todayKyiv);
     } catch (e) {
@@ -265,7 +279,24 @@ function ConsultationsPageContent() {
   }, [loadClients]);
 
   const updateClientLocal = useCallback((id: string, patch: Partial<ConsultationClient>) => {
-    setClients((prev) => prev.map((c) => (c.id === id ? { ...c, ...patch } : c)));
+    setClients((prev) =>
+      prev.map((c) => {
+        if (c.id !== id) return c;
+        const next = { ...c, ...patch };
+        // Лід і копія консультації — один clientId; зберігаємо режим кожного рядка.
+        next.isLeadOnly = c.isLeadOnly;
+        next.rowKey = c.rowKey;
+        next.countsTowardConsultationSummary = c.countsTowardConsultationSummary;
+        next.rowColorKey = getConsultationRowColorKey({
+          consultationBookingDate: c.isLeadOnly ? null : next.consultationBookingDate,
+          outcome: next.outcome,
+          consultationListOutcomeOverride: next.consultationListOutcomeOverride,
+          signedUpForPaidService: next.signedUpForPaidService,
+          signedUpForPaidServiceAfterConsultation: next.signedUpForPaidServiceAfterConsultation,
+        });
+        return next;
+      })
+    );
   }, []);
 
   const markSaving = useCallback((id: string, on: boolean) => {
@@ -298,7 +329,7 @@ function ConsultationsPageContent() {
 
   const handleOutcomeOverrideChange = useCallback(
     async (clientId: string, selected: ConsultationResultValue) => {
-      const client = clientsById.get(clientId);
+      const client = clients.find((row) => row.id === clientId);
       if (!client) return;
       const auto = getAutoConsultationResultValue(client);
       const override = consultationOverrideFromResultSelection(selected, auto);
@@ -314,16 +345,9 @@ function ConsultationsPageContent() {
       const savedOverride = res.client?.consultationListOutcomeOverride ?? null;
       updateClientLocal(clientId, {
         consultationListOutcomeOverride: savedOverride,
-        rowColorKey: getConsultationRowColorKey({
-          consultationBookingDate: client.isLeadOnly ? null : client.consultationBookingDate,
-          outcome: client.outcome,
-          consultationListOutcomeOverride: savedOverride,
-          signedUpForPaidService: client.signedUpForPaidService,
-          signedUpForPaidServiceAfterConsultation: client.signedUpForPaidServiceAfterConsultation,
-        }),
       });
     },
-    [clientsById, markSaving, updateClientLocal]
+    [clients, markSaving, updateClientLocal]
   );
 
   const scheduleCommentSave = useCallback(
@@ -477,7 +501,7 @@ function ConsultationsPageContent() {
                     );
                   }
 
-                  const c = clientsById.get(row.clientId);
+                  const c = clientsByRowKey.get(row.rowKey);
                   if (!c) return null;
 
                   rowNumber += 1;
@@ -490,7 +514,7 @@ function ConsultationsPageContent() {
                   const isSaving = savingIds.has(c.id);
 
                   return (
-                    <tr key={c.id} className={`consultation-data-row ${rowBg}`}>
+                    <tr key={row.rowKey} className={`consultation-data-row ${rowBg}`}>
                       <td className="tabular-nums text-center text-gray-600">{rowNumber}</td>
                       <td className="whitespace-nowrap tabular-nums">{formatKyivDate(c.firstContactDate)}</td>
                       <td>
@@ -628,7 +652,7 @@ function ConsultationsPageContent() {
                       </td>
                       <td className="p-0.5 align-middle">
                         <input
-                          key={`${c.id}-${c.consultationListComment ?? ""}`}
+                          key={`${c.rowKey}-${c.consultationListComment ?? ""}`}
                           type="text"
                           className={compactInputClass(c.rowColorKey)}
                           defaultValue={c.consultationListComment || ""}

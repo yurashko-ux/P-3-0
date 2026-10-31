@@ -174,17 +174,21 @@ export function formatConsultationDayLabelWithCount(
   todayKyiv: string,
   count: number
 ): string {
-  return `${formatConsultationDayLabel(kyivDay, todayKyiv)} (${formatLeadsCountLabel(count)})`;
+  const label = formatConsultationDayLabel(kyivDay, todayKyiv);
+  // День лише з майбутніми консультаціями (копії) — без «(0 лідів)».
+  if (count <= 0) return label;
+  return `${label} (${formatLeadsCountLabel(count)})`;
 }
 
 export type ConsultationTableRow =
   | { type: "day-separator"; kyivDay: string; label: string; isToday: boolean }
-  | { type: "client"; kyivDay: string; clientId: string };
+  | { type: "client"; kyivDay: string; clientId: string; rowKey: string };
 
 /** Групує по днях (consultationBookingDate або firstContactDate), від новіших до старіших. */
 export function buildConsultationTableRows(
   clients: Array<{
     id: string;
+    rowKey?: string;
     consultationBookingDate?: string | null;
     firstContactDate?: string | null;
     isLeadOnly?: boolean;
@@ -202,8 +206,8 @@ export function buildConsultationTableRows(
 
   const countByDay = new Map<string, number>();
   for (const c of clients) {
-    // У дужках — ліди (без консультації в цьому місяці). Запис у наступному місяці не прибирає з лічильника.
-    if (c.consultationBookingDate && !c.isLeadOnly) continue;
+    // У дужках лише рядки-ліди. Копія консультації на майбутню дату в лічильник дня не входить.
+    if (!c.isLeadOnly) continue;
     const day = kyivDayFromISO(c.firstContactDate || "") || "unknown";
     countByDay.set(day, (countByDay.get(day) ?? 0) + 1);
   }
@@ -221,7 +225,7 @@ export function buildConsultationTableRows(
       });
       lastDay = day;
     }
-    out.push({ type: "client", kyivDay: day, clientId: c.id });
+    out.push({ type: "client", kyivDay: day, clientId: c.id, rowKey: c.rowKey || c.id });
   }
   return out;
 }
