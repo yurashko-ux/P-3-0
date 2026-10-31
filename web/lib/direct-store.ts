@@ -1887,6 +1887,21 @@ export async function saveDirectClient(
       return next;
     };
 
+    // Altegio create/merge часто передає includeInNewLeadsKpi:false — не знімаємо вже порахований Direct-лід з KPI «Нові ліди» / списку Ліди.
+    const preserveNewLeadsKpiOnUpdate = (
+      existing: { id?: string; includeInNewLeadsKpi?: boolean | null; instagramUsername?: string | null } | null | undefined,
+      updateData: any
+    ) => {
+      if (!existing || !updateData) return updateData;
+      if (existing.includeInNewLeadsKpi !== false && updateData.includeInNewLeadsKpi === false) {
+        console.log(
+          `[direct-store] 🛡️ Зберігаємо includeInNewLeadsKpi=true для ${existing.id || existing.instagramUsername || '?'} (Altegio не знімає лід з KPI)`
+        );
+        updateData.includeInNewLeadsKpi = true;
+      }
+      return updateData;
+    };
+
     // Перевіряємо, чи serviceMasterName не є адміністратором (автоматичне очищення)
     if (client.serviceMasterName) {
       try {
@@ -2060,19 +2075,22 @@ export async function saveDirectClient(
       }
       
       const activityKeys = touchUpdatedAt ? computeActivityKeys(existingByAltegioId, finalState) : null;
-      const updateData: any = applyMetricsPatch({
-        ...dataWithCorrectState,
-        id: existingByAltegioId.id, // Зберігаємо існуючий ID
-        instagramUsername: targetInstagramUsername, // Використовуємо визначений username
-        createdAt: existingByAltegioId.createdAt < data.firstContactDate 
-          ? existingByAltegioId.createdAt 
-          : new Date(data.firstContactDate),
-        // Новий лід = сьогодні вперше написав. Зберігаємо найранішу firstContactDate при merge.
-        firstContactDate: existingByAltegioId.firstContactDate < data.firstContactDate 
-          ? existingByAltegioId.firstContactDate 
-          : data.firstContactDate,
-        ...(touchUpdatedAt ? { updatedAt: new Date() } : {}),
-      });
+      const updateData: any = preserveNewLeadsKpiOnUpdate(
+        existingByAltegioId,
+        applyMetricsPatch({
+          ...dataWithCorrectState,
+          id: existingByAltegioId.id, // Зберігаємо існуючий ID
+          instagramUsername: targetInstagramUsername, // Використовуємо визначений username
+          createdAt: existingByAltegioId.createdAt < data.firstContactDate 
+            ? existingByAltegioId.createdAt 
+            : new Date(data.firstContactDate),
+          // Новий лід = сьогодні вперше написав. Зберігаємо найранішу firstContactDate при merge.
+          firstContactDate: existingByAltegioId.firstContactDate < data.firstContactDate 
+            ? existingByAltegioId.firstContactDate 
+            : data.firstContactDate,
+          ...(touchUpdatedAt ? { updatedAt: new Date() } : {}),
+        })
+      );
       
       // Гарантуємо збереження altegioClientId
       updateData.altegioClientId = data.altegioClientId || existingByAltegioId.altegioClientId;
@@ -2136,18 +2154,21 @@ export async function saveDirectClient(
       // Якщо існує клієнт з таким username, оновлюємо його (об'єднуємо дані)
       // Беремо найранішу дату створення та найпізнішу дату оновлення
       const activityKeys = touchUpdatedAt ? computeActivityKeys(existingByUsername, finalState) : null;
-      const updateData: any = applyMetricsPatch({
-        ...dataWithCorrectState,
-        id: existingByUsername.id, // Зберігаємо існуючий ID
-        createdAt: existingByUsername.createdAt < data.firstContactDate 
-          ? existingByUsername.createdAt 
-          : new Date(data.firstContactDate),
-        // Новий лід = сьогодні вперше написав. Зберігаємо найранішу firstContactDate при merge.
-        firstContactDate: existingByUsername.firstContactDate < data.firstContactDate 
-          ? existingByUsername.firstContactDate 
-          : data.firstContactDate,
-        ...(touchUpdatedAt ? { updatedAt: new Date() } : {}),
-      });
+      const updateData: any = preserveNewLeadsKpiOnUpdate(
+        existingByUsername,
+        applyMetricsPatch({
+          ...dataWithCorrectState,
+          id: existingByUsername.id, // Зберігаємо існуючий ID
+          createdAt: existingByUsername.createdAt < data.firstContactDate 
+            ? existingByUsername.createdAt 
+            : new Date(data.firstContactDate),
+          // Новий лід = сьогодні вперше написав. Зберігаємо найранішу firstContactDate при merge.
+          firstContactDate: existingByUsername.firstContactDate < data.firstContactDate 
+            ? existingByUsername.firstContactDate 
+            : data.firstContactDate,
+          ...(touchUpdatedAt ? { updatedAt: new Date() } : {}),
+        })
+      );
       
       // ВАЖЛИВО: гарантуємо збереження altegioClientId при об'єднанні
       // Якщо новий клієнт має altegioClientId, а існуючий не має - встановлюємо його
@@ -2217,13 +2238,16 @@ export async function saveDirectClient(
         
         // Оновлюємо існуючий запис. Зберігаємо найранішу firstContactDate (новий лід = сьогодні вперше написав).
         const activityKeys = touchUpdatedAt ? computeActivityKeys(existingById, finalState) : null;
-        const updateData: any = applyMetricsPatch({
-          ...dataWithCorrectState,
-          firstContactDate: existingById.firstContactDate < data.firstContactDate 
-            ? existingById.firstContactDate 
-            : data.firstContactDate,
-          ...(touchUpdatedAt ? { updatedAt: new Date() } : {}),
-        });
+        const updateData: any = preserveNewLeadsKpiOnUpdate(
+          existingById,
+          applyMetricsPatch({
+            ...dataWithCorrectState,
+            firstContactDate: existingById.firstContactDate < data.firstContactDate 
+              ? existingById.firstContactDate 
+              : data.firstContactDate,
+            ...(touchUpdatedAt ? { updatedAt: new Date() } : {}),
+          })
+        );
         if (touchUpdatedAt) {
           updateData.lastActivityAt = new Date();
           updateData.lastActivityKeys = activityKeys;
@@ -2248,19 +2272,22 @@ export async function saveDirectClient(
             clientIdForLog = finalCheckByAltegioId.id;
             
             const activityKeys = touchUpdatedAt ? computeActivityKeys(finalCheckByAltegioId, finalState) : null;
-            const updateData: any = applyMetricsPatch({
-              ...dataWithCorrectState,
-              id: finalCheckByAltegioId.id,
-              instagramUsername: normalizedUsername,
-              createdAt: finalCheckByAltegioId.createdAt < data.firstContactDate 
-                ? finalCheckByAltegioId.createdAt 
-                : new Date(data.firstContactDate),
-              // Новий лід = сьогодні вперше написав. Зберігаємо найранішу firstContactDate.
-              firstContactDate: finalCheckByAltegioId.firstContactDate < data.firstContactDate 
-                ? finalCheckByAltegioId.firstContactDate 
-                : data.firstContactDate,
-              ...(touchUpdatedAt ? { updatedAt: new Date() } : {}),
-            });
+            const updateData: any = preserveNewLeadsKpiOnUpdate(
+              finalCheckByAltegioId,
+              applyMetricsPatch({
+                ...dataWithCorrectState,
+                id: finalCheckByAltegioId.id,
+                instagramUsername: normalizedUsername,
+                createdAt: finalCheckByAltegioId.createdAt < data.firstContactDate 
+                  ? finalCheckByAltegioId.createdAt 
+                  : new Date(data.firstContactDate),
+                // Новий лід = сьогодні вперше написав. Зберігаємо найранішу firstContactDate.
+                firstContactDate: finalCheckByAltegioId.firstContactDate < data.firstContactDate 
+                  ? finalCheckByAltegioId.firstContactDate 
+                  : data.firstContactDate,
+                ...(touchUpdatedAt ? { updatedAt: new Date() } : {}),
+              })
+            );
             
             updateData.altegioClientId = data.altegioClientId || finalCheckByAltegioId.altegioClientId;
             

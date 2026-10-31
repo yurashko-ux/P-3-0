@@ -81,19 +81,41 @@ function hasConsultationBooking(client: {
   return !client.consultationDeletedInAltegio && !!client.consultationBookingDate;
 }
 
+function isPlaceholderInstagramUsername(username: string): boolean {
+  const u = String(username || "");
+  return (
+    u.startsWith("binotel_") ||
+    u.startsWith("missing_instagram_") ||
+    u.startsWith("no_instagram_") ||
+    u.startsWith("altegio_") ||
+    u.startsWith("__no_ig__")
+  );
+}
+
+/**
+ * Лід у місяці firstContact: KPI-прапорець або реальний IG, якого з KPI зняли після запису консультації в Altegio.
+ * Без цього бронювання «на наступний місяць» ховає лід з вкладки Ліди в місяці першого контакту.
+ */
 function isNewLeadInMonth(
   client: {
     firstContactDate: Date;
     includeInNewLeadsKpi: boolean;
     state: string | null;
     instagramUsername: string;
+    consultationBookingDate?: Date | null;
+    consultationDeletedInAltegio?: boolean;
   },
   monthStartUtc: Date,
   anchorEndUtc: Date
 ): boolean {
   const t = client.firstContactDate.getTime();
   if (t < monthStartUtc.getTime() || t >= anchorEndUtc.getTime()) return false;
-  return clientCountsTowardNewLeadsKpi(client);
+  if (clientCountsTowardNewLeadsKpi(client)) return true;
+  // Захист: після Altegio merge kpi інколи false, але лід з реальним IG і записом консультації має лишатись у Лідах.
+  if (client.state === "binotel-lead") return false;
+  if (isPlaceholderInstagramUsername(client.instagramUsername)) return false;
+  if (client.consultationDeletedInAltegio) return false;
+  return !!client.consultationBookingDate;
 }
 
 export async function GET(req: NextRequest) {
@@ -191,9 +213,18 @@ export async function GET(req: NextRequest) {
       prisma.$queryRaw<Array<{ id: string }>>`
         SELECT id
         FROM direct_clients
-        WHERE "includeInNewLeadsKpi" = true
-          AND "firstContactDate" >= ${monthStartUtc}
+        WHERE "firstContactDate" >= ${monthStartUtc}
           AND "firstContactDate" < ${anchorEndUtc}
+          AND (
+            "includeInNewLeadsKpi" = true
+            OR (
+              -- Реальний IG-лід, знятий з KPI після запису консультації (має лишатись у Лідах у місяці firstContact)
+              "consultationBookingDate" IS NOT NULL
+              AND "consultationDeletedInAltegio" = false
+              AND COALESCE(state, '') <> 'binotel-lead'
+              AND "instagramUsername" !~ '^(binotel_|missing_instagram_|no_instagram_|altegio_|__no_ig__)'
+            )
+          )
       `,
     ]);
 
@@ -248,12 +279,9 @@ export async function GET(req: NextRequest) {
       const inMonth = isConsultationInMonth(c, monthStartUtc, anchorEndUtc);
       const booked = hasConsultationBooking(c);
       const isLeadOnly = !inMonth;
+      // Колір «Лід», якщо консультація не в цьому місяці (навіть якщо дата бронювання вже є — напр. листопад).
       const rowColorKey = getConsultationRowColorKey({
-        consultationBookingDate: inMonth
-          ? c.consultationBookingDate?.toISOString() ?? null
-          : booked
-            ? c.consultationBookingDate?.toISOString() ?? null
-            : null,
+        consultationBookingDate: inMonth ? c.consultationBookingDate?.toISOString() ?? null : null,
         outcome,
         consultationListOutcomeOverride: c.consultationListOutcomeOverride,
         signedUpForPaidService: c.signedUpForPaidService,
@@ -266,6 +294,7 @@ export async function GET(req: NextRequest) {
         instagramUsername: c.instagramUsername,
         source: c.source,
         firstContactDate: c.firstContactDate.toISOString(),
+        // Дату бронювання показуємо завжди (у т.ч. «Лід» з записом на наступний місяць)
         consultationBookingDate: booked ? c.consultationBookingDate?.toISOString() ?? null : null,
         consultationAttended: c.consultationAttended,
         consultationCancelled: c.consultationCancelled,
@@ -292,8 +321,9 @@ export async function GET(req: NextRequest) {
     });
 
     mapped.sort((a, b) => {
-      const sa = a.consultationBookingDate || a.firstContactDate;
-      const sb = b.consultationBookingDate || b.firstContactDate;
+      // Лід без консультації в цьому місяці — сортуємо по firstContact (бронювання може бути в наступному)
+      const sa = a.isLeadOnly ? a.firstContactDate : a.consultationBookingDate || a.firstContactDate;
+      const sb = b.isLeadOnly ? b.firstContactDate : b.consultationBookingDate || b.firstContactDate;
       return sb.localeCompare(sa);
     });
 

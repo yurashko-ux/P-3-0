@@ -117,7 +117,9 @@ export function consultationControlBgHex(colorKey: ConsultationRowColorKey): str
 export function getConsultationListSortIso(client: {
   consultationBookingDate?: string | null;
   firstContactDate?: string | null;
+  isLeadOnly?: boolean;
 }): string {
+  if (client.isLeadOnly) return client.firstContactDate || "";
   return client.consultationBookingDate || client.firstContactDate || "";
 }
 
@@ -185,6 +187,7 @@ export function buildConsultationTableRows(
     id: string;
     consultationBookingDate?: string | null;
     firstContactDate?: string | null;
+    isLeadOnly?: boolean;
   }>,
   todayKyiv: string
 ): ConsultationTableRow[] {
@@ -199,8 +202,8 @@ export function buildConsultationTableRows(
 
   const countByDay = new Map<string, number>();
   for (const c of clients) {
-    // У дужках лише ліди без запису. Консультація цього дня в число не входить.
-    if (c.consultationBookingDate) continue;
+    // У дужках — ліди (без консультації в цьому місяці). Запис у наступному місяці не прибирає з лічильника.
+    if (c.consultationBookingDate && !c.isLeadOnly) continue;
     const day = kyivDayFromISO(c.firstContactDate || "") || "unknown";
     countByDay.set(day, (countByDay.get(day) ?? 0) + 1);
   }
