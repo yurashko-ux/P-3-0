@@ -838,8 +838,34 @@ export async function GET(req: NextRequest) {
     const remoteAttempted = allowRemoteFetch;
     await tryRemoteAvatar(false);
 
+    // Ліди з Graph (#6) часто немає в ManyChat — тягнемо profile_pic через Instagram Graph (IGSID).
+    if ((!url || !/^https?:\/\//i.test(url)) && allowRemoteFetch && resolvedClientId) {
+      try {
+        const { resolveInstagramGraphAvatar } = await import('@/lib/direct-instagram-graph-avatar');
+        const graphAvatar = await resolveInstagramGraphAvatar({
+          clientId: resolvedClientId,
+          username: normalized || null,
+        });
+        if (debug) {
+          (debugInfo as any).instagramGraph = {
+            ok: graphAvatar.ok,
+            reason: graphAvatar.reason || null,
+            hasUrl: Boolean(graphAvatar.avatarUrl),
+          };
+        }
+        if (graphAvatar.avatarUrl && /^https?:\/\//i.test(graphAvatar.avatarUrl)) {
+          await persistUrl(graphAvatar.avatarUrl);
+        }
+      } catch (graphErr) {
+        console.warn(
+          '[direct/instagram-avatar] Graph avatar:',
+          graphErr instanceof Error ? graphErr.message : String(graphErr),
+        );
+      }
+    }
+
     if (!url || !/^https?:\/\//i.test(url)) {
-      // Miss-cache лише якщо реально ходили в ManyChat — інакше отруюємо ключ
+      // Miss-cache лише якщо реально ходили remote — інакше отруюємо ключ
       // запитами лише з username (розділ Ліди) і потім Direct теж не тягне фото.
       if (missKey && !debug && remoteAttempted) {
         try {

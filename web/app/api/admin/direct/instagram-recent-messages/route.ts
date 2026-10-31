@@ -396,8 +396,10 @@ export async function POST(req: NextRequest) {
       text: string;
       username: string | null;
       name: string | null;
+      igsid: string | null;
     };
     const pulled: Pulled[] = [];
+    const igsidByUsername = new Map<string, string>();
 
     for (const thread of recentThreads) {
       const people = (thread.participants?.data || []).map((person) => asPerson(person)).filter(Boolean) as Person[];
@@ -420,14 +422,18 @@ export async function POST(req: NextRequest) {
         const text = (message.message || "").trim() || (message.attachments?.data?.length ? "📷 медіа" : "(без тексту)");
         const at = message.created_time ? new Date(message.created_time) : null;
         if (!message.id || !at || Number.isNaN(at.getTime()) || at.getTime() < since.getTime()) continue;
+        const clientUsername = normalizeInstagram(clientPerson?.username) || forcedUsername;
+        const clientIgsid = clientPerson?.id ? String(clientPerson.id) : null;
+        if (clientUsername && clientIgsid) igsidByUsername.set(clientUsername, clientIgsid);
         pulled.push({
           graphId: String(message.id),
           conversationId: thread.id ? String(thread.id) : "",
           at,
           direction: outgoing ? "outgoing" : "incoming",
           text: text.slice(0, 4000),
-          username: normalizeInstagram(clientPerson?.username) || forcedUsername,
+          username: clientUsername,
           name: clientPerson?.name?.trim() || null,
+          igsid: clientIgsid,
         });
       }
     }
@@ -496,6 +502,23 @@ export async function POST(req: NextRequest) {
         })
       : [];
     const clientByUsername = new Map(clients.map((client) => [client.instagramUsername, client]));
+    // Зберігаємо IGSID з учасників діалогу — потрібно для аватарок Graph і відповідей CRM.
+    for (const client of clients) {
+      const uname = normalizeInstagram(client.instagramUsername);
+      const igsid = uname ? igsidByUsername.get(uname) : null;
+      if (!igsid) continue;
+      try {
+        await prisma.directClient.update({
+          where: { id: client.id },
+          data: { instagramScopedId: igsid },
+        });
+      } catch (scopedErr) {
+        console.warn(
+          "[instagram-recent] scoped id:",
+          scopedErr instanceof Error ? scopedErr.message : String(scopedErr),
+        );
+      }
+    }
     const clientIds = clients.map((client) => client.id);
     const existing = clientIds.length
       ? await prisma.directMessage.findMany({
@@ -569,6 +592,7 @@ export async function POST(req: NextRequest) {
               rawData: JSON.stringify({
                 conversationId: item.conversationId,
                 username: item.username,
+                igsid: item.igsid || igsidByUsername.get(usernameKey || "") || null,
               }).slice(0, 2000),
             },
           });
@@ -658,15 +682,40 @@ export async function POST(req: NextRequest) {
       });
     }
 
-    // Прогрів аватарок у KV (ManyChat) — щоб у Лідах одразу були фото, не сірі заглушки
+    // Прогрів аватарок у KV: спочатку ManyChat, потім Instagram Graph (ліди лише з #6).
     let avatarsWarmed = 0;
     try {
       const { warmInstagramAvatarCache } = await import("@/lib/direct-instagram-avatar-warm");
+      const { warmGraphAvatarByIgsid, resolveInstagramGraphAvatar } = await import(
+        "@/lib/direct-instagram-graph-avatar"
+      );
       for (const client of clients) {
         const uname = normalizeInstagram(client.instagramUsername);
         if (!uname) continue;
         const warm = await warmInstagramAvatarCache({ username: uname, clientId: client.id });
-        if (warm.ok) avatarsWarmed += 1;
+        if (warm.ok) {
+          avatarsWarmed += 1;
+          continue;
+        }
+        const igsid = igsidByUsername.get(uname) || null;
+        if (igsid) {
+          const graphWarm = await warmGraphAvatarByIgsid({
+            igsid,
+            username: uname,
+            clientId: client.id,
+            pageToken,
+          });
+          if (graphWarm.ok) {
+            avatarsWarmed += 1;
+            continue;
+          }
+        }
+        const graphResolve = await resolveInstagramGraphAvatar({
+          clientId: client.id,
+          username: uname,
+          igsid,
+        });
+        if (graphResolve.ok) avatarsWarmed += 1;
       }
     } catch (warmErr) {
       console.warn(
