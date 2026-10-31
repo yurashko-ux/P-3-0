@@ -1,54 +1,18 @@
 // web/lib/direct-instagram-avatar-warm.ts
-// Прогрів KV-аватарки після ручного збереження IG / recover.
+// Прогрів KV-аватарки через Instagram Graph (без ManyChat).
 
 import { kvRead, kvWrite } from '@/lib/kv';
 import { normalizeInstagram } from '@/lib/normalize';
 import { hasNormalInstagramUsername } from '@/lib/altegio/client-utils';
-import { getEnvValue } from '@/lib/env';
-import { getSubscriberIdFromClientMessages } from '@/lib/direct-store';
 
 const directAvatarKey = (username: string) => `direct:ig-avatar:${username.toLowerCase()}`;
 const directAvatarByClientKey = (clientId: string) => `direct:ig-avatar-client:${clientId}`;
-const directSubscriberKey = (username: string) => `direct:ig-subscriber:${username.toLowerCase()}`;
 
-function getManyChatApiKey(): string | null {
-  const key = getEnvValue(
-    'MANYCHAT_API_KEY',
-    'ManyChat_API_Key',
-    'MANYCHAT_API_TOKEN',
-    'MC_API_KEY',
-    'MANYCHAT_APIKEY',
-  );
-  const t = typeof key === 'string' ? key.trim() : '';
-  return t ? t : null;
-}
-
-function pickAvatar(node: any): string | null {
-  const candidates = [
-    node?.profile_pic,
-    node?.profile_picture,
-    node?.profile_pic_url,
-    node?.profile_picture_url,
-    node?.avatar,
-    node?.avatar_url,
-  ];
-  for (const c of candidates) {
-    if (typeof c === 'string' && /^https?:\/\//i.test(c.trim())) return c.trim();
-  }
-  return null;
-}
-
-function pickIg(item: any): string | null {
-  const c = item?.ig_username || item?.instagram_username || item?.username || null;
-  if (typeof c !== 'string') return null;
-  const n = normalizeInstagram(c);
-  return n && hasNormalInstagramUsername(n) ? n : null;
-}
-
-/** Скидає miss-cache і тягне profile_pic у KV (username + clientId). */
+/** Скидає miss-cache і тягне profile_pic у KV через Instagram Graph. */
 export async function warmInstagramAvatarCache(opts: {
   username: string;
   clientId?: string | null;
+  igsid?: string | null;
 }): Promise<{ ok: boolean; avatarUrl?: string; reason?: string }> {
   const normalized = normalizeInstagram(opts.username) || String(opts.username || '').trim().toLowerCase();
   if (!normalized || !hasNormalInstagramUsername(normalized)) {
@@ -56,10 +20,10 @@ export async function warmInstagramAvatarCache(opts: {
   }
   const clientId = (opts.clientId || '').trim() || null;
 
-  // Скидаємо miss-cache (v1 + v2; старі ключі без username + з username)
   const missKeys = [
     `direct:ig-avatar-miss:${normalized}`,
     `direct:ig-avatar-miss-v2:${normalized}`,
+    `direct:ig-avatar-miss-v3:${normalized}`,
     ...(clientId
       ? [
           `direct:ig-avatar-miss-client:${clientId}`,
@@ -67,6 +31,8 @@ export async function warmInstagramAvatarCache(opts: {
           `direct:ig-avatar-miss-client:${clientId}:_`,
           `direct:ig-avatar-miss-client-v2:${clientId}:${normalized}`,
           `direct:ig-avatar-miss-client-v2:${clientId}:_`,
+          `direct:ig-avatar-miss-client-v3:${clientId}:${normalized}`,
+          `direct:ig-avatar-miss-client-v3:${clientId}:_`,
         ]
       : []),
   ];
@@ -78,7 +44,6 @@ export async function warmInstagramAvatarCache(opts: {
     }
   }
 
-  // Вже є в KV?
   try {
     const existing = await kvRead.getRaw(directAvatarKey(normalized));
     if (typeof existing === 'string' && /^https?:\/\//i.test(existing.trim())) {
@@ -95,87 +60,29 @@ export async function warmInstagramAvatarCache(opts: {
     // continue
   }
 
-  const apiKey = getManyChatApiKey();
-  if (!apiKey) return { ok: false, reason: 'no_api_key' };
-
-  let avatarUrl: string | null = null;
-  let subscriberId: string | null = null;
-
-  // 1) subscriber з повідомлень клієнта
-  if (clientId) {
-    subscriberId = await getSubscriberIdFromClientMessages(clientId);
-  }
-  if (!subscriberId) {
-    try {
-      const raw = await kvRead.getRaw(directSubscriberKey(normalized));
-      if (typeof raw === 'string' && raw.trim()) {
-        const m = raw.match(/\d+/);
-        subscriberId = m?.[0] || raw.trim();
-      }
-    } catch {
-      // ignore
-    }
-  }
-
-  // 2) findByName по точному IG
-  if (!avatarUrl) {
-    try {
-      const findUrl = `https://api.manychat.com/fb/subscriber/findByName?name=${encodeURIComponent(normalized)}`;
-      const ctrl = new AbortController();
-      const timer = setTimeout(() => ctrl.abort(), 8000);
-      const res = await fetch(findUrl, {
-        method: 'GET',
-        headers: { Authorization: `Bearer ${apiKey}` },
-        signal: ctrl.signal,
-      }).finally(() => clearTimeout(timer));
-      if (res.ok) {
-        const data = (await res.json().catch(() => null)) as any;
-        const arr = Array.isArray(data?.data) ? data.data : [];
-        const match = arr.find((item: any) => pickIg(item) === normalized) || (arr.length === 1 ? arr[0] : null);
-        if (match) {
-          avatarUrl = pickAvatar(match);
-          const sid = match?.subscriber_id || match?.id;
-          if (sid != null) subscriberId = String(sid).match(/\d+/)?.[0] || String(sid);
-        }
-      }
-    } catch (err) {
-      console.warn('[warm-avatar] findByName:', err);
-    }
-  }
-
-  // 3) getInfo
-  if (!avatarUrl && subscriberId) {
-    try {
-      const infoUrl = `https://api.manychat.com/fb/subscriber/getInfo?subscriber_id=${encodeURIComponent(subscriberId)}`;
-      const ctrl = new AbortController();
-      const timer = setTimeout(() => ctrl.abort(), 8000);
-      const res = await fetch(infoUrl, {
-        method: 'GET',
-        headers: { Authorization: `Bearer ${apiKey}` },
-        signal: ctrl.signal,
-      }).finally(() => clearTimeout(timer));
-      if (res.ok) {
-        const data = (await res.json().catch(() => null)) as any;
-        avatarUrl = pickAvatar(data?.data ?? data);
-      }
-    } catch (err) {
-      console.warn('[warm-avatar] getInfo:', err);
-    }
-  }
-
-  if (!avatarUrl) {
-    console.warn('[warm-avatar] не знайшов profile_pic', { username: normalized, clientId, subscriberId });
-    return { ok: false, reason: 'not_found', ...(subscriberId ? { subscriberId } as any : {}) };
+  if (!clientId) {
+    return { ok: false, reason: 'no_client_id' };
   }
 
   try {
-    await kvWrite.setRaw(directAvatarKey(normalized), avatarUrl);
-    if (clientId) await kvWrite.setRaw(directAvatarByClientKey(clientId), avatarUrl);
-    if (subscriberId) await kvWrite.setRaw(directSubscriberKey(normalized), subscriberId);
+    const { resolveInstagramGraphAvatar } = await import('@/lib/direct-instagram-graph-avatar');
+    const graph = await resolveInstagramGraphAvatar({
+      clientId,
+      username: normalized,
+      igsid: opts.igsid || null,
+    });
+    if (graph.ok && graph.avatarUrl) {
+      console.log('[warm-avatar] ✅ Graph', { username: normalized, clientId });
+      return { ok: true, avatarUrl: graph.avatarUrl, reason: graph.reason || 'graph' };
+    }
+    console.warn('[warm-avatar] Graph не знайшов profile_pic', {
+      username: normalized,
+      clientId,
+      reason: graph.reason || null,
+    });
+    return { ok: false, reason: graph.reason || 'not_found' };
   } catch (err) {
-    console.warn('[warm-avatar] kv write:', err);
+    console.warn('[warm-avatar] Graph error:', err);
+    return { ok: false, reason: 'graph_error' };
   }
-
-  console.log('[warm-avatar] ✅', { username: normalized, clientId });
-  return { ok: true, avatarUrl };
 }

@@ -507,7 +507,7 @@ export async function GET(req: NextRequest) {
     const clientIdParam = String(req.nextUrl.searchParams.get('clientId') || '').trim();
     const debug = req.nextUrl.searchParams.get('debug') === '1';
     const fetchRemote = req.nextUrl.searchParams.get('fetch') === '1';
-    // getInfo / remote — з clientId/fetch; після resolve також з resolvedClientId (розділ Ліди шле лише username)
+    // Remote = лише Instagram Graph (ManyChat для аватарок вимкнено)
     let allowRemoteFetch = debug || fetchRemote || Boolean(clientIdParam);
 
     let normalized =
@@ -566,7 +566,7 @@ export async function GET(req: NextRequest) {
       console.warn('[direct/instagram-avatar] resolve client:', resolveErr);
     }
 
-    // Ліди/Переписки часто шлють лише username — клієнта вже знайшли вище, дозволяємо ManyChat.
+    // Ліди/Переписки часто шлють лише username — клієнта вже знайшли вище, дозволяємо Graph.
     if (!allowRemoteFetch && resolvedClientId) {
       allowRemoteFetch = true;
     }
@@ -605,17 +605,8 @@ export async function GET(req: NextRequest) {
           username: normalized || null,
           clientId: resolvedClientId || null,
           kv: { avatarHit: Boolean(url) },
-          manychat: {
-            apiKeyPresent: Boolean(getManyChatApiKey()),
-            getInfo: null as null | Record<string, unknown>,
-            findByName: null as null | Record<string, unknown>,
-          },
-          subscriber: {
-            fromKv: null as null | string,
-            fromMessages: null as null | string,
-            fromLogs: null as null | string,
-            fromFindByName: null as null | string,
-          },
+          instagramGraph: null as null | Record<string, unknown>,
+          manychat: { disabled: true },
         }
       : {};
 
@@ -657,29 +648,23 @@ export async function GET(req: NextRequest) {
       }
     }
 
-    // 2) subscriber_id → getInfo; або findByName по IG/ПІБ
-    // v2: старі ключі могли бути записані без реального ManyChat-запиту (Лише username з Лідів)
+    // 2) Instagram Graph profile_pic (IGSID / діалог). ManyChat для аватарок вимкнено.
     const missKey = resolvedClientId
-      ? `direct:ig-avatar-miss-client-v2:${resolvedClientId}:${normalized || '_'}`
+      ? `direct:ig-avatar-miss-client-v3:${resolvedClientId}:${normalized || '_'}`
       : normalized
-        ? `direct:ig-avatar-miss-v2:${normalized}`
+        ? `direct:ig-avatar-miss-v3:${normalized}`
         : null;
-    // findByName: з нормальним IG — ок; без IG — лише явний fetch/debug і лише з повним ПІБ (див. findAvatarViaManychatNameSearch)
-    const allowNameSearch =
-      debug ||
-      fetchRemote ||
-      Boolean(resolvedClientId && normalized && hasNormalInstagramUsername(normalized));
 
-    const tryRemoteAvatar = async (forceRefresh: boolean) => {
+    const tryGraphAvatar = async (forceRefresh: boolean) => {
       if (!allowRemoteFetch && !forceRefresh) return;
+      if (!resolvedClientId) return;
       if (url && /^https?:\/\//i.test(url) && !forceRefresh) return;
 
-      // Недавно вже пробували і нічого не знайшли — не спамимо ManyChat (fetch=1 з модалки ігнорує)
       if (!forceRefresh && !debug && !fetchRemote && missKey) {
         try {
           const miss = await kvRead.getRaw(missKey);
           if (miss === '1') {
-            console.log('[direct/instagram-avatar] ⏭️ miss-cache, пропускаю remote', {
+            console.log('[direct/instagram-avatar] ⏭️ miss-cache, пропускаю Graph', {
               username: normalized || null,
               clientId: resolvedClientId || null,
             });
@@ -690,156 +675,6 @@ export async function GET(req: NextRequest) {
         }
       }
 
-      let subscriberId = '';
-      const apiKey = getManyChatApiKey();
-      if (!apiKey) return;
-
-      if (normalized && hasNormalInstagramUsername(normalized)) {
-        const subRaw = await kvRead.getRaw(directSubscriberKey(normalized));
-        subscriberId = typeof subRaw === 'string' ? subRaw.trim() : '';
-        subscriberId = normalizeSubscriberId(subscriberId) || subscriberId;
-        if (debug) (debugInfo.subscriber as any).fromKv = subscriberId || null;
-      }
-
-      if (!subscriberId && resolvedClientId) {
-        try {
-          const { prisma } = await import('@/lib/prisma');
-          const withSub = await prisma.directMessage.findFirst({
-            where: { clientId: resolvedClientId, subscriberId: { not: null } },
-            orderBy: { receivedAt: 'desc' },
-            select: { subscriberId: true },
-          });
-          if (withSub?.subscriberId) {
-            subscriberId = normalizeSubscriberId(withSub.subscriberId) || withSub.subscriberId;
-            if (debug) (debugInfo.subscriber as any).fromMessages = subscriberId;
-          }
-          if (!subscriberId) {
-            const rows = await prisma.directMessage.findMany({
-              where: { clientId: resolvedClientId, rawData: { not: null } },
-              orderBy: { receivedAt: 'desc' },
-              take: 20,
-              select: { rawData: true },
-            });
-            for (const row of rows) {
-              const sid = pickSubscriberIdFromRawBody(row.rawData || '');
-              if (sid) {
-                subscriberId = normalizeSubscriberId(sid) || sid;
-                if (debug) (debugInfo.subscriber as any).fromMessages = subscriberId;
-                break;
-              }
-            }
-          }
-        } catch (subErr) {
-          console.warn('[direct/instagram-avatar] subscriber from messages:', subErr);
-        }
-      }
-
-      if (!subscriberId && normalized && hasNormalInstagramUsername(normalized)) {
-        try {
-          const items = await kvRead.lrange('manychat:webhook:log', 0, 199);
-          for (const it of items) {
-            const entry = parseKvLogEntry(it);
-            if (!entry) continue;
-            const sid = pickSubscriberIdFromWebhookLogEntry(entry, normalized);
-            if (sid) {
-              subscriberId = normalizeSubscriberId(sid) || sid;
-              if (debug) (debugInfo.subscriber as any).fromLogs = subscriberId;
-              try {
-                await kvWrite.setRaw(directSubscriberKey(normalized), subscriberId);
-              } catch {
-                // ignore
-              }
-              break;
-            }
-          }
-        } catch (err) {
-          console.warn('[direct/instagram-avatar] webhook log scan:', err);
-        }
-      }
-
-      // Немає subscriberId — шукаємо в ManyChat по ніку / ПІБ (обережно з RPS)
-      if (!subscriberId && (allowNameSearch || forceRefresh || fetchRemote)) {
-        console.log('[direct/instagram-avatar] 🔎 findByName (нема subscriberId)', {
-          username: normalized || null,
-          clientId: resolvedClientId || null,
-          name: [clientFirstName, clientLastName].filter(Boolean).join(' ') || null,
-        });
-        const found = await findAvatarViaManychatNameSearch({
-          apiKey,
-          expectedIg: normalized && hasNormalInstagramUsername(normalized) ? normalized : null,
-          firstName: clientFirstName,
-          lastName: clientLastName,
-        });
-        if (debug) {
-          (debugInfo.manychat as any).findByName = {
-            avatar: Boolean(found.avatarUrl),
-            subscriberId: found.subscriberId,
-          };
-        }
-        if (found.subscriberId) {
-          subscriberId = normalizeSubscriberId(found.subscriberId) || found.subscriberId;
-          if (debug) (debugInfo.subscriber as any).fromFindByName = subscriberId;
-          if (normalized && hasNormalInstagramUsername(normalized)) {
-            try {
-              await kvWrite.setRaw(directSubscriberKey(normalized), subscriberId);
-            } catch {
-              // ignore
-            }
-          }
-        }
-        if (found.avatarUrl) {
-          await persistUrl(found.avatarUrl);
-          console.log('[direct/instagram-avatar] ✅ Аватар з findByName', {
-            username: normalized || null,
-            clientId: resolvedClientId || null,
-          });
-          return;
-        }
-      }
-
-      if (subscriberId) {
-        console.log('[direct/instagram-avatar] 🖼️ ManyChat getInfo', {
-          username: normalized || null,
-          clientId: resolvedClientId || null,
-          subscriberId,
-          forceRefresh,
-        });
-        try {
-          const fetched = await fetchAvatarViaGetInfo(apiKey, subscriberId);
-          if (debug) {
-            (debugInfo.manychat as any).getInfo = { ok: Boolean(fetched), subscriberId };
-          }
-          if (fetched) {
-            await persistUrl(fetched);
-            if (normalized && hasNormalInstagramUsername(normalized)) {
-              try {
-                await kvWrite.setRaw(directSubscriberKey(normalized), subscriberId);
-              } catch {
-                // ignore
-              }
-            }
-            console.log('[direct/instagram-avatar] ✅ Підтягнув і зберіг аватарку в KV', {
-              username: normalized || null,
-              clientId: resolvedClientId || null,
-            });
-          }
-        } catch (err) {
-          console.warn('[direct/instagram-avatar] ⚠️ ManyChat getInfo error:', err);
-          if (debug) {
-            (debugInfo.manychat as any).getInfo = {
-              ok: false,
-              error: err instanceof Error ? err.message : String(err),
-            };
-          }
-        }
-      }
-    };
-
-    const remoteAttempted = allowRemoteFetch;
-    await tryRemoteAvatar(false);
-
-    // Ліди з Graph (#6) часто немає в ManyChat — тягнемо profile_pic через Instagram Graph (IGSID).
-    if ((!url || !/^https?:\/\//i.test(url)) && allowRemoteFetch && resolvedClientId) {
       try {
         const { resolveInstagramGraphAvatar } = await import('@/lib/direct-instagram-graph-avatar');
         const graphAvatar = await resolveInstagramGraphAvatar({
@@ -847,29 +682,40 @@ export async function GET(req: NextRequest) {
           username: normalized || null,
         });
         if (debug) {
-          (debugInfo as any).instagramGraph = {
+          debugInfo.instagramGraph = {
             ok: graphAvatar.ok,
             reason: graphAvatar.reason || null,
             hasUrl: Boolean(graphAvatar.avatarUrl),
+            forceRefresh,
           };
         }
         if (graphAvatar.avatarUrl && /^https?:\/\//i.test(graphAvatar.avatarUrl)) {
           await persistUrl(graphAvatar.avatarUrl);
+          console.log('[direct/instagram-avatar] ✅ Аватар з Instagram Graph', {
+            username: normalized || null,
+            clientId: resolvedClientId,
+          });
         }
       } catch (graphErr) {
         console.warn(
           '[direct/instagram-avatar] Graph avatar:',
           graphErr instanceof Error ? graphErr.message : String(graphErr),
         );
+        if (debug) {
+          debugInfo.instagramGraph = {
+            ok: false,
+            error: graphErr instanceof Error ? graphErr.message : String(graphErr),
+          };
+        }
       }
-    }
+    };
+
+    const remoteAttempted = allowRemoteFetch && Boolean(resolvedClientId);
+    await tryGraphAvatar(false);
 
     if (!url || !/^https?:\/\//i.test(url)) {
-      // Miss-cache лише якщо реально ходили remote — інакше отруюємо ключ
-      // запитами лише з username (розділ Ліди) і потім Direct теж не тягне фото.
       if (missKey && !debug && remoteAttempted) {
         try {
-          // 6 год — щоб таблиця не дергала ManyChat на кожен reload
           await kvWrite.setRaw(missKey, '1');
         } catch {
           // ignore
@@ -878,7 +724,6 @@ export async function GET(req: NextRequest) {
       return notFoundResponse(req, debug, debugInfo);
     }
 
-    // Успіх — знімаємо miss-cache
     if (missKey) {
       try {
         await kvWrite.setRaw(missKey, '');
@@ -890,13 +735,12 @@ export async function GET(req: NextRequest) {
     const proxied = await tryProxyOrRedirectAvatar(req, url, debug);
     if (proxied.ok) return proxied.response;
 
-    // Прострочений CDN URL у KV — оновлюємо через ManyChat і пробуємо ще раз
-    console.warn('[direct/instagram-avatar] ♻️ CDN fail → refresh avatar', {
+    console.warn('[direct/instagram-avatar] ♻️ CDN fail → refresh via Graph', {
       username: normalized || null,
       clientId: resolvedClientId || null,
     });
     await clearCachedUrl();
-    await tryRemoteAvatar(true);
+    await tryGraphAvatar(true);
 
     if (url && /^https?:\/\//i.test(url)) {
       const again = await tryProxyOrRedirectAvatar(req, url, debug);

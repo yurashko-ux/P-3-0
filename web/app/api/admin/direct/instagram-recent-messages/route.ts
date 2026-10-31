@@ -682,40 +682,19 @@ export async function POST(req: NextRequest) {
       });
     }
 
-    // Прогрів аватарок у KV: спочатку ManyChat, потім Instagram Graph (ліди лише з #6).
+    // Прогрів аватарок у KV лише через Instagram Graph (ManyChat вимкнено).
     let avatarsWarmed = 0;
     try {
       const { warmInstagramAvatarCache } = await import("@/lib/direct-instagram-avatar-warm");
-      const { warmGraphAvatarByIgsid, resolveInstagramGraphAvatar } = await import(
-        "@/lib/direct-instagram-graph-avatar"
-      );
       for (const client of clients) {
         const uname = normalizeInstagram(client.instagramUsername);
         if (!uname) continue;
-        const warm = await warmInstagramAvatarCache({ username: uname, clientId: client.id });
-        if (warm.ok) {
-          avatarsWarmed += 1;
-          continue;
-        }
-        const igsid = igsidByUsername.get(uname) || null;
-        if (igsid) {
-          const graphWarm = await warmGraphAvatarByIgsid({
-            igsid,
-            username: uname,
-            clientId: client.id,
-            pageToken,
-          });
-          if (graphWarm.ok) {
-            avatarsWarmed += 1;
-            continue;
-          }
-        }
-        const graphResolve = await resolveInstagramGraphAvatar({
-          clientId: client.id,
+        const warm = await warmInstagramAvatarCache({
           username: uname,
-          igsid,
+          clientId: client.id,
+          igsid: igsidByUsername.get(uname) || null,
         });
-        if (graphResolve.ok) avatarsWarmed += 1;
+        if (warm.ok) avatarsWarmed += 1;
       }
     } catch (warmErr) {
       console.warn(
