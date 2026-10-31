@@ -190,7 +190,7 @@ export async function resolveInstagramGraphAvatar(opts: {
   const username = normalizeInstagram(opts.username || "") || "";
 
   const auth = await loadPageAuth();
-  if (!auth.ok) return { ok: false, reason: auth.reason };
+  if (auth.ok === false) return { ok: false, reason: auth.reason };
 
   let igsid = String(opts.igsid || "").trim();
   if (!igsid) {
