@@ -17,8 +17,12 @@ import { resolveJournalCompanyId } from "./company-id";
 import { appendAppointmentChangeLog } from "./change-log";
 import { replaceAppointmentGoods, replaceAppointmentParticipants } from "./participants";
 import { linePayable, serializeStaffIds } from "./line-staff";
-import { isJournalAltegioWriteSkipped } from "./altegio-write-gate";
+import {
+  isConsultationServiceKind,
+  shouldWriteJournalAppointmentToAltegio,
+} from "./altegio-write-gate";
 import { isKrescoRecordNumberConflict, nextKrescoRecordNumber } from "./kresco-record-number";
+import { ensureAltegioClientId } from "@/lib/altegio/clients-write";
 
 function formatKyivDateTime(date: Date): string {
   const parts = new Intl.DateTimeFormat("sv-SE", {
@@ -453,13 +457,60 @@ export type KrescoAppointmentInput = {
   actor?: string | null;
 };
 
-async function loadWriteContext(input: KrescoAppointmentInput) {
-  const skipAltegio = isJournalAltegioWriteSkipped();
-  const client = await prisma.directClient.findUnique({ where: { id: input.directClientId } });
-  if (!client) throw new Error("Клієнта Direct не знайдено");
-  if (!skipAltegio && !(client.altegioClientId && client.altegioClientId > 0)) {
-    throw new Error("У клієнта немає id Altegio — запис у журнал Altegio неможливий");
+async function ensureDirectClientLinkedToAltegio<
+  T extends {
+    id: string;
+    altegioClientId: number | null;
+    phone: string | null;
+    firstName: string | null;
+    lastName: string | null;
+    instagramUsername: string | null;
+  },
+>(client: T): Promise<T> {
+  if (client.altegioClientId && client.altegioClientId > 0) return client;
+  const phone = String(client.phone || "").trim();
+  if (!phone) {
+    throw new Error("Для запису консультації в Altegio потрібен телефон клієнта в Direct");
   }
+  const name =
+    [client.lastName, client.firstName].filter(Boolean).join(" ").trim() ||
+    String(client.instagramUsername || "").replace(/^@/, "").trim() ||
+    "Клієнт";
+  const { altegioClientId, created } = await ensureAltegioClientId({ name, phone });
+  await prisma.directClient.update({
+    where: { id: client.id },
+    data: { altegioClientId },
+  });
+  console.log(
+    `[journal] Клієнт Direct ${client.id} → Altegio ${altegioClientId} (${created ? "створено" : "знайдено за телефоном"})`,
+  );
+  return { ...client, altegioClientId };
+}
+
+function servicesIncludeConsultation(
+  services: Array<{ kind?: string | null; title?: string | null }>,
+): boolean {
+  return services.some(
+    (s) => isConsultationServiceKind(s.kind) || /консультаці/i.test(String(s.title || "")),
+  );
+}
+
+async function appointmentLinesAreConsultation(
+  lines: Array<{ serviceId?: string | null; title?: string | null }>,
+): Promise<boolean> {
+  if (lines.some((l) => /консультаці/i.test(String(l.title || "")))) return true;
+  const serviceIds = [...new Set(lines.map((l) => String(l.serviceId || "")).filter(Boolean))];
+  if (serviceIds.length === 0) return false;
+  const services = await prisma.salonService.findMany({
+    where: { id: { in: serviceIds } },
+    select: { kind: true, title: true },
+  });
+  return servicesIncludeConsultation(services);
+}
+
+async function loadWriteContext(input: KrescoAppointmentInput) {
+  let client = await prisma.directClient.findUnique({ where: { id: input.directClientId } });
+  if (!client) throw new Error("Клієнта Direct не знайдено");
 
   const staffList = await listJournalStaffFromAltegio();
   let altegioStaffId = 0;
@@ -503,7 +554,24 @@ async function loadWriteContext(input: KrescoAppointmentInput) {
     Number(input.seanceLength) > 0
       ? Number(input.seanceLength)
       : Math.max(...orderedServices.map((s) => s.durationSec || 3600), 3600);
-  return { client, directMasterId, altegioStaffId, staffName, services: orderedServices, datetime, seanceLength };
+
+  const isConsultation = servicesIncludeConsultation(orderedServices);
+  const writeAltegio = shouldWriteJournalAppointmentToAltegio({ isConsultation });
+  if (writeAltegio) {
+    client = await ensureDirectClientLinkedToAltegio(client);
+  }
+
+  return {
+    client,
+    directMasterId,
+    altegioStaffId,
+    staffName,
+    services: orderedServices,
+    datetime,
+    seanceLength,
+    isConsultation,
+    writeAltegio,
+  };
 }
 
 async function buildServiceLineRows(
@@ -682,16 +750,18 @@ export async function createAppointmentFromKresco(input: KrescoAppointmentInput)
 
   let created: { id: number; visitId: number | null };
 
-  if (isJournalAltegioWriteSkipped()) {
+  if (!ctx.writeAltegio) {
     console.log(
-      `[journal] JOURNAL_SKIP_ALTEGIO_WRITE: запис ${pending.id} лише в Kresco (без createAltegioRecord)`,
+      `[journal] Dual-write вимкнено для цього запису ${pending.id} (consult=${ctx.isConsultation}) — лише Kresco`,
     );
     await applyCardExtras(pending.id, input, ctx, "create");
     return prisma.salonAppointment.update({
       where: { id: pending.id },
       data: {
         status: "synced",
-        syncError: "тест: без запису в Altegio",
+        syncError: ctx.isConsultation
+          ? "консультації в Altegio вимкнено (JOURNAL_ALTEGIO_WRITE_CONSULTATIONS)"
+          : "тест: без запису в Altegio (не консультація)",
       },
       include: appointmentWriteInclude,
     });
@@ -818,9 +888,9 @@ export async function updateAppointmentFromKresco(input: KrescoAppointmentInput)
     include: { lines: true },
   });
   if (!existing) throw new Error("Запис не знайдено");
-  const skipAltegio =
-    isJournalAltegioWriteSkipped() || !(existing.altegioRecordId && existing.altegioRecordId > 0);
   const ctx = await loadWriteContext(input);
+  const hasAltegioRecord = Boolean(existing.altegioRecordId && existing.altegioRecordId > 0);
+  const skipAltegio = !ctx.writeAltegio || !hasAltegioRecord;
   const kyivDay = kyivYmdFromDateTimeInput(ctx.datetime) || "";
   const snap = snapshotFromDirectClient(ctx.client);
 
@@ -839,7 +909,11 @@ export async function updateAppointmentFromKresco(input: KrescoAppointmentInput)
       attendance: input.attendance ?? existing.attendance,
       comment: input.comment ?? existing.comment,
       status: skipAltegio ? "synced" : "pending",
-      syncError: skipAltegio ? "тест: без запису в Altegio" : null,
+      syncError: skipAltegio
+        ? hasAltegioRecord
+          ? "dual-write вимкнено для цього типу запису"
+          : "немає id запису Altegio"
+        : null,
       kyivDay,
       source: "kresco",
     },
@@ -857,7 +931,7 @@ export async function updateAppointmentFromKresco(input: KrescoAppointmentInput)
 
   if (skipAltegio) {
     console.log(
-      `[journal] JOURNAL_SKIP_ALTEGIO_WRITE або немає altegioRecordId: оновлення ${existing.id} лише в Kresco`,
+      `[journal] Оновлення ${existing.id} лише в Kresco (writeAltegio=${ctx.writeAltegio}, altegioRecordId=${existing.altegioRecordId || "—"})`,
     );
     await applyCardExtras(existing.id, input, ctx, "update");
     return prisma.salonAppointment.findUniqueOrThrow({
@@ -929,8 +1003,9 @@ export async function updateAppointmentAttendanceFromKresco(input: {
     data: { attendance, source: "kresco" },
   });
 
+  const isConsultation = await appointmentLinesAreConsultation(existing.lines || []);
   if (
-    !isJournalAltegioWriteSkipped() &&
+    shouldWriteJournalAppointmentToAltegio({ isConsultation }) &&
     existing.altegioRecordId &&
     existing.altegioRecordId > 0
   ) {
@@ -986,10 +1061,14 @@ export async function updateAppointmentAttendanceFromKresco(input: {
 }
 
 export async function cancelAppointmentFromKresco(appointmentId: string, actor?: string | null) {
-  const existing = await prisma.salonAppointment.findUnique({ where: { id: appointmentId } });
+  const existing = await prisma.salonAppointment.findUnique({
+    where: { id: appointmentId },
+    include: { lines: true },
+  });
   if (!existing) throw new Error("Запис не знайдено");
+  const isConsultation = await appointmentLinesAreConsultation(existing.lines || []);
   if (
-    !isJournalAltegioWriteSkipped() &&
+    shouldWriteJournalAppointmentToAltegio({ isConsultation }) &&
     existing.altegioRecordId &&
     existing.altegioRecordId > 0
   ) {
