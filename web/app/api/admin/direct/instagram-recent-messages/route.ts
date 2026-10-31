@@ -17,12 +17,14 @@ export const runtime = "nodejs";
 export const maxDuration = 60;
 
 const GRAPH = "https://graph.facebook.com/v21.0";
-const CONVERSATION_LIMIT = 4;
-const MESSAGE_LIMIT = 5;
-const PREVIEW_LIMIT = 25;
+const CONVERSATION_LIMIT = 10;
+const MESSAGE_LIMIT = 25;
+const PREVIEW_LIMIT = 40;
 const LOOKBACK_DAYS = 3;
 const LOOKBACK_MS = LOOKBACK_DAYS * 24 * 60 * 60 * 1000;
 const DEDUP_WINDOW_MS = 30 * 60 * 1000;
+/** Додатково тягнемо діалоги лідів без жодного вхідного (після простою залишились лише echo). */
+const ORPHAN_OUTGOING_LIMIT = 12;
 
 type Person = { id?: string; username?: string; name?: string };
 type GraphMessage = {
@@ -256,13 +258,88 @@ export async function POST(req: NextRequest) {
     }
 
     const recentThreads = threads;
+    const forcedUsernameByThread = new Map<string, string>();
+
+    // Ліди, у яких є лише вихідні (типово echo ManyChat після даунтайму) — шукаємо діалог за IGSID.
+    const recentLeadClients = await prisma.directClient.findMany({
+      where: {
+        firstContactDate: { gte: since },
+        instagramScopedId: { not: null },
+        instagramUsername: { not: { startsWith: "__" } },
+      },
+      select: { id: true, instagramUsername: true, instagramScopedId: true },
+      orderBy: { firstContactDate: "desc" },
+      take: 80,
+    });
+    let orphanOutgoingRecovered = 0;
+    if (recentLeadClients.length) {
+      const ids = recentLeadClients.map((row) => row.id);
+      const incomingCounts = await prisma.directMessage.groupBy({
+        by: ["clientId"],
+        where: { clientId: { in: ids }, direction: "incoming" },
+        _count: { _all: true },
+      });
+      const hasIncoming = new Set(incomingCounts.map((row) => row.clientId));
+      const orphans = recentLeadClients
+        .filter((row) => row.instagramScopedId && !hasIncoming.has(row.id))
+        .slice(0, ORPHAN_OUTGOING_LIMIT);
+      const knownThreadIds = new Set(recentThreads.map((thread) => thread.id).filter(Boolean) as string[]);
+      for (const orphan of orphans) {
+        const scopedId = String(orphan.instagramScopedId || "").trim();
+        if (!scopedId) continue;
+        const byUser = await graphGet(`${pageId}/conversations`, pageToken, {
+          platform: "instagram",
+          user_id: scopedId,
+          fields: "id,participants",
+          limit: "1",
+        });
+        if (graphFailed(byUser)) {
+          attempts.push({
+            step: `діалог за IGSID @${orphan.instagramUsername}`,
+            code: byUser.code,
+            message: byUser.message,
+          });
+          console.warn(
+            "[instagram-recent] Діалог за IGSID не вдався",
+            orphan.instagramUsername,
+            byUser.code,
+            byUser.message,
+          );
+          continue;
+        }
+        const rows = Array.isArray(byUser.data.data) ? (byUser.data.data as Conversation[]) : [];
+        const row = rows[0];
+        const threadId = row?.id ? String(row.id) : "";
+        if (!threadId) continue;
+        forcedUsernameByThread.set(threadId, normalizeInstagram(orphan.instagramUsername) || orphan.instagramUsername);
+        if (!knownThreadIds.has(threadId)) {
+          recentThreads.push({
+            id: threadId,
+            participants: row.participants,
+          });
+          knownThreadIds.add(threadId);
+          orphanOutgoingRecovered += 1;
+        }
+      }
+      if (orphanOutgoingRecovered > 0) {
+        console.log("[instagram-recent] Додано діалоги без вхідних", {
+          orphans: orphans.length,
+          added: orphanOutgoingRecovered,
+        });
+      }
+    }
 
     let messageFailures = 0;
     let messageTargets = 0;
     for (const thread of recentThreads) {
       if (!thread.id) continue;
       messageTargets += 1;
-      const messageFieldSets = ["id,created_time,from,to,message", "id,created_time,from,message", "id,created_time,message"];
+      const messageFieldSets = [
+        "id,created_time,from,to,message,attachments",
+        "id,created_time,from,to,message",
+        "id,created_time,from,message",
+        "id,created_time,message",
+      ];
       let listedMessages: GraphResult | null = null;
       for (const fields of messageFieldSets) {
         const fetched = await graphGet(`${thread.id}/messages`, pageToken, {
@@ -323,6 +400,7 @@ export async function POST(req: NextRequest) {
     for (const thread of recentThreads) {
       const people = (thread.participants?.data || []).map((person) => asPerson(person)).filter(Boolean) as Person[];
       const messages = thread.messages?.data || [];
+      const forcedUsername = thread.id ? forcedUsernameByThread.get(String(thread.id)) || null : null;
       for (const message of messages) {
         const from = asPerson(message.from);
         const toPeople = (message.to?.data || []).map((person) => asPerson(person)).filter(Boolean) as Person[];
@@ -346,7 +424,7 @@ export async function POST(req: NextRequest) {
           at,
           direction: outgoing ? "outgoing" : "incoming",
           text: text.slice(0, 4000),
-          username: normalizeInstagram(clientPerson?.username),
+          username: normalizeInstagram(clientPerson?.username) || forcedUsername,
           name: clientPerson?.name?.trim() || null,
         });
       }
@@ -355,6 +433,9 @@ export async function POST(req: NextRequest) {
     pulled.sort((a, b) => b.at.getTime() - a.at.getTime());
 
     const usernameByConversation = new Map<string, string>();
+    for (const [threadId, username] of forcedUsernameByThread) {
+      usernameByConversation.set(threadId, username);
+    }
     for (const item of pulled) {
       if (item.username && item.conversationId) usernameByConversation.set(item.conversationId, item.username);
     }
@@ -401,7 +482,15 @@ export async function POST(req: NextRequest) {
     const clients = usernames.length
       ? await prisma.directClient.findMany({
           where: { instagramUsername: { in: usernames } },
-          select: { id: true, instagramUsername: true, firstName: true, lastName: true, lastMessageAt: true },
+          select: {
+            id: true,
+            instagramUsername: true,
+            firstName: true,
+            lastName: true,
+            lastMessageAt: true,
+            leadAgency: true,
+            firstContactDate: true,
+          },
         })
       : [];
     const clientByUsername = new Map(clients.map((client) => [client.instagramUsername, client]));
@@ -416,6 +505,9 @@ export async function POST(req: NextRequest) {
       : [];
 
     const knownIds = new Set(existing.map((row) => row.messageId).filter(Boolean) as string[]);
+    const hadIncomingBefore = new Set(
+      existing.filter((row) => row.direction === "incoming").map((row) => row.clientId),
+    );
     let incoming = 0;
     let outgoing = 0;
     let saved = 0;
@@ -509,6 +601,49 @@ export async function POST(req: NextRequest) {
       }
     }
 
+    // Якщо нарешті з'явилось перше вхідне (після echo-only) — джерело + firstContactDate.
+    let recoveredIncoming = 0;
+    for (const client of clients) {
+      if (hadIncomingBefore.has(client.id)) continue;
+      const firstIncoming = pulled
+        .filter(
+          (item) =>
+            item.direction === "incoming" &&
+            normalizeInstagram(item.username || "") === normalizeInstagram(client.instagramUsername),
+        )
+        .sort((a, b) => a.at.getTime() - b.at.getTime())[0];
+      if (!firstIncoming) continue;
+      const savedIncoming = existing.some(
+        (row) =>
+          row.clientId === client.id &&
+          row.direction === "incoming" &&
+          row.messageId === firstIncoming.graphId,
+      );
+      if (!savedIncoming) continue;
+      if (firstIncoming.text) {
+        await assignLeadSourceFromFirstIncoming({
+          clientId: client.id,
+          leadAgency: client.leadAgency,
+          text: firstIncoming.text,
+          username: client.instagramUsername,
+        }).catch((err) => {
+          console.warn("[instagram-recent] assignLeadSource recover:", err instanceof Error ? err.message : String(err));
+        });
+      }
+      if (!client.firstContactDate || firstIncoming.at < client.firstContactDate) {
+        await prisma.directClient.update({
+          where: { id: client.id },
+          data: { firstContactDate: firstIncoming.at },
+        });
+      }
+      recoveredIncoming += 1;
+      console.log("[instagram-recent] Відновлено перше вхідне", {
+        username: client.instagramUsername,
+        at: firstIncoming.at.toISOString(),
+        text: firstIncoming.text.slice(0, 120),
+      });
+    }
+
     console.log("[instagram-recent] Готово", {
       threads: recentThreads.length,
       messages: pulled.length,
@@ -518,6 +653,8 @@ export async function POST(req: NextRequest) {
       duplicates,
       unmatched,
       createdLeads,
+      orphanOutgoingRecovered,
+      recoveredIncoming,
     });
 
     return NextResponse.json({
@@ -532,6 +669,8 @@ export async function POST(req: NextRequest) {
       duplicates,
       unmatched,
       createdLeads,
+      orphanOutgoingRecovered,
+      recoveredIncoming,
       preview,
     });
   } catch (error) {
