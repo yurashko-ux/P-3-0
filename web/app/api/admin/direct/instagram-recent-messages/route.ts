@@ -7,6 +7,10 @@ import { getAuthContext } from "@/lib/auth-rbac";
 import { isPreviewDeploymentHost } from "@/lib/auth-preview";
 import { prisma } from "@/lib/prisma";
 import { normalizeInstagram } from "@/lib/normalize";
+import {
+  assignLeadSourceFromFirstIncoming,
+  ensureDirectLeadClient,
+} from "@/lib/lead-sources";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
@@ -361,7 +365,39 @@ export async function POST(req: NextRequest) {
       }
     }
 
-    const usernames = [...new Set(pulled.map((item) => item.username).filter(Boolean))] as string[];
+    const usernames = [...new Set(
+      pulled
+        .map((item) => (item.username ? normalizeInstagram(item.username) : null))
+        .filter(Boolean),
+    )] as string[];
+
+    // Якщо після даунтайму Vercel вебхук не створив лід — створюємо з Graph (кнопка #6).
+    let createdLeads = 0;
+    for (const username of usernames) {
+      const existingClient = await prisma.directClient.findFirst({
+        where: { instagramUsername: username },
+        select: { id: true, leadAgency: true },
+      });
+      if (existingClient) continue;
+      const firstIncoming = pulled
+        .filter((item) => item.direction === "incoming" && normalizeInstagram(item.username || "") === username)
+        .sort((a, b) => a.at.getTime() - b.at.getTime())[0];
+      const receivedAt = firstIncoming?.at ?? new Date();
+      const created = await ensureDirectLeadClient({ username, receivedAt });
+      createdLeads += 1;
+      if (firstIncoming?.text) {
+        await assignLeadSourceFromFirstIncoming({
+          clientId: created.id,
+          leadAgency: created.leadAgency,
+          text: firstIncoming.text,
+          username,
+        }).catch((err) => {
+          console.warn("[instagram-recent] assignLeadSource:", err instanceof Error ? err.message : String(err));
+        });
+      }
+      console.log("[instagram-recent] Створено лід з Graph", { username, id: created.id });
+    }
+
     const clients = usernames.length
       ? await prisma.directClient.findMany({
           where: { instagramUsername: { in: usernames } },
@@ -399,7 +435,8 @@ export async function POST(req: NextRequest) {
       if (item.direction === "incoming") incoming += 1;
       else outgoing += 1;
 
-      const client = item.username ? clientByUsername.get(item.username) : undefined;
+      const usernameKey = item.username ? normalizeInstagram(item.username) : null;
+      const client = usernameKey ? clientByUsername.get(usernameKey) : undefined;
       let status = "немає в таблиці клієнтів";
       if (!client) {
         unmatched += 1;
@@ -480,6 +517,7 @@ export async function POST(req: NextRequest) {
       saved,
       duplicates,
       unmatched,
+      createdLeads,
     });
 
     return NextResponse.json({
@@ -493,6 +531,7 @@ export async function POST(req: NextRequest) {
       saved,
       duplicates,
       unmatched,
+      createdLeads,
       preview,
     });
   } catch (error) {

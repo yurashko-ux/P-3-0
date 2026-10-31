@@ -142,57 +142,76 @@ export async function GET(req: NextRequest) {
     const sourceMarkByCode = new Map(leadSources.map((s) => [s.code, s.mark]));
     const sourceNameByCode = new Map(leadSources.map((s) => [s.code, s.name]));
 
-    const clients = await prisma.directClient.findMany({
-      where: {
-        OR: [
-          {
-            consultationDeletedInAltegio: false,
-            consultationBookingDate: {
-              gte: monthStartUtc,
-              lt: anchorEndUtc,
-            },
+    // Два окремі запити замість великого OR: на проді OR інколи відрізав свіжих лідів
+    // (були в Direct/Переписках, але не в /stats/consultations — напр. @lianarumarchyk).
+    const consultationSelect = {
+      id: true,
+      firstName: true,
+      lastName: true,
+      instagramUsername: true,
+      source: true,
+      state: true,
+      includeInNewLeadsKpi: true,
+      firstContactDate: true,
+      consultationBookingDate: true,
+      consultationDeletedInAltegio: true,
+      consultationAttended: true,
+      consultationCancelled: true,
+      isOnlineConsultation: true,
+      consultationMasterName: true,
+      serviceMasterName: true,
+      masterId: true,
+      paidServiceDate: true,
+      paidServiceTotalCost: true,
+      paidServiceVisitBreakdown: true,
+      spent: true,
+      signedUpForPaidService: true,
+      signedUpForPaidServiceAfterConsultation: true,
+      consultationListComment: true,
+      consultationListOutcomeOverride: true,
+      phone: true,
+      chatStatusId: true,
+      chatStatusSetAt: true,
+      chatStatusCheckedAt: true,
+      leadAgency: true,
+      leadAdId: true,
+    } as const;
+
+    const [consultationRows, newLeadRows] = await Promise.all([
+      prisma.directClient.findMany({
+        where: {
+          consultationDeletedInAltegio: false,
+          consultationBookingDate: {
+            gte: monthStartUtc,
+            lt: anchorEndUtc,
           },
-          {
-            firstContactDate: {
-              gte: monthStartUtc,
-              lt: anchorEndUtc,
-            },
-            includeInNewLeadsKpi: true,
+        },
+        select: consultationSelect,
+      }),
+      prisma.directClient.findMany({
+        where: {
+          firstContactDate: {
+            gte: monthStartUtc,
+            lt: anchorEndUtc,
           },
-        ],
-      },
-      select: {
-        id: true,
-        firstName: true,
-        lastName: true,
-        instagramUsername: true,
-        source: true,
-        state: true,
-        includeInNewLeadsKpi: true,
-        firstContactDate: true,
-        consultationBookingDate: true,
-        consultationDeletedInAltegio: true,
-        consultationAttended: true,
-        consultationCancelled: true,
-        isOnlineConsultation: true,
-        consultationMasterName: true,
-        serviceMasterName: true,
-        masterId: true,
-        paidServiceDate: true,
-        paidServiceTotalCost: true,
-        paidServiceVisitBreakdown: true,
-        spent: true,
-        signedUpForPaidService: true,
-        signedUpForPaidServiceAfterConsultation: true,
-        consultationListComment: true,
-        consultationListOutcomeOverride: true,
-        phone: true,
-        chatStatusId: true,
-        chatStatusSetAt: true,
-        chatStatusCheckedAt: true,
-        leadAgency: true,
-        leadAdId: true,
-      },
+          includeInNewLeadsKpi: true,
+        },
+        select: consultationSelect,
+      }),
+    ]);
+
+    const byId = new Map<string, (typeof consultationRows)[number]>();
+    for (const row of consultationRows) byId.set(row.id, row);
+    for (const row of newLeadRows) {
+      if (!byId.has(row.id)) byId.set(row.id, row);
+    }
+    const clients = Array.from(byId.values());
+    console.log("[stats/consultations] Вибірка", {
+      consultations: consultationRows.length,
+      newLeads: newLeadRows.length,
+      merged: clients.length,
+      monthStartUtc: monthStartUtc.toISOString(),
+      anchorEndUtc: anchorEndUtc.toISOString(),
     });
 
     const filtered = clients.filter(
@@ -343,17 +362,25 @@ export async function GET(req: NextRequest) {
       summary,
     });
 
-    return NextResponse.json({
-      ok: true,
-      month: monthKey,
-      anchorDay,
-      startOfMonthKyiv,
-      endOfMonthKyiv,
-      summary,
-      masters: visibleMasters.map((m) => ({ id: m.id, name: m.name })),
-      todayKyiv,
-      clients: withChat,
-    });
+    return NextResponse.json(
+      {
+        ok: true,
+        month: monthKey,
+        anchorDay,
+        startOfMonthKyiv,
+        endOfMonthKyiv,
+        summary,
+        masters: visibleMasters.map((m) => ({ id: m.id, name: m.name })),
+        todayKyiv,
+        clients: withChat,
+      },
+      {
+        headers: {
+          "Cache-Control": "no-store, no-cache, must-revalidate",
+          Pragma: "no-cache",
+        },
+      },
+    );
   } catch (err) {
     console.error("[stats/consultations] Помилка:", err);
     return NextResponse.json(
