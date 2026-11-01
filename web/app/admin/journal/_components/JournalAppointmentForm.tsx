@@ -357,6 +357,12 @@ export function JournalAppointmentForm({
   /** Якого члена команди зараз замінюємо олівцем (altegioStaffId) */
   const [replacingStaffId, setReplacingStaffId] = useState<number | null>(null);
   const [addStaffOpen, setAddStaffOpen] = useState(false);
+  const [createClientOpen, setCreateClientOpen] = useState(false);
+  const [createFullName, setCreateFullName] = useState("");
+  const [createPhone, setCreatePhone] = useState("");
+  const [createInstagram, setCreateInstagram] = useState("");
+  const [createClientSaving, setCreateClientSaving] = useState(false);
+  const [createClientError, setCreateClientError] = useState<string | null>(null);
 
   const masterByAltegio = useMemo(() => {
     const map = new Map<number, JournalMaster>();
@@ -724,6 +730,71 @@ export function JournalAppointmentForm({
     });
     if (clientPicked) params.set("label", clientPicked);
     window.open(`/admin/direct?${params.toString()}`, "_blank", "noopener,noreferrer");
+  };
+
+  const openCreateClientForm = () => {
+    setCreateClientError(null);
+    setCreateFullName(clientQuery.trim());
+    setCreatePhone("");
+    setCreateInstagram("");
+    setCreateClientOpen(true);
+  };
+
+  const submitCreateClient = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setCreateClientError(null);
+    const fullName = createFullName.trim();
+    const phone = createPhone.trim();
+    const instagram = createInstagram.trim().replace(/^@/, "");
+    if (!fullName) {
+      setCreateClientError("Вкажіть ПІБ.");
+      return;
+    }
+    if (!phone) {
+      setCreateClientError("Вкажіть номер телефону (потрібен для Altegio).");
+      return;
+    }
+    if (!instagram) {
+      setCreateClientError("Вкажіть Instagram username.");
+      return;
+    }
+    setCreateClientSaving(true);
+    try {
+      const res = await fetch("/api/admin/direct/add-client", {
+        method: "POST",
+        credentials: "include",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          fullName,
+          phone,
+          instagramUsername: instagram,
+          source: "instagram",
+          syncAltegio: true,
+        }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok || !data?.ok || !data?.client?.id) {
+        setCreateClientError(data?.error || "Не вдалося створити клієнта");
+        return;
+      }
+      const c = data.client as JournalClient & { altegioClientId?: number | null };
+      setDirectClientId(c.id);
+      setClientPicked(clientLabel(c) || fullName);
+      setClientInstagram(c.instagramUsername || instagram);
+      setClientPhoneLocal(c.phone || phone || null);
+      setClientSpent(c.spent ?? null);
+      setClientVisits(c.visits ?? null);
+      setClientLastVisitAt(null);
+      setAvatarBroken(false);
+      setClientHits([]);
+      setClientQuery("");
+      setCreateClientOpen(false);
+      setError(null);
+    } catch (err) {
+      setCreateClientError(err instanceof Error ? err.message : String(err));
+    } finally {
+      setCreateClientSaving(false);
+    }
   };
 
   const replaceInTeam = (oldId: number, newId: number) => {
@@ -1730,12 +1801,23 @@ export function JournalAppointmentForm({
                 </div>
               ) : (
                 <div>
-                  <input
-                    className="input input-bordered input-sm w-full"
-                    placeholder="Імʼя, нік, телефон…"
-                    value={clientQuery}
-                    onChange={(e) => setClientQuery(e.target.value)}
-                  />
+                  <div className="flex items-center gap-1.5">
+                    <input
+                      className="input input-bordered input-sm w-full min-w-0"
+                      placeholder="Імʼя, нік, телефон…"
+                      value={clientQuery}
+                      onChange={(e) => setClientQuery(e.target.value)}
+                    />
+                    <button
+                      type="button"
+                      className="btn btn-sm btn-square btn-ghost border border-gray-200 bg-white shrink-0 h-8 w-8 min-h-0"
+                      title="Новий клієнт"
+                      aria-label="Новий клієнт"
+                      onClick={openCreateClientForm}
+                    >
+                      <span className="text-lg leading-none font-semibold text-gray-700">+</span>
+                    </button>
+                  </div>
                   {clientPicked && <p className="text-xs mt-1">{clientPicked}</p>}
                   {clientHits.length > 0 && (
                     <ul className="bg-base-100 border rounded-md mt-1 max-h-52 overflow-auto divide-y">
@@ -1846,6 +1928,79 @@ export function JournalAppointmentForm({
           </button>
         </div>
       </div>
+
+      {createClientOpen ? (
+        <div
+          className="fixed inset-0 z-[80] flex items-center justify-center bg-black/40 p-3"
+          onClick={() => !createClientSaving && setCreateClientOpen(false)}
+        >
+          <div
+            className="bg-white rounded-2xl shadow-xl w-full max-w-sm p-4 space-y-3"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <h3 className="text-base font-semibold">Новий клієнт</h3>
+            {createClientError ? (
+              <div className="text-sm text-red-700 bg-red-50 border border-red-100 rounded-lg px-2.5 py-2">
+                {createClientError}
+              </div>
+            ) : null}
+            <form className="space-y-3" onSubmit={(e) => void submitCreateClient(e)}>
+              <div>
+                <label className="block text-xs font-medium text-gray-600 mb-1">ПІБ</label>
+                <input
+                  className="input input-bordered input-sm w-full"
+                  value={createFullName}
+                  onChange={(e) => setCreateFullName(e.target.value)}
+                  placeholder="Прізвище Імʼя"
+                  autoFocus
+                  required
+                />
+              </div>
+              <div>
+                <label className="block text-xs font-medium text-gray-600 mb-1">Номер тел.</label>
+                <input
+                  className="input input-bordered input-sm w-full"
+                  value={createPhone}
+                  onChange={(e) => setCreatePhone(e.target.value)}
+                  placeholder="+380…"
+                  inputMode="tel"
+                  required
+                />
+                <p className="mt-1 text-[11px] text-gray-500">
+                  За телефоном звіряємо з Altegio: знайдемо існуючого або створимо нового.
+                </p>
+              </div>
+              <div>
+                <label className="block text-xs font-medium text-gray-600 mb-1">Instagram username</label>
+                <input
+                  className="input input-bordered input-sm w-full"
+                  value={createInstagram}
+                  onChange={(e) => setCreateInstagram(e.target.value)}
+                  placeholder="@username"
+                  required
+                />
+              </div>
+              <div className="flex gap-2 pt-1">
+                <button
+                  type="submit"
+                  className="btn btn-sm btn-neutral flex-1"
+                  disabled={createClientSaving}
+                >
+                  {createClientSaving ? "Створення…" : "Створити"}
+                </button>
+                <button
+                  type="button"
+                  className="btn btn-sm btn-ghost"
+                  disabled={createClientSaving}
+                  onClick={() => setCreateClientOpen(false)}
+                >
+                  Скасувати
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      ) : null}
     </div>
   );
 }

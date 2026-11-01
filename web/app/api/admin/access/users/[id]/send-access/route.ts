@@ -6,7 +6,7 @@ import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { hashPassword } from "@/lib/auth-rbac";
 import { normalizeTelegramUsername } from "@/lib/access/normalize-telegram-username";
-import { CRESCO_LOGIN_URL } from "@/lib/access/cresco-login-url";
+import { CRESCO_LOGIN_URL, CRESCO_MOBILE_APP_URL } from "@/lib/access/cresco-login-url";
 import {
   createPendingAccess,
   REPORTS_BOT_USERNAME,
@@ -35,10 +35,17 @@ function toChatId(value: bigint | number | null | undefined): number | null {
   return Number.isFinite(n) && n > 0 ? n : null;
 }
 
-function buildAccessMessage(login: string, password: string, crescoLoginUrl: string): string {
+function buildAccessMessage(
+  login: string,
+  password: string,
+  crescoLoginUrl: string,
+  mobileAppUrl?: string,
+): string {
+  const mobile = String(mobileAppUrl || "").trim();
   return (
     `<b>Доступ до Креско CRM</b>\n\n` +
     `Посилання: ${escapeHtml(crescoLoginUrl)}\n` +
+    (mobile ? `Мобільний додаток: ${escapeHtml(mobile)}\n` : "") +
     `Логін: <code>${escapeHtml(login)}</code>\n` +
     `Пароль: <code>${escapeHtml(password)}</code>`
   );
@@ -75,6 +82,7 @@ export async function POST(req: Request, { params }: Params) {
   let body: {
     password?: string;
     crescoLoginUrl?: string;
+    mobileAppUrl?: string;
     telegramUsername?: string;
   } = {};
   try {
@@ -98,6 +106,14 @@ export async function POST(req: Request, { params }: Params) {
   if (!/^https?:\/\//i.test(crescoLoginUrl)) {
     return NextResponse.json(
       { error: "Посилання для входу в Креско має починатися з http:// або https://" },
+      { status: 400 },
+    );
+  }
+
+  const mobileAppUrl = String(body.mobileAppUrl || "").trim() || CRESCO_MOBILE_APP_URL;
+  if (mobileAppUrl && !/^https?:\/\//i.test(mobileAppUrl)) {
+    return NextResponse.json(
+      { error: "Посилання на мобільний додаток має починатися з http:// або https://" },
       { status: 400 },
     );
   }
@@ -140,7 +156,7 @@ export async function POST(req: Request, { params }: Params) {
     );
   }
 
-  const text = buildAccessMessage(user.login, password, crescoLoginUrl);
+  const text = buildAccessMessage(user.login, password, crescoLoginUrl, mobileAppUrl);
   let chatId = toChatId(user.telegramChatId);
 
   // 1) Якщо є chatId — шлемо напряму
@@ -158,6 +174,7 @@ export async function POST(req: Request, { params }: Params) {
         telegramUsername,
         login: user.login,
         crescoLoginUrl,
+        mobileAppUrl: mobileAppUrl || undefined,
         ok: true,
         via: "chatId",
       });
@@ -175,6 +192,7 @@ export async function POST(req: Request, { params }: Params) {
         chatId,
         telegramUsername,
         crescoLoginUrl,
+        mobileAppUrl: mobileAppUrl || undefined,
       });
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
@@ -197,6 +215,7 @@ export async function POST(req: Request, { params }: Params) {
       telegramUsername,
       login: user.login,
       crescoLoginUrl,
+      mobileAppUrl: mobileAppUrl || undefined,
       ok: true,
       via: "username",
     });
@@ -212,6 +231,7 @@ export async function POST(req: Request, { params }: Params) {
       login: user.login,
       telegramUsername,
       crescoLoginUrl,
+      mobileAppUrl: mobileAppUrl || undefined,
       via: "username",
     });
   } catch (err) {
@@ -227,6 +247,7 @@ export async function POST(req: Request, { params }: Params) {
     login: user.login,
     password,
     crescoLoginUrl,
+    mobileAppUrl,
     telegramUsername,
   });
 
@@ -235,6 +256,7 @@ export async function POST(req: Request, { params }: Params) {
     telegramUsername,
     login: user.login,
     crescoLoginUrl,
+    mobileAppUrl: mobileAppUrl || undefined,
     ok: true,
     via: "pending_deeplink",
     deepLink: pending.deepLink,
@@ -256,6 +278,7 @@ export async function POST(req: Request, { params }: Params) {
     login: user.login,
     telegramUsername,
     crescoLoginUrl,
+    mobileAppUrl: mobileAppUrl || undefined,
     deepLink: pending.deepLink,
     expiresAt: pending.expiresAt,
     botUsername: REPORTS_BOT_USERNAME,

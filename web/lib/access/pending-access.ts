@@ -15,6 +15,8 @@ export type PendingAccess = {
   login: string;
   password: string;
   crescoLoginUrl: string;
+  /** Посилання на мобільний додаток (опційно). */
+  mobileAppUrl?: string;
   telegramUsername: string;
   expiresAt: string;
   createdAt: string;
@@ -55,18 +57,21 @@ export async function createPendingAccess(input: {
   login: string;
   password: string;
   crescoLoginUrl: string;
+  mobileAppUrl?: string;
   telegramUsername: string;
 }): Promise<{ token: string; deepLink: string; expiresAt: string }> {
   // Короткий токен: лише [A-Za-z0-9_], ≤64 символи разом із префіксом access_
   const token = randomBytes(12).toString("base64url").replace(/-/g, "x").slice(0, 16);
   const now = new Date();
   const expiresAt = new Date(now.getTime() + TTL_MS).toISOString();
+  const mobileAppUrl = String(input.mobileAppUrl || "").trim();
   const pending: PendingAccess = {
     token,
     userId: input.userId,
     login: input.login,
     password: input.password,
     crescoLoginUrl: input.crescoLoginUrl,
+    ...(mobileAppUrl ? { mobileAppUrl } : {}),
     telegramUsername: input.telegramUsername,
     expiresAt,
     createdAt: now.toISOString(),

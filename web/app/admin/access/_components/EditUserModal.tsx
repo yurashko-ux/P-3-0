@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { CRESCO_LOGIN_URL } from "@/lib/access/cresco-login-url";
+import { CRESCO_LOGIN_URL, CRESCO_MOBILE_APP_URL } from "@/lib/access/cresco-login-url";
 
 type AppFunction = { id: string; name: string };
 
@@ -29,6 +29,7 @@ export function EditUserModal({ user, functions, onClose, onSaved }: Props) {
   const [telegramUsername, setTelegramUsername] = useState(user.telegramUsername ?? "");
   const [functionId, setFunctionId] = useState(user.functionId ?? "");
   const [crescoLoginUrl, setCrescoLoginUrl] = useState(CRESCO_LOGIN_URL);
+  const [mobileAppUrl, setMobileAppUrl] = useState(CRESCO_MOBILE_APP_URL);
   const [newPassword, setNewPassword] = useState("");
   const [loading, setLoading] = useState(false);
   const [sendingAccess, setSendingAccess] = useState(false);
@@ -98,6 +99,10 @@ export function EditUserModal({ user, functions, onClose, onSaved }: Props) {
       setError("Вкажіть коректне посилання для входу в Креско (http/https).");
       return;
     }
+    if (mobileAppUrl.trim() && !/^https?:\/\//i.test(mobileAppUrl.trim())) {
+      setError("Вкажіть коректне посилання на мобільний додаток (http/https).");
+      return;
+    }
 
     setSendingAccess(true);
     try {
@@ -107,6 +112,7 @@ export function EditUserModal({ user, functions, onClose, onSaved }: Props) {
         body: JSON.stringify({
           password,
           crescoLoginUrl: crescoLoginUrl.trim(),
+          mobileAppUrl: mobileAppUrl.trim() || undefined,
           telegramUsername: telegramUsername.trim(),
         }),
       });
@@ -140,15 +146,18 @@ export function EditUserModal({ user, functions, onClose, onSaved }: Props) {
   const handleCopy = async () => {
     if (!passwordChanged) return;
     const link = crescoLoginUrl.trim() || CRESCO_LOGIN_URL;
+    const mobile = mobileAppUrl.trim();
+    const mobileLine = mobile ? `\nМобільний додаток: ${mobile}` : "";
     const text = pendingDeepLink
-      ? `Відкрийте бота (один клік) — отримаєте доступ до Креско:\n${pendingDeepLink}\n\nАбо вручну:\n${link}\nЛогін: ${passwordChanged.login}\nПароль: ${passwordChanged.password}`
-      : `${link}\nЛогін: ${passwordChanged.login}\nПароль: ${passwordChanged.password}`;
+      ? `Відкрийте бота (один клік) — отримаєте доступ до Креско:\n${pendingDeepLink}\n\nАбо вручну:\n${link}${mobileLine}\nЛогін: ${passwordChanged.login}\nПароль: ${passwordChanged.password}`
+      : `${link}${mobileLine}\nЛогін: ${passwordChanged.login}\nПароль: ${passwordChanged.password}`;
     await navigator.clipboard.writeText(text);
     alert("Скопійовано!");
   };
 
   if (passwordChanged) {
     const link = crescoLoginUrl.trim() || CRESCO_LOGIN_URL;
+    const mobile = mobileAppUrl.trim();
     return (
       <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50" onClick={onClose}>
         <div
@@ -199,6 +208,12 @@ export function EditUserModal({ user, functions, onClose, onSaved }: Props) {
               <span className="text-gray-500">Посилання: </span>
               <span className="break-all">{link}</span>
             </div>
+            {mobile ? (
+              <div>
+                <span className="text-gray-500">Мобільний додаток: </span>
+                <span className="break-all">{mobile}</span>
+              </div>
+            ) : null}
             <div>
               <span className="text-gray-500">Логін: </span>
               <span>{passwordChanged.login}</span>
@@ -329,6 +344,19 @@ export function EditUserModal({ user, functions, onClose, onSaved }: Props) {
               className="input input-bordered w-full"
               placeholder={CRESCO_LOGIN_URL}
             />
+          </div>
+          <div>
+            <label className="block text-sm font-medium mb-1">Посилання на мобільний додаток</label>
+            <input
+              type="url"
+              value={mobileAppUrl}
+              onChange={(e) => setMobileAppUrl(e.target.value)}
+              className="input input-bordered w-full"
+              placeholder="https://…"
+            />
+            <p className="mt-1 text-xs text-gray-500">
+              Додається в повідомлення при «Надіслати доступ».
+            </p>
           </div>
           <div>
             <label className="block text-sm font-medium mb-1">Новий пароль (залиште порожнім, щоб не змінювати)</label>

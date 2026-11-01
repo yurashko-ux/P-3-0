@@ -67,6 +67,7 @@ async function deliverPendingAccessCredentials(input: {
     login: string;
     password: string;
     crescoLoginUrl: string;
+    mobileAppUrl?: string;
     telegramUsername: string;
     token: string;
   };
@@ -94,9 +95,11 @@ async function deliverPendingAccessCredentials(input: {
   const consumed = await consumePendingAccess(input.pending.token);
   if (!consumed) return false;
 
+  const mobile = String(consumed.mobileAppUrl || "").trim();
   const text =
     `<b>Доступ до Креско CRM</b>\n\n` +
     `Посилання: ${escapeHtml(consumed.crescoLoginUrl)}\n` +
+    (mobile ? `Мобільний додаток: ${escapeHtml(mobile)}\n` : "") +
     `Логін: <code>${escapeHtml(consumed.login)}</code>\n` +
     `Пароль: <code>${escapeHtml(consumed.password)}</code>`;
 
@@ -231,9 +234,11 @@ export async function POST(req: NextRequest) {
         if (matchedUser) {
           const pendingByUser = await consumePendingAccessForUser(matchedUser.id);
           if (pendingByUser) {
+            const mobile = String(pendingByUser.mobileAppUrl || "").trim();
             const text =
               `<b>Доступ до Креско CRM</b>\n\n` +
               `Посилання: ${escapeHtml(pendingByUser.crescoLoginUrl)}\n` +
+              (mobile ? `Мобільний додаток: ${escapeHtml(mobile)}\n` : "") +
               `Логін: <code>${escapeHtml(pendingByUser.login)}</code>\n` +
               `Пароль: <code>${escapeHtml(pendingByUser.password)}</code>`;
             await sendMessage(
