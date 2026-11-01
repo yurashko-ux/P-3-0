@@ -26,7 +26,9 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ ok: false, error: "Unauthorized" }, { status: 401 });
   }
   try {
-    console.log("[cron/sync-journal-records] Старт: з 1-го числа місяця і всі майбутні записи");
+    // Повний діапазон (1-ше … +36 міс) лише 00:00–00:30 UTC; інакше −3…+90 днів.
+    // Пишемо в Prisma лише нові/змінені записи (див. syncAppointmentsRangeFromAltegio).
+    console.log("[cron/sync-journal-records] Старт синку журналу з Altegio");
     const result = await syncJournalAppointmentsFromAltegio();
     console.log("[cron/sync-journal-records] Готово", result);
     return NextResponse.json({ ok: true, result, today: kyivCalendarTodayYmd() });

@@ -1100,7 +1100,14 @@ function pad2(n: number) {
   return String(n).padStart(2, "0");
 }
 
-/** З 1-го числа поточного місяця (Kyiv) і далеко вперед — усі живі записи, без стелі +7 днів. */
+function shiftYmd(ymd: string, deltaDays: number): string {
+  const [y, m, d] = String(ymd).split("-").map(Number);
+  const dt = new Date(Date.UTC(y, (m || 1) - 1, d || 1, 12));
+  dt.setUTCDate(dt.getUTCDate() + deltaDays);
+  return `${dt.getUTCFullYear()}-${pad2(dt.getUTCMonth() + 1)}-${pad2(dt.getUTCDate())}`;
+}
+
+/** Повний діапазон: з 1-го числа місяця (Kyiv) на ~36 міс уперед. Лише нічний повний синк. */
 export function journalAltegioSyncRange(todayYmd = kyivCalendarTodayYmd()): { startDate: string; endDate: string } {
   const startDate = `${String(todayYmd).slice(0, 7)}-01`;
   const [y, m] = String(todayYmd).split("-").map(Number);
@@ -1109,8 +1116,151 @@ export function journalAltegioSyncRange(todayYmd = kyivCalendarTodayYmd()): { st
   return { startDate, endDate };
 }
 
-export async function syncJournalAppointmentsFromAltegio() {
-  const range = journalAltegioSyncRange();
+/** Вузьке вікно для щогодинного cron: сьогодні −3 … +90 днів (Kyiv). */
+export function journalAltegioSyncRangeRecent(
+  todayYmd = kyivCalendarTodayYmd(),
+): { startDate: string; endDate: string } {
+  return {
+    startDate: shiftYmd(todayYmd, -3),
+    endDate: shiftYmd(todayYmd, 90),
+  };
+}
+
+/**
+ * Як у фінансах: повний діапазон раз на добу (00:00–00:30 UTC),
+ * решту часу — лише recent-вікно (менше запитів до Prisma).
+ */
+export function resolveJournalAltegioSyncRange(
+  now: Date = new Date(),
+  todayYmd = kyivCalendarTodayYmd(),
+): { startDate: string; endDate: string; mode: "full" | "recent" } {
+  const isNightlyFullSync = now.getUTCHours() === 0 && now.getUTCMinutes() < 30;
+  if (isNightlyFullSync) {
+    return { ...journalAltegioSyncRange(todayYmd), mode: "full" };
+  }
+  return { ...journalAltegioSyncRangeRecent(todayYmd), mode: "recent" };
+}
+
+type JournalExistingSnap = {
+  id: string;
+  status: string;
+  datetime: Date;
+  seanceLength: number;
+  attendance: number | null;
+  altegioStaffId: number | null;
+  altegioClientId: number | null;
+  altegioVisitId: number | null;
+  comment: string | null;
+  clientName: string | null;
+  clientPhone: string | null;
+  lines: Array<{
+    altegioServiceId: number | null;
+    title: string;
+    amount: number;
+    cost: number;
+  }>;
+};
+
+/** Знімок для порівняння Altegio ↔ БД без зайвих upsert. */
+function journalSyncFingerprint(input: {
+  deleted: boolean;
+  datetimeIso: string | null;
+  seanceLength: number;
+  attendance: number | null;
+  altegioStaffId: number | null;
+  altegioClientId: number | null;
+  altegioVisitId: number | null;
+  comment: string | null;
+  clientName: string | null;
+  clientPhone: string | null;
+  lines: Array<{ altegioServiceId: number | null; title: string; amount: number; cost: number }>;
+}): string {
+  const linesKey = [...input.lines]
+    .map(
+      (l) =>
+        `${l.altegioServiceId ?? ""}|${l.title}|${Number(l.amount) || 0}|${Number(l.cost) || 0}`,
+    )
+    .sort()
+    .join(";");
+  return [
+    input.deleted ? "1" : "0",
+    input.datetimeIso || "",
+    // seance порівнюємо окремо (каталог може збільшити DB-значення)
+    String(input.attendance ?? ""),
+    String(input.altegioStaffId ?? ""),
+    String(input.altegioClientId ?? ""),
+    String(input.altegioVisitId ?? ""),
+    String(input.comment || "").trim(),
+    isBlankClientName(input.clientName) ? "" : String(input.clientName || "").trim(),
+    String(input.clientPhone || "").trim(),
+    linesKey,
+    // seance як підказка; skip якщо DB >= Altegio (див. isUnchanged)
+    String(input.seanceLength || 0),
+  ].join("\n");
+}
+
+function isJournalAppointmentUnchanged(
+  existing: JournalExistingSnap,
+  incoming: {
+    deleted: boolean;
+    datetime: Date | null;
+    seanceLength: number;
+    attendance: number | null;
+    altegioStaffId: number | null;
+    altegioClientId: number | null;
+    altegioVisitId: number | null;
+    comment: string | null;
+    clientName: string | null;
+    clientPhone: string | null;
+    lines: Array<{ altegioServiceId: number | null; title: string; amount: number; cost: number }>;
+  },
+): boolean {
+  if (incoming.deleted) {
+    return existing.status === "deleted";
+  }
+  if (existing.status === "deleted") return false;
+  if (!incoming.datetime) return false;
+
+  const existingFp = journalSyncFingerprint({
+    deleted: false,
+    datetimeIso: existing.datetime.toISOString(),
+    seanceLength: existing.seanceLength,
+    attendance: existing.attendance,
+    altegioStaffId: existing.altegioStaffId,
+    altegioClientId: existing.altegioClientId,
+    altegioVisitId: existing.altegioVisitId,
+    comment: existing.comment,
+    clientName: existing.clientName,
+    clientPhone: existing.clientPhone,
+    lines: existing.lines,
+  });
+  const incomingFp = journalSyncFingerprint({
+    deleted: false,
+    datetimeIso: incoming.datetime.toISOString(),
+    seanceLength: incoming.seanceLength,
+    attendance: incoming.attendance,
+    altegioStaffId: incoming.altegioStaffId,
+    altegioClientId: incoming.altegioClientId,
+    altegioVisitId: incoming.altegioVisitId,
+    comment: incoming.comment,
+    clientName: incoming.clientName,
+    clientPhone: incoming.clientPhone,
+    lines: incoming.lines,
+  });
+
+  // seanceLength у fingerprint — якщо відрізняється лише seance і DB >= Altegio (каталог), вважаємо ок
+  const stripSeance = (fp: string) => fp.replace(/\n\d+$/, "\n*");
+  if (stripSeance(existingFp) !== stripSeance(incomingFp)) return false;
+  if (existing.seanceLength === incoming.seanceLength) return true;
+  // upsert може підняти seance до суми тривалостей послуг з каталогу
+  return existing.seanceLength >= incoming.seanceLength;
+}
+
+export async function syncJournalAppointmentsFromAltegio(options?: { full?: boolean }) {
+  const range =
+    options?.full === true
+      ? { ...journalAltegioSyncRange(), mode: "full" as const }
+      : resolveJournalAltegioSyncRange();
   const result = await syncAppointmentsRangeFromAltegio(range);
   return { ...range, ...result };
 }
@@ -1119,6 +1269,7 @@ export async function syncAppointmentsRangeFromAltegio(params: {
   startDate: string;
   endDate: string;
   enrich?: boolean;
+  mode?: "full" | "recent";
 }) {
   const { fetchAllRecordsForLocation } = await import("@/lib/altegio/records");
   const { resolveJournalCompanyId } = await import("./company-id");
@@ -1130,35 +1281,150 @@ export async function syncAppointmentsRangeFromAltegio(params: {
     countPerPage: 100,
     delayMs: 150,
   });
+
+  const recordIds = records
+    .map((rec) => Number(rec.record_id ?? rec.id) || 0)
+    .filter((id) => id > 0);
+  const existingByRecordId = new Map<number, JournalExistingSnap>();
+  const CHUNK = 400;
+  for (let i = 0; i < recordIds.length; i += CHUNK) {
+    const chunk = recordIds.slice(i, i + CHUNK);
+    const rows = await prisma.salonAppointment.findMany({
+      where: { altegioRecordId: { in: chunk } },
+      select: {
+        id: true,
+        status: true,
+        datetime: true,
+        seanceLength: true,
+        attendance: true,
+        altegioStaffId: true,
+        altegioClientId: true,
+        altegioVisitId: true,
+        comment: true,
+        clientName: true,
+        clientPhone: true,
+        altegioRecordId: true,
+        lines: {
+          select: {
+            altegioServiceId: true,
+            title: true,
+            amount: true,
+            cost: true,
+          },
+        },
+      },
+    });
+    for (const row of rows) {
+      if (!(row.altegioRecordId && row.altegioRecordId > 0)) continue;
+      existingByRecordId.set(row.altegioRecordId, {
+        id: row.id,
+        status: row.status,
+        datetime: row.datetime,
+        seanceLength: row.seanceLength,
+        attendance: row.attendance,
+        altegioStaffId: row.altegioStaffId,
+        altegioClientId: row.altegioClientId,
+        altegioVisitId: row.altegioVisitId,
+        comment: row.comment,
+        clientName: row.clientName,
+        clientPhone: row.clientPhone,
+        lines: row.lines.map((l) => ({
+          altegioServiceId: l.altegioServiceId,
+          title: l.title,
+          amount: l.amount,
+          cost: l.cost,
+        })),
+      });
+    }
+  }
+
   let upserted = 0;
+  let skipped = 0;
+  let loggedFirst = false;
   for (const rec of records) {
     const recordId = Number(rec.record_id ?? rec.id) || 0;
     if (!(recordId > 0)) continue;
-    if (upserted === 0) {
-      console.log("[journal] Перший запис Altegio для синку:", {
+
+    const deleted = Boolean(rec.deleted);
+    const datetime = parseAppointmentDatetime(rec.date);
+    const lines = normalizeLines(rec.services);
+    const seanceLength = normalizeSeanceLength(
+      rec.seance_length,
+      (rec.services || []).map(
+        (s: { duration?: number; seance_length?: number; length?: number }) =>
+          Number(s.duration ?? s.seance_length ?? s.length) || 0,
+      ),
+    );
+    const attendance =
+      rec.attendance === -1 ||
+      rec.attendance === 0 ||
+      rec.attendance === 1 ||
+      rec.attendance === 2
+        ? rec.attendance
+        : null;
+    const altegioStaffId = Number(rec.staff_id) || null;
+    const altegioClientId =
+      Number((rec as { client_id?: number; client?: { id?: number } }).client_id ?? (rec as { client?: { id?: number } }).client?.id) ||
+      null;
+    const altegioVisitId = Number(rec.visit_id) || null;
+    const comment = (rec as { comment?: string | null }).comment || null;
+    const clientName = rec.client_name ?? null;
+    const clientPhone = rec.client_phone ?? null;
+
+    const existing = existingByRecordId.get(recordId);
+    // enrich / одноденний синк — завжди пишемо (checkout + дотягування клієнта)
+    const forceWrite = params.enrich === true || params.startDate === params.endDate;
+    if (
+      !forceWrite &&
+      existing &&
+      isJournalAppointmentUnchanged(existing, {
+        deleted,
+        datetime,
+        seanceLength,
+        attendance,
+        altegioStaffId,
+        altegioClientId: altegioClientId && altegioClientId > 0 ? altegioClientId : null,
+        altegioVisitId: altegioVisitId && altegioVisitId > 0 ? altegioVisitId : null,
+        comment,
+        clientName,
+        clientPhone,
+        lines,
+      })
+    ) {
+      skipped += 1;
+      continue;
+    }
+
+    if (!loggedFirst) {
+      loggedFirst = true;
+      console.log("[journal] Перший запис Altegio для синку (зміна/новий):", {
         recordId,
         date: rec.date,
         seance_length: rec.seance_length,
         client_name: rec.client_name,
-        client_id: (rec as any).client_id,
-        services: (rec.services || []).map((s) => ({ title: s.title || s.name, duration: s.duration })),
+        client_id: (rec as { client_id?: number }).client_id,
+        services: (rec.services || []).map((s: { title?: string; name?: string; duration?: number }) => ({
+          title: s.title || s.name,
+          duration: s.duration,
+        })),
       });
     }
+
     await upsertSalonAppointmentFromAltegio(
       {
-        status: rec.deleted ? "delete" : "update",
-        deleted: Boolean(rec.deleted),
+        status: deleted ? "delete" : "update",
+        deleted,
         altegioRecordId: recordId,
         altegioVisitId: rec.visit_id,
-        altegioClientId: Number((rec as any).client_id ?? (rec as any).client?.id) || null,
+        altegioClientId,
         altegioStaffId: rec.staff_id ?? null,
         staffName: rec.staff_name ?? null,
         datetime: rec.date,
         seanceLength: rec.seance_length ?? undefined,
         attendance: rec.attendance,
-        comment: (rec as any).comment || null,
-        clientName: rec.client_name ?? null,
-        clientPhone: rec.client_phone ?? null,
+        comment,
+        clientName,
+        clientPhone,
         services: rec.services,
       },
       { enrich: params.enrich === true },
@@ -1191,9 +1457,10 @@ export async function syncAppointmentsRangeFromAltegio(params: {
     await fillMissingClientsFromVisit(params.startDate);
   }
   console.log(
-    `[journal] Sync Altegio ${params.startDate}…${params.endDate}: ${upserted} записів enrich=${params.enrich === true}`,
+    `[journal] Sync Altegio ${params.startDate}…${params.endDate}` +
+      `${params.mode ? ` mode=${params.mode}` : ""}: отримано=${records.length}, записано=${upserted}, пропущено(без змін)=${skipped} enrich=${params.enrich === true}`,
   );
-  return { count: records.length, upserted };
+  return { count: records.length, upserted, skipped };
 }
 
 async function fillMissingClientsFromVisit(kyivDay: string) {
