@@ -69,7 +69,7 @@
     },
     {
       "path": "/api/cron/sync-altegio-archive",
-      "schedule": "*/5 * * * *"
+      "schedule": "0 * * * *"
     },
     {
       "path": "/api/cron/bank-automatic-altegio-payments",
@@ -85,7 +85,7 @@
     },
     {
       "path": "/api/cron/notion-notifications",
-      "schedule": "*/5 * * * *"
+      "schedule": "*/15 * * * *"
     }
   ],
   "rewrites": [
