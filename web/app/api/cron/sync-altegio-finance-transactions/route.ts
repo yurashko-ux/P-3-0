@@ -21,6 +21,24 @@ function isAuthorized(req: NextRequest): boolean {
   return Boolean(isVercelCron || (cronSecret && (authHeader === `Bearer ${cronSecret}` || secretParam === cronSecret)));
 }
 
+/** Скільки днів назад синхронізувати у звичайних (кожні 30 хв) запусках. */
+const RECENT_SYNC_DAYS = 7;
+
+/**
+ * Повна синхронізація з ALTEGIO_FINANCE_SYNC_START_DATE — лише раз на добу
+ * (перший запуск після 00:00 UTC ≈ 02:00–03:00 Київ). Решта запусків беруть
+ * тільки останні RECENT_SYNC_DAYS днів, щоб не перезаписувати всю історію
+ * в Prisma Postgres кожні 30 хвилин (це давало ~10 млн запитів/міс).
+ */
+function resolveDefaultDateFrom(now: Date = new Date()): string {
+  const isNightlyFullSync = now.getUTCHours() === 0 && now.getUTCMinutes() < 30;
+  if (isNightlyFullSync) return ALTEGIO_FINANCE_SYNC_START_DATE;
+  const recent = new Date(now.getTime() - RECENT_SYNC_DAYS * 24 * 60 * 60 * 1000)
+    .toISOString()
+    .slice(0, 10);
+  return recent > ALTEGIO_FINANCE_SYNC_START_DATE ? recent : ALTEGIO_FINANCE_SYNC_START_DATE;
+}
+
 export async function GET(req: NextRequest) {
   return POST(req);
 }
@@ -31,7 +49,7 @@ export async function POST(req: NextRequest) {
   }
 
   try {
-    const dateFrom = req.nextUrl.searchParams.get("from") || ALTEGIO_FINANCE_SYNC_START_DATE;
+    const dateFrom = req.nextUrl.searchParams.get("from") || resolveDefaultDateFrom();
     const dateTo = req.nextUrl.searchParams.get("to") || undefined;
 
     const altegio = await syncAltegioFinanceTransactions({ dateFrom, dateTo, syncPurposes: true });
