@@ -5,14 +5,24 @@ import { fetchWarehouseCatalogForImport } from "@/lib/altegio";
 import { kyivCalendarTodayYmd } from "@/lib/direct-kyiv-today";
 import { rebuildWarehouseStocksFromDocuments, saveCurrentMonthStockSnapshot } from "./stock";
 import { ensureGroupFromCategory } from "./catalog";
-import { mergeHairTailsIntoKhvosty, resolveKrescoGroupTitle, KHVOSTY_GROUP_TITLE, deleteEmptySourceKrescoGroups, moveKrescoProductsToKhvosty } from "./merge-khvosty";
+import {
+  mergeHairTailsIntoKhvosty,
+  resolveKrescoGroupTitle,
+  KHVOSTY_GROUP_TITLE,
+  deleteEmptySourceKrescoGroups,
+  moveKrescoProductsToKhvosty,
+} from "./merge-khvosty";
 
 export type WarehouseImportResult = {
   storages: number;
   products: number;
+  productsWritten: number;
+  storagesWritten: number;
   hairProducts: number;
   snapshotLines: number;
   stockRows: number;
+  /** true = залишки збіглись із поточним posted-знімком, документів не створювали */
+  snapshotSkipped: boolean;
 };
 
 /** Ховаємо склади без додатного залишку — як «Склад #2638935», на якому немає товару. */
@@ -44,6 +54,20 @@ const KRESCO_STORAGE_TITLES: Record<number, string> = {
   2343838: "Товари",
 };
 
+function roundQty(n: number): number {
+  return Math.round((Number(n) || 0) * 1000) / 1000;
+}
+
+function stockFingerprint(
+  lines: Array<{ storageId: string; productId: string; quantity: number }>,
+): string {
+  return lines
+    .filter((l) => roundQty(l.quantity) > 0)
+    .map((l) => `${l.storageId}|${l.productId}|${roundQty(l.quantity)}`)
+    .sort()
+    .join("\n");
+}
+
 export async function importWarehouseFromAltegio(params?: {
   createdBy?: string | null;
 }): Promise<WarehouseImportResult> {
@@ -56,32 +80,66 @@ export async function importWarehouseFromAltegio(params?: {
     `[warehouse/import] Старт імпорту: складів=${snapshot.storages.length}, товарів=${snapshot.goods.length}`,
   );
 
+  // Один findMany замість findUnique+upsert на кожен склад
+  const existingStorages = await prisma.warehouseStorage.findMany({
+    where: {
+      altegioStorageId: {
+        in: snapshot.storages.map((s) => s.altegioStorageId),
+      },
+    },
+  });
+  const storageByAltegio = new Map(
+    existingStorages
+      .filter((s) => s.altegioStorageId != null)
+      .map((s) => [s.altegioStorageId as number, s]),
+  );
+
   const storageIdByAltegio = new Map<number, string>();
+  let storagesWritten = 0;
   for (const storage of snapshot.storages) {
-    const existing = await prisma.warehouseStorage.findUnique({
-      where: { altegioStorageId: storage.altegioStorageId },
-    });
+    const existing = storageByAltegio.get(storage.altegioStorageId);
     const krescoTitle = KRESCO_STORAGE_TITLES[storage.altegioStorageId];
-    const row = await prisma.warehouseStorage.upsert({
-      where: { altegioStorageId: storage.altegioStorageId },
-      create: {
-        title: krescoTitle || storage.title,
-        altegioStorageId: storage.altegioStorageId,
-        includeInFinanceReport: storage.includeInFinanceReport,
-        titleLocked: Boolean(krescoTitle),
-        isActive: true,
-      },
-      update: {
-        ...(krescoTitle
-          ? { title: krescoTitle, titleLocked: true }
-          : existing?.titleLocked
-            ? {}
-            : { title: storage.title }),
-        includeInFinanceReport: storage.includeInFinanceReport,
-        isActive: true,
-      },
-    });
-    storageIdByAltegio.set(storage.altegioStorageId, row.id);
+    const nextTitle = krescoTitle
+      ? krescoTitle
+      : existing?.titleLocked
+        ? existing.title
+        : storage.title;
+    const nextLocked = Boolean(krescoTitle) || Boolean(existing?.titleLocked);
+
+    if (existing) {
+      const same =
+        existing.title === nextTitle &&
+        existing.titleLocked === nextLocked &&
+        existing.includeInFinanceReport === storage.includeInFinanceReport &&
+        existing.isActive === true;
+      if (same) {
+        storageIdByAltegio.set(storage.altegioStorageId, existing.id);
+        continue;
+      }
+      const row = await prisma.warehouseStorage.update({
+        where: { id: existing.id },
+        data: {
+          title: nextTitle,
+          titleLocked: nextLocked,
+          includeInFinanceReport: storage.includeInFinanceReport,
+          isActive: true,
+        },
+      });
+      storageIdByAltegio.set(storage.altegioStorageId, row.id);
+      storagesWritten += 1;
+    } else {
+      const row = await prisma.warehouseStorage.create({
+        data: {
+          title: nextTitle,
+          altegioStorageId: storage.altegioStorageId,
+          includeInFinanceReport: storage.includeInFinanceReport,
+          titleLocked: Boolean(krescoTitle),
+          isActive: true,
+        },
+      });
+      storageIdByAltegio.set(storage.altegioStorageId, row.id);
+      storagesWritten += 1;
+    }
   }
 
   const groupByTitle = new Map<string, string>([[KHVOSTY_GROUP_TITLE, khvosty.targetGroupId]]);
@@ -99,7 +157,53 @@ export async function importWarehouseFromAltegio(params?: {
     if (group) groupByTitle.set(title, group.id);
   }
 
+  const altegioGoodIds = snapshot.goods.map((g) => g.altegioGoodId);
+  const existingProducts: Array<{
+    id: string;
+    altegioGoodId: number | null;
+    title: string;
+    category: string | null;
+    groupId: string | null;
+    unit: string | null;
+    costPerUnit: number;
+    salePrice: number;
+    isHair: boolean;
+    lengthCm: number | null;
+    weightGrams: number | null;
+    sku: number | null;
+    isActive: boolean;
+  }> = [];
+  const PROD_CHUNK = 500;
+  for (let i = 0; i < altegioGoodIds.length; i += PROD_CHUNK) {
+    const chunk = altegioGoodIds.slice(i, i + PROD_CHUNK);
+    const rows = await prisma.warehouseProduct.findMany({
+      where: { altegioGoodId: { in: chunk } },
+      select: {
+        id: true,
+        altegioGoodId: true,
+        title: true,
+        category: true,
+        groupId: true,
+        unit: true,
+        costPerUnit: true,
+        salePrice: true,
+        isHair: true,
+        lengthCm: true,
+        weightGrams: true,
+        sku: true,
+        isActive: true,
+      },
+    });
+    existingProducts.push(...rows);
+  }
+  const productByAltegio = new Map(
+    existingProducts
+      .filter((p) => p.altegioGoodId != null)
+      .map((p) => [p.altegioGoodId as number, p]),
+  );
+
   const productIdByAltegio = new Map<number, string>();
+  let productsWritten = 0;
   const chunkSize = 40;
   for (let i = 0; i < snapshot.goods.length; i += chunkSize) {
     const chunk = snapshot.goods.slice(i, i + chunkSize);
@@ -108,11 +212,51 @@ export async function importWarehouseFromAltegio(params?: {
         const mappedTitle = resolveKrescoGroupTitle(String(good.categoryTitle || "").trim());
         const groupId = (mappedTitle ? groupByTitle.get(mappedTitle) : null) || null;
         const isHair = good.isHair || mappedTitle === KHVOSTY_GROUP_TITLE;
-        const row = await prisma.warehouseProduct.upsert({
-          where: { altegioGoodId: good.altegioGoodId },
-          create: {
+        const category = mappedTitle || good.categoryTitle || null;
+        const existing = productByAltegio.get(good.altegioGoodId);
+
+        if (existing) {
+          const same =
+            existing.title === good.title &&
+            existing.category === category &&
+            existing.groupId === groupId &&
+            existing.unit === good.unit &&
+            Number(existing.costPerUnit) === Number(good.costPerUnit) &&
+            Number(existing.salePrice) === Number(good.salePrice) &&
+            existing.isHair === isHair &&
+            existing.lengthCm === good.lengthCm &&
+            existing.weightGrams === good.weightGrams &&
+            existing.sku === good.altegioGoodId &&
+            existing.isActive === true;
+          if (same) {
+            productIdByAltegio.set(good.altegioGoodId, existing.id);
+            return;
+          }
+          const row = await prisma.warehouseProduct.update({
+            where: { id: existing.id },
+            data: {
+              title: good.title,
+              category,
+              groupId,
+              unit: good.unit,
+              costPerUnit: good.costPerUnit,
+              salePrice: good.salePrice,
+              isHair,
+              lengthCm: good.lengthCm,
+              weightGrams: good.weightGrams,
+              sku: good.altegioGoodId,
+              isActive: true,
+            },
+          });
+          productIdByAltegio.set(good.altegioGoodId, row.id);
+          productsWritten += 1;
+          return;
+        }
+
+        const row = await prisma.warehouseProduct.create({
+          data: {
             title: good.title,
-            category: mappedTitle || good.categoryTitle || null,
+            category,
             groupId,
             unit: good.unit,
             costPerUnit: good.costPerUnit,
@@ -124,21 +268,9 @@ export async function importWarehouseFromAltegio(params?: {
             sku: good.altegioGoodId,
             isActive: true,
           },
-          update: {
-            title: good.title,
-            category: mappedTitle || good.categoryTitle || null,
-            groupId,
-            unit: good.unit,
-            costPerUnit: good.costPerUnit,
-            salePrice: good.salePrice,
-            isHair,
-            lengthCm: good.lengthCm,
-            weightGrams: good.weightGrams,
-            sku: good.altegioGoodId,
-            isActive: true,
-          },
         });
         productIdByAltegio.set(good.altegioGoodId, row.id);
+        productsWritten += 1;
       }),
     );
   }
@@ -158,11 +290,15 @@ export async function importWarehouseFromAltegio(params?: {
       })
     ).id;
 
-  const lines: Array<{ productId: string; quantity: number; costPerUnit: number; storageId: string }> = [];
+  const lines: Array<{ productId: string; quantity: number; costPerUnit: number; storageId: string }> =
+    [];
   for (const good of snapshot.goods) {
     const productId = productIdByAltegio.get(good.altegioGoodId);
     if (!productId) continue;
-    const stocks = good.stocks.length > 0 ? good.stocks : [{ altegioStorageId: 0, storageTitle: "Основний склад", quantity: 0 }];
+    const stocks =
+      good.stocks.length > 0
+        ? good.stocks
+        : [{ altegioStorageId: 0, storageTitle: "Основний склад", quantity: 0 }];
     for (const stock of stocks) {
       const storageId = storageIdByAltegio.get(stock.altegioStorageId) || defaultStorageId;
       lines.push({
@@ -182,39 +318,75 @@ export async function importWarehouseFromAltegio(params?: {
     linesByStorage.set(line.storageId, list);
   }
 
-  await prisma.$transaction(async (tx) => {
-    await tx.warehouseDocument.updateMany({
-      where: { source: "altegio_import", type: "altegio_sync", status: "posted" },
-      data: { status: "cancelled" },
-    });
+  const nextFp = stockFingerprint(lines);
 
-    for (const [storageId, storageLines] of linesByStorage.entries()) {
-      const meaningful = storageLines.filter((line) => line.quantity > 0);
-      if (meaningful.length === 0) continue;
-      await tx.warehouseDocument.create({
-        data: {
-          type: "altegio_sync",
-          status: "posted",
-          occurredAt: now,
-          kyivDay,
-          toStorageId: storageId,
-          comment: "Дзеркало залишків Altegio. Прийомки/списання з Kresco пишуться в Altegio окремими документами.",
-          source: "altegio_import",
-          createdBy: params?.createdBy || null,
-          lines: {
-            create: meaningful.map((line) => ({
-              productId: line.productId,
-              quantity: line.quantity,
-              costPerUnit: line.costPerUnit,
-            })),
-          },
-        },
+  // Порівняти з поточними posted-документами altegio_sync — якщо ті самі залишки, не чіпаємо
+  const currentDocs = await prisma.warehouseDocument.findMany({
+    where: { source: "altegio_import", type: "altegio_sync", status: "posted" },
+    select: {
+      toStorageId: true,
+      lines: { select: { productId: true, quantity: true } },
+    },
+  });
+  const currentLines: Array<{ storageId: string; productId: string; quantity: number }> = [];
+  for (const doc of currentDocs) {
+    if (!doc.toStorageId) continue;
+    for (const line of doc.lines) {
+      currentLines.push({
+        storageId: doc.toStorageId,
+        productId: line.productId,
+        quantity: line.quantity,
       });
     }
-  });
+  }
+  const currentFp = stockFingerprint(currentLines);
+  const snapshotSkipped = nextFp === currentFp && currentDocs.length > 0;
 
-  const rebuilt = await rebuildWarehouseStocksFromDocuments({ includeKrescoDocuments: false });
-  await saveCurrentMonthStockSnapshot();
+  let stockRows = 0;
+  if (snapshotSkipped) {
+    console.log(
+      `[warehouse/import] Знімок пропущено: залишки без змін (рядків з qty>0=${lines.filter((l) => l.quantity > 0).length})`,
+    );
+    const stockCount = await prisma.warehouseStock.count();
+    stockRows = stockCount;
+  } else {
+    await prisma.$transaction(async (tx) => {
+      await tx.warehouseDocument.updateMany({
+        where: { source: "altegio_import", type: "altegio_sync", status: "posted" },
+        data: { status: "cancelled" },
+      });
+
+      for (const [storageId, storageLines] of linesByStorage.entries()) {
+        const meaningful = storageLines.filter((line) => line.quantity > 0);
+        if (meaningful.length === 0) continue;
+        await tx.warehouseDocument.create({
+          data: {
+            type: "altegio_sync",
+            status: "posted",
+            occurredAt: now,
+            kyivDay,
+            toStorageId: storageId,
+            comment:
+              "Дзеркало залишків Altegio. Прийомки/списання з Kresco пишуться в Altegio окремими документами.",
+            source: "altegio_import",
+            createdBy: params?.createdBy || null,
+            lines: {
+              create: meaningful.map((line) => ({
+                productId: line.productId,
+                quantity: line.quantity,
+                costPerUnit: line.costPerUnit,
+              })),
+            },
+          },
+        });
+      }
+    });
+
+    const rebuilt = await rebuildWarehouseStocksFromDocuments({ includeKrescoDocuments: false });
+    stockRows = rebuilt.stockRows;
+    await saveCurrentMonthStockSnapshot();
+  }
+
   const deactivated = await deactivateEmptyWarehouseStorages();
   await moveKrescoProductsToKhvosty(khvosty.targetGroupId);
   const deletedEmptyGroups = await deleteEmptySourceKrescoGroups(khvosty.targetGroupId);
@@ -223,9 +395,12 @@ export async function importWarehouseFromAltegio(params?: {
   const result: WarehouseImportResult = {
     storages: snapshot.storages.length,
     products: snapshot.goods.length,
+    productsWritten,
+    storagesWritten,
     hairProducts,
     snapshotLines: lines.filter((line) => line.quantity > 0).length,
-    stockRows: rebuilt.stockRows,
+    stockRows,
+    snapshotSkipped,
   };
 
   console.log(
