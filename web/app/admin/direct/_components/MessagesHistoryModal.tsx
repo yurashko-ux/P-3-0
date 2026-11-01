@@ -206,6 +206,13 @@ export function MessagesHistoryModal({
   const [needsAttention, setNeedsAttention] = useState<boolean>(false);
   const [statusAnchorMessageId, setStatusAnchorMessageId] = useState<string | null>(null);
   const [statusAnchorReceivedAt, setStatusAnchorReceivedAt] = useState<string | null>(null);
+
+  const [consultOpen, setConsultOpen] = useState(false);
+  const [consultFullName, setConsultFullName] = useState('');
+  const [consultPhone, setConsultPhone] = useState('');
+  const [consultInstagram, setConsultInstagram] = useState('');
+  const [consultSaving, setConsultSaving] = useState(false);
+  const [consultError, setConsultError] = useState<string | null>(null);
   /** Реальний IG з переписки / після recover (не __no_ig__) */
   const [displayIg, setDisplayIg] = useState<string | null>(null);
 
@@ -730,6 +737,91 @@ export function MessagesHistoryModal({
     }
   }
 
+  const openConsultForm = () => {
+    if (!client) return;
+    const name = getFullName(client);
+    const ig = resolveDisplayInstagramUsername(
+      displayIg || client.instagramUsername,
+      displayIg,
+    );
+    const igHandle = String(ig || client.instagramUsername || '')
+      .replace(/^@/, '')
+      .trim();
+    setConsultError(null);
+    setConsultFullName(name && name !== '-' ? name : '');
+    setConsultPhone(client.phone || '');
+    setConsultInstagram(hasNormalInstagramUsername(igHandle) ? igHandle : '');
+    setConsultOpen(true);
+  };
+
+  const submitConsultForm = async (e: { preventDefault: () => void }) => {
+    e.preventDefault();
+    if (!client) return;
+    setConsultError(null);
+    const fullNameValue = consultFullName.trim();
+    const phoneValue = consultPhone.trim();
+    const instagramValue = consultInstagram.trim().replace(/^@/, '');
+    if (!fullNameValue) {
+      setConsultError('Вкажіть ПІБ.');
+      return;
+    }
+    if (!phoneValue) {
+      setConsultError('Вкажіть номер телефону (потрібен для Altegio).');
+      return;
+    }
+    if (!instagramValue) {
+      setConsultError('Вкажіть Instagram username.');
+      return;
+    }
+    setConsultSaving(true);
+    try {
+      const res = await fetch('/api/admin/direct/add-client', {
+        method: 'POST',
+        credentials: 'include',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          fullName: fullNameValue,
+          phone: phoneValue,
+          instagramUsername: instagramValue,
+          source: 'instagram',
+          syncAltegio: true,
+        }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok || !data?.ok || !data?.client?.id) {
+        setConsultError(data?.error || 'Не вдалося зберегти клієнта');
+        return;
+      }
+      const clientId = String(data.client.id);
+      const label =
+        [data.client.lastName, data.client.firstName].filter(Boolean).join(' ').trim() ||
+        fullNameValue;
+      try {
+        sessionStorage.setItem(
+          'journal:pendingClient',
+          JSON.stringify({
+            id: clientId,
+            label,
+            phone: data.client.phone || phoneValue,
+            instagram: data.client.instagramUsername || instagramValue,
+            altegioClientId: data.client.altegioClientId || data.altegio?.clientId || null,
+            spent: data.client.spent ?? null,
+            visits: data.client.visits ?? null,
+          }),
+        );
+      } catch {
+        // ignore storage errors
+      }
+      const journalUrl = `/admin/journal?pendingClientId=${encodeURIComponent(clientId)}`;
+      window.open(journalUrl, '_blank', 'noopener,noreferrer');
+      setConsultOpen(false);
+    } catch (err) {
+      setConsultError(err instanceof Error ? err.message : String(err));
+    } finally {
+      setConsultSaving(false);
+    }
+  };
+
   if (!isOpen || !client) return null;
 
   const fullName = getFullName(client);
@@ -755,52 +847,62 @@ export function MessagesHistoryModal({
         onClick={(e) => e.stopPropagation()}
       >
         <div className="p-6 flex-1 overflow-hidden flex flex-col">
-          <div className="flex items-center justify-between mb-4">
-            <div>
+          <div className="flex items-center justify-between mb-4 gap-3">
+            <div className="min-w-0 flex-1">
               <h3 className="font-bold text-lg">
                 {channel === 'telegram' ? 'Telegram — історія' : 'Instagram — історія'}
               </h3>
-              <p className="text-sm text-gray-600 mt-1">
-                {(() => {
-                  const ig = resolveDisplayInstagramUsername(
-                    displayIg || client.instagramUsername,
-                    displayIg,
-                  );
-                  const igHandle = String(ig || '').replace(/^@/, '');
-                  const igOk = hasNormalInstagramUsername(igHandle);
-                  const badge =
-                    contactKind === 'lead' ? (
-                      <LeadBadgeIcon size={16} />
-                    ) : (
-                      <ClientSpendLoyaltyBadge spent={client.spent} size="sm" />
+              <div className="mt-1 flex flex-wrap items-center gap-2">
+                <p className="text-sm text-gray-600 min-w-0">
+                  {(() => {
+                    const ig = resolveDisplayInstagramUsername(
+                      displayIg || client.instagramUsername,
+                      displayIg,
                     );
-                  const badgeNode = igOk ? (
-                    <a
-                      href={`https://instagram.com/${encodeURIComponent(igHandle)}`}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      className="inline-flex shrink-0 hover:opacity-80"
-                      title={`Відкрити @${igHandle} в Instagram`}
-                    >
-                      {badge}
-                    </a>
-                  ) : (
-                    <span className="inline-flex shrink-0">{badge}</span>
-                  );
-                  return (
-                    <span className="inline-flex items-center gap-1.5">
-                      {badgeNode}
-                      <span>
-                        {clientName}
-                        {contactKind === 'client' && client.visits != null ? (
-                          <span className="opacity-80">{` (${client.visits})`}</span>
-                        ) : null}
-                        {igOk ? <span>{` (@${igHandle})`}</span> : null}
+                    const igHandle = String(ig || '').replace(/^@/, '');
+                    const igOk = hasNormalInstagramUsername(igHandle);
+                    const badge =
+                      contactKind === 'lead' ? (
+                        <LeadBadgeIcon size={16} />
+                      ) : (
+                        <ClientSpendLoyaltyBadge spent={client.spent} size="sm" />
+                      );
+                    const badgeNode = igOk ? (
+                      <a
+                        href={`https://instagram.com/${encodeURIComponent(igHandle)}`}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="inline-flex shrink-0 hover:opacity-80"
+                        title={`Відкрити @${igHandle} в Instagram`}
+                      >
+                        {badge}
+                      </a>
+                    ) : (
+                      <span className="inline-flex shrink-0">{badge}</span>
+                    );
+                    return (
+                      <span className="inline-flex items-center gap-1.5">
+                        {badgeNode}
+                        <span>
+                          {clientName}
+                          {contactKind === 'client' && client.visits != null ? (
+                            <span className="opacity-80">{` (${client.visits})`}</span>
+                          ) : null}
+                          {igOk ? <span>{` (@${igHandle})`}</span> : null}
+                        </span>
                       </span>
-                    </span>
-                  );
-                })()}
-              </p>
+                    );
+                  })()}
+                </p>
+                <button
+                  type="button"
+                  className="btn btn-sm btn-primary h-8 min-h-0 px-3 text-xs font-semibold"
+                  onClick={openConsultForm}
+                  title="Створити/оновити клієнта і відкрити Журнал для запису на консультацію"
+                >
+                  Консультація
+                </button>
+              </div>
               {channel === 'telegram' && telegramStats ? (
                 <p className="text-xs text-gray-500 mt-1">
                   У чаті: {telegramStats.total} (вхідні {telegramStats.incoming}, вихідні {telegramStats.outgoing}).
@@ -809,7 +911,7 @@ export function MessagesHistoryModal({
               ) : null}
             </div>
             <button
-              className="btn btn-sm btn-circle btn-ghost"
+              className="btn btn-sm btn-circle btn-ghost shrink-0"
               onClick={onClose}
             >
               ✕
@@ -1171,6 +1273,92 @@ export function MessagesHistoryModal({
           </button>
         </div>
       </div>
+
+      {consultOpen ? (
+        <div
+          className="fixed inset-0 z-[60] flex items-center justify-center"
+          style={{ backgroundColor: 'rgba(0, 0, 0, 0.45)' }}
+          onClick={() => {
+            if (!consultSaving) setConsultOpen(false);
+          }}
+        >
+          <div
+            className="bg-white rounded-lg shadow-xl w-full max-w-md mx-4 p-5"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="flex items-center justify-between mb-3">
+              <h4 className="font-bold text-base">Консультація — новий клієнт</h4>
+              <button
+                type="button"
+                className="btn btn-sm btn-circle btn-ghost"
+                onClick={() => setConsultOpen(false)}
+                disabled={consultSaving}
+              >
+                ✕
+              </button>
+            </div>
+            <form onSubmit={submitConsultForm} className="space-y-3">
+              <label className="form-control w-full">
+                <div className="label py-0">
+                  <span className="label-text text-xs">ПІБ</span>
+                </div>
+                <input
+                  className="input input-sm input-bordered w-full"
+                  value={consultFullName}
+                  onChange={(e) => setConsultFullName(e.target.value)}
+                  placeholder="Прізвище Імʼя"
+                  autoFocus
+                  disabled={consultSaving}
+                />
+              </label>
+              <label className="form-control w-full">
+                <div className="label py-0">
+                  <span className="label-text text-xs">Телефон</span>
+                </div>
+                <input
+                  className="input input-sm input-bordered w-full"
+                  value={consultPhone}
+                  onChange={(e) => setConsultPhone(e.target.value)}
+                  placeholder="+380…"
+                  disabled={consultSaving}
+                />
+              </label>
+              <label className="form-control w-full">
+                <div className="label py-0">
+                  <span className="label-text text-xs">Instagram</span>
+                </div>
+                <input
+                  className="input input-sm input-bordered w-full"
+                  value={consultInstagram}
+                  onChange={(e) => setConsultInstagram(e.target.value)}
+                  placeholder="username"
+                  disabled={consultSaving}
+                />
+              </label>
+              {consultError ? (
+                <div className="text-xs text-error">{consultError}</div>
+              ) : (
+                <div className="text-xs text-gray-500">
+                  Після збереження відкриється Журнал у новій вкладці — оберіть майстра і дату, клієнт підставиться в картку запису.
+                </div>
+              )}
+              <div className="flex justify-end gap-2 pt-1">
+                <button
+                  type="button"
+                  className="btn btn-sm"
+                  onClick={() => setConsultOpen(false)}
+                  disabled={consultSaving}
+                >
+                  Скасувати
+                </button>
+                <button type="submit" className="btn btn-sm btn-primary" disabled={consultSaving}>
+                  {consultSaving ? 'Збереження…' : 'Зберегти'}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      ) : null}
     </div>
   );
 }

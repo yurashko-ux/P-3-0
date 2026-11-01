@@ -89,6 +89,68 @@ export default function JournalDayPage() {
   const [formOpen, setFormOpen] = useState(false);
   const [checkoutId, setCheckoutId] = useState<string | null>(null);
   const openedFromUrl = useRef(false);
+  const pendingClientRef = useRef<{
+    id: string;
+    label: string;
+    phone?: string | null;
+    instagram?: string | null;
+    altegioClientId?: number | null;
+    spent?: number | null;
+    visits?: number | null;
+  } | null>(null);
+
+  const peekPendingClientFields = useCallback(() => {
+    let pending = pendingClientRef.current;
+    if (!pending?.id) {
+      try {
+        const raw = sessionStorage.getItem("journal:pendingClient");
+        if (raw) {
+          const parsed = JSON.parse(raw) as {
+            id?: string;
+            label?: string;
+            phone?: string | null;
+            instagram?: string | null;
+            altegioClientId?: number | null;
+            spent?: number | null;
+            visits?: number | null;
+          };
+          if (parsed?.id) {
+            pending = {
+              id: parsed.id,
+              label: parsed.label || parsed.id,
+              phone: parsed.phone,
+              instagram: parsed.instagram,
+              altegioClientId: parsed.altegioClientId,
+              spent: parsed.spent,
+              visits: parsed.visits,
+            };
+            pendingClientRef.current = pending;
+          }
+        }
+      } catch {
+        // ignore
+      }
+    }
+    if (!pending?.id) return {};
+    return {
+      directClientId: pending.id,
+      clientLabel: pending.label,
+      clientPhone: pending.phone ?? null,
+      clientInstagram: pending.instagram ?? null,
+      clientSpent: pending.spent ?? null,
+      clientVisits: pending.visits ?? null,
+      altegioClientId: pending.altegioClientId ?? null,
+    };
+  }, []);
+
+  const clearPendingClient = useCallback(() => {
+    pendingClientRef.current = null;
+    try {
+      sessionStorage.removeItem("journal:pendingClient");
+    } catch {
+      // ignore
+    }
+  }, []);
 
   const load = useCallback(async (ymd: string) => {
     setLoading(true);
@@ -137,9 +199,9 @@ export default function JournalDayPage() {
   }, [day, load]);
 
   const openBookForm = useCallback(() => {
-    setDraft({});
+    setDraft({ ...peekPendingClientFields() });
     setFormOpen(true);
-  }, []);
+  }, [peekPendingClientFields]);
 
   useEffect(() => {
     setSidebarActions({
@@ -156,6 +218,7 @@ export default function JournalDayPage() {
     setDraft({
       masterId,
       datetime: datetimeLocal,
+      ...peekPendingClientFields(),
     });
     setFormOpen(true);
   };
@@ -352,6 +415,106 @@ export default function JournalDayPage() {
     window.history.replaceState(null, "", q ? `${window.location.pathname}?${q}` : window.location.pathname);
   }, [openBookForm]);
 
+  // Консультація з Direct: pendingClientId → підставити клієнта при відкритті картки запису
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    const pendingId = params.get("pendingClientId");
+    if (!pendingId) {
+      try {
+        const raw = sessionStorage.getItem("journal:pendingClient");
+        if (raw) {
+          const parsed = JSON.parse(raw) as {
+            id?: string;
+            label?: string;
+            phone?: string | null;
+            instagram?: string | null;
+            altegioClientId?: number | null;
+            spent?: number | null;
+            visits?: number | null;
+          };
+          if (parsed?.id) {
+            pendingClientRef.current = {
+              id: parsed.id,
+              label: parsed.label || parsed.id,
+              phone: parsed.phone,
+              instagram: parsed.instagram,
+              altegioClientId: parsed.altegioClientId,
+              spent: parsed.spent,
+              visits: parsed.visits,
+            };
+          }
+        }
+      } catch {
+        // ignore
+      }
+      return;
+    }
+
+    params.delete("pendingClientId");
+    const q = params.toString();
+    window.history.replaceState(null, "", q ? `${window.location.pathname}?${q}` : window.location.pathname);
+
+    void (async () => {
+      let fromStorage: {
+        id: string;
+        label: string;
+        phone?: string | null;
+        instagram?: string | null;
+        altegioClientId?: number | null;
+        spent?: number | null;
+        visits?: number | null;
+      } | null = null;
+      try {
+        const raw = sessionStorage.getItem("journal:pendingClient");
+        if (raw) {
+          const parsed = JSON.parse(raw) as typeof fromStorage;
+          if (parsed?.id === pendingId) fromStorage = parsed;
+        }
+      } catch {
+        // ignore
+      }
+
+      if (fromStorage) {
+        pendingClientRef.current = fromStorage;
+        setNotice(`Клієнт «${fromStorage.label}» готовий — оберіть майстра і час для запису`);
+        return;
+      }
+
+      try {
+        const res = await fetch(`/api/admin/direct/clients/${encodeURIComponent(pendingId)}`, {
+          credentials: "include",
+        });
+        const json = await res.json().catch(() => null);
+        const c = json?.client;
+        if (!res.ok || !json?.ok || !c?.id) return;
+        const label =
+          [c.lastName, c.firstName].filter(Boolean).join(" ").trim() ||
+          c.instagramUsername ||
+          c.id;
+        pendingClientRef.current = {
+          id: c.id,
+          label,
+          phone: c.phone || null,
+          instagram: c.instagramUsername || null,
+          altegioClientId: c.altegioClientId ?? null,
+          spent: c.spent ?? null,
+          visits: c.visits ?? null,
+        };
+        try {
+          sessionStorage.setItem(
+            "journal:pendingClient",
+            JSON.stringify(pendingClientRef.current),
+          );
+        } catch {
+          // ignore
+        }
+        setNotice(`Клієнт «${label}» готовий — оберіть майстра і час для запису`);
+      } catch {
+        // ignore
+      }
+    })();
+  }, []);
+
   useEffect(() => {
     if (openedFromUrl.current) return;
     const params = new URLSearchParams(window.location.search);
@@ -434,7 +597,10 @@ export default function JournalDayPage() {
         <JournalAppointmentForm
           open={formOpen}
           onClose={() => setFormOpen(false)}
-          onSaved={() => void load(day)}
+          onSaved={() => {
+            clearPendingClient();
+            void load(day);
+          }}
           masters={staff}
           services={services}
           draft={draft}
