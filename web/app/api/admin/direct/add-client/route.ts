@@ -44,6 +44,8 @@ export async function POST(req: NextRequest) {
       phone,
       source,
       syncAltegio = false,
+      // Телефон без консультації/платного запису — не робити «клієнтом» у Direct
+      keepAsLead = false,
     } = body;
 
     if (!instagramUsername) {
@@ -134,6 +136,8 @@ export async function POST(req: NextRequest) {
     const now = new Date().toISOString();
 
     if (!client) {
+      // keepAsLead / немає консультації: Altegio-картка може бути, але в Direct лишається лід
+      const asLead = Boolean(keepAsLead) || !altegioClientId;
       client = {
         id: `direct_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
         instagramUsername: normalized,
@@ -142,9 +146,9 @@ export async function POST(req: NextRequest) {
         ...(phoneNorm ? { phone: phoneNorm } : {}),
         ...(altegioClientId ? { altegioClientId } : {}),
         source: (source as "instagram" | "tiktok" | "other") || "instagram",
-        state: (altegioClientId ? "client" : "message") as DirectClient["state"],
+        state: (asLead ? "message" : "client") as DirectClient["state"],
         firstContactDate: now,
-        statusId: altegioClientId ? "client" : "lead",
+        statusId: asLead ? "lead" : "client",
         visitedSalon: false,
         signedUpForPaidService: false,
         createdAt: now,
@@ -156,8 +160,12 @@ export async function POST(req: NextRequest) {
         ok: true,
         message: altegioClientId
           ? altegioCreated
-            ? "Клієнта створено в Kresco і в Altegio"
-            : "Клієнта створено в Kresco; в Altegio знайдено за телефоном"
+            ? asLead
+              ? "Ліда створено в Kresco і в Altegio (статус клієнта — після консультації)"
+              : "Клієнта створено в Kresco і в Altegio"
+            : asLead
+              ? "Ліда створено; в Altegio знайдено за телефоном"
+              : "Клієнта створено в Kresco; в Altegio знайдено за телефоном"
           : "Клієнт створено",
         client,
         created: true,
@@ -166,6 +174,13 @@ export async function POST(req: NextRequest) {
           : null,
       });
     }
+
+    // Не промоутити ліда в клієнта лише через телефон/Altegio id
+    const keepLeadOnUpdate =
+      Boolean(keepAsLead) &&
+      client.statusId !== "client" &&
+      !client.consultationBookingDate &&
+      !client.paidServiceDate;
 
     const updated: DirectClient = {
       ...client,
@@ -177,6 +192,9 @@ export async function POST(req: NextRequest) {
         : {}),
       ...(altegioClientId && !(client.altegioClientId && client.altegioClientId > 0)
         ? { altegioClientId }
+        : {}),
+      ...(keepLeadOnUpdate
+        ? { statusId: "lead" as const, state: (client.state === "client" ? "message" : client.state) }
         : {}),
     };
     // Якщо вже був altegioClientId — не перетираємо іншим id

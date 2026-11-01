@@ -737,8 +737,114 @@ export function MessagesHistoryModal({
     }
   }
 
+  const openJournalWithPendingClient = (payload: {
+    id: string;
+    label: string;
+    phone?: string | null;
+    instagram?: string | null;
+    altegioClientId?: number | null;
+    spent?: number | null;
+    visits?: number | null;
+  }) => {
+    try {
+      sessionStorage.setItem('journal:pendingClient', JSON.stringify(payload));
+    } catch {
+      // ignore storage errors
+    }
+    window.open(
+      `/admin/journal?pendingClientId=${encodeURIComponent(payload.id)}`,
+      '_blank',
+      'noopener,noreferrer',
+    );
+  };
+
+  /** Уже є картка з телефоном (або розділ Клієнти) — одразу Журнал без форми. */
+  const openJournalForExistingClient = async () => {
+    if (!client) return;
+    const name = getFullName(client);
+    const label =
+      name && name !== '-'
+        ? name
+        : client.firstName || client.lastName || client.instagramUsername || client.id;
+    const ig = resolveDisplayInstagramUsername(
+      displayIg || client.instagramUsername,
+      displayIg,
+    );
+    const igHandle = String(ig || client.instagramUsername || '')
+      .replace(/^@/, '')
+      .trim();
+    const phoneValue = String(client.phone || '').trim();
+
+    // Якщо є телефон, але ще немає Altegio — підтягнути/створити там, лишаючи лідом у Direct
+    if (phoneValue && !(client.altegioClientId && client.altegioClientId > 0)) {
+      setConsultSaving(true);
+      setConsultError(null);
+      const openFormFallback = (errText: string) => {
+        setConsultFullName(label);
+        setConsultPhone(phoneValue);
+        setConsultInstagram(hasNormalInstagramUsername(igHandle) ? igHandle : '');
+        setConsultError(errText);
+        setConsultOpen(true);
+      };
+      try {
+        const res = await fetch('/api/admin/direct/add-client', {
+          method: 'POST',
+          credentials: 'include',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            fullName: label,
+            phone: phoneValue,
+            instagramUsername: hasNormalInstagramUsername(igHandle)
+              ? igHandle
+              : client.instagramUsername,
+            source: 'instagram',
+            syncAltegio: true,
+            keepAsLead: contactKind !== 'client',
+          }),
+        });
+        const data = await res.json().catch(() => ({}));
+        if (!res.ok || !data?.ok || !data?.client?.id) {
+          openFormFallback(data?.error || 'Не вдалося синхронізувати з Altegio');
+          return;
+        }
+        openJournalWithPendingClient({
+          id: String(data.client.id),
+          label:
+            [data.client.lastName, data.client.firstName].filter(Boolean).join(' ').trim() ||
+            label,
+          phone: data.client.phone || phoneValue,
+          instagram: data.client.instagramUsername || igHandle || null,
+          altegioClientId: data.client.altegioClientId || data.altegio?.clientId || null,
+          spent: data.client.spent ?? client.spent ?? null,
+          visits: data.client.visits ?? client.visits ?? null,
+        });
+        setConsultOpen(false);
+      } catch (err) {
+        openFormFallback(err instanceof Error ? err.message : String(err));
+      } finally {
+        setConsultSaving(false);
+      }
+      return;
+    }
+
+    openJournalWithPendingClient({
+      id: client.id,
+      label,
+      phone: client.phone || null,
+      instagram: hasNormalInstagramUsername(igHandle) ? igHandle : client.instagramUsername || null,
+      altegioClientId: client.altegioClientId ?? null,
+      spent: client.spent ?? null,
+      visits: client.visits ?? null,
+    });
+  };
+
   const openConsultForm = () => {
     if (!client) return;
+    // Клієнти / лід уже з телефоном — без модалки, одразу Журнал
+    if (contactKind === 'client' || String(client.phone || '').trim()) {
+      void openJournalForExistingClient();
+      return;
+    }
     const name = getFullName(client);
     const ig = resolveDisplayInstagramUsername(
       displayIg || client.instagramUsername,
@@ -785,6 +891,8 @@ export function MessagesHistoryModal({
           instagramUsername: instagramValue,
           source: 'instagram',
           syncAltegio: true,
+          // Лише телефон без консультації/платного запису — лишається лід
+          keepAsLead: true,
         }),
       });
       const data = await res.json().catch(() => ({}));
@@ -796,24 +904,15 @@ export function MessagesHistoryModal({
       const label =
         [data.client.lastName, data.client.firstName].filter(Boolean).join(' ').trim() ||
         fullNameValue;
-      try {
-        sessionStorage.setItem(
-          'journal:pendingClient',
-          JSON.stringify({
-            id: clientId,
-            label,
-            phone: data.client.phone || phoneValue,
-            instagram: data.client.instagramUsername || instagramValue,
-            altegioClientId: data.client.altegioClientId || data.altegio?.clientId || null,
-            spent: data.client.spent ?? null,
-            visits: data.client.visits ?? null,
-          }),
-        );
-      } catch {
-        // ignore storage errors
-      }
-      const journalUrl = `/admin/journal?pendingClientId=${encodeURIComponent(clientId)}`;
-      window.open(journalUrl, '_blank', 'noopener,noreferrer');
+      openJournalWithPendingClient({
+        id: clientId,
+        label,
+        phone: data.client.phone || phoneValue,
+        instagram: data.client.instagramUsername || instagramValue,
+        altegioClientId: data.client.altegioClientId || data.altegio?.clientId || null,
+        spent: data.client.spent ?? null,
+        visits: data.client.visits ?? null,
+      });
       setConsultOpen(false);
     } catch (err) {
       setConsultError(err instanceof Error ? err.message : String(err));
@@ -898,9 +997,20 @@ export function MessagesHistoryModal({
                   type="button"
                   className="btn btn-sm btn-primary h-8 min-h-0 px-3 text-xs font-semibold"
                   onClick={openConsultForm}
-                  title="Створити/оновити клієнта і відкрити Журнал для запису на консультацію"
+                  disabled={consultSaving}
+                  title={
+                    contactKind === 'client'
+                      ? 'Відкрити Журнал і підставити цього клієнта в картку запису'
+                      : String(client.phone || '').trim()
+                        ? 'Відкрити Журнал і підставити клієнта (телефон уже є)'
+                        : 'Створити клієнта з телефоном і відкрити Журнал для консультації'
+                  }
                 >
-                  Консультація
+                  {consultSaving
+                    ? '…'
+                    : contactKind === 'client'
+                      ? 'Запис'
+                      : 'Консультація'}
                 </button>
               </div>
               {channel === 'telegram' && telegramStats ? (
@@ -1287,7 +1397,9 @@ export function MessagesHistoryModal({
             onClick={(e) => e.stopPropagation()}
           >
             <div className="flex items-center justify-between mb-3">
-              <h4 className="font-bold text-base">Консультація — новий клієнт</h4>
+              <h4 className="font-bold text-base">
+                {contactKind === 'client' ? 'Запис — клієнт' : 'Консультація — новий клієнт'}
+              </h4>
               <button
                 type="button"
                 className="btn btn-sm btn-circle btn-ghost"
