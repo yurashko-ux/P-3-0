@@ -61,6 +61,7 @@ export type SyncAltegioFinanceTransactionsResult = {
   dateTo: string;
   fetched: number;
   upserted: number;
+  skippedUnchanged?: number;
   purposesSynced: number;
   sourceEndpoint: string;
 };
@@ -384,8 +385,14 @@ export async function syncAltegioFinanceTransactions(params: {
 
   let fetched = 0;
   let upserted = 0;
+  let skippedUnchanged = 0;
   let lastPage = 0;
   let sourceEndpoint = SOURCE_ENDPOINT;
+  /** Призначення: один upsert на унікальний normalizedTitle за весь запуск */
+  const purposesFromRows = new Map<
+    string,
+    { title: string; expenseId: number | null; raw: RawAltegioFinanceTransaction }
+  >();
 
   try {
     for (let page = 1; page <= maxPages; page += 1) {
@@ -395,93 +402,179 @@ export async function syncAltegioFinanceTransactions(params: {
       sourceEndpoint = pageResult.sourceEndpoint;
       fetched += rows.length;
 
-      for (const row of rows) {
-        const altegioId = toInt(row.id);
-        if (!altegioId) continue;
-        const operationDate = parseAltegioDate(row.date || row.created_at);
-        const amountKopiykas = toKopiykas(row.amount);
-        const direction = detectDirection(row, amountKopiykas);
-        const accountId = toInt(row.account_id ?? row.account?.id);
-        const expenseId = toInt(row.expense_id ?? row.expense?.id);
-        const categoryTitle = getCategoryTitle(row);
-        const paymentPurpose = getPaymentPurpose(row);
-        const accountBalanceAfterKopiykas = extractPaymentMethodBalanceKopiykas(
-          row,
-          accountId != null ? String(accountId) : null,
-        );
-
-        await (prisma as any).altegioFinanceTransaction.upsert({
-          where: { companyId_altegioId: { companyId, altegioId } },
-          create: {
+      const parsed = rows
+        .map((row) => {
+          const altegioId = toInt(row.id);
+          if (!altegioId) return null;
+          const operationDate = parseAltegioDate(row.date || row.created_at);
+          const amountKopiykas = toKopiykas(row.amount);
+          const direction = detectDirection(row, amountKopiykas);
+          const accountId = toInt(row.account_id ?? row.account?.id);
+          const expenseId = toInt(row.expense_id ?? row.expense?.id);
+          const categoryTitle = getCategoryTitle(row);
+          const paymentPurpose = getPaymentPurpose(row);
+          const accountBalanceAfterKopiykas = extractPaymentMethodBalanceKopiykas(
+            row,
+            accountId != null ? String(accountId) : null,
+          );
+          return {
+            row,
             altegioId,
-            companyId,
-            accountId: accountId != null ? String(accountId) : null,
-            accountTitle: cleanText(row.account?.title || row.account?.name),
-            documentId: getDocumentId(row),
-            expenseId,
             operationDate,
-            kyivDay: kyivDayFromDate(operationDate),
             amountKopiykas,
-            accountBalanceAfterKopiykas,
             direction,
+            accountId,
+            expenseId,
             categoryTitle,
             paymentPurpose,
-            comment: cleanText(row.comment),
-            counterpartyName: getCounterpartyName(row),
-            sourceEndpoint,
-            rawData: row as object,
-            deletedInAltegio: truthyFlag(row.deleted),
-            syncedAt: new Date(),
-          },
-          update: {
-            accountId: accountId != null ? String(accountId) : null,
+            accountBalanceAfterKopiykas,
             accountTitle: cleanText(row.account?.title || row.account?.name),
             documentId: getDocumentId(row),
-            expenseId,
-            operationDate,
-            kyivDay: kyivDayFromDate(operationDate),
-            amountKopiykas,
-            accountBalanceAfterKopiykas,
-            direction,
-            categoryTitle,
-            paymentPurpose,
             comment: cleanText(row.comment),
             counterpartyName: getCounterpartyName(row),
-            sourceEndpoint,
-            rawData: row as object,
             deletedInAltegio: truthyFlag(row.deleted),
-            syncedAt: new Date(),
-          },
-        });
-        upserted += 1;
+            kyivDay: kyivDayFromDate(operationDate),
+          };
+        })
+        .filter(Boolean) as Array<{
+        row: RawAltegioFinanceTransaction;
+        altegioId: number;
+        operationDate: Date;
+        amountKopiykas: bigint;
+        direction: string;
+        accountId: number | null;
+        expenseId: number | null;
+        categoryTitle: string | null;
+        paymentPurpose: string | null;
+        accountBalanceAfterKopiykas: bigint | null;
+        accountTitle: string | null;
+        documentId: number | null;
+        comment: string | null;
+        counterpartyName: string | null;
+        deletedInAltegio: boolean;
+        kyivDay: string;
+      }>;
 
-        if (paymentPurpose) {
-          const normalizedTitle = normalizePaymentPurposeTitle(paymentPurpose);
-          if (normalizedTitle) {
-            await (prisma as any).altegioPaymentPurpose.upsert({
-              where: { companyId_normalizedTitle: { companyId, normalizedTitle } },
-              create: {
-                companyId,
-                externalId: expenseId != null ? String(expenseId) : null,
-                title: paymentPurpose,
-                normalizedTitle,
-                source: "finance_transaction",
-                rawData: row as object,
-                isActive: true,
-                syncedAt: new Date(),
+      const pageIds = parsed.map((p) => p.altegioId);
+      const existingRows =
+        pageIds.length > 0
+          ? await (prisma as any).altegioFinanceTransaction.findMany({
+              where: { companyId, altegioId: { in: pageIds } },
+              select: {
+                altegioId: true,
+                accountId: true,
+                accountTitle: true,
+                documentId: true,
+                expenseId: true,
+                operationDate: true,
+                kyivDay: true,
+                amountKopiykas: true,
+                accountBalanceAfterKopiykas: true,
+                direction: true,
+                categoryTitle: true,
+                paymentPurpose: true,
+                comment: true,
+                counterpartyName: true,
+                deletedInAltegio: true,
               },
-              update: {
-                title: paymentPurpose,
-                externalId: expenseId != null ? String(expenseId) : null,
-                isActive: true,
-                syncedAt: new Date(),
-              },
+            })
+          : [];
+      const existingById = new Map<number, (typeof existingRows)[number]>(
+        existingRows.map((r: { altegioId: number }) => [r.altegioId, r]),
+      );
+
+      for (const item of parsed) {
+        if (item.paymentPurpose) {
+          const normalizedTitle = normalizePaymentPurposeTitle(item.paymentPurpose);
+          if (normalizedTitle && !purposesFromRows.has(normalizedTitle)) {
+            purposesFromRows.set(normalizedTitle, {
+              title: item.paymentPurpose,
+              expenseId: item.expenseId,
+              raw: item.row,
             });
           }
         }
+
+        const existing = existingById.get(item.altegioId);
+        const same =
+          existing &&
+          String(existing.accountId ?? "") === String(item.accountId != null ? String(item.accountId) : "") &&
+          String(existing.accountTitle ?? "") === String(item.accountTitle ?? "") &&
+          String(existing.documentId ?? "") === String(item.documentId ?? "") &&
+          Number(existing.expenseId ?? 0) === Number(item.expenseId ?? 0) &&
+          new Date(existing.operationDate).getTime() === item.operationDate.getTime() &&
+          String(existing.kyivDay ?? "") === String(item.kyivDay ?? "") &&
+          BigInt(existing.amountKopiykas) === item.amountKopiykas &&
+          BigInt(existing.accountBalanceAfterKopiykas ?? 0) ===
+            BigInt(item.accountBalanceAfterKopiykas ?? 0) &&
+          String(existing.direction ?? "") === String(item.direction ?? "") &&
+          String(existing.categoryTitle ?? "") === String(item.categoryTitle ?? "") &&
+          String(existing.paymentPurpose ?? "") === String(item.paymentPurpose ?? "") &&
+          String(existing.comment ?? "") === String(item.comment ?? "") &&
+          String(existing.counterpartyName ?? "") === String(item.counterpartyName ?? "") &&
+          Boolean(existing.deletedInAltegio) === Boolean(item.deletedInAltegio);
+
+        if (same) {
+          skippedUnchanged += 1;
+          continue;
+        }
+
+        const data = {
+          accountId: item.accountId != null ? String(item.accountId) : null,
+          accountTitle: item.accountTitle,
+          documentId: item.documentId,
+          expenseId: item.expenseId,
+          operationDate: item.operationDate,
+          kyivDay: item.kyivDay,
+          amountKopiykas: item.amountKopiykas,
+          accountBalanceAfterKopiykas: item.accountBalanceAfterKopiykas,
+          direction: item.direction,
+          categoryTitle: item.categoryTitle,
+          paymentPurpose: item.paymentPurpose,
+          comment: item.comment,
+          counterpartyName: item.counterpartyName,
+          sourceEndpoint,
+          rawData: item.row as object,
+          deletedInAltegio: item.deletedInAltegio,
+          syncedAt: new Date(),
+        };
+
+        await (prisma as any).altegioFinanceTransaction.upsert({
+          where: { companyId_altegioId: { companyId, altegioId: item.altegioId } },
+          create: {
+            altegioId: item.altegioId,
+            companyId,
+            ...data,
+          },
+          update: data,
+        });
+        upserted += 1;
       }
 
       if (rows.length < count) break;
+    }
+
+    // Призначення з транзакцій — один раз на унікальний title
+    for (const [normalizedTitle, purpose] of purposesFromRows.entries()) {
+      await (prisma as any).altegioPaymentPurpose.upsert({
+        where: { companyId_normalizedTitle: { companyId, normalizedTitle } },
+        create: {
+          companyId,
+          externalId: purpose.expenseId != null ? String(purpose.expenseId) : null,
+          title: purpose.title,
+          normalizedTitle,
+          source: "finance_transaction",
+          rawData: purpose.raw as object,
+          isActive: true,
+          syncedAt: new Date(),
+        },
+        update: {
+          title: purpose.title,
+          externalId: purpose.expenseId != null ? String(purpose.expenseId) : null,
+          isActive: true,
+          syncedAt: new Date(),
+        },
+      });
     }
 
     const purposesSynced = params.syncPurposes === false ? 0 : await syncPaymentPurposes(companyId);
@@ -502,11 +595,22 @@ export async function syncAltegioFinanceTransactions(params: {
       dateTo,
       fetched,
       upserted,
+      skippedUnchanged,
+      purposesFromRows: purposesFromRows.size,
       purposesSynced,
       balancesUpdated: balances.transactionsUpdated,
     });
 
-    return { companyId, dateFrom, dateTo, fetched, upserted, purposesSynced, sourceEndpoint };
+    return {
+      companyId,
+      dateFrom,
+      dateTo,
+      fetched,
+      upserted,
+      skippedUnchanged,
+      purposesSynced,
+      sourceEndpoint,
+    };
   } catch (error) {
     await (prisma as any).altegioFinanceSyncState.update({
       where: { companyId_syncKey: { companyId, syncKey: FINANCE_SYNC_KEY } },
