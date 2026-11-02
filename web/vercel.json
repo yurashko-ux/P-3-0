@@ -49,7 +49,7 @@
     },
     {
       "path": "/api/cron/sync-warehouse-mirror",
-      "schedule": "20 * * * *"
+      "schedule": "20 */6 * * *"
     },
     {
       "path": "/api/cron/sync-journal-records",
@@ -66,10 +66,6 @@
     {
       "path": "/api/cron/sync-altegio-finance-transactions",
       "schedule": "*/30 * * * *"
-    },
-    {
-      "path": "/api/cron/sync-altegio-archive",
-      "schedule": "0 * * * *"
     },
     {
       "path": "/api/cron/bank-automatic-altegio-payments",
