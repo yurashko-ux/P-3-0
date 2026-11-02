@@ -45,6 +45,8 @@ type ConsultationClient = {
   consultationCancelled: boolean;
   isOnlineConsultation: boolean;
   masterId: string | null;
+  consultationMasterId?: string | null;
+  consultationMasterName?: string | null;
   masterDisplayName: string | null;
   consultationListComment: string | null;
   consultationListOutcomeOverride: string | null;
@@ -321,6 +323,8 @@ function ConsultationsPageContent() {
       }
       updateClientLocal(clientId, {
         masterId: res.client?.masterId ?? (masterId || null),
+        consultationMasterId: res.client?.consultationMasterId ?? (masterId || null),
+        consultationMasterName: res.client?.consultationMasterName ?? null,
         masterDisplayName: res.client?.masterDisplayName ?? null,
       });
     },

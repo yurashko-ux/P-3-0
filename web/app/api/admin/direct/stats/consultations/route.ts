@@ -184,6 +184,7 @@ export async function GET(req: NextRequest) {
       consultationCancelled: true,
       isOnlineConsultation: true,
       consultationMasterName: true,
+      consultationMasterId: true,
       serviceMasterName: true,
       masterId: true,
       paidServiceDate: true,
@@ -286,6 +287,7 @@ export async function GET(req: NextRequest) {
       consultationCancelled: boolean;
       isOnlineConsultation: boolean | null;
       consultationMasterName: string | null;
+      consultationMasterId: string | null;
       masterId: string | null;
       masterDisplayName: string | null;
       consultationListComment: string | null;
@@ -308,11 +310,18 @@ export async function GET(req: NextRequest) {
     };
 
     const mapped: MappedConsultationRow[] = [];
+    const masterNameById = new Map(visibleMasters.map((m) => [m.id, m.name]));
 
     for (const c of filtered) {
       const outcome = getConsultationOutcome(c);
       const masterNames = getConsultationMasterColumnNames(c as unknown as DirectClient);
-      const masterDisplayName = masterNames.length > 0 ? masterNames.join(", ") : null;
+      const selectMasterId = c.consultationMasterId || c.masterId || null;
+      const masterDisplayName =
+        masterNames.length > 0
+          ? masterNames.join(", ")
+          : selectMasterId
+            ? masterNameById.get(selectMasterId) || null
+            : null;
       const inMonth = isConsultationInMonth(c, monthStartUtc, anchorEndUtc);
       const booked = hasConsultationBooking(c);
       const asLead = isNewLeadInMonth(c, monthStartUtc, anchorEndUtc);
@@ -334,7 +343,9 @@ export async function GET(req: NextRequest) {
         consultationCancelled: c.consultationCancelled,
         isOnlineConsultation: c.isOnlineConsultation,
         consultationMasterName: c.consultationMasterName,
-        masterId: c.masterId,
+        consultationMasterId: c.consultationMasterId,
+        // Для селекта колонки «Майстер» — майстер консультації, інакше відповідальний.
+        masterId: selectMasterId,
         masterDisplayName,
         consultationListComment: c.consultationListComment,
         consultationListOutcomeOverride: c.consultationListOutcomeOverride,

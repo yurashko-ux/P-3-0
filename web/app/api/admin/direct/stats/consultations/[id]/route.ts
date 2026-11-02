@@ -74,18 +74,23 @@ export async function PATCH(
 
     if (Object.prototype.hasOwnProperty.call(body, "masterId")) {
       const raw = body.masterId;
+      // У списку Ліди колонка «Майстер» = майстер консультації (не лише відповідальний).
       if (raw === null || raw === "") {
         updates.masterId = undefined;
+        updates.consultationMasterId = undefined;
+        updates.consultationMasterName = undefined;
         updates.masterManuallySet = true;
       } else if (typeof raw === "string" && raw.trim()) {
         const master = await prisma.directMaster.findFirst({
           where: { id: raw.trim(), isActive: true },
-          select: { id: true },
+          select: { id: true, name: true },
         });
         if (!master) {
           return NextResponse.json({ ok: false, error: "Майстра не знайдено" }, { status: 400 });
         }
         updates.masterId = master.id;
+        updates.consultationMasterId = master.id;
+        updates.consultationMasterName = master.name;
         updates.masterManuallySet = true;
       }
     }
@@ -128,12 +133,20 @@ export async function PATCH(
       fields: Object.keys(updates),
     });
 
+    const masterDisplayName =
+      masterNames.length > 0
+        ? masterNames.join(", ")
+        : masters.find((m) => m.id === saved.masterId || m.id === saved.consultationMasterId)?.name ||
+          null;
+
     return NextResponse.json({
       ok: true,
       client: {
         id: saved.id,
-        masterId: saved.masterId ?? null,
-        masterDisplayName: masterNames.length > 0 ? masterNames.join(", ") : null,
+        masterId: saved.masterId ?? saved.consultationMasterId ?? null,
+        consultationMasterId: saved.consultationMasterId ?? null,
+        consultationMasterName: saved.consultationMasterName ?? null,
+        masterDisplayName,
         consultationListComment: saved.consultationListComment ?? null,
         consultationListOutcomeOverride: saved.consultationListOutcomeOverride ?? null,
       },
