@@ -25,7 +25,8 @@ function LoginInner() {
     hostname.endsWith('.vercel.app') &&
     hostname !== 'p-3-0.vercel.app' &&
     hostname !== 'cresco-crm.vercel.app';
-  // Логін+пароль (AppUser) — і на cresco, і на p-3-0: інакше Маркетолог не зайде в /admin/journal на p-3-0.
+  // Спільне посилання журналу (p-3-0): користувачі з Доступів — логін+свій пароль.
+  // ADMIN_PASS лишається лише для супер-адміна (не роздавати маркетологу).
   const showPasswordForm = isCresco || isP30 || isPreviewDeployment || !hostname;
   const showTokenForm = isP30 || isPreviewDeployment || (!isCresco && !hostname);
   const nextRaw = sp.get('next') || '';
@@ -37,12 +38,16 @@ function LoginInner() {
   const handlePasswordLogin = async (e: React.FormEvent) => {
     e.preventDefault();
     setError('');
+    if (!login.trim()) {
+      setError('Вкажіть логін користувача з розділу Доступи');
+      return;
+    }
     setSubmitting(true);
     try {
       const res = await fetch('/api/auth/login', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ login: login.trim() || undefined, password }),
+        body: JSON.stringify({ login: login.trim(), password }),
       });
       const data = await res.json();
       if (data.ok) {
@@ -72,11 +77,11 @@ function LoginInner() {
           marginBottom: 16, padding: '12px 14px', borderRadius: 10,
           border: '1px solid #fecaca', background: '#fef2f2', color: '#7f1d1d'
         }}>
-          {error || 'Невірний токен або сесія завершена. Спробуйте ще раз.'}
+          {error || 'Невірний логін/пароль або сесія завершена. Спробуйте ще раз.'}
         </div>
       )}
 
-      {/* Cresco CRM: тільки логін + пароль */}
+      {/* Основний вхід для посад (Маркетолог тощо) — свій логін з Доступів */}
       {showPasswordForm && (
         <form onSubmit={handlePasswordLogin} style={{
           border: '1px solid #e8ebf0', borderRadius: 16, background: '#fff', padding: 20,
@@ -84,7 +89,7 @@ function LoginInner() {
         }}>
           <div>
             <label htmlFor="login" style={{ display: 'block', marginBottom: 8, fontWeight: 700 }}>
-              {isCresco ? 'Логін' : 'Логін (опційно для супер-адміна)'}
+              Логін
             </label>
             <input
               id="login"
@@ -92,7 +97,9 @@ function LoginInner() {
               type="text"
               value={login}
               onChange={(e) => setLogin(e.target.value)}
-              placeholder="Логін користувача"
+              placeholder="Логін з розділу Доступи"
+              autoComplete="username"
+              required
               style={{
                 width: '100%', padding: '12px 14px', borderRadius: 12,
                 border: '1px solid #dfe3ea', background: '#f8fbff'
@@ -109,7 +116,8 @@ function LoginInner() {
               type="password"
               value={password}
               onChange={(e) => setPassword(e.target.value)}
-              placeholder="Пароль"
+              placeholder="Пароль користувача"
+              autoComplete="current-password"
               required
               style={{
                 width: '100%', padding: '12px 14px', borderRadius: 12,
@@ -130,43 +138,43 @@ function LoginInner() {
         </form>
       )}
 
-      {/* p-3-0: тільки вхід по токену (ADMIN_PASS). Лише форма в картці, без заголовка/підказки/вийти */}
+      {/* Супер-адмін: ADMIN_PASS — не для роздачі співробітникам */}
       {showTokenForm && (
-        <form method="GET" action="" style={{
-          border: '1px solid #e8ebf0', borderRadius: 16, background: '#fff', padding: 20,
-          display: 'grid', gap: 16
-        }}>
-          {!isP30 && (
-            <div style={{ marginBottom: 0, color: 'rgba(0,0,0,0.6)', fontSize: 14 }}>
-              Або для супер-адміна (ADMIN_PASS):
+        <details style={{ marginTop: 16 }}>
+          <summary style={{ cursor: 'pointer', color: 'rgba(0,0,0,0.45)', fontSize: 13 }}>
+            Вхід супер-адміна
+          </summary>
+          <form method="GET" action="" style={{
+            marginTop: 10, border: '1px solid #e8ebf0', borderRadius: 16, background: '#fff', padding: 20,
+            display: 'grid', gap: 16
+          }}>
+            <div>
+              <label htmlFor="token" style={{ display: 'block', marginBottom: 8, fontWeight: 700 }}>
+                ADMIN_PASS
+              </label>
+              <input
+                id="token"
+                name="token"
+                value={token}
+                onChange={(e) => setToken(e.target.value)}
+                placeholder="Токен супер-адміна"
+                style={{
+                  width: '100%', padding: '12px 14px', borderRadius: 12,
+                  border: '1px solid #dfe3ea', background: '#f8fbff'
+                }}
+              />
             </div>
-          )}
-          <div>
-            <label htmlFor="token" style={{ display: 'block', marginBottom: 8, fontWeight: 700 }}>
-              ADMIN_PASS (токен)
-            </label>
-            <input
-              id="token"
-              name="token"
-              value={token}
-              onChange={(e) => setToken(e.target.value)}
-              placeholder="Введіть ADMIN_PASS"
+            <button
+              type="submit"
               style={{
-                width: '100%', padding: '12px 14px', borderRadius: 12,
-                border: '1px solid #dfe3ea', background: '#f8fbff'
+                background: '#6b7280', color: '#fff', padding: '12px 16px', borderRadius: 12,
+                border: 'none', fontWeight: 800, width: '100%'
               }}
-            />
-          </div>
-          <button
-            type="submit"
-            style={{
-              background: '#6b7280', color: '#fff', padding: '12px 16px', borderRadius: 12,
-              border: 'none', fontWeight: 800, width: '100%'
-            }}
-          >
-            Увійти (токен)
-          </button>
-        </form>
+            >
+              Увійти (токен)
+            </button>
+          </form>
+        </details>
       )}
     </main>
   );
