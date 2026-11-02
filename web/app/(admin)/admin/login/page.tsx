@@ -25,8 +25,14 @@ function LoginInner() {
     hostname.endsWith('.vercel.app') &&
     hostname !== 'p-3-0.vercel.app' &&
     hostname !== 'cresco-crm.vercel.app';
-  const showPasswordForm = isCresco || isPreviewDeployment || (!isP30 && !hostname);
+  // Логін+пароль (AppUser) — і на cresco, і на p-3-0: інакше Маркетолог не зайде в /admin/journal на p-3-0.
+  const showPasswordForm = isCresco || isP30 || isPreviewDeployment || !hostname;
   const showTokenForm = isP30 || isPreviewDeployment || (!isCresco && !hostname);
+  const nextRaw = sp.get('next') || '';
+  const nextPath =
+    nextRaw.startsWith('/') && !nextRaw.startsWith('//') && !nextRaw.includes('\\')
+      ? nextRaw
+      : '';
 
   const handlePasswordLogin = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -40,9 +46,12 @@ function LoginInner() {
       });
       const data = await res.json();
       if (data.ok) {
-        window.location.href = typeof data.startPath === 'string' && data.startPath.startsWith('/')
-          ? data.startPath
-          : '/admin/direct';
+        // ?next= має пріоритет (напр. відкрили /admin/journal → логін → назад у журнал)
+        const dest = nextPath
+          || (typeof data.startPath === 'string' && data.startPath.startsWith('/')
+            ? data.startPath
+            : '/admin/direct');
+        window.location.href = dest;
         return;
       }
       setError(data.error || 'Помилка входу');
