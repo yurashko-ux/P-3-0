@@ -14,6 +14,7 @@ import { resolveDisplayInstagramUsername } from '@/lib/direct-message-handle';
 import { ClientSpendLoyaltyBadge } from '@/app/admin/_components/ClientNameWithLoyalty';
 import { resolveInstagramReactionEmoji } from '@/lib/instagram-webhook';
 import { LeadBadgeIcon } from './DirectClientTableRowBadges';
+import { resolveDirectContactKind } from '@/lib/direct-contact-kind';
 import { getFullName } from './direct-client-table-formatters';
 
 interface MessageMedia {
@@ -47,7 +48,10 @@ interface MessagesHistoryModalProps {
   onClose: () => void;
   /** Канал переписки: instagram (за замовч.) або telegram */
   channel?: DirectChatChannel;
-  /** У Переписках: лід → синій кружечок, клієнт → бейдж витрат. */
+  /**
+   * @deprecated Не використовується для бейджа/кнопки.
+   * Лід vs клієнт визначається з даних картки (resolveDirectContactKind) у всіх розділах.
+   */
   contactKind?: 'client' | 'lead';
   /** Після завантаження історії — щоб Переписки одразу підтягнули порядок (вихідні салону). */
   onHistoryLoaded?: (info: {
@@ -165,10 +169,12 @@ export function MessagesHistoryModal({
   isOpen,
   onClose,
   channel = 'instagram',
-  contactKind = 'client',
+  contactKind: _contactKindProp,
   onHistoryLoaded,
   onChatStatusUpdated,
 }: MessagesHistoryModalProps) {
+  // Наскрізно: лід → синя крапка + «Консультація»; клієнт → витрати + «Запис».
+  const contactKind = resolveDirectContactKind(client);
   const statusFields = CHANNEL_CHAT_STATUS_FIELDS[channel];
   const [messages, setMessages] = useState<Message[]>([]);
   const [loading, setLoading] = useState(false);
