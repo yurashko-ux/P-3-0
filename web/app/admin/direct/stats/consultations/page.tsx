@@ -216,6 +216,31 @@ function ConsultationsPageContent() {
     return counts;
   }, [clients]);
 
+  // Лічильник джерел лідів за обраний місяць: емодзі джерела + кількість (назва — у підказці).
+  // Клієнт рахується один раз, навіть якщо в таблиці є і рядок ліда, і копія консультації.
+  const sourceCounts = useMemo(() => {
+    const groups = new Map<string, { mark: string | null; name: string; count: number }>();
+    const seen = new Set<string>();
+    for (const c of clients) {
+      if (seen.has(c.id)) continue;
+      seen.add(c.id);
+      const meta = c.leadAgency ? leadSourcesMap[c.leadAgency] : undefined;
+      const mark = (c.sourceMark || "").trim() || meta?.mark || null;
+      const name = (c.sourceName || "").trim() || meta?.name || c.leadAgency || "";
+      const key = c.leadAgency || mark || "__none__";
+      const group = groups.get(key) || {
+        mark: key === "__none__" ? "❔" : mark,
+        name: key === "__none__" ? "Без джерела" : name || "Невідоме джерело",
+        count: 0,
+      };
+      group.count += 1;
+      groups.set(key, group);
+    }
+    return Array.from(groups.entries())
+      .map(([key, g]) => ({ key, ...g }))
+      .sort((a, b) => b.count - a.count);
+  }, [clients, leadSourcesMap]);
+
   useEffect(() => {
     if (/^\d{4}-\d{2}$/.test(monthFromUrl) && monthFromUrl !== selectedMonth) {
       setSelectedMonth(monthFromUrl);
@@ -442,6 +467,20 @@ function ConsultationsPageContent() {
             </span>
           ))}
         </div>
+        {sourceCounts.length > 0 && (
+          <div className="flex flex-wrap items-center gap-1.5 text-[11px] pl-1 border-l border-gray-300">
+            {sourceCounts.map((s) => (
+              <span
+                key={s.key}
+                className="inline-flex items-center gap-0.5 whitespace-nowrap cursor-default"
+                title={`${s.name}: ${s.count}`}
+              >
+                {s.mark ? <span className="text-sm leading-none">{s.mark}</span> : <span>{s.name}</span>}
+                <span className="tabular-nums font-semibold">{s.count}</span>
+              </span>
+            ))}
+          </div>
+        )}
         <Link
           href="/admin/direct/messages"
           target="_blank"
