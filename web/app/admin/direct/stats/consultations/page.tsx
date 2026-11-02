@@ -723,6 +723,8 @@ function ConsultationsPageContent() {
         client={(messagesClient as unknown as DirectClient | null)}
         isOpen={messagesClient != null}
         channel="instagram"
+        // Розділ Ліди: синя крапка + кнопка «Консультація», не клієнтський «Запис»
+        contactKind="lead"
         onClose={() => setMessagesClient(null)}
       />
     </div>
