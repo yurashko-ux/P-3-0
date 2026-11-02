@@ -234,7 +234,6 @@ export async function GET(req: NextRequest) {
       prisma.salonAppointment.findMany({
         where: {
           source: "kresco",
-          status: { not: "deleted" },
           directClientId: { not: null },
           datetime: { gte: monthStartUtc, lt: monthEndUtc },
           lines: {
@@ -254,14 +253,27 @@ export async function GET(req: NextRequest) {
           attendance: true,
           masterId: true,
           staffName: true,
+          status: true,
         },
       }),
     ]);
 
-    // Один запис Kresco на клієнта — найпізніший у місяці.
+    // Один активний запис Kresco на клієнта — найпізніший у місяці.
+    // Видалені в Kresco — окремо: ховаємо консультацію Direct на той самий день
+    // (вебхук Altegio про видалення не очищає consultationBookingDate у Direct).
     const krescoByClientId = new Map<string, (typeof krescoConsultations)[number]>();
+    const krescoDeletedDaysByClientId = new Map<string, Set<string>>();
     for (const appt of krescoConsultations) {
-      if (appt.directClientId && !krescoByClientId.has(appt.directClientId)) {
+      if (!appt.directClientId) continue;
+      if (appt.status === "deleted") {
+        const day = kyivDayFromISO(appt.datetime.toISOString());
+        if (!day) continue;
+        const days = krescoDeletedDaysByClientId.get(appt.directClientId) || new Set<string>();
+        days.add(day);
+        krescoDeletedDaysByClientId.set(appt.directClientId, days);
+        continue;
+      }
+      if (!krescoByClientId.has(appt.directClientId)) {
         krescoByClientId.set(appt.directClientId, appt);
       }
     }
@@ -311,7 +323,22 @@ export async function GET(req: NextRequest) {
     const krescoOverrideIds = new Set<string>();
     for (const c of clients) {
       const appt = krescoByClientId.get(c.id);
-      if (!appt) continue;
+      if (!appt) {
+        // Консультацію видалили в Журналі Kresco, а Direct ще тримає її дату — не показуємо.
+        const deletedDays = krescoDeletedDaysByClientId.get(c.id);
+        const directDay =
+          c.consultationBookingDate && !c.consultationDeletedInAltegio
+            ? kyivDayFromISO(c.consultationBookingDate.toISOString())
+            : null;
+        if (deletedDays && directDay && deletedDays.has(directDay)) {
+          console.log("[stats/consultations] Консультацію видалено в Журналі Kresco — ховаємо дату з Direct", {
+            clientId: c.id,
+            directDay,
+          });
+          c.consultationDeletedInAltegio = true;
+        }
+        continue;
+      }
       const directDay =
         c.consultationBookingDate && !c.consultationDeletedInAltegio
           ? kyivDayFromISO(c.consultationBookingDate.toISOString())
