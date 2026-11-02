@@ -508,7 +508,7 @@ async function appointmentLinesAreConsultation(
   return servicesIncludeConsultation(services);
 }
 
-async function loadWriteContext(input: KrescoAppointmentInput) {
+async function loadWriteContext(input: KrescoAppointmentInput, opts?: { isCreate?: boolean }) {
   let client = await prisma.directClient.findUnique({ where: { id: input.directClientId } });
   if (!client) throw new Error("Клієнта Direct не знайдено");
 
@@ -556,6 +556,18 @@ async function loadWriteContext(input: KrescoAppointmentInput) {
       : Math.max(...orderedServices.map((s) => s.durationSec || 3600), 3600);
 
   const isConsultation = servicesIncludeConsultation(orderedServices);
+  // Нова консультація в минулому: Altegio відповідає 409 «time is not available».
+  // Зупиняємо до створення запису в Kresco і до будь-яких викликів Altegio, щоб не лишати sync_error.
+  if (opts?.isCreate && isConsultation && datetime.getTime() < Date.now()) {
+    console.warn(
+      `[journal] Відхилено створення консультації в минулому: ${formatKyivDateTime(datetime)} (зараз ${formatKyivDateTime(new Date())})`,
+    );
+    const [ymd, hm] = formatKyivDateTime(datetime).slice(0, 16).split(" ");
+    const [y, mo, d] = ymd.split("-");
+    throw new Error(
+      `Цей час недоступний — він уже минув (${d}.${mo}.${y} ${hm}). Оберіть майбутній час для консультації.`,
+    );
+  }
   const writeAltegio = shouldWriteJournalAppointmentToAltegio({ isConsultation });
   if (writeAltegio) {
     client = await ensureDirectClientLinkedToAltegio(client);
@@ -704,7 +716,7 @@ async function applyCardExtras(
 }
 
 export async function createAppointmentFromKresco(input: KrescoAppointmentInput) {
-  const ctx = await loadWriteContext(input);
+  const ctx = await loadWriteContext(input, { isCreate: true });
   const kyivDay = kyivYmdFromDateTimeInput(ctx.datetime) || "";
   const snap = snapshotFromDirectClient(ctx.client);
   const defaultStaffIds = (() => {
