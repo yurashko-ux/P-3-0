@@ -43,3 +43,4 @@ web/.turbo/
 scripts/vidryadzhennya.replacements.json
 **/vidryadzhennya.replacements.json
 **/*vidryadzhennya*.local.json
+.vercel
