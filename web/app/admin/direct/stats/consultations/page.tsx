@@ -108,7 +108,8 @@ function formatKyivDate(iso: string | null | undefined): string {
 
 function getClientName(c: ConsultationClient): string {
   const parts = [c.firstName, c.lastName].filter(Boolean);
-  return parts.length > 0 ? parts.join(" ") : c.instagramUsername;
+  if (parts.length > 0) return parts.join(" ");
+  return hasNormalInstagramUsername(c.instagramUsername) ? c.instagramUsername : "—";
 }
 
 function buildDirectClientHref(clientId: string, label?: string): string {
@@ -573,9 +574,11 @@ function ConsultationsPageContent() {
                   if (!c) return null;
 
                   rowNumber += 1;
-                  const username = (c.instagramUsername || "").replace(/^@/, "");
+                  // Технічні заглушки (missing_instagram_…, binotel_…) не показуємо — лише «—».
+                  const hasInstagram = hasNormalInstagramUsername(c.instagramUsername);
+                  const username = hasInstagram ? (c.instagramUsername || "").replace(/^@/, "") : "";
                   const instagramUrl = username ? `https://instagram.com/${username}` : null;
-                  const avatarSrc = hasNormalInstagramUsername(c.instagramUsername)
+                  const avatarSrc = hasInstagram
                     ? `/api/admin/direct/instagram-avatar?clientId=${encodeURIComponent(c.id)}&username=${encodeURIComponent(username)}`
                     : null;
                   const rowBg = CONSULTATION_ROW_BG[c.rowColorKey];
