@@ -355,7 +355,8 @@ export function EditUserModal({ user, functions, onClose, onSaved }: Props) {
               placeholder={CRESCO_MOBILE_APP_URL || "https://…"}
             />
             <p className="mt-1 text-xs text-gray-500">
-              Додається в повідомлення при «Надіслати доступ». За замовчуванням — логін Креско.
+              Додається в повідомлення при «Надіслати доступ». За замовчуванням — бот журналу
+              @Zurnal_zapysiv_bot.
             </p>
           </div>
           <div>
