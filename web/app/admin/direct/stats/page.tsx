@@ -933,6 +933,36 @@ function ActiveBaseDailyChart({
 }
 
 function DirectStatsPageContent() {
+  const [accessChecked, setAccessChecked] = useState(false);
+  const [canViewStats, setCanViewStats] = useState(false);
+
+  // Закриваємо прямий захід на /admin/direct/stats без права statsSection
+  useEffect(() => {
+    let cancelled = false;
+    fetch("/api/auth/me", { credentials: "include" })
+      .then((res) => res.json())
+      .then((data) => {
+        if (cancelled) return;
+        const level = data?.permissions?.statsSection;
+        const allowed = data?.ok === true && level != null && level !== "none";
+        setCanViewStats(allowed);
+        setAccessChecked(true);
+        if (!allowed && typeof window !== "undefined") {
+          const hasLeads = data?.permissions?.leadsSection != null && data.permissions.leadsSection !== "none";
+          window.location.replace(hasLeads ? "/admin/direct/stats/consultations" : "/admin/direct");
+        }
+      })
+      .catch(() => {
+        if (cancelled) return;
+        setCanViewStats(false);
+        setAccessChecked(true);
+        if (typeof window !== "undefined") window.location.replace("/admin/direct");
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
   // Місячний фільтр (masters-stats): календарний YYYY-MM у Europe/Kyiv — той самий, що «Звіт за:» / KPI
   const [selectedMonth, setSelectedMonth] = useState<string>(() => {
     try {
@@ -1939,6 +1969,14 @@ function DirectStatsPageContent() {
       </>
     );
   };
+
+  if (!accessChecked || !canViewStats) {
+    return (
+      <div className="w-full max-w-full px-1 py-6 flex items-center justify-center min-h-[200px]">
+        <span className="loading loading-spinner loading-lg" />
+      </div>
+    );
+  }
 
   return (
     <div className="w-full max-w-full px-1 py-6">

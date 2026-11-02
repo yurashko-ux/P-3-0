@@ -158,6 +158,7 @@ async function patchConsultationClient(
 }
 
 function ConsultationsPageContent() {
+  const [canOpenStats, setCanOpenStats] = useState(false);
   const router = useRouter();
   const searchParams = useSearchParams();
   const monthOptions = useMemo(() => buildMonthOptions(), []);
@@ -220,6 +221,24 @@ function ConsultationsPageContent() {
       setSelectedMonth(monthFromUrl);
     }
   }, [monthFromUrl, selectedMonth]);
+
+  // «← Статистика» лише якщо є право statsSection (Маркетолог з Лідами не має бачити звіт)
+  useEffect(() => {
+    let cancelled = false;
+    fetch("/api/auth/me", { credentials: "include" })
+      .then((res) => res.json())
+      .then((data) => {
+        if (cancelled) return;
+        const level = data?.permissions?.statsSection;
+        setCanOpenStats(data?.ok === true && level != null && level !== "none");
+      })
+      .catch(() => {
+        if (!cancelled) setCanOpenStats(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   const loadClients = useCallback(async (opts?: { silent?: boolean }) => {
     if (!opts?.silent) setLoading(true);
@@ -384,9 +403,15 @@ function ConsultationsPageContent() {
   return (
     <div className="w-full max-w-full px-2 pt-1 pb-2 min-w-0">
       <div className="flex flex-wrap items-center gap-1 mb-1">
-        <Link href="/admin/direct/stats" className="btn btn-ghost btn-xs min-h-6 h-6 px-1.5 text-[10px]">
-          ← Статистика
-        </Link>
+        {canOpenStats ? (
+          <Link href="/admin/direct/stats" className="btn btn-ghost btn-xs min-h-6 h-6 px-1.5 text-[10px]">
+            ← Статистика
+          </Link>
+        ) : (
+          <Link href="/admin/direct" className="btn btn-ghost btn-xs min-h-6 h-6 px-1.5 text-[10px]">
+            ← Direct
+          </Link>
+        )}
         <h1 className="text-sm font-semibold leading-none px-1">Ліди</h1>
         <select
           className="h-8 w-[12.5rem] shrink-0 rounded-md border border-gray-300 bg-white px-2 text-[13px] leading-8 text-gray-900"

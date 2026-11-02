@@ -461,6 +461,7 @@ function EmojisPanel({ sources, onChanged }: { sources: Source[]; onChanged: () 
 }
 
 export default function LeadSourcesPage() {
+  const [canOpenStats, setCanOpenStats] = useState(false);
   const [month, setMonth] = useState("");
   const [sources, setSources] = useState<Source[]>([]);
   const [error, setError] = useState("");
@@ -491,6 +492,23 @@ export default function LeadSourcesPage() {
   useEffect(() => {
     void load();
   }, [load]);
+
+  useEffect(() => {
+    let cancelled = false;
+    fetch("/api/auth/me", { credentials: "include" })
+      .then((res) => res.json())
+      .then((data) => {
+        if (cancelled) return;
+        const level = data?.permissions?.statsSection;
+        setCanOpenStats(data?.ok === true && level != null && level !== "none");
+      })
+      .catch(() => {
+        if (!cancelled) setCanOpenStats(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   async function createSource() {
     setSaving(true);
@@ -597,9 +615,11 @@ export default function LeadSourcesPage() {
     <div className="w-full px-4 py-6">
       <div className="mb-4 flex flex-wrap items-center gap-3">
         <h1 className="text-2xl font-bold">Джерела</h1>
-        <Link href="/admin/direct/stats" className="text-sm link">
-          Статистика
-        </Link>
+        {canOpenStats ? (
+          <Link href="/admin/direct/stats" className="text-sm link">
+            Статистика
+          </Link>
+        ) : null}
         <label className="form-control ml-auto">
           <span className="label-text text-xs">Місяць</span>
           <input
