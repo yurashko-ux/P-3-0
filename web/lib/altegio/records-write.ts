@@ -126,7 +126,8 @@ export async function updateAltegioRecord(
   const companyId = resolveCompanyId();
   if (!(recordId > 0)) throw new Error("Немає id запису Altegio для оновлення");
   try {
-    const raw = await altegioFetch<unknown>(`/records/${companyId}/${recordId}`, {
+    // Altegio: створення — POST /records/{company}, а один запис — /record/{company}/{id} (однина).
+    const raw = await altegioFetch<unknown>(`/record/${companyId}/${recordId}`, {
       method: "PUT",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(toPayload(input)),
@@ -145,9 +146,14 @@ export async function deleteAltegioRecord(recordId: number): Promise<void> {
   const companyId = resolveCompanyId();
   if (!(recordId > 0)) throw new Error("Немає id запису Altegio для видалення");
   try {
-    await altegioFetch<unknown>(`/records/${companyId}/${recordId}`, { method: "DELETE" });
+    await altegioFetch<unknown>(`/record/${companyId}/${recordId}`, { method: "DELETE" });
     console.log(`[altegio/records-write] Видалено запис id=${recordId}`);
   } catch (err) {
+    // 404 — запису в Altegio вже немає (видалили там раніше): мета досягнута, не блокуємо видалення в Kresco.
+    if (err instanceof AltegioHttpError && err.status === 404) {
+      console.warn(`[altegio/records-write] Запис ${recordId} уже відсутній в Altegio (404) — вважаємо видаленим`);
+      return;
+    }
     throw formatAltegioError(err, `видалення запису ${recordId}`);
   }
 }
