@@ -5,7 +5,7 @@
 
 import { useState, useEffect, useCallback } from "react";
 import Link from "next/link";
-import { CRESCO_LOGIN_URL } from "@/lib/access/cresco-login-url";
+import { CRESCO_LOGIN_URL, CRESCO_MOBILE_APP_URL } from "@/lib/access/cresco-login-url";
 import { CreateUserModal } from "./_components/CreateUserModal";
 import { CreateFunctionModal } from "./_components/CreateFunctionModal";
 import { EditUserModal } from "./_components/EditUserModal";
@@ -206,7 +206,10 @@ export default function AccessPage() {
                                 type="button"
                                 className="btn btn-ghost btn-xs whitespace-nowrap"
                                 onClick={async () => {
-                                  const text = `${CRESCO_LOGIN_URL}\nЛогін: ${u.login}`;
+                                  const mobileLine = CRESCO_MOBILE_APP_URL
+                                    ? `\nМобільний додаток: ${CRESCO_MOBILE_APP_URL}`
+                                    : "";
+                                  const text = `${CRESCO_LOGIN_URL}${mobileLine}\nЛогін: ${u.login}`;
                                   await navigator.clipboard.writeText(text);
                                   alert("Скопійовано посилання та логін.");
                                 }}

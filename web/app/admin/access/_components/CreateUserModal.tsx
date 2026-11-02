@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { CRESCO_LOGIN_URL } from "@/lib/access/cresco-login-url";
+import { CRESCO_LOGIN_URL, CRESCO_MOBILE_APP_URL } from "@/lib/access/cresco-login-url";
 
 type AppFunction = { id: string; name: string };
 
@@ -57,7 +57,10 @@ export function CreateUserModal({ functions, onClose, onCreated }: Props) {
 
   const handleCopy = async () => {
     if (!created) return;
-    const text = `${CRESCO_LOGIN_URL}\nЛогін: ${created.login}\nПароль: ${created.password}`;
+    const mobileLine = CRESCO_MOBILE_APP_URL
+      ? `\nМобільний додаток: ${CRESCO_MOBILE_APP_URL}`
+      : "";
+    const text = `${CRESCO_LOGIN_URL}${mobileLine}\nЛогін: ${created.login}\nПароль: ${created.password}`;
     await navigator.clipboard.writeText(text);
     alert("Скопійовано!");
   };
@@ -78,6 +81,12 @@ export function CreateUserModal({ functions, onClose, onCreated }: Props) {
               <span className="text-gray-500">Посилання: </span>
               <span className="break-all">{CRESCO_LOGIN_URL}</span>
             </div>
+            {CRESCO_MOBILE_APP_URL ? (
+              <div>
+                <span className="text-gray-500">Мобільний додаток: </span>
+                <span className="break-all">{CRESCO_MOBILE_APP_URL}</span>
+              </div>
+            ) : null}
             <div>
               <span className="text-gray-500">Логін: </span>
               <span>{created.login}</span>

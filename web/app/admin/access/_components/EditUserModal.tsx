@@ -352,10 +352,10 @@ export function EditUserModal({ user, functions, onClose, onSaved }: Props) {
               value={mobileAppUrl}
               onChange={(e) => setMobileAppUrl(e.target.value)}
               className="input input-bordered w-full"
-              placeholder="https://…"
+              placeholder={CRESCO_MOBILE_APP_URL || "https://…"}
             />
             <p className="mt-1 text-xs text-gray-500">
-              Додається в повідомлення при «Надіслати доступ».
+              Додається в повідомлення при «Надіслати доступ». За замовчуванням — логін Креско.
             </p>
           </div>
           <div>
