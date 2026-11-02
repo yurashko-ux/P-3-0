@@ -9,6 +9,8 @@
 @.cursor/rules/git-workflow.mdc
 
 ## Примітки для Claude
+- **Важливіше за правило автокоміту з Cursor:** зміни робити локально й перевіряти на dev-сервері (`cd web && npm run dev -- -p 3000`, http://localhost:3000) у вбудованому браузері. Комітити й пушити лише тоді, коли користувач напише.
+- Локальний dev-сервер працює з продакшн-БД і KV (`web/.env.local`) — обережно із записом даних і зайвими запитами.
 - Код застосунку — у `web/` (Next.js, Prisma). Деплой: push у `main` → Vercel (https://p-3-0.vercel.app).
 - Статус збірки перевіряти через `vercel` CLI (`vercel ls`, `vercel inspect --logs <url>`) або в дашборді https://vercel.com/mykolays-projects/p-3-0.
 - Файли `web/scripts/tmp-*.ts` і `web/tsconfig.tsbuildinfo` не комітити без потреби.

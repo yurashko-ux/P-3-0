@@ -154,6 +154,7 @@ export async function GET(req: NextRequest) {
 
     const { startUtc: monthStartUtc } = getKyivDayUtcBounds(startOfMonthKyiv);
     const { endUtc: anchorEndUtc } = getKyivDayUtcBounds(anchorDay);
+    const { endUtc: monthEndUtc } = getKyivDayUtcBounds(endOfMonthKyiv);
 
     const masters = await prisma.directMaster.findMany({
       where: { isActive: true },
@@ -203,7 +204,9 @@ export async function GET(req: NextRequest) {
       leadAdId: true,
     } as const;
 
-    const [consultationIdRows, newLeadIdRows] = await Promise.all([
+    // Альтернативний шлях: консультації, створені в Журналі Kresco (не чекаємо вебхук Altegio → Direct).
+    // +1 запит до БД на завантаження сторінки. Лише source=kresco; імпорт з Altegio не чіпаємо.
+    const [consultationIdRows, newLeadIdRows, krescoConsultations] = await Promise.all([
       prisma.$queryRaw<Array<{ id: string }>>`
         SELECT id
         FROM direct_clients
@@ -228,11 +231,45 @@ export async function GET(req: NextRequest) {
             )
           )
       `,
+      prisma.salonAppointment.findMany({
+        where: {
+          source: "kresco",
+          status: { not: "deleted" },
+          directClientId: { not: null },
+          datetime: { gte: monthStartUtc, lt: monthEndUtc },
+          lines: {
+            some: {
+              OR: [
+                { service: { kind: "consultation" } },
+                { title: { contains: "консультаці", mode: "insensitive" } },
+              ],
+            },
+          },
+        },
+        orderBy: { datetime: "desc" },
+        select: {
+          id: true,
+          directClientId: true,
+          datetime: true,
+          attendance: true,
+          masterId: true,
+          staffName: true,
+        },
+      }),
     ]);
+
+    // Один запис Kresco на клієнта — найпізніший у місяці.
+    const krescoByClientId = new Map<string, (typeof krescoConsultations)[number]>();
+    for (const appt of krescoConsultations) {
+      if (appt.directClientId && !krescoByClientId.has(appt.directClientId)) {
+        krescoByClientId.set(appt.directClientId, appt);
+      }
+    }
 
     const idSet = new Set<string>();
     for (const row of consultationIdRows) idSet.add(row.id);
     for (const row of newLeadIdRows) idSet.add(row.id);
+    for (const clientId of krescoByClientId.keys()) idSet.add(clientId);
     const allIds = Array.from(idSet);
 
     let clients =
@@ -268,10 +305,42 @@ export async function GET(req: NextRequest) {
       anchorEndUtc: anchorEndUtc.toISOString(),
     });
 
+    // Журнал Kresco має пріоритет над Direct, якщо консультація на інший день (або в Direct її немає).
+    // Той самий день Kyiv — лишаємо дані Direct (вебхук уже обробив цей запис).
+    // Лише для відображення: картку клієнта в БД не змінюємо.
+    const krescoOverrideIds = new Set<string>();
+    for (const c of clients) {
+      const appt = krescoByClientId.get(c.id);
+      if (!appt) continue;
+      const directDay =
+        c.consultationBookingDate && !c.consultationDeletedInAltegio
+          ? kyivDayFromISO(c.consultationBookingDate.toISOString())
+          : null;
+      const krescoDay = kyivDayFromISO(appt.datetime.toISOString());
+      if (directDay && directDay === krescoDay) continue;
+      console.log("[stats/consultations] Консультація з Журналу Kresco замість Direct", {
+        clientId: c.id,
+        appointmentId: appt.id,
+        krescoDay,
+        directDay,
+      });
+      c.consultationBookingDate = appt.datetime;
+      c.consultationDeletedInAltegio = false;
+      c.consultationCancelled = false;
+      // attendance як в Altegio: 1 — прийшов, -1 — не з'явився, інше — очікуємо.
+      c.consultationAttended = appt.attendance === 1 ? true : appt.attendance === -1 ? false : null;
+      c.consultationMasterName = appt.staffName || null;
+      c.consultationMasterId = appt.masterId || null;
+      krescoOverrideIds.add(c.id);
+    }
+    // Консультації Kresco показуємо на весь місяць, включно з майбутніми днями.
+    const consultationWindowEnd = (clientId: string) =>
+      krescoOverrideIds.has(clientId) ? monthEndUtc : anchorEndUtc;
+
     const filtered = clients.filter(
       (c) =>
         isNewLeadInMonth(c, monthStartUtc, anchorEndUtc) ||
-        isConsultationInMonth(c, monthStartUtc, anchorEndUtc)
+        isConsultationInMonth(c, monthStartUtc, consultationWindowEnd(c.id))
     );
 
     type MappedConsultationRow = {
@@ -322,7 +391,7 @@ export async function GET(req: NextRequest) {
           : selectMasterId
             ? masterNameById.get(selectMasterId) || null
             : null;
-      const inMonth = isConsultationInMonth(c, monthStartUtc, anchorEndUtc);
+      const inMonth = isConsultationInMonth(c, monthStartUtc, consultationWindowEnd(c.id));
       const booked = hasConsultationBooking(c);
       const asLead = isNewLeadInMonth(c, monthStartUtc, anchorEndUtc);
       const firstContactIso = c.firstContactDate.toISOString();
