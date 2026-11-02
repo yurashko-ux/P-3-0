@@ -284,14 +284,15 @@ export async function setTeamMemberJournalVisibility(viewerId: string, targetIds
   const existing = await prisma.teamMember.findUnique({ where: { id: viewerId }, select: { id: true, name: true } });
   if (!existing) throw new Error("Людину не знайдено");
   const uniqueTargetIds = [...new Set(targetIds.map((id) => String(id).trim()).filter(Boolean))];
-  await prisma.$transaction(async (tx) => {
-    await tx.teamMemberJournalVisibility.deleteMany({ where: { viewerId } });
-    if (uniqueTargetIds.length === 0) return;
-    await tx.teamMemberJournalVisibility.createMany({
+  // Без interactive $transaction: на Prisma Accelerate/serverless tx часто
+  // закривається між deleteMany і createMany («Transaction already closed»).
+  await prisma.teamMemberJournalVisibility.deleteMany({ where: { viewerId } });
+  if (uniqueTargetIds.length > 0) {
+    await prisma.teamMemberJournalVisibility.createMany({
       data: uniqueTargetIds.map((targetId) => ({ viewerId, targetId })),
       skipDuplicates: true,
     });
-  });
+  }
   console.log(`[team] Видимість журналу «${existing.name}» (${viewerId}): ${uniqueTargetIds.length} ціль(ей)`);
   const row = await prisma.teamMember.findUniqueOrThrow({ where: { id: viewerId }, include: memberInclude });
   return serializeMember(row);
