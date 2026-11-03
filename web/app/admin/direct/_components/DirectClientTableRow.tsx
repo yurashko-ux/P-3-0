@@ -755,228 +755,6 @@ return (
       }
     />
   </td>
-  {!hideCommunicationColumn && (
-    <td className="pl-0 pr-0.5 py-1 align-middle" style={cellPxRow("communication", getColumnStyle(columnWidths.communication, true))}>
-      <CommunicationChannelPicker
-        value={client.communicationChannel}
-        onChange={async (next) => {
-          await onClientUpdate(client.id, { communicationChannel: next });
-        }}
-      />
-    </td>
-  )}
-  {/* Переписка: число повідомлень (клік → історія) + текст-статус */}
-  <td
-    className={
-      chatStatusUiVariant === 'v2'
-        ? "pl-0 pr-1 sm:pr-1.5 py-1 text-xs whitespace-normal text-left align-top"
-        : "pl-0 pr-1 sm:pr-1.5 py-1 text-xs whitespace-nowrap overflow-hidden text-left align-top"
-    }
-    style={{ ...cellPxRow("inst", getColumnStyle(columnWidths.inst, true)), minHeight: instCallsCellMinHeight }}
-  >
-      {(() => {
-      const total =
-        typeof (client as any).messagesTotal === 'number' ? (client as any).messagesTotal : 0;
-      const needs = Boolean((client as any).chatNeedsAttention);
-      const showInstDot = winningKey === 'message';
-      const showChatStatusDot = winningKey === 'chatStatusId';
-      const statusId = (client.chatStatusId || '').toString().trim();
-      const hasStatus = Boolean(statusId);
-      const statusNameRaw = ((client as any).chatStatusName || '').toString().trim();
-      const showStatus = Boolean(statusNameRaw) && hasStatus;
-      const badgeKey = ((client as any).chatStatusBadgeKey || '').toString().trim();
-      const badgeCfg = getChatBadgeStyle(badgeKey);
-
-      // debug logs removed
-        
-      // Фон лічильника НЕ залежить від статусу:
-      // - сірий завжди
-      // - голубий тільки якщо зʼявились нові
-      // НОВЕ ПРАВИЛО:
-      // - якщо кількість повідомлень = 0 → сірий фон
-      // - якщо статус НЕ встановлено → голубий
-      // - якщо статус встановлено і нових нема → сірий
-      // - якщо є нові → голубий (незалежно від статусу)
-      // Ідентичний “телеграмний” голубий (hex), щоб вигляд був як на скріні
-      const countClass =
-        total === 0
-          ? 'bg-gray-200 text-gray-900'
-          : needs || !hasStatus
-          ? 'bg-[#2AABEE] text-white'
-          : 'bg-gray-200 text-gray-900';
-
-          const lastMessageDateStr = formatDateDDMMYY(client.lastMessageAt);
-          return (
-        <span className="flex flex-col items-start gap-0.5">
-            <div className="flex items-center justify-start gap-2 min-w-0">
-            <button
-            className={`relative inline-flex items-center justify-center rounded-full px-2 py-0.5 tabular-nums hover:opacity-80 transition-opacity ${countClass} text-[12px] font-normal leading-none`}
-            onClick={() => setMessagesHistoryClient(client)}
-            title={needs ? 'Є нові повідомлення — відкрити історію' : 'Відкрити історію повідомлень'}
-            type="button"
-            >
-            {total}
-            {showInstDot ? (
-              <CornerRedDot title="Тригер: нове повідомлення" />
-            ) : null}
-            </button>
-
-          {showStatus ? (
-            <WithCornerRedDot
-              show={showChatStatusDot}
-              title="Тригер: змінився/встановлений статус переписки"
-              dotClassName="-top-[5px] -right-[4px]"
-            >
-              <span
-                className={
-                  chatStatusUiVariant === 'v2'
-                    ? 'inline-flex min-w-0 max-w-[50px] items-start rounded-full px-2 py-0.5 text-[11px] font-normal leading-[1.05]'
-                    : 'inline-flex min-w-0 max-w-[50px] items-center rounded-full px-2 py-0.5 text-[11px] font-normal leading-none overflow-hidden'
-                }
-                title={statusNameRaw}
-                style={{
-                  backgroundColor: badgeCfg.bg,
-                  color: badgeCfg.fg,
-                }}
-              >
-                {chatStatusUiVariant === 'v2' ? (
-                  <span
-                    className="min-w-0 break-words overflow-hidden"
-                    style={{
-                      display: '-webkit-box',
-                      WebkitLineClamp: 2,
-                      WebkitBoxOrient: 'vertical',
-                    }}
-                  >
-                    {statusNameRaw}
-                  </span>
-                ) : (
-                  <span className="overflow-hidden whitespace-nowrap text-clip">
-                    {statusNameRaw}
-                  </span>
-                )}
-              </span>
-            </WithCornerRedDot>
-          ) : null}
-        </div>
-            {lastMessageDateStr !== '-' ? (
-              <span
-                className="text-[10px] leading-none opacity-60"
-                title={`Останнє повідомлення: ${lastMessageDateStr}`}
-              >
-                {lastMessageDateStr}
-              </span>
-            ) : null}
-        </span>
-      );
-    })()}
-  </td>
-  <td
-    className="pl-0 pr-1.5 sm:pr-2 py-1 text-xs text-left align-top"
-    style={{ ...cellPxRow("calls", getColumnStyle(columnWidths.calls, true)), minHeight: instCallsCellMinHeight }}
-  >
-    {(client as any).binotelCallsCount != null &&
-    (client as any).binotelCallsCount > 0 ? (
-      <span
-        className="inline-flex flex-col items-start gap-0.5"
-        title={formatDateDDMMYYHHMM((client as any).binotelLatestCallStartTime)}
-      >
-        <span className="inline-flex items-center justify-start gap-1">
-          <WithCornerRedDot
-            show={winningKey === 'binotel_call'}
-            title="Тригер: дзвінок Binotel"
-            dotClassName="-top-[5px] -right-[4px]"
-          >
-            <button
-              type="button"
-              onClick={() => setBinotelHistoryClient(client)}
-              className="inline-flex items-center"
-              title={`Історія дзвінків Binotel. Останній: ${formatDateDDMMYYHHMM((client as any).binotelLatestCallStartTime)}`}
-            >
-              <BinotelCallTypeIcon
-                callType={(client as any).binotelLatestCallType || "incoming"}
-                success={["ANSWER", "VM-SUCCESS", "SUCCESS"].includes(
-                  (client as any).binotelLatestCallDisposition || ""
-                )}
-                size={18}
-              />
-            </button>
-          </WithCornerRedDot>
-          {(() => {
-            const disp = (client as any).binotelLatestCallDisposition || "";
-            const isSuccess = ["ANSWER", "VM-SUCCESS", "SUCCESS"].includes(disp);
-            const hasRecording =
-              (client as any).binotelLatestCallRecordingUrl ||
-              (client as any).binotelLatestCallGeneralID;
-            const latestCallAt = (client as { binotelLatestCallStartTime?: string | null }).binotelLatestCallStartTime;
-            const latestCallDate = latestCallAt ? new Date(latestCallAt) : null;
-            const latestCallDay =
-              latestCallDate && !isNaN(latestCallDate.getTime())
-                ? new Intl.DateTimeFormat("en-CA", {
-                    timeZone: "Europe/Kyiv",
-                    year: "numeric",
-                    month: "2-digit",
-                    day: "2-digit",
-                  }).format(latestCallDate)
-                : "";
-            const todayKyivCall = new Intl.DateTimeFormat("en-CA", {
-              timeZone: "Europe/Kyiv",
-              year: "numeric",
-              month: "2-digit",
-              day: "2-digit",
-            }).format(new Date());
-            if (!hasRecording || !isSuccess || !latestCallDay || latestCallDay !== todayKyivCall) return null;
-            return (
-              <PlayRecordingButton
-                recordingUrl={(client as any).binotelLatestCallRecordingUrl}
-                generalCallID={(client as any).binotelLatestCallGeneralID}
-                title="Прослухати останній запис"
-                onPlayRequest={(url) => setInlineRecordingUrl(url)}
-                listenDisabled={!canListenCalls}
-              />
-            );
-          })()}
-        </span>
-        {(() => {
-          const startTime = (client as any).binotelLatestCallStartTime;
-          const dateStr = formatDateDDMMYY(startTime);
-          if (dateStr === '-') return null;
-          return (
-            <span
-              className="text-[10px] leading-none opacity-60"
-              title={formatDateDDMMYYHHMM(startTime)}
-            >
-              {dateStr}
-            </span>
-          );
-        })()}
-      </span>
-    ) : null}
-  </td>
-  <td
-    className="pl-0 pr-1 sm:pr-1.5 py-0.5 text-xs text-left align-middle"
-    style={cellPxRow("callbackReminder", getColumnStyle(columnWidths.callbackReminder, true))}
-  >
-    <CallbackReminderCell client={client} showActivityDot={winningKey === 'callbackReminder'} />
-  </td>
-  <td
-    className="pl-0 pr-1.5 sm:pr-2 py-1 text-xs text-left align-top"
-    style={cellPxRow("callStatus", getColumnStyle(columnWidths.callStatus, true))}
-  >
-    <DirectStatusCell
-      client={client}
-      statuses={statuses}
-      showDot={showStatusDot}
-      dotTitle="Тригер: змінився/встановлений статус"
-      onStatusChange={async (u) => {
-        await onClientUpdate(u.clientId, {
-          statusId: u.statusId,
-          ...(client.instagramUsername && { _fallbackInstagram: client.instagramUsername }),
-        });
-      }}
-      onMenuOpen={onStatusMenuOpen}
-    />
-  </td>
   <td className="pl-0 pr-2 sm:pr-2.5 py-1 text-xs whitespace-nowrap text-left align-top" style={cellPxRow("state", getColumnStyle(columnWidths.state, true))}>
     {(() => {
       const kyivDayFmt = new Intl.DateTimeFormat('en-CA', {
@@ -1288,6 +1066,228 @@ return (
 
       return '';
       })()}
+  </td>
+  <td
+    className="pl-0 pr-1.5 sm:pr-2 py-1 text-xs text-left align-top"
+    style={cellPxRow("callStatus", getColumnStyle(columnWidths.callStatus, true))}
+  >
+    <DirectStatusCell
+      client={client}
+      statuses={statuses}
+      showDot={showStatusDot}
+      dotTitle="Тригер: змінився/встановлений статус"
+      onStatusChange={async (u) => {
+        await onClientUpdate(u.clientId, {
+          statusId: u.statusId,
+          ...(client.instagramUsername && { _fallbackInstagram: client.instagramUsername }),
+        });
+      }}
+      onMenuOpen={onStatusMenuOpen}
+    />
+  </td>
+  {!hideCommunicationColumn && (
+    <td className="pl-0 pr-0.5 py-1 align-middle" style={cellPxRow("communication", getColumnStyle(columnWidths.communication, true))}>
+      <CommunicationChannelPicker
+        value={client.communicationChannel}
+        onChange={async (next) => {
+          await onClientUpdate(client.id, { communicationChannel: next });
+        }}
+      />
+    </td>
+  )}
+  {/* Переписка: число повідомлень (клік → історія) + текст-статус */}
+  <td
+    className={
+      chatStatusUiVariant === 'v2'
+        ? "pl-0 pr-1 sm:pr-1.5 py-1 text-xs whitespace-normal text-left align-top"
+        : "pl-0 pr-1 sm:pr-1.5 py-1 text-xs whitespace-nowrap overflow-hidden text-left align-top"
+    }
+    style={{ ...cellPxRow("inst", getColumnStyle(columnWidths.inst, true)), minHeight: instCallsCellMinHeight }}
+  >
+      {(() => {
+      const total =
+        typeof (client as any).messagesTotal === 'number' ? (client as any).messagesTotal : 0;
+      const needs = Boolean((client as any).chatNeedsAttention);
+      const showInstDot = winningKey === 'message';
+      const showChatStatusDot = winningKey === 'chatStatusId';
+      const statusId = (client.chatStatusId || '').toString().trim();
+      const hasStatus = Boolean(statusId);
+      const statusNameRaw = ((client as any).chatStatusName || '').toString().trim();
+      const showStatus = Boolean(statusNameRaw) && hasStatus;
+      const badgeKey = ((client as any).chatStatusBadgeKey || '').toString().trim();
+      const badgeCfg = getChatBadgeStyle(badgeKey);
+
+      // debug logs removed
+        
+      // Фон лічильника НЕ залежить від статусу:
+      // - сірий завжди
+      // - голубий тільки якщо зʼявились нові
+      // НОВЕ ПРАВИЛО:
+      // - якщо кількість повідомлень = 0 → сірий фон
+      // - якщо статус НЕ встановлено → голубий
+      // - якщо статус встановлено і нових нема → сірий
+      // - якщо є нові → голубий (незалежно від статусу)
+      // Ідентичний “телеграмний” голубий (hex), щоб вигляд був як на скріні
+      const countClass =
+        total === 0
+          ? 'bg-gray-200 text-gray-900'
+          : needs || !hasStatus
+          ? 'bg-[#2AABEE] text-white'
+          : 'bg-gray-200 text-gray-900';
+
+          const lastMessageDateStr = formatDateDDMMYY(client.lastMessageAt);
+          return (
+        <span className="flex flex-col items-start gap-0.5">
+            <div className="flex items-center justify-start gap-2 min-w-0">
+            <button
+            className={`relative inline-flex items-center justify-center rounded-full px-2 py-0.5 tabular-nums hover:opacity-80 transition-opacity ${countClass} text-[12px] font-normal leading-none`}
+            onClick={() => setMessagesHistoryClient(client)}
+            title={needs ? 'Є нові повідомлення — відкрити історію' : 'Відкрити історію повідомлень'}
+            type="button"
+            >
+            {total}
+            {showInstDot ? (
+              <CornerRedDot title="Тригер: нове повідомлення" />
+            ) : null}
+            </button>
+
+          {showStatus ? (
+            <WithCornerRedDot
+              show={showChatStatusDot}
+              title="Тригер: змінився/встановлений статус переписки"
+              dotClassName="-top-[5px] -right-[4px]"
+            >
+              <span
+                className={
+                  chatStatusUiVariant === 'v2'
+                    ? 'inline-flex min-w-0 max-w-[50px] items-start rounded-full px-2 py-0.5 text-[11px] font-normal leading-[1.05]'
+                    : 'inline-flex min-w-0 max-w-[50px] items-center rounded-full px-2 py-0.5 text-[11px] font-normal leading-none overflow-hidden'
+                }
+                title={statusNameRaw}
+                style={{
+                  backgroundColor: badgeCfg.bg,
+                  color: badgeCfg.fg,
+                }}
+              >
+                {chatStatusUiVariant === 'v2' ? (
+                  <span
+                    className="min-w-0 break-words overflow-hidden"
+                    style={{
+                      display: '-webkit-box',
+                      WebkitLineClamp: 2,
+                      WebkitBoxOrient: 'vertical',
+                    }}
+                  >
+                    {statusNameRaw}
+                  </span>
+                ) : (
+                  <span className="overflow-hidden whitespace-nowrap text-clip">
+                    {statusNameRaw}
+                  </span>
+                )}
+              </span>
+            </WithCornerRedDot>
+          ) : null}
+        </div>
+            {lastMessageDateStr !== '-' ? (
+              <span
+                className="text-[10px] leading-none opacity-60"
+                title={`Останнє повідомлення: ${lastMessageDateStr}`}
+              >
+                {lastMessageDateStr}
+              </span>
+            ) : null}
+        </span>
+      );
+    })()}
+  </td>
+  <td
+    className="pl-0 pr-1.5 sm:pr-2 py-1 text-xs text-left align-top"
+    style={{ ...cellPxRow("calls", getColumnStyle(columnWidths.calls, true)), minHeight: instCallsCellMinHeight }}
+  >
+    {(client as any).binotelCallsCount != null &&
+    (client as any).binotelCallsCount > 0 ? (
+      <span
+        className="inline-flex flex-col items-start gap-0.5"
+        title={formatDateDDMMYYHHMM((client as any).binotelLatestCallStartTime)}
+      >
+        <span className="inline-flex items-center justify-start gap-1">
+          <WithCornerRedDot
+            show={winningKey === 'binotel_call'}
+            title="Тригер: дзвінок Binotel"
+            dotClassName="-top-[5px] -right-[4px]"
+          >
+            <button
+              type="button"
+              onClick={() => setBinotelHistoryClient(client)}
+              className="inline-flex items-center"
+              title={`Історія дзвінків Binotel. Останній: ${formatDateDDMMYYHHMM((client as any).binotelLatestCallStartTime)}`}
+            >
+              <BinotelCallTypeIcon
+                callType={(client as any).binotelLatestCallType || "incoming"}
+                success={["ANSWER", "VM-SUCCESS", "SUCCESS"].includes(
+                  (client as any).binotelLatestCallDisposition || ""
+                )}
+                size={18}
+              />
+            </button>
+          </WithCornerRedDot>
+          {(() => {
+            const disp = (client as any).binotelLatestCallDisposition || "";
+            const isSuccess = ["ANSWER", "VM-SUCCESS", "SUCCESS"].includes(disp);
+            const hasRecording =
+              (client as any).binotelLatestCallRecordingUrl ||
+              (client as any).binotelLatestCallGeneralID;
+            const latestCallAt = (client as { binotelLatestCallStartTime?: string | null }).binotelLatestCallStartTime;
+            const latestCallDate = latestCallAt ? new Date(latestCallAt) : null;
+            const latestCallDay =
+              latestCallDate && !isNaN(latestCallDate.getTime())
+                ? new Intl.DateTimeFormat("en-CA", {
+                    timeZone: "Europe/Kyiv",
+                    year: "numeric",
+                    month: "2-digit",
+                    day: "2-digit",
+                  }).format(latestCallDate)
+                : "";
+            const todayKyivCall = new Intl.DateTimeFormat("en-CA", {
+              timeZone: "Europe/Kyiv",
+              year: "numeric",
+              month: "2-digit",
+              day: "2-digit",
+            }).format(new Date());
+            if (!hasRecording || !isSuccess || !latestCallDay || latestCallDay !== todayKyivCall) return null;
+            return (
+              <PlayRecordingButton
+                recordingUrl={(client as any).binotelLatestCallRecordingUrl}
+                generalCallID={(client as any).binotelLatestCallGeneralID}
+                title="Прослухати останній запис"
+                onPlayRequest={(url) => setInlineRecordingUrl(url)}
+                listenDisabled={!canListenCalls}
+              />
+            );
+          })()}
+        </span>
+        {(() => {
+          const startTime = (client as any).binotelLatestCallStartTime;
+          const dateStr = formatDateDDMMYY(startTime);
+          if (dateStr === '-') return null;
+          return (
+            <span
+              className="text-[10px] leading-none opacity-60"
+              title={formatDateDDMMYYHHMM(startTime)}
+            >
+              {dateStr}
+            </span>
+          );
+        })()}
+      </span>
+    ) : null}
+  </td>
+  <td
+    className="pl-0 pr-1 sm:pr-1.5 py-0.5 text-xs text-left align-middle"
+    style={cellPxRow("callbackReminder", getColumnStyle(columnWidths.callbackReminder, true))}
+  >
+    <CallbackReminderCell client={client} showActivityDot={winningKey === 'callbackReminder'} />
   </td>
   {(() => {
     // Перевіряємо, чи запис платної послуги створено сьогодні (для фону колонки)

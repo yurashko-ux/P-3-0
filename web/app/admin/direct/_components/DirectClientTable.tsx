@@ -1699,6 +1699,43 @@ export function DirectClientTable({
                       />
                     </div>
                   </th>
+                  <th className="pl-0 pr-2 sm:pr-2.5 py-0 text-[10px] font-semibold text-left" style={getColumnStyle(layoutColumnWidths.state, true)}>
+                    <div className="flex items-center justify-start gap-1">
+                      <button
+                        className={`hover:underline cursor-pointer text-left ${sortBy === "state" ? "text-blue-600 font-bold" : "text-gray-600"}`}
+                        onClick={() =>
+                          onSortChange(
+                            "state",
+                            sortBy === "state" && sortOrder === "desc" ? "asc" : "desc"
+                          )
+                        }
+                      >
+                        Стан {sortBy === "state" && (sortOrder === "asc" ? "↑" : "↓")}
+                      </button>
+                      <StateFilterDropdown
+                        clients={clients}
+                        totalClientsCount={totalClientsCount}
+                        stateCounts={stateCounts}
+                        filters={filters}
+                        onFiltersChange={onFiltersChange}
+                        columnLabel="Стан"
+                      />
+                    </div>
+                  </th>
+                  <th className="pl-0 pr-1.5 sm:pr-2 py-0 text-[10px] font-semibold text-center" style={getColumnStyle(layoutColumnWidths.callStatus, true)}>
+                    <div className="flex items-center justify-center gap-1">
+                      <span>Статус</span>
+                      <StatusFilterDropdown
+                        clients={clients}
+                        statuses={statuses}
+                        totalClientsCount={totalClientsCount}
+                        statusCounts={statusCounts}
+                        filters={filters}
+                        onFiltersChange={onFiltersChange}
+                        columnLabel="Статус"
+                      />
+                    </div>
+                  </th>
                   {!hideCommunicationColumn && (
                     <th
                       className="pl-0 pr-0.5 sm:pr-1 py-0 text-[10px] font-semibold text-left whitespace-nowrap overflow-hidden text-ellipsis"
@@ -1776,43 +1813,6 @@ export function DirectClientTable({
                         filters={filters}
                         onFiltersChange={onFiltersChange}
                         columnLabel="Передзвонити"
-                      />
-                    </div>
-                  </th>
-                  <th className="pl-0 pr-1.5 sm:pr-2 py-0 text-[10px] font-semibold text-left" style={getColumnStyle(layoutColumnWidths.callStatus, true)}>
-                    <div className="flex items-center justify-start gap-1">
-                      <span>Статус</span>
-                      <StatusFilterDropdown
-                        clients={clients}
-                        statuses={statuses}
-                        totalClientsCount={totalClientsCount}
-                        statusCounts={statusCounts}
-                        filters={filters}
-                        onFiltersChange={onFiltersChange}
-                        columnLabel="Статус"
-                      />
-                    </div>
-                  </th>
-                  <th className="pl-0 pr-2 sm:pr-2.5 py-0 text-[10px] font-semibold text-left" style={getColumnStyle(layoutColumnWidths.state, true)}>
-                    <div className="flex items-center justify-start gap-1">
-                      <button
-                        className={`hover:underline cursor-pointer text-left ${sortBy === "state" ? "text-blue-600 font-bold" : "text-gray-600"}`}
-                        onClick={() =>
-                          onSortChange(
-                            "state",
-                            sortBy === "state" && sortOrder === "desc" ? "asc" : "desc"
-                          )
-                        }
-                      >
-                        Стан {sortBy === "state" && (sortOrder === "asc" ? "↑" : "↓")}
-                      </button>
-                      <StateFilterDropdown
-                        clients={clients}
-                        totalClientsCount={totalClientsCount}
-                        stateCounts={stateCounts}
-                        filters={filters}
-                        onFiltersChange={onFiltersChange}
-                        columnLabel="Стан"
                       />
                     </div>
                   </th>
