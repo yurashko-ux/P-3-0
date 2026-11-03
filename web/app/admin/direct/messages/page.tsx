@@ -604,16 +604,8 @@ export default function DirectMessagesPage() {
   return (
     <div className="w-full max-w-full min-w-0 px-2 pb-2 pt-1">
       <div className="mb-1 flex flex-wrap items-center gap-1">
-        <Link href="/admin/direct" className="btn btn-ghost btn-xs h-6 min-h-6 px-1.5 text-[10px]">
-          ← Direct
-        </Link>
+        {/* Перехід до Direct / Лідів — у спільній панелі розділів (AdminTopNav) */}
         <h1 className="px-1 text-sm font-semibold leading-none">Переписки</h1>
-        <Link
-          href="/admin/direct/stats/consultations"
-          className="btn btn-outline btn-xs ml-auto h-6 min-h-6 px-1.5 text-[10px]"
-        >
-          Ліди
-        </Link>
       </div>
 
       <div className="flex flex-wrap items-start gap-2">

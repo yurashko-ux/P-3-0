@@ -585,9 +585,6 @@ export default function BankPage() {
   const showDebug = permissions == null || permissions.debugSection !== "none";
   const showAccess = permissions == null || permissions.accessSection !== "none";
   const showFinanceReport = permissions == null || permissions.financeReportSection !== "none";
-  const showWarehouse = permissions == null || permissions.warehouseSection !== "none";
-  const showJournal = permissions == null || permissions.journalSection !== "none";
-  const showTeam = permissions == null || permissions.teamSection !== "none";
   const showBank = permissions == null || permissions.bankSection !== "none";
 
   const loadConnections = useCallback(async (opts?: { silent?: boolean; waitForReplicaSec?: number }) => {
@@ -1532,14 +1529,6 @@ export default function BankPage() {
           style={{ width: BANK_TABLE_WIDTH, margin: "0 auto" }}
         >
           <div className="flex items-center gap-0.5 min-h-[20px] w-full md:max-w-[260px]">
-            <Link
-              href="/admin/direct"
-              className="btn btn-ghost min-h-0 py-0.5 text-[10px] px-1 leading-tight"
-              title="Дірект"
-              aria-label="Дірект"
-            >
-              🏠
-            </Link>
             <input
               type="search"
               value={displaySearch}
@@ -1599,39 +1588,7 @@ export default function BankPage() {
                 💰 Фінансовий звіт
               </Link>
             )}
-            {showWarehouse && (
-              <Link
-                href="/admin/warehouse"
-                className="btn btn-ghost min-h-0 py-0.5 text-[10px] px-1 leading-tight"
-                target="_blank"
-                rel="noopener noreferrer"
-              >
-                Склад
-              </Link>
-            )}
-            {showJournal && (
-              <Link
-                href="/admin/journal"
-                className="btn btn-ghost min-h-0 py-0.5 text-[10px] px-1 leading-tight"
-                target="_blank"
-                rel="noopener noreferrer"
-              >
-                Журнал
-              </Link>
-            )}
-            {showTeam && (
-              <Link
-                href="/admin/team"
-                className="btn btn-ghost min-h-0 py-0.5 text-[10px] px-1 leading-tight"
-                target="_blank"
-                rel="noopener noreferrer"
-              >
-                Команда
-              </Link>
-            )}
-            <Link href="/admin/direct/stats" className="btn btn-ghost min-h-0 py-0.5 text-[10px] px-1 leading-tight" target="_blank" rel="noopener noreferrer">
-              📈 Статистика
-            </Link>
+            {/* Склад / Журнал / Команда / Статистика / Direct — у спільній панелі розділів (AdminTopNav) */}
             {showDebug && (
               <Link href="/admin/debug" className="btn btn-ghost min-h-0 py-0.5 px-1 text-[10px] leading-tight" title="Відкрити тести">
                 тести

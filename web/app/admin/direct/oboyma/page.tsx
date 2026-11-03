@@ -4,7 +4,6 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
-import Link from "next/link";
 import type { OboymaDeadlineRule, OboymaMetaOption } from "@/lib/direct-oboyma-rules";
 
 type LoadState = { loading: boolean; error: string | null };
@@ -130,9 +129,6 @@ export default function OboymaPage() {
     <div className="min-h-screen bg-base-200 p-4">
       <div className="w-full max-w-[calc(100vw-32px)] mx-auto">
         <div className="flex flex-wrap items-center gap-2 mb-4">
-          <Link href="/admin/direct" className="btn btn-sm btn-ghost">
-            ← Direct
-          </Link>
           <h1 className="text-lg font-semibold">Обойма</h1>
           <span className="text-xs text-base-content/70">
             Правила автоматичних дедлайнів для колонки «Передзвонити»

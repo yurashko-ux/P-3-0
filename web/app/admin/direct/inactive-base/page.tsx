@@ -876,9 +876,6 @@ function InactiveBasePageContent() {
       <div className="w-full max-w-[calc(100vw-16px)] mx-auto">
         <div className="bg-base-100 rounded-lg border border-base-300 px-1.5 py-1 mb-1">
         <div className="flex flex-wrap gap-1 items-center">
-          <Link href="/admin/direct" className="btn btn-xs btn-ghost shrink-0 mb-0 min-h-6 h-6 px-1.5 text-[10px]">
-            ← Direct
-          </Link>
           <h1 className="text-sm font-semibold leading-none px-1">Клієнти</h1>
           <div className="inline-flex flex-col gap-0.5 shrink-0">
             <div className="flex gap-0.5">
