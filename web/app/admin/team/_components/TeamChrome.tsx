@@ -33,22 +33,9 @@ export function TeamNav() {
 export function TeamChrome({ children }: { children: React.ReactNode }) {
   return (
     <div className="min-h-screen bg-[#f6f7fb] text-gray-900">
-      <header className="sticky top-0 z-20 bg-white border-b px-3 py-2 flex flex-wrap items-center gap-2">
+      <header className="sticky top-[var(--admin-nav-h,0px)] z-20 bg-white border-b px-3 py-2 flex flex-wrap items-center gap-2">
         <h1 className="text-base font-bold mr-1">Команда</h1>
         <TeamNav />
-        <div className="flex-1" />
-        <Link href="/admin/direct" className="btn btn-ghost min-h-0 h-8 py-0 text-xs">
-          Direct
-        </Link>
-        <Link href="/admin/journal" className="btn btn-ghost min-h-0 h-8 py-0 text-xs">
-          Журнал
-        </Link>
-        <Link href="/admin/warehouse" className="btn btn-ghost min-h-0 h-8 py-0 text-xs">
-          Склад
-        </Link>
-        <Link href="/admin/finance" className="btn btn-ghost min-h-0 h-8 py-0 text-xs">
-          Фінанси
-        </Link>
       </header>
       {children}
     </div>

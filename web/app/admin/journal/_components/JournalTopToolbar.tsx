@@ -58,7 +58,7 @@ export function JournalTopToolbar() {
   }, [day]);
 
   return (
-    <header className="sticky top-0 z-10 bg-white/95 backdrop-blur-md border-b px-3 py-2 flex flex-wrap items-center gap-1.5 sm:gap-2 min-h-11">
+    <header className="sticky top-[var(--admin-nav-h,0px)] z-10 bg-white/95 backdrop-blur-md border-b px-3 py-2 flex flex-wrap items-center gap-1.5 sm:gap-2 min-h-11">
       <div className="hidden md:block">
         <button
           type="button"

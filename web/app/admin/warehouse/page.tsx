@@ -249,7 +249,7 @@ export default function WarehousePage() {
   };
 
   return (
-    <main className="h-[calc(100vh-3.25rem)] overflow-hidden flex flex-col">
+    <main className="h-[calc(100vh-3.25rem-var(--admin-nav-h,0px))] overflow-hidden flex flex-col">
       <section className="flex-1 min-h-0 flex flex-col px-3 pb-3 pt-0">
         {notice && (
           <div

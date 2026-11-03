@@ -17,7 +17,7 @@ function SidebarInner() {
   const { day, setDay, sidebarActions } = useJournalDay();
 
   return (
-    <aside className="hidden lg:flex w-[260px] shrink-0 border-r bg-[#eef0f4] flex-col min-h-screen sticky top-0 self-start max-h-screen overflow-y-auto">
+    <aside className="hidden lg:flex w-[260px] shrink-0 border-r bg-[#eef0f4] flex-col min-h-[calc(100vh-var(--admin-nav-h,0px))] sticky top-[var(--admin-nav-h,0px)] self-start max-h-[calc(100vh-var(--admin-nav-h,0px))] overflow-y-auto">
       <div className="px-3 pt-3 pb-2">
         <div className="text-sm font-bold tracking-tight">Журнал</div>
         <div className="text-[10px] text-gray-500">Kresco · dual-write Altegio</div>

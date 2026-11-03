@@ -53,6 +53,8 @@ import type { GlobalMasterFilterPanelCounts } from "@/lib/master-filter-utils";
 import { mergeIncomingClientsPreservingCommunicationMeta } from "@/lib/direct-client-communication-meta-shared";
 import { enrichClientWithLifecycle } from "@/lib/inactive-base/lifecycle";
 import { kyivDayFromISO } from "@/lib/altegio/records-grouping";
+import { AdminNavLinks } from "@/app/admin/_components/AdminTopNav";
+import type { Permissions } from "@/lib/auth-rbac";
 
 /** Таймаути fetch: без них завислий API блокує loadData() і екран вічно «Завантаження...» */
 const DIRECT_FETCH_TIMEOUT_MS = {
@@ -797,33 +799,8 @@ function DirectPageContent() {
     return () => { cancelled = true; };
   }, []);
 
-  const showFinanceDocs =
-    permissions == null ||
-    permissions.financeDocsSection !== "none" ||
-    permissions.financeReportSection !== "none" ||
-    permissions.cashSection !== "none";
-  const showLeadOperationsOnly =
-    permissions != null &&
-    permissions.financeOperationsSection !== "none" &&
-    permissions.financeDocsSection === "none" &&
-    permissions.financeReportSection === "none" &&
-    permissions.cashSection === "none";
-  const showCash = permissions == null || permissions.cashSection !== "none" || permissions.financeDocsSection !== "none";
-  const showWarehouse = permissions == null || permissions.warehouseSection !== "none";
+  // Кнопки розділів у шапці — getAdminNavItems (AdminTopNav); тут лише прапорці, потрібні самій сторінці Direct.
   const showJournal = permissions == null || permissions.journalSection !== "none";
-  const showClientsSection = permissions == null || permissions.inactiveBaseSection !== "none";
-  const showMessages = permissions == null || permissions.messagesSection !== "none";
-  const showLeads =
-    permissions == null ||
-    permissions.leadsSection !== "none" ||
-    permissions.statsSection !== "none";
-  const showTeam = permissions == null || permissions.teamSection !== "none";
-  const showBank = permissions == null || permissions.bankSection !== "none";
-  const showPaymentReconciliation =
-    permissions == null ||
-    permissions.paymentReconciliationSection !== "none" ||
-    permissions.bankSection !== "none";
-  const showStats = permissions == null || permissions.statsSection !== "none";
   const showOboyma = permissions == null || permissions.oboymaSection !== "none";
   const showDebug = permissions == null || permissions.debugSection !== "none";
   const showAccess = permissions == null || permissions.accessSection !== "none";
@@ -2497,122 +2474,14 @@ function DirectPageContent() {
                   : 'Ще не оновлювали вручну'}
             </span>
           </div>
-          {/* Кнопки навігації до інших розділів */}
-          {showBank && (
-            <Link
-              href="/admin/bank"
-              className="btn btn-ghost min-h-0 py-0.5 text-[10px] px-1 leading-tight"
-              target="_blank"
-              rel="noopener noreferrer"
-            >
-              🏦 Банк
-            </Link>
-          )}
-          {showPaymentReconciliation && (
-            <Link
-              href="/admin/direct/payment-reconciliation"
-              className="btn btn-ghost min-h-0 py-0.5 text-[10px] px-1 leading-tight"
-              target="_blank"
-              rel="noopener noreferrer"
-            >
-              Платежі
-            </Link>
-          )}
-          {showCash && (
-            <Link
-              href="/admin/finance/cash"
-              className="btn btn-ghost min-h-0 py-0.5 text-[10px] px-1 leading-tight"
-              target="_blank"
-              rel="noopener noreferrer"
-            >
-              Каса
-            </Link>
-          )}
-          {showFinanceDocs && (
-            <Link
-              href="/admin/finance"
-              className="btn btn-ghost min-h-0 py-0.5 text-[10px] px-1 leading-tight"
-              target="_blank"
-              rel="noopener noreferrer"
-            >
-              Фінанси
-            </Link>
-          )}
-          {showLeadOperationsOnly && (
-            <Link
-              href="/admin/finance/operations"
-              className="btn btn-ghost min-h-0 py-0.5 text-[10px] px-1 leading-tight"
-              target="_blank"
-              rel="noopener noreferrer"
-            >
-              Операції лідів
-            </Link>
-          )}
-          {showWarehouse && (
-            <Link
-              href="/admin/warehouse"
-              className="btn btn-ghost min-h-0 py-0.5 text-[10px] px-1 leading-tight"
-              target="_blank"
-              rel="noopener noreferrer"
-            >
-              Склад
-            </Link>
-          )}
-          {showJournal && (
-            <Link
-              href="/admin/journal"
-              className="btn btn-ghost min-h-0 py-0.5 text-[10px] px-1 leading-tight"
-              target="_blank"
-              rel="noopener noreferrer"
-            >
-              Журнал
-            </Link>
-          )}
-          {showClientsSection && (
-            <Link
-              href="/admin/direct/inactive-base"
-              className="btn btn-ghost min-h-0 py-0.5 text-[10px] px-1 leading-tight"
-              target="_blank"
-              rel="noopener noreferrer"
-            >
-              Клієнти
-            </Link>
-          )}
-          {showMessages && (
-            <Link
-              href="/admin/direct/messages"
-              className="btn btn-ghost min-h-0 py-0.5 text-[10px] px-1 leading-tight"
-              target="_blank"
-              rel="noopener noreferrer"
-            >
-              Переписки
-            </Link>
-          )}
-          {showLeads && (
-            <Link
-              href="/admin/direct/stats/consultations"
-              className="btn btn-ghost min-h-0 py-0.5 text-[10px] px-1 leading-tight"
-              target="_blank"
-              rel="noopener noreferrer"
-            >
-              Ліди
-            </Link>
-          )}
-          {showTeam && (
-            <Link
-              href="/admin/team"
-              className="btn btn-ghost min-h-0 py-0.5 text-[10px] px-1 leading-tight"
-              target="_blank"
-              rel="noopener noreferrer"
-            >
-              Команда
-            </Link>
-          )}
-          {showStats && (
-            <Link href={statsFiltersQuery ? `/admin/direct/stats?${statsFiltersQuery}` : "/admin/direct/stats"} className="btn btn-ghost min-h-0 py-0.5 text-[10px] px-1 leading-tight" target="_blank" rel="noopener noreferrer">
-              📈 Статистика
-            </Link>
-          )}
+          {/* Кнопки навігації до інших розділів — спільні з панеллю адмінки (AdminTopNav) */}
+          <AdminNavLinks
+            permissions={permissions as Permissions | null}
+            pathname="/admin/direct"
+            hrefOverrides={{
+              stats: statsFiltersQuery ? `/admin/direct/stats?${statsFiltersQuery}` : "/admin/direct/stats",
+            }}
+          />
           {showDebug && (
             <button
               type="button"

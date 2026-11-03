@@ -430,7 +430,7 @@ function ConversationTable({
         </div>
       ) : null}
       <div className="card bg-base-100 shadow-sm">
-        <div ref={scrollRef} className="card-body max-h-[calc(100vh-4.25rem)] overflow-y-auto overscroll-contain p-1">
+        <div ref={scrollRef} className="card-body max-h-[calc(100vh-4.25rem-var(--admin-nav-h,0px))] overflow-y-auto overscroll-contain p-1">
           {loading ? (
             <div className="flex justify-center py-8">
               <span className="loading loading-spinner loading-md" />

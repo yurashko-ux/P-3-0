@@ -255,7 +255,7 @@ function FinanceVisitPaymentsInner() {
 
       {error && <div className="alert alert-error text-sm py-2">{error}</div>}
 
-      <div className="bg-white border rounded-xl overflow-auto max-h-[calc(100vh-11rem)]">
+      <div className="bg-white border rounded-xl overflow-auto max-h-[calc(100vh-11rem-var(--admin-nav-h,0px))]">
         <table className="table table-xs w-full">
           <thead className="sticky top-0 z-10 bg-[#eef1f6] [&_th]:bg-[#eef1f6]">
             <tr>

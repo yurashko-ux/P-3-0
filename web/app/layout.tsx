@@ -1,6 +1,7 @@
 // web/app/layout.tsx
 import "./globals.css";
 import { Inter } from "next/font/google";
+import { AdminTopNav } from "./admin/_components/AdminTopNav";
 
 const inter = Inter({
   subsets: ["latin", "cyrillic"],
@@ -29,7 +30,11 @@ export const metadata = {
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
     <html lang="uk" className={inter.className}>
-      <body>{children}</body>
+      <body>
+        {/* Спільна панель розділів адмінки (сама ховається поза /admin/*) */}
+        <AdminTopNav />
+        {children}
+      </body>
     </html>
   );
 }

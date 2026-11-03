@@ -433,7 +433,7 @@ export default function PaymentReconciliationPage() {
         showIncomingSplit || showCash ? "flex flex-col" : ""
       }`}
     >
-      <div className="sticky top-0 z-20 border-b border-gray-200 bg-white/95 backdrop-blur">
+      <div className="sticky top-[var(--admin-nav-h,0px)] z-20 border-b border-gray-200 bg-white/95 backdrop-blur">
         <div className="flex flex-wrap items-center gap-2 px-2 py-1">
           <div className="flex flex-wrap items-center gap-1.5 rounded-lg border border-gray-200 bg-gray-50/80 px-2 py-1">
             <span className="text-[10px] font-bold uppercase tracking-wide text-gray-600">Вихідні</span>

@@ -29,7 +29,7 @@ export function WarehouseChrome({ children }: { children: ReactNode }) {
   return (
     <WarehouseSearchContext.Provider value={value}>
       <div className="min-h-screen bg-[#f6f7fb] text-gray-900">
-        <header className="sticky top-0 z-20 h-[3.25rem] bg-white border-b px-3 flex flex-wrap items-center gap-2">
+        <header className="sticky top-[var(--admin-nav-h,0px)] z-20 h-[3.25rem] bg-white border-b px-3 flex flex-wrap items-center gap-2">
           <h1 className="text-base font-bold mr-1">Склад</h1>
           <WarehouseNav />
           {isLeftovers && (
@@ -43,18 +43,6 @@ export function WarehouseChrome({ children }: { children: ReactNode }) {
             />
           )}
           <div className="flex-1" />
-          <Link href="/admin/direct" className="btn btn-ghost min-h-0 h-8 py-0 text-xs">
-            Direct
-          </Link>
-          <Link href="/admin/journal" className="btn btn-ghost min-h-0 h-8 py-0 text-xs">
-            Журнал
-          </Link>
-          <Link href="/admin/team" className="btn btn-ghost min-h-0 h-8 py-0 text-xs">
-            Команда
-          </Link>
-          <Link href="/admin/finance" className="btn btn-ghost min-h-0 h-8 py-0 text-xs">
-            Фінанси
-          </Link>
           <Link href="/admin/finance-report" className="btn btn-ghost min-h-0 h-8 py-0 text-xs">
             Фінансовий звіт
           </Link>

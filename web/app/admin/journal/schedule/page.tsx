@@ -176,8 +176,8 @@ export default function JournalSchedulePage() {
   }
 
   return (
-    <div className="flex flex-col min-h-[calc(100dvh-3.75rem)] lg:min-h-screen bg-[#f7f8fa]">
-      <header className="sticky top-0 z-20 bg-white border-b px-3 h-12 flex items-center gap-2">
+    <div className="flex flex-col min-h-[calc(100dvh-3.75rem-var(--admin-nav-h,0px))] lg:min-h-[calc(100vh-var(--admin-nav-h,0px))] bg-[#f7f8fa]">
+      <header className="sticky top-[var(--admin-nav-h,0px)] z-20 bg-white border-b px-3 h-12 flex items-center gap-2">
         <h1 className="text-[17px] font-semibold tracking-tight flex items-center gap-1.5">
           Графік роботи
           <span className="text-amber-400 text-base" aria-hidden>

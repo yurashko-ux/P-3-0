@@ -39,8 +39,6 @@ export function FinanceChrome({ children }: { children: React.ReactNode }) {
     permissions.financeOperationsSection !== "none" ||
     permissions.financeDocsSection !== "none";
   const showReport = permissions == null || permissions.financeReportSection !== "none";
-  const showBank = permissions == null || permissions.bankSection !== "none";
-  const showWarehouse = permissions == null || permissions.warehouseSection !== "none";
 
   const onDocs = pathname === "/admin/finance" || pathname === "/admin/finance/";
   const onKasa = pathname?.startsWith("/admin/finance/kasa") || pathname?.startsWith("/admin/finance/cash");
@@ -51,7 +49,7 @@ export function FinanceChrome({ children }: { children: React.ReactNode }) {
 
   return (
     <div className="min-h-screen bg-[#f6f7fb] text-gray-900">
-      <header className="sticky top-0 z-20 bg-white border-b px-3 py-2 flex flex-wrap items-center gap-2">
+      <header className="sticky top-[var(--admin-nav-h,0px)] z-20 bg-white border-b px-3 py-2 flex flex-wrap items-center gap-2">
         <h1 className="text-base font-bold mr-1">Фінанси</h1>
         {showDocs && (
           <Link
@@ -111,20 +109,6 @@ export function FinanceChrome({ children }: { children: React.ReactNode }) {
             Звіт
           </Link>
         )}
-        <div className="flex-1" />
-        {showBank && (
-          <Link href="/admin/bank" className="btn btn-ghost min-h-0 h-8 py-0 text-xs">
-            Банк
-          </Link>
-        )}
-        {showWarehouse && (
-          <Link href="/admin/warehouse" className="btn btn-ghost min-h-0 h-8 py-0 text-xs">
-            Склад
-          </Link>
-        )}
-        <Link href="/admin/direct" className="btn btn-ghost min-h-0 h-8 py-0 text-xs">
-          Direct
-        </Link>
       </header>
       {children}
     </div>

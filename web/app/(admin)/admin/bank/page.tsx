@@ -1526,7 +1526,7 @@ export default function BankPage() {
 
   return (
     <div className="min-h-screen flex flex-col w-full">
-      <header className="fixed top-0 left-0 right-0 z-50 bg-white border-b border-gray-200 shrink-0 leading-none">
+      <header className="fixed top-[var(--admin-nav-h,0px)] left-0 right-0 z-[29] bg-white border-b border-gray-200 shrink-0 leading-none">
         <div
           className="py-0 flex flex-col md:flex-row md:items-center md:justify-between gap-0.5"
           style={{ width: BANK_TABLE_WIDTH, margin: "0 auto" }}
