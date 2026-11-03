@@ -29,12 +29,6 @@ function LoginInner() {
   // ADMIN_PASS лишається лише для супер-адміна (не роздавати маркетологу).
   const showPasswordForm = isCresco || isP30 || isPreviewDeployment || !hostname;
   const showTokenForm = isP30 || isPreviewDeployment || (!isCresco && !hostname);
-  const nextRaw = sp.get('next') || '';
-  const nextPath =
-    nextRaw.startsWith('/') && !nextRaw.startsWith('//') && !nextRaw.includes('\\')
-      ? nextRaw
-      : '';
-
   const handlePasswordLogin = async (e: React.FormEvent) => {
     e.preventDefault();
     setError('');
@@ -51,11 +45,12 @@ function LoginInner() {
       });
       const data = await res.json();
       if (data.ok) {
-        // ?next= має пріоритет (напр. відкрили /admin/journal → логін → назад у журнал)
-        const dest = nextPath
-          || (typeof data.startPath === 'string' && data.startPath.startsWith('/')
+        // Завжди стартовий розділ посади (у Маркетолога — Ліди), не URL з якого зайшли
+        // (напр. мобільне посилання /admin/journal не повинно перебивати startSection).
+        const dest =
+          typeof data.startPath === 'string' && data.startPath.startsWith('/')
             ? data.startPath
-            : '/admin/direct');
+            : '/admin/direct';
         window.location.href = dest;
         return;
       }

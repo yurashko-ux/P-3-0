@@ -160,6 +160,8 @@ async function patchConsultationClient(
 
 function ConsultationsPageContent() {
   const [canOpenStats, setCanOpenStats] = useState(false);
+  const [canSeeMessages, setCanSeeMessages] = useState(false);
+  const [canSeeJournal, setCanSeeJournal] = useState(false);
   const router = useRouter();
   const searchParams = useSearchParams();
   const monthOptions = useMemo(() => buildMonthOptions(), []);
@@ -248,18 +250,25 @@ function ConsultationsPageContent() {
     }
   }, [monthFromUrl, selectedMonth]);
 
-  // «← Статистика» лише якщо є право statsSection (Маркетолог з Лідами не має бачити звіт)
+  // Навігація з Лідів — лише за правами посади (Маркетолог: без статистики/Direct/переписок)
   useEffect(() => {
     let cancelled = false;
     fetch("/api/auth/me", { credentials: "include" })
       .then((res) => res.json())
       .then((data) => {
         if (cancelled) return;
-        const level = data?.permissions?.statsSection;
-        setCanOpenStats(data?.ok === true && level != null && level !== "none");
+        const p = data?.permissions || {};
+        const ok = data?.ok === true;
+        setCanOpenStats(ok && p.statsSection != null && p.statsSection !== "none");
+        setCanSeeMessages(ok && p.messagesSection != null && p.messagesSection !== "none");
+        setCanSeeJournal(ok && p.journalSection != null && p.journalSection !== "none");
       })
       .catch(() => {
-        if (!cancelled) setCanOpenStats(false);
+        if (!cancelled) {
+          setCanOpenStats(false);
+          setCanSeeMessages(false);
+          setCanSeeJournal(false);
+        }
       });
     return () => {
       cancelled = true;
@@ -433,11 +442,7 @@ function ConsultationsPageContent() {
           <Link href="/admin/direct/stats" className="btn btn-ghost btn-xs min-h-6 h-6 px-1.5 text-[10px]">
             ← Статистика
           </Link>
-        ) : (
-          <Link href="/admin/direct" className="btn btn-ghost btn-xs min-h-6 h-6 px-1.5 text-[10px]">
-            ← Direct
-          </Link>
-        )}
+        ) : null}
         <h1 className="text-sm font-semibold leading-none px-1">Ліди</h1>
         <select
           className="h-8 w-[12.5rem] shrink-0 rounded-md border border-gray-300 bg-white px-2 text-[13px] leading-8 text-gray-900"
@@ -482,22 +487,34 @@ function ConsultationsPageContent() {
             ))}
           </div>
         )}
-        <Link
-          href="/admin/direct/messages"
-          target="_blank"
-          rel="noopener noreferrer"
-          className="btn btn-outline btn-xs min-h-6 h-6 px-1.5 text-[10px] ml-auto"
-        >
-          Переписки
-        </Link>
+        {canSeeMessages ? (
+          <Link
+            href="/admin/direct/messages"
+            target="_blank"
+            rel="noopener noreferrer"
+            className="btn btn-outline btn-xs min-h-6 h-6 px-1.5 text-[10px] ml-auto"
+          >
+            Переписки
+          </Link>
+        ) : null}
         <Link
           href="/admin/direct/stats/leads"
           target="_blank"
           rel="noopener noreferrer"
-          className="btn btn-outline btn-xs min-h-6 h-6 px-1.5 text-[10px]"
+          className={`btn btn-outline btn-xs min-h-6 h-6 px-1.5 text-[10px] ${canSeeMessages ? "" : "ml-auto"}`}
         >
           Джерела
         </Link>
+        {canSeeJournal ? (
+          <Link
+            href="/admin/journal"
+            target="_blank"
+            rel="noopener noreferrer"
+            className="btn btn-outline btn-xs min-h-6 h-6 px-1.5 text-[10px]"
+          >
+            Журнал
+          </Link>
+        ) : null}
       </div>
 
       {error && (

@@ -46,10 +46,21 @@ export default function AdminHome() {
   const showCampaigns = permissions == null || permissions.campaignsSection !== 'none';
   const showAltegio = permissions == null || permissions.altegioSection !== 'none';
   const showInactiveBase = permissions == null || permissions.inactiveBaseSection !== 'none';
+  const showLeads = permissions == null || permissions.leadsSection !== 'none';
   const showLeadsSources =
     permissions == null ||
     permissions.leadsSourcesSection !== 'none' ||
     permissions.statsSection !== 'none';
+  // Direct (воронка) — не показуємо посадам на кшталт Маркетолог (лише ліди/клієнти/журнал)
+  const showDirect =
+    permissions == null ||
+    permissions.finances !== 'none' ||
+    permissions.salesColumn !== 'none' ||
+    permissions.actionsColumn !== 'none' ||
+    permissions.messagesSection !== 'none' ||
+    permissions.phoneOutgoingCalls !== 'none' ||
+    permissions.oboymaSection !== 'none' ||
+    permissions.mastersStatsSection !== 'none';
 
   return (
     <main style={{ maxWidth: 1040, margin: '48px auto', padding: '0 20px' }}>
@@ -70,7 +81,8 @@ export default function AdminHome() {
           alignItems: 'stretch',
         }}
       >
-        {/* Direct Manager */}
+        {/* Direct Manager — лише якщо є права роботи у воронці */}
+        {showDirect && (
         <Card>
           <CardHeader
             emoji="💬"
@@ -88,6 +100,7 @@ export default function AdminHome() {
             <PrimaryLink href="/admin/direct">Відкрити модуль</PrimaryLink>
           </CardFooter>
         </Card>
+        )}
 
         {/* Кампанії — список */}
         {showCampaigns && (
@@ -203,6 +216,26 @@ export default function AdminHome() {
           </CardBody>
           <CardFooter>
             <PrimaryLink href="/admin/direct/inactive-base">Відкрити</PrimaryLink>
+          </CardFooter>
+        </Card>
+        )}
+
+        {showLeads && (
+        <Card>
+          <CardHeader
+            emoji="📥"
+            title="Ліди"
+            subtitle="Консультації та ліди за період"
+          />
+          <CardBody>
+            <ul style={{ margin: 0, paddingLeft: 18, color: 'rgba(0,0,0,0.75)' }}>
+              <li>Список лідів по місяцях</li>
+              <li>Джерела та статуси</li>
+              <li>Результати консультацій</li>
+            </ul>
+          </CardBody>
+          <CardFooter>
+            <PrimaryLink href="/admin/direct/stats/consultations">Відкрити</PrimaryLink>
           </CardFooter>
         </Card>
         )}
