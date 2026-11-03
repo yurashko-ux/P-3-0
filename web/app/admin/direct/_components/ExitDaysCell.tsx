@@ -1,6 +1,6 @@
 "use client";
 
-// Колонка «Днів»: число днів + бейджі lifecycle (Н/А / ✓) і дата під pill.
+// Колонка «Днів»: число днів + бейдж ✓ (повернувся) і дата під pill.
 
 import { formatDateDDMMYY } from "@/app/admin/direct/_components/direct-client-table-formatters";
 
@@ -14,8 +14,6 @@ export type ExitDaysCellProps = {
   align?: "left" | "right";
   /** Дата останнього візиту — для tooltip */
   lastVisitAt?: string | null;
-  /** У неактивній базі бейдж «Н/А» зайвий: він розтягує кожен рядок. */
-  showInactiveBadge?: boolean;
 };
 
 function pillClass(days: number | null, restored: boolean, inactive: boolean): string {
@@ -27,24 +25,6 @@ function pillClass(days: number | null, restored: boolean, inactive: boolean): s
   return "bg-red-200 text-red-900";
 }
 
-/** Маленький бейдж «випав у неактивну» */
-function InactiveExitBadge() {
-  return (
-    <span
-      className="inline-flex items-center gap-0.5 rounded px-1 py-px text-[8px] font-bold uppercase leading-none tracking-wide bg-slate-500 text-white"
-      title="Випав у неактивну базу (101+ днів)"
-    >
-      <svg width="8" height="8" viewBox="0 0 12 12" aria-hidden className="shrink-0">
-        <circle cx="6" cy="4" r="2.2" fill="currentColor" opacity="0.95" />
-        <path d="M2 11c0-2.2 1.8-3.5 4-3.5s4 1.3 4 3.5" fill="currentColor" opacity="0.85" />
-        <rect x="7.2" y="1.2" width="3.2" height="3.2" rx="0.6" fill="#94a3b8" />
-        <rect x="7.9" y="2.3" width="1.8" height="1" rx="0.3" fill="#f8fafc" />
-      </svg>
-      Н/А
-    </span>
-  );
-}
-
 export function ExitDaysCell({
   exitDays,
   inactiveSinceKyivDay,
@@ -53,7 +33,6 @@ export function ExitDaysCell({
   onOpenHistory,
   align = "right",
   lastVisitAt,
-  showInactiveBadge = true,
 }: ExitDaysCellProps) {
   const restored = status === "restored";
   const inactive = status === "inactive";
@@ -112,7 +91,6 @@ export function ExitDaysCell({
           </span>
         ) : null}
       </span>
-      {showInactiveBadge && inactive && !restored ? <InactiveExitBadge /> : null}
       {subDate ? (
         <span className="text-[9px] tabular-nums text-base-content/55 leading-none">
           {formatDateDDMMYY(subDate)}

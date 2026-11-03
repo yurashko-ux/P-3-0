@@ -734,7 +734,7 @@ return (
       </span>
     </td>
   )}
-  {/* Днів з останнього візиту (+ бейджі Н/А / ✓ при lifecycle) */}
+  {/* Днів з останнього візиту (+ ✓ при поверненні) */}
   <td className="pl-0 pr-1 sm:pr-1 py-1 text-xs whitespace-nowrap tabular-nums text-left" style={cellPxRow("days", getColumnStyle(columnWidths.days, true))}>
     <ExitDaysCell
       exitDays={

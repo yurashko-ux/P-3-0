@@ -1213,7 +1213,6 @@ function InactiveBasePageContent() {
                           inactiveSinceKyivDay={client.inactiveSinceKyivDay}
                           restoredAtKyivDay={client.restoredAtKyivDay}
                           status={client.inactiveLifecycleStatus}
-                          showInactiveBadge={false}
                           lastVisitAt={client.lastVisitAt as string | null | undefined}
                           align="left"
                           onOpenHistory={
@@ -1299,6 +1298,25 @@ function InactiveBasePageContent() {
                   onSort={handleSort}
                   className="text-right w-16"
                 />
+                <th>
+                  <div className="flex items-center gap-1">
+                    <button
+                      type="button"
+                      className={`hover:underline cursor-pointer text-left font-semibold text-[10px] ${
+                        sortBy === "messagesTotal" ? "text-primary" : "text-inherit"
+                      }`}
+                      onClick={() => handleSort("messagesTotal")}
+                    >
+                      Inst
+                      {sortBy === "messagesTotal" ? (sortOrder === "asc" ? " ↑" : " ↓") : ""}
+                    </button>
+                    <InactiveBaseInstagramFilterDropdown
+                      value={instInstagramFilter}
+                      onChange={setInstInstagramFilter}
+                      counts={instInstagramCounts}
+                    />
+                  </div>
+                </th>
                 <th className="text-[10px] whitespace-nowrap">Статус</th>
                 <SortableTh label="Телефон" field="phone" sortBy={sortBy} sortOrder={sortOrder} onSort={handleSort} />
                 <th className="text-[10px] whitespace-nowrap">Передзвонити</th>
@@ -1334,25 +1352,6 @@ function InactiveBasePageContent() {
                   sortOrder={sortOrder}
                   onSort={handleSort}
                 />
-                <th>
-                  <div className="flex items-center gap-1">
-                    <button
-                      type="button"
-                      className={`hover:underline cursor-pointer text-left font-semibold text-[10px] ${
-                        sortBy === "messagesTotal" ? "text-primary" : "text-inherit"
-                      }`}
-                      onClick={() => handleSort("messagesTotal")}
-                    >
-                      Inst
-                      {sortBy === "messagesTotal" ? (sortOrder === "asc" ? " ↑" : " ↓") : ""}
-                    </button>
-                    <InactiveBaseInstagramFilterDropdown
-                      value={instInstagramFilter}
-                      onChange={setInstInstagramFilter}
-                      counts={instInstagramCounts}
-                    />
-                  </div>
-                </th>
                 <th className="text-[10px] whitespace-nowrap">Статус повідомлень</th>
               </tr>
             </thead>
@@ -1535,10 +1534,24 @@ function InactiveBasePageContent() {
                             inactiveSinceKyivDay={client.inactiveSinceKyivDay}
                             restoredAtKyivDay={client.restoredAtKyivDay}
                             status={client.inactiveLifecycleStatus}
-                            showInactiveBadge={false}
                             onOpenHistory={() => setLifecycleHistoryClient(client)}
                           />
                         )}
+                      </td>
+                      <td className="text-xs overflow-visible">
+                        <InactiveBaseChatCell
+                          client={client}
+                          channel="instagram"
+                          key={`${client.id}-ig`}
+                          groupInstagramStats={
+                            isCollapsedGroupLeader
+                              ? campaignInstagramActiveClients.get(row.campaignId) ?? {
+                                  incomingCount: 0,
+                                  outgoingCount: 0,
+                                }
+                              : null
+                          }
+                        />
                       </td>
                       <td className="text-xs align-middle overflow-visible">
                         {isCollapsedGroupLeader ? (
@@ -1654,21 +1667,6 @@ function InactiveBasePageContent() {
                             instagramUsername={client.instagramUsername}
                           />
                         )}
-                      </td>
-                      <td className="text-xs overflow-visible">
-                        <InactiveBaseChatCell
-                          client={client}
-                          channel="instagram"
-                          key={`${client.id}-ig`}
-                          groupInstagramStats={
-                            isCollapsedGroupLeader
-                              ? campaignInstagramActiveClients.get(row.campaignId) ?? {
-                                  incomingCount: 0,
-                                  outgoingCount: 0,
-                                }
-                              : null
-                          }
-                        />
                       </td>
                       <td className="text-xs align-top">
                         <InactiveBaseMessageStatusCell

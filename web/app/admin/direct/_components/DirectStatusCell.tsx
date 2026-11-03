@@ -170,7 +170,7 @@ export function DirectStatusCell({ client, statuses, onStatusChange, onMenuOpen,
   const statusButton = (
     <button
       type="button"
-      className="inline-flex items-center justify-center rounded-md px-1.5 py-0.5 text-[10px] font-normal min-w-[52px] h-5 hover:opacity-80 transition-opacity"
+      className="inline-flex items-center justify-center rounded-md px-1.5 py-0.5 text-[10px] font-normal min-w-[52px] h-5 whitespace-nowrap hover:opacity-80 transition-opacity"
       style={{ backgroundColor: displayColor, color: fg }}
       onClick={() => {
         if (!isOpen) onMenuOpen?.(client.id);

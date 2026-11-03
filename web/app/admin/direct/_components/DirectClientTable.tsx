@@ -99,6 +99,8 @@ const NUMBER_COLUMN_MAX_WIDTH_PX = 40;
 const ACT_COLUMN_MIN_WIDTH_PX = 84;
 /** Колонка «Ім'я» — зменшено на 25% */
 const NAME_COLUMN_MIN_WIDTH_PX = 165;
+/** Колонка «Статус»: найдовша назва статусу в один рядок (місце від прихованих «Продажі» / «Комунікація»). */
+const CALL_STATUS_COLUMN_MIN_WIDTH_PX = 205;
 
 const DEFAULT_COLUMN_CONFIG: ColumnWidthConfig = {
   number: { width: 28, mode: 'min' },
@@ -111,7 +113,7 @@ const DEFAULT_COLUMN_CONFIG: ColumnWidthConfig = {
   inst: { width: INST_COLUMN_MIN_WIDTH_PX, mode: 'min' },
   calls: { width: CALLS_COLUMN_MIN_WIDTH_PX, mode: 'min' },
   callbackReminder: { width: 133, mode: 'min' },
-  callStatus: { width: 100, mode: 'min' },
+  callStatus: { width: CALL_STATUS_COLUMN_MIN_WIDTH_PX, mode: 'min' },
   state: { width: 30, mode: 'min' },
   consultation: { width: 110, mode: 'min' },
   consultMaster: { width: 72, mode: 'min' },
@@ -166,6 +168,7 @@ function clampStoredColumnWidthPx(key: ColumnKey, w: number): number {
   if (key === "inst") x = Math.max(x, INST_COLUMN_MIN_WIDTH_PX);
   if (key === "calls") x = Math.max(x, CALLS_COLUMN_MIN_WIDTH_PX);
   if (key === "callbackReminder") x = Math.max(x, CALLBACK_REMINDER_COLUMN_MIN_WIDTH_PX);
+  if (key === "callStatus") x = Math.max(x, CALL_STATUS_COLUMN_MIN_WIDTH_PX);
   return x;
 }
 
@@ -626,6 +629,7 @@ export function DirectClientTable({
       if (k === 'inst') return Math.max(w, INST_COLUMN_MIN_WIDTH_PX);
       if (k === 'calls') return Math.max(w, CALLS_COLUMN_MIN_WIDTH_PX);
       if (k === 'callbackReminder') return Math.max(w, CALLBACK_REMINDER_COLUMN_MIN_WIDTH_PX);
+      if (k === 'callStatus') return Math.max(w, CALL_STATUS_COLUMN_MIN_WIDTH_PX);
       if (k === 'state') return Math.max(w, STATE_MIN_WIDTH);
       if (k === 'consultation') return Math.max(w, CONSULTATION_MIN_WIDTH);
       return w;
@@ -1670,7 +1674,7 @@ export function DirectClientTable({
                   <th
                     className="pl-0 pr-1 sm:pr-1 py-0 text-[10px] font-semibold text-left"
                     style={getColumnStyle(layoutColumnWidths.days, true)}
-                    title="Днів з останнього візиту. Бейдж Н/А = неактивна база; ✓ = повернувся майбутнім записом."
+                    title="Днів з останнього візиту. ✓ = повернувся майбутнім записом."
                   >
                     <div className="flex items-center gap-1">
                       <button
