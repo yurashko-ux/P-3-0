@@ -4,6 +4,7 @@
 import * as React from 'react';
 import { Suspense } from 'react';
 import { useSearchParams } from 'next/navigation';
+import { isMobileJournalPath } from '@/lib/access/cresco-login-url';
 
 function LoginInner() {
   const sp = useSearchParams();
@@ -25,10 +26,15 @@ function LoginInner() {
     hostname.endsWith('.vercel.app') &&
     hostname !== 'p-3-0.vercel.app' &&
     hostname !== 'cresco-crm.vercel.app';
-  // Спільне посилання журналу (p-3-0): користувачі з Доступів — логін+свій пароль.
-  // ADMIN_PASS лишається лише для супер-адміна (не роздавати маркетологу).
+  // Cresco + p-3-0: користувачі з Доступів — логін+свій пароль. ADMIN_PASS — лише супер-адмін.
   const showPasswordForm = isCresco || isP30 || isPreviewDeployment || !hostname;
   const showTokenForm = isP30 || isPreviewDeployment || (!isCresco && !hostname);
+  const nextRaw = sp.get('next') || '';
+  const nextPath =
+    nextRaw.startsWith('/') && !nextRaw.startsWith('//') && !nextRaw.includes('\\')
+      ? nextRaw
+      : '';
+
   const handlePasswordLogin = async (e: React.FormEvent) => {
     e.preventDefault();
     setError('');
@@ -45,11 +51,13 @@ function LoginInner() {
       });
       const data = await res.json();
       if (data.ok) {
-        // Після логіну — лише «Стартовий розділ» з Доступів цієї посади (не URL, з якого зайшли).
-        const dest =
+        const startPath =
           typeof data.startPath === 'string' && data.startPath.startsWith('/')
             ? data.startPath
             : '/admin/direct';
+        // Мобільне посилання /admin/journal → після логіну саме журнал (PWA).
+        // Звичайний вхід з /admin/login → стартовий розділ з Доступів.
+        const dest = nextPath && isMobileJournalPath(nextPath) ? nextPath : startPath;
         window.location.href = dest;
         return;
       }

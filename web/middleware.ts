@@ -331,8 +331,11 @@ export default async function middleware(req: NextRequest) {
 
   const loginUrl = url.clone();
   loginUrl.pathname = '/admin/login';
-  loginUrl.searchParams.set('err', '1'); // невірний або відсутній токен
-  // Маркетолог відкриває /admin/journal на телефоні → логін → назад у журнал, не в startSection
+  // err=1 лише якщо кука була, але невалідна — не при першому заході без сесії
+  if (cookieToken) {
+    loginUrl.searchParams.set('err', '1');
+  }
+  // Мобільний журнал тощо: після логіну повернутись на цільовий шлях (?next=)
   if (pathname.startsWith('/admin/') && pathname !== '/admin/login') {
     loginUrl.searchParams.set('next', `${pathname}${url.search}`);
   }

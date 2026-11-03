@@ -2,10 +2,16 @@
 export const CRESCO_LOGIN_URL = "https://cresco-crm.vercel.app/admin/login";
 
 /**
- * Посилання на мобільний журнал (веб PWA /admin/journal).
- * Бот @Zurnal_zapysiv_bot — окремий «Мій журнал» для майстрів (/master), не для посад на кшталт Маркетолог.
+ * Мобільний журнал для користувачів з Доступів (логін + пароль).
+ * Відкриває веб PWA на домені cresco — не p-3-0 і не Telegram-бот майстрів.
  * Окремий URL: NEXT_PUBLIC_CRESCO_MOBILE_APP_URL.
  */
 export const CRESCO_MOBILE_APP_URL =
   process.env.NEXT_PUBLIC_CRESCO_MOBILE_APP_URL?.trim() ||
-  "https://p-3-0.vercel.app/admin/journal";
+  "https://cresco-crm.vercel.app/admin/journal";
+
+/** Чи шлях — вхід саме в мобільний журнал (після логіну лишаємось у журналі). */
+export function isMobileJournalPath(path: string): boolean {
+  const p = String(path || "").trim();
+  return p === "/admin/journal" || p.startsWith("/admin/journal?") || p.startsWith("/admin/journal/");
+}

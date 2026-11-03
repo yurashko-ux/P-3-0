@@ -355,8 +355,8 @@ export function EditUserModal({ user, functions, onClose, onSaved }: Props) {
               placeholder={CRESCO_MOBILE_APP_URL || "https://…"}
             />
             <p className="mt-1 text-xs text-gray-500">
-              Додається в повідомлення при «Надіслати доступ». За замовчуванням — веб-журнал
-              /admin/journal (для майстрів у Mini App можна вказати @Zurnal_zapysiv_bot).
+              Додається в повідомлення при «Надіслати доступ». За замовчуванням —
+              https://cresco-crm.vercel.app/admin/journal (логін + пароль з Доступів, мобільна версія).
             </p>
           </div>
           <div>
