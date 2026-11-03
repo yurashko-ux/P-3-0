@@ -109,6 +109,7 @@ function DirectClientTableRowInner({
     hideFinances,
     hideActionsColumn,
     hideSalesColumn,
+    hideCommunicationColumn,
     canListenCalls,
     chatStatusUiVariant,
     instCallsCellMinHeight,
@@ -754,14 +755,16 @@ return (
       }
     />
   </td>
-  <td className="pl-0 pr-0.5 py-1 align-middle" style={cellPxRow("communication", getColumnStyle(columnWidths.communication, true))}>
-    <CommunicationChannelPicker
-      value={client.communicationChannel}
-      onChange={async (next) => {
-        await onClientUpdate(client.id, { communicationChannel: next });
-      }}
-    />
-  </td>
+  {!hideCommunicationColumn && (
+    <td className="pl-0 pr-0.5 py-1 align-middle" style={cellPxRow("communication", getColumnStyle(columnWidths.communication, true))}>
+      <CommunicationChannelPicker
+        value={client.communicationChannel}
+        onChange={async (next) => {
+          await onClientUpdate(client.id, { communicationChannel: next });
+        }}
+      />
+    </td>
+  )}
   {/* Переписка: число повідомлень (клік → історія) + текст-статус */}
   <td
     className={

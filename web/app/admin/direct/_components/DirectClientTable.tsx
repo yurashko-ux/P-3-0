@@ -531,6 +531,8 @@ type DirectClientTableProps = {
   isLoadingMore?: boolean;
   /** Приховати колонку «Продажі» (право salesColumn = none) */
   hideSalesColumn?: boolean;
+  /** Приховати колонку «Комунікація» */
+  hideCommunicationColumn?: boolean;
   /** Приховати колонку «Дії» (право actionsColumn = none) */
   hideActionsColumn?: boolean;
   /** Приховати фінанси: сума запису в колонці Запис, цифри в дужках у колонці Майстри (право finances = none) */
@@ -582,6 +584,7 @@ export function DirectClientTable({
   hasMore = false,
   isLoadingMore = false,
   hideSalesColumn = false,
+  hideCommunicationColumn = false,
   hideActionsColumn = false,
   hideFinances = false,
   canListenCalls = true,
@@ -637,9 +640,12 @@ export function DirectClientTable({
   const visibleColumnIndices = useMemo(
     () =>
       COLUMN_KEYS.map((_, i) => i).filter(
-        (i) => !(hideSalesColumn && COLUMN_KEYS[i] === 'sales') && !(hideActionsColumn && COLUMN_KEYS[i] === 'actions')
+        (i) =>
+          !(hideSalesColumn && COLUMN_KEYS[i] === 'sales') &&
+          !(hideCommunicationColumn && COLUMN_KEYS[i] === 'communication') &&
+          !(hideActionsColumn && COLUMN_KEYS[i] === 'actions')
       ),
-    [hideSalesColumn, hideActionsColumn]
+    [hideSalesColumn, hideCommunicationColumn, hideActionsColumn]
   );
 
   const totalTableWidth = visibleColumnIndices.reduce((s, i) => s + (effectiveWidths[i] ?? 0), 0);
@@ -969,6 +975,7 @@ export function DirectClientTable({
     clientsForTable.length,
     totalTableWidth,
     hideSalesColumn,
+    hideCommunicationColumn,
     hideActionsColumn,
     isEditingColumnWidths,
   ]);
@@ -1045,6 +1052,7 @@ export function DirectClientTable({
       hideFinances,
       hideActionsColumn,
       hideSalesColumn,
+      hideCommunicationColumn,
       canListenCalls,
       chatStatusUiVariant,
       instCallsCellMinHeight: INST_CALLS_CELL_MIN_HEIGHT,
@@ -1083,6 +1091,7 @@ export function DirectClientTable({
     hideFinances,
     hideActionsColumn,
     hideSalesColumn,
+    hideCommunicationColumn,
     canListenCalls,
     chatStatusUiVariant,
     setFullscreenAvatar,
@@ -1686,13 +1695,15 @@ export function DirectClientTable({
                       />
                     </div>
                   </th>
-                  <th
-                    className="pl-0 pr-0.5 sm:pr-1 py-0 text-[10px] font-semibold text-left whitespace-nowrap overflow-hidden text-ellipsis"
-                    style={getColumnStyle(layoutColumnWidths.communication, true)}
-                    title="Канал комунікації з клієнтом"
-                  >
-                    Комунікація
-                  </th>
+                  {!hideCommunicationColumn && (
+                    <th
+                      className="pl-0 pr-0.5 sm:pr-1 py-0 text-[10px] font-semibold text-left whitespace-nowrap overflow-hidden text-ellipsis"
+                      style={getColumnStyle(layoutColumnWidths.communication, true)}
+                      title="Канал комунікації з клієнтом"
+                    >
+                      Комунікація
+                    </th>
+                  )}
                   <th className="pl-0 pr-1 sm:pr-1.5 py-0 text-[10px] font-semibold text-left" style={getColumnStyle(layoutColumnWidths.inst, true)}>
                     <div className="flex items-center gap-1">
                       <button

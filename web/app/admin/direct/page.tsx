@@ -805,7 +805,9 @@ function DirectPageContent() {
   const showDebug = permissions == null || permissions.debugSection !== "none";
   const showAccess = permissions == null || permissions.accessSection !== "none";
   const showStatusesCreate = permissions == null || permissions.statusesCreateSubsection !== "none";
-  const hideSalesColumn = permissions?.salesColumn === "none";
+  // «Продажі» та «Комунікація» приховані для всіх (рішення 03.11.2026); право salesColumn більше не впливає.
+  const hideSalesColumn = true;
+  const hideCommunicationColumn = true;
   const hideActionsColumn = permissions?.actionsColumn === "none";
   const hideFinances = permissions?.finances === "none";
   const canListenCalls = permissions == null || permissions.callsListen !== "none";
@@ -4304,6 +4306,7 @@ function DirectPageContent() {
         isEditingColumnWidths={isEditingColumnWidths}
         setIsEditingColumnWidths={setIsEditingColumnWidths}
         hideSalesColumn={hideSalesColumn}
+        hideCommunicationColumn={hideCommunicationColumn}
         hideActionsColumn={hideActionsColumn}
         hideFinances={hideFinances}
         canListenCalls={canListenCalls}

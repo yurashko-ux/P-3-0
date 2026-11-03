@@ -52,6 +52,7 @@ export type DirectClientTableRowContextValue = {
   hideFinances: boolean;
   hideActionsColumn: boolean;
   hideSalesColumn: boolean;
+  hideCommunicationColumn: boolean;
   canListenCalls: boolean;
   chatStatusUiVariant: ChatStatusUiVariant;
   instCallsCellMinHeight: string;
