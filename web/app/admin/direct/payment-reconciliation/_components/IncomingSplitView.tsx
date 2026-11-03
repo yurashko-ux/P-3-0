@@ -3479,8 +3479,15 @@ export function IncomingSplitView({
     () => new Set(data?.reconciled?.depositBankItemIds ?? []),
     [data?.reconciled?.depositBankItemIds],
   );
-  const depositMatches = data?.reconciled?.depositMatches ?? [];
-  const bankDays = data ? regroupBankByDayWithAcquiringShift(data.bank.byDay) : [];
+  // Стабільні посилання: інакше кожен рендер дає нові масиви → лічильники → onControlsReady → setState батька → нескінченний цикл.
+  const depositMatches = useMemo(
+    () => data?.reconciled?.depositMatches ?? [],
+    [data?.reconciled?.depositMatches],
+  );
+  const bankDays = useMemo(
+    () => (data ? regroupBankByDayWithAcquiringShift(data.bank.byDay) : []),
+    [data],
+  );
   const bankRowById = useMemo(() => {
     const map = new Map<string, BankDayItemRow>();
     for (const day of bankDays) {
@@ -3829,15 +3836,28 @@ export function IncomingSplitView({
   const showPageLoading = loading && !loadingMoreLinked && !isDepositsView;
   const showDepositsLoading = isDepositsView && depositTabLoading && depositTabData == null;
 
+  // Лічильники передаємо за значенням (числа), щоб новий об'єкт з тими самими числами не перезапускав батька.
+  const { linked: countLinked, open: countOpen, all: countAll, deposits: countDeposits } = incomingStatusCounts;
   useEffect(() => {
     onControlsReady?.({
       refresh: () => void refreshAll(),
       reconcile: () => void runManualReconcile(),
       loading: showPageLoading,
       reconciling,
-      statusCounts: incomingStatusCounts,
+      statusCounts: { linked: countLinked, open: countOpen, all: countAll, deposits: countDeposits },
     });
-  }, [loading, refreshAll, onControlsReady, incomingStatusCounts, runManualReconcile, reconciling, showPageLoading]);
+  }, [
+    loading,
+    refreshAll,
+    onControlsReady,
+    countLinked,
+    countOpen,
+    countAll,
+    countDeposits,
+    runManualReconcile,
+    reconciling,
+    showPageLoading,
+  ]);
 
   const showMetaColumns = reconciliationStatus === "linked" || reconciliationStatus === "open";
   const altegioHeaderColSpan = showMetaColumns ? 6 : 4;
