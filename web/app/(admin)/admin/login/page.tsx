@@ -45,8 +45,7 @@ function LoginInner() {
       });
       const data = await res.json();
       if (data.ok) {
-        // Завжди стартовий розділ посади (у Маркетолога — Ліди), не URL з якого зайшли
-        // (напр. мобільне посилання /admin/journal не повинно перебивати startSection).
+        // Після логіну — лише «Стартовий розділ» з Доступів цієї посади (не URL, з якого зайшли).
         const dest =
           typeof data.startPath === 'string' && data.startPath.startsWith('/')
             ? data.startPath
