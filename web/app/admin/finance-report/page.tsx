@@ -385,6 +385,8 @@ async function getSummaryForMonth(
   warehouseBalanceSource: WarehouseBalanceSource;
   /** Розбивка балансу складу: Товари / Волосся (null — немає складу волосся або знімка Kresco) */
   warehouseGoodsHairSplit: WarehouseGoodsHairSplit | null;
+  /** Та сама розбивка за попередній місяць — для різниці по складах */
+  previousWarehouseGoodsHairSplit: WarehouseGoodsHairSplit | null;
   hairPurchaseAmount: number; // Сума для закупівлі волосся з урахуванням різниці складу, округлена до більшого до 10000
   discountAmount: number; // Сума знижки Altegio за період (у блоці #2: окремий підрозділ "Знижки")
   discountDetails: DiscountVisitDetail[]; // Деталізація знижок по клієнтах/датах візитів
@@ -504,9 +506,12 @@ async function getSummaryForMonth(
   // Розраховуємо різницю
   const warehouseBalanceDiff = warehouseBalance - previousMonthBalance;
 
-  const warehouseGoodsHairSplit = await getWarehouseGoodsHairSplit(year, month, warehouseBalance).catch((err) => {
+  const [warehouseGoodsHairSplit, previousWarehouseGoodsHairSplit] = await Promise.all([
+    getWarehouseGoodsHairSplit(year, month, warehouseBalance),
+    getWarehouseGoodsHairSplit(previousMonthData.year, previousMonthData.month, previousMonthBalance),
+  ]).catch((err) => {
     console.warn("[finance-report] Розбивка складу Товари/Волосся не вдалася:", err instanceof Error ? err.message : err);
-    return null;
+    return [null, null] as const;
   });
 
   try {
@@ -789,6 +794,7 @@ async function getSummaryForMonth(
       warehouseBalanceDiff,
       warehouseBalanceSource,
       warehouseGoodsHairSplit,
+      previousWarehouseGoodsHairSplit,
       hairPurchaseAmount,
       discountAmount,
       discountDetails,
@@ -829,6 +835,7 @@ async function getSummaryForMonth(
       warehouseBalanceDiff: 0,
       warehouseBalanceSource: "missing",
       warehouseGoodsHairSplit: null,
+      previousWarehouseGoodsHairSplit: null,
       hairPurchaseAmount: 0,
       discountAmount: 0,
       discountDetails: [],
@@ -931,6 +938,7 @@ export default async function FinanceReportPage({
     warehouseBalanceDiff,
     warehouseBalanceSource,
     warehouseGoodsHairSplit,
+    previousWarehouseGoodsHairSplit,
     hairPurchaseAmount,
     discountAmount,
     discountDetails,
@@ -2111,23 +2119,46 @@ export default async function FinanceReportPage({
 
                   {/* Склади: Товари і Волосся (за знімком залишків Kresco; курс — звітного місяця). Без знімка — прочерк. */}
                   {[
-                    { key: "goods", title: "Товари", uah: warehouseGoodsHairSplit?.goodsUah ?? null },
                     {
                       key: "hair",
                       title: warehouseGoodsHairSplit?.hairStorageTitle || "Волосся",
                       uah: warehouseGoodsHairSplit?.hairUah ?? null,
+                      prevUah: previousWarehouseGoodsHairSplit?.hairUah ?? null,
                     },
-                  ].map((row) => (
-                    <div key={row.key} className="flex justify-between items-center bg-blue-50 px-1 py-0.5 pl-3 rounded">
-                      <span className="text-xs font-medium">Склад {row.title}</span>
-                      <div className="text-right">
-                        <p className="text-xs font-bold tabular-nums">{row.uah != null ? `${formatMoney(row.uah)} грн.` : "—"}</p>
-                        <p className="text-xs text-gray-500 tabular-nums">
-                          {row.uah != null && exchangeRate > 0 ? `${formatMoney(row.uah / exchangeRate)} $` : "—"}
-                        </p>
+                    {
+                      key: "goods",
+                      title: "Товари",
+                      uah: warehouseGoodsHairSplit?.goodsUah ?? null,
+                      prevUah: previousWarehouseGoodsHairSplit?.goodsUah ?? null,
+                    },
+                  ].map((row) => {
+                    // Різниця з попереднім місяцем; невідома, якщо немає знімка за будь-який із двох місяців.
+                    const diff = row.uah != null && row.prevUah != null ? row.uah - row.prevUah : null;
+                    return (
+                      <div key={row.key} className="flex justify-between items-center bg-blue-50 px-1 py-0.5 pl-3 rounded">
+                        <div>
+                          <p className="text-xs font-medium">Склад {row.title}</p>
+                          <p className="text-xs text-gray-400">
+                            Різниця:{" "}
+                            {diff == null ? (
+                              "—"
+                            ) : (
+                              <span className={`font-semibold ${diff >= 0 ? "text-green-600" : "text-red-600"}`}>
+                                {diff >= 0 ? "+" : ""}
+                                {formatMoney(diff)} грн.
+                              </span>
+                            )}
+                          </p>
+                        </div>
+                        <div className="text-right">
+                          <p className="text-xs font-bold tabular-nums">{row.uah != null ? `${formatMoney(row.uah)} грн.` : "—"}</p>
+                          <p className="text-xs text-gray-500 tabular-nums">
+                            {row.uah != null && exchangeRate > 0 ? `${formatMoney(row.uah / exchangeRate)} $` : "—"}
+                          </p>
+                        </div>
                       </div>
-                    </div>
-                  ))}
+                    );
+                  })}
                   
                   {/* Різниця балансу складу */}
                   <div className="pt-1 border-t bg-green-100 px-1 py-0.5 rounded">
