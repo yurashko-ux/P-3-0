@@ -51,7 +51,8 @@ export async function refreshMonobankBalancesForConnection(params: {
 /** Нічне оновлення балансів усіх підключених рахунків. */
 export async function refreshAllMonobankAccountBalances(): Promise<MonobankBalanceRefreshResult[]> {
   const connections = await prisma.bankConnection.findMany({
-    where: { provider: "monobank" },
+    // Призупинені підключення не оновлюємо
+    where: { provider: "monobank", pausedAt: null },
     select: {
       id: true,
       token: true,

@@ -29,6 +29,8 @@ type BankConnection = {
   name: string;
   clientName: string | null;
   webhookUrl: string | null;
+  /** Призупинено: вебхук знято, нові платежі не тягнемо */
+  pausedAt: string | null;
   createdAt: string;
   accounts: BankAccount[];
 };
@@ -142,6 +144,7 @@ export default function BankConnectionsPage() {
   const [syncLoading, setSyncLoading] = useState(false);
   const [syncMessage, setSyncMessage] = useState<string | null>(null);
   const [deleteConnectionId, setDeleteConnectionId] = useState<string | null>(null);
+  const [pausingConnectionId, setPausingConnectionId] = useState<string | null>(null);
 
   const [reregisteringId, setReregisteringId] = useState<string | null>(null);
   const [webhookStatus, setWebhookStatus] = useState<{
@@ -251,6 +254,7 @@ export default function BankConnectionsPage() {
             name: conn.name ?? "Monobank",
             clientName: conn.clientName ?? null,
             webhookUrl: conn.webhookUrl ?? null,
+            pausedAt: null,
             createdAt: new Date().toISOString(),
             accounts: accounts.map((a: { id: string; externalId: string; balance: string; currencyCode?: number; type?: string | null; iban?: string | null; maskedPan?: string | null }) => ({
               id: a.id,
@@ -630,7 +634,17 @@ export default function BankConnectionsPage() {
                   }}
                 >
                   <div>
-                    <div style={{ fontWeight: 600 }}>{c.name}</div>
+                    <div style={{ fontWeight: 600 }}>
+                      {c.name}
+                      {c.pausedAt ? (
+                        <span
+                          style={{ marginLeft: 8, fontSize: 12, fontWeight: 500, color: "#92400e", background: "#fef3c7", borderRadius: 6, padding: "2px 6px" }}
+                          title={`Призупинено ${new Date(c.pausedAt).toLocaleString("uk-UA")}: нові платежі з monobank не приходять, історія збережена`}
+                        >
+                          ⏸ Призупинено
+                        </span>
+                      ) : null}
+                    </div>
                     {c.clientName && (
                       <div style={{ fontSize: 13, color: "rgba(0,0,0,0.6)" }}>
                         {c.clientName}
@@ -782,6 +796,44 @@ export default function BankConnectionsPage() {
                       }}
                     >
                       {deletingWebhookId === c.id ? "Вимкнення…" : "Вимкнути вебхук"}
+                    </button>
+                    <button
+                      type="button"
+                      onClick={async () => {
+                        const pause = !c.pausedAt;
+                        const question = pause
+                          ? "Призупинити підключення? Нові платежі й баланси з monobank перестануть приходити. Уся історія збережеться."
+                          : "Відновити підключення? Вебхук буде зареєстровано знову, нові платежі почнуть приходити.";
+                        if (!confirm(question)) return;
+                        setPausingConnectionId(c.id);
+                        try {
+                          const res = await fetch("/api/bank/connections/pause", {
+                            method: "POST",
+                            headers: { "Content-Type": "application/json" },
+                            credentials: "include",
+                            body: JSON.stringify({ connectionId: c.id, paused: pause }),
+                          });
+                          const data = await res.json().catch(() => ({}));
+                          if (data.ok) {
+                            if (data.warning) alert(data.warning);
+                            loadConnections();
+                          } else alert(data.error || "Помилка");
+                        } finally {
+                          setPausingConnectionId(null);
+                        }
+                      }}
+                      disabled={pausingConnectionId !== null}
+                      style={{
+                        padding: "6px 12px",
+                        fontSize: 13,
+                        borderRadius: 8,
+                        border: c.pausedAt ? "1px solid #86efac" : "1px solid #fcd34d",
+                        background: c.pausedAt ? "#f0fdf4" : "#fffbeb",
+                        color: c.pausedAt ? "#166534" : "#92400e",
+                        cursor: pausingConnectionId !== null ? "not-allowed" : "pointer",
+                      }}
+                    >
+                      {pausingConnectionId === c.id ? "Зачекайте…" : c.pausedAt ? "▶ Відновити" : "⏸ Призупинити"}
                     </button>
                     <button
                       type="button"

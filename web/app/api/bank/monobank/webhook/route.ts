@@ -69,8 +69,21 @@ export async function POST(req: NextRequest) {
 
     const bankAccount = await prisma.bankAccount.findFirst({
       where: { externalId: accountExternalId },
-      select: { id: true, currencyCode: true, includeInOperationsTable: true },
+      select: {
+        id: true,
+        currencyCode: true,
+        includeInOperationsTable: true,
+        connection: { select: { pausedAt: true, name: true } },
+      },
     });
+    // Підключення призупинено — нових платежів не приймаємо (вебхук мав бути знятий, це страховка).
+    if (bankAccount?.connection?.pausedAt) {
+      console.log("[bank/monobank/webhook] Підключення призупинено — платіж пропущено", {
+        connection: bankAccount.connection.name,
+        accountExternalId,
+      });
+      return new NextResponse(null, { status: 200 });
+    }
     if (!bankAccount) {
       const knownIds = await prisma.bankAccount.findMany({
         select: { externalId: true },

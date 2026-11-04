@@ -107,7 +107,7 @@ export async function GET(req: NextRequest) {
 
   try {
     const allConnections = await prisma.bankConnection.findMany({
-      where: { provider: "monobank" },
+      where: { provider: "monobank", pausedAt: null },
       include: {
         accounts: {
           select: {

@@ -85,6 +85,7 @@ export async function GET(req: Request) {
       name: c.name,
       clientName: c.clientName,
       webhookUrl: c.webhookUrl,
+      pausedAt: c.pausedAt ? c.pausedAt.toISOString() : null,
       createdAt: c.createdAt.toISOString(),
       accounts: c.accounts.map((a) => {
         const openingManual =
@@ -154,6 +155,30 @@ export async function DELETE(req: Request) {
       return NextResponse.json({ error: "Не вказано id підключення" }, { status: 400 });
     }
 
+    // Запобіжник: каскад стер би банківські платежі разом із їхніми зведеннями з Altegio.
+    // Якщо по рахунках підключення є хоч одна звʼязана операція — не видаляємо.
+    const linked = await countConnectionLinkedOperations(id);
+    const linkedTotal = Object.values(linked).reduce((sum, n) => sum + n, 0);
+    if (linkedTotal > 0) {
+      const parts = [
+        linked.paymentMatches ? `зведених витрат: ${linked.paymentMatches}` : "",
+        linked.incomingMatches ? `зведених надходжень: ${linked.incomingMatches}` : "",
+        linked.depositMatches ? `зведених завдатків: ${linked.depositMatches}` : "",
+        linked.pendingPayments ? `платежів в очікуванні Altegio: ${linked.pendingPayments}` : "",
+        linked.automaticExpenses ? `автоматичних витрат Altegio: ${linked.automaticExpenses}` : "",
+      ].filter(Boolean);
+      console.warn("[bank/connections] DELETE заблоковано — є звʼязані операції", { id, ...linked });
+      return NextResponse.json(
+        {
+          error:
+            `Підключення не можна видалити: по його рахунках є звʼязані операції (${parts.join(", ")}). ` +
+            `Видалення стерло б банківську історію. Щоб прибрати рахунок з Каси, приховайте його у Фінанси → «Архів Altegio».`,
+          linked,
+        },
+        { status: 409 },
+      );
+    }
+
     // Каскадне видалення (BankAccount, BankStatementItem) через onDelete: Cascade у схемі
     await prisma.bankConnection.delete({ where: { id } });
     console.log("[bank/connections] DELETE ok, connection id:", id);
@@ -163,4 +188,17 @@ export async function DELETE(req: Request) {
     const message = err instanceof Error ? err.message : "Помилка видалення";
     return NextResponse.json({ error: message }, { status: 500 });
   }
+}
+
+/** Звʼязані операції по рахунках підключення: зведення з Altegio, очікування, автоматичні витрати. */
+async function countConnectionLinkedOperations(connectionId: string) {
+  const byItem = { bankStatementItem: { account: { connectionId } } };
+  const [paymentMatches, incomingMatches, depositMatches, pendingPayments, automaticExpenses] = await Promise.all([
+    prisma.bankAltegioPaymentMatch.count({ where: byItem }),
+    prisma.bankAltegioIncomingMatch.count({ where: byItem }),
+    prisma.bankAltegioDepositMatch.count({ where: byItem }),
+    prisma.bankAltegioPendingPayment.count({ where: byItem }),
+    prisma.bankAutomaticAltegioExpense.count({ where: { bankAccount: { connectionId } } }),
+  ]);
+  return { paymentMatches, incomingMatches, depositMatches, pendingPayments, automaticExpenses };
 }

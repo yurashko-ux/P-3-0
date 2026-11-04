@@ -200,6 +200,8 @@ export async function syncBankOutgoingStatementsForReconciliation(params: {
     where: {
       includeInOperationsTable: true,
       currencyCode: 980,
+      // Призупинені підключення не синхронізуємо
+      connection: { pausedAt: null },
       ...(params.accountType ? { type: params.accountType } : {}),
       ...(params.requireAltegioAccount === false ? {} : { altegioAccountId: { not: null } }),
     },

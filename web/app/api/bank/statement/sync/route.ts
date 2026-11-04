@@ -52,11 +52,17 @@ export async function POST(req: NextRequest) {
         id: true,
         connectionId: true,
         externalId: true,
-        connection: { select: { token: true } },
+        connection: { select: { token: true, pausedAt: true } },
       },
     });
     if (!account || !account.connection) {
       return NextResponse.json({ error: "Рахунок не знайдено" }, { status: 404 });
+    }
+    if (account.connection.pausedAt) {
+      return NextResponse.json(
+        { error: "Підключення призупинено — нові платежі з monobank не підтягуємо. Спершу натисніть «Відновити»." },
+        { status: 409 },
+      );
     }
 
     // Monobank лімітує /personal/statement по токену/підключенню, а не по окремому рахунку.

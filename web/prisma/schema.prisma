@@ -1154,6 +1154,8 @@ model BankConnection {
   webhookUrl String? // URL, зареєстрований у банку (наш endpoint)
   clientName String? // Ім'я клієнта з API (client-info name)
   clientId   String? // clientId з monobank
+  /// Призупинено: вебхук знято, нові платежі й баланси з monobank не тягнемо; історія лишається
+  pausedAt   DateTime?
   createdAt  DateTime @default(now())
   updatedAt  DateTime @updatedAt
 
