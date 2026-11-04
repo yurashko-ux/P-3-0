@@ -1284,10 +1284,14 @@ export default async function FinanceReportPage({
             
             // Розраховуємо в доларах (якщо курс встановлено)
             const ownerProfitUSD = exchangeRate > 0 ? ownerProfitLocal / exchangeRate : 0;
-            const hairCostForPurchaseDisplay = goods?.hairCost || 0;
-            const hairCostForPurchaseDisplayUSD = exchangeRate > 0
-              ? hairCostForPurchaseDisplay / exchangeRate
-              : 0;
+            // «Потрібно закупити волосся» = різниця складу «Волосся» з попереднім місяцем (як у блоці складу).
+            // null — немає знімка залишків Kresco за котрийсь із двох місяців.
+            const hairCostForPurchaseDisplay: number | null =
+              warehouseGoodsHairSplit && previousWarehouseGoodsHairSplit
+                ? warehouseGoodsHairSplit.hairUah - previousWarehouseGoodsHairSplit.hairUah
+                : null;
+            const hairCostForPurchaseDisplayUSD =
+              hairCostForPurchaseDisplay != null && exchangeRate > 0 ? hairCostForPurchaseDisplay / exchangeRate : null;
 
             return (
               <>
@@ -1379,7 +1383,9 @@ export default async function FinanceReportPage({
                       <div className="flex justify-between items-center">
                         <p className="text-xs font-medium">Потрібно закупити волосся на суму</p>
                         <div className="text-right">
-                          {exchangeRate > 0 ? (
+                          {hairCostForPurchaseDisplay == null ? (
+                            <p className="text-xs font-bold">—</p>
+                          ) : hairCostForPurchaseDisplayUSD != null ? (
                             <>
                               <p className="text-xs font-bold">${formatMoney(hairCostForPurchaseDisplayUSD)} USD</p>
                               <p className="text-xs text-gray-700">{formatMoney(hairCostForPurchaseDisplay)} грн.</p>
@@ -2146,6 +2152,7 @@ export default async function FinanceReportPage({
                               <span className={`font-semibold ${diff >= 0 ? "text-green-600" : "text-red-600"}`}>
                                 {diff >= 0 ? "+" : ""}
                                 {formatMoney(diff)} грн.
+                                {exchangeRate > 0 ? ` (${diff >= 0 ? "+" : ""}${formatMoney(diff / exchangeRate)} $)` : ""}
                               </span>
                             )}
                           </p>
