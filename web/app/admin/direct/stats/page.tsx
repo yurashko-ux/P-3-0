@@ -946,7 +946,10 @@ function DirectStatsPageContent() {
         const level = data?.permissions?.statsSection;
         // Та сама умова, що й для кнопки «Статистика» в навігаційній панелі (getAdminNavItems):
         // заборонено лише явне "none". Інакше кнопка є, а сторінка викидала в Direct.
-        const allowed = data?.ok === true && level !== "none";
+        // data.ok = false — сесії немає: так буває лише на адресі конкретного деплою
+        // (p-3-0-xxxx-mykolays-projects.vercel.app), де middleware пускає без логіну, а панель
+        // показує всі кнопки. На основному домені без логіну сюди не потрапити.
+        const allowed = data?.ok !== true || level !== "none";
         setCanViewStats(allowed);
         setAccessChecked(true);
         if (!allowed && typeof window !== "undefined") {
