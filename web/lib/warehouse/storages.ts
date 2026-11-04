@@ -1,7 +1,26 @@
-// Створення складу в Kresco + Altegio.
+// Створення складу лише в Kresco (без складу в Altegio).
+// Такий склад облікує товари в Kresco (напр. «Волосся» для груп Хвости / Накладки / Стрічки / Треси),
+// а прийомку, списання й продаж з нього пишемо в склад Altegio «Товари» (altegioWriteStorageId).
 
 import { prisma } from "@/lib/prisma";
-import { createAltegioStorage } from "@/lib/altegio/warehouse-write";
+
+/** Склад Altegio «Товари» — куди пишемо операції зі складів, що існують лише в Kresco. */
+export const ALTEGIO_GOODS_STORAGE_ID = 2343838;
+
+/** Id складу Altegio для запису операцій: свій склад Altegio або склад-адресат для складу лише в Kresco. */
+export function altegioStorageIdForWrites(storage: {
+  altegioStorageId: number | null;
+  altegioWriteStorageId?: number | null;
+}): number | null {
+  if (storage.altegioStorageId && storage.altegioStorageId > 0) return storage.altegioStorageId;
+  if (storage.altegioWriteStorageId && storage.altegioWriteStorageId > 0) return storage.altegioWriteStorageId;
+  return null;
+}
+
+/** Склад лише в Kresco: у нього немає власного складу Altegio. */
+export function isKrescoOnlyStorage(storage: { altegioStorageId: number | null }): boolean {
+  return !(storage.altegioStorageId && storage.altegioStorageId > 0);
+}
 
 export async function createWarehouseStorage(title: string) {
   const trimmed = title.trim();
@@ -11,32 +30,23 @@ export async function createWarehouseStorage(title: string) {
   }
 
   const existing = await prisma.warehouseStorage.findFirst({
-    where: { title: trimmed, isActive: true },
+    where: { title: { equals: trimmed, mode: "insensitive" }, isActive: true },
   });
   if (existing) throw new Error("Склад з такою назвою вже є");
-
-  const altegio = await createAltegioStorage(trimmed);
-  const already = await prisma.warehouseStorage.findUnique({
-    where: { altegioStorageId: altegio.id },
-  });
-  if (already) {
-    const row = await prisma.warehouseStorage.update({
-      where: { id: already.id },
-      data: { title: trimmed, titleLocked: true, isActive: true },
-    });
-    console.log(`[warehouse/storages] Увімкнено існуючий склад Altegio id=${altegio.id}`);
-    return row;
-  }
 
   const row = await prisma.warehouseStorage.create({
     data: {
       title: trimmed,
-      altegioStorageId: altegio.id,
-      includeInFinanceReport: trimmed.toLocaleLowerCase("uk-UA") === "товари",
+      altegioStorageId: null,
+      altegioWriteStorageId: ALTEGIO_GOODS_STORAGE_ID,
+      // Як «Товари» в Altegio — у балансі фінзвіту.
+      includeInFinanceReport: true,
       titleLocked: true,
       isActive: true,
     },
   });
-  console.log(`[warehouse/storages] Створено склад «${trimmed}» altegioStorageId=${altegio.id}`);
+  console.log(
+    `[warehouse/storages] Створено склад «${trimmed}» лише в Kresco (операції → Altegio склад ${ALTEGIO_GOODS_STORAGE_ID})`,
+  );
   return row;
 }

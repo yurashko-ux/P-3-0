@@ -20,6 +20,7 @@ import { getUsdUahRate } from "@/lib/warehouse/fx";
 import { resolveJournalCompanyId } from "./company-id";
 import { isJournalAltegioWriteSkipped } from "./altegio-write-gate";
 import { hiddenFinanceAccountIds } from "@/lib/finance/account-archive";
+import { altegioStorageIdForWrites } from "@/lib/warehouse/storages";
 
 function toMoney(n: number): number {
   return Math.round(n * 100) / 100;
@@ -363,7 +364,8 @@ async function normalizeGoods(raw: CheckoutGoodLineInput[] | undefined): Promise
     }
     const storage = storageById.get(row.storageId);
     if (!storage) throw new Error(`Склад не знайдено (${row.storageId})`);
-    if (!(storage.altegioStorageId && storage.altegioStorageId > 0)) {
+    // Склад лише в Kresco («Волосся») продає через свій склад Altegio для запису («Товари»).
+    if (!altegioStorageIdForWrites(storage)) {
       throw new Error(`Склад «${storage.title}» без id Altegio`);
     }
     if (!storage.isActive) throw new Error(`Склад «${storage.title}» вимкнено`);

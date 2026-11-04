@@ -1714,11 +1714,15 @@ model WarehouseStorage {
   includeInFinanceReport Boolean @default(true)
   /// Назву задано в Kresco — імпорт з Altegio її не перезаписує
   titleLocked      Boolean  @default(false)
+  /// Склад лише в Kresco (altegioStorageId = null): прийомку / списання / продаж пишемо в цей склад Altegio
+  altegioWriteStorageId Int?
   isActive         Boolean  @default(true)
   createdAt        DateTime @default(now())
   updatedAt        DateTime @updatedAt
 
   stocks          WarehouseStock[]
+  /// Групи, залишки яких Kresco облікує на цьому складі (незалежно від складу в Altegio)
+  productGroups   WarehouseProductGroup[] @relation("WarehouseGroupStorage")
   documentsFrom   WarehouseDocument[] @relation("WarehouseDocFromStorage")
   documentsTo     WarehouseDocument[] @relation("WarehouseDocToStorage")
   snapshots       WarehouseStockMonthSnapshot[]
@@ -1735,12 +1739,15 @@ model WarehouseProductGroup {
   title             String
   isHair            Boolean  @default(false)
   altegioCategoryId Int?     @unique
+  /// Склад Kresco для залишків цієї групи (напр. «Волосся»); null — як в Altegio
+  storageId         String?
   sortOrder         Int      @default(0)
   isActive          Boolean  @default(true)
   createdAt         DateTime @default(now())
   updatedAt         DateTime @updatedAt
 
   products WarehouseProduct[]
+  storage  WarehouseStorage? @relation("WarehouseGroupStorage", fields: [storageId], references: [id], onDelete: SetNull)
 
   @@index([title])
   @@map("warehouse_product_groups")

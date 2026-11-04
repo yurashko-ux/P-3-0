@@ -94,10 +94,30 @@ export async function importWarehouseFromAltegio(params?: {
       .map((s) => [s.altegioStorageId as number, s]),
   );
 
+  // Склади лише в Kresco (напр. «Волосся»): однойменний склад Altegio не дзеркалимо окремо —
+  // його залишки (якщо будуть) рахуємо на складі Kresco. Сам склад Kresco до Altegio не привʼязуємо.
+  const krescoOnlyStorages = await prisma.warehouseStorage.findMany({
+    where: { altegioStorageId: null, isActive: true },
+    select: { id: true, title: true },
+  });
+  const krescoOnlyByTitle = new Map(
+    krescoOnlyStorages.map((row) => [row.title.trim().toLocaleLowerCase("uk-UA"), row.id]),
+  );
+
   const storageIdByAltegio = new Map<number, string>();
   let storagesWritten = 0;
   for (const storage of snapshot.storages) {
     const existing = storageByAltegio.get(storage.altegioStorageId);
+    const krescoOnlyId = existing
+      ? null
+      : krescoOnlyByTitle.get(String(storage.title || "").trim().toLocaleLowerCase("uk-UA"));
+    if (krescoOnlyId) {
+      storageIdByAltegio.set(storage.altegioStorageId, krescoOnlyId);
+      console.log(
+        `[warehouse/import] Склад Altegio «${storage.title}» (${storage.altegioStorageId}) → склад лише в Kresco, без привʼязки`,
+      );
+      continue;
+    }
     const krescoTitle = KRESCO_STORAGE_TITLES[storage.altegioStorageId];
     const nextTitle = krescoTitle
       ? krescoTitle
@@ -290,6 +310,18 @@ export async function importWarehouseFromAltegio(params?: {
       })
     ).id;
 
+  // Групи з власним складом Kresco (Хвости, Накладки, Стрічки, Треси → «Волосся»):
+  // їхні залишки з будь-якого складу Altegio кладемо на цей склад. В Altegio нічого не змінюється.
+  const groupStorageRows = await prisma.warehouseProduct.findMany({
+    where: { group: { storageId: { not: null } } },
+    select: { id: true, group: { select: { storageId: true } } },
+  });
+  const groupStorageByProduct = new Map(
+    groupStorageRows
+      .filter((row) => row.group?.storageId)
+      .map((row) => [row.id, row.group!.storageId as string]),
+  );
+
   const lines: Array<{ productId: string; quantity: number; costPerUnit: number; storageId: string }> =
     [];
   for (const good of snapshot.goods) {
@@ -299,8 +331,9 @@ export async function importWarehouseFromAltegio(params?: {
       good.stocks.length > 0
         ? good.stocks
         : [{ altegioStorageId: 0, storageTitle: "Основний склад", quantity: 0 }];
+    const groupStorageId = groupStorageByProduct.get(productId);
     for (const stock of stocks) {
-      const storageId = storageIdByAltegio.get(stock.altegioStorageId) || defaultStorageId;
+      const storageId = groupStorageId || storageIdByAltegio.get(stock.altegioStorageId) || defaultStorageId;
       lines.push({
         productId,
         quantity: stock.quantity,

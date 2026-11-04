@@ -13,6 +13,7 @@ import { requireUsdUahRate } from "./fx";
 import { ensureGroupAltegioCategory } from "./catalog";
 import { altegioCategoryIdForKrescoWrite } from "./merge-khvosty";
 import { getEnabledCurrencyCodes } from "./currencies";
+import { altegioStorageIdForWrites, isKrescoOnlyStorage } from "./storages";
 
 const HAIR_WEIGHT_TOLERANCE_G = 50;
 
@@ -37,13 +38,19 @@ function hairCardTitle(groupTitle: string, lengthCm: number, weightGrams: number
   return `${groupTitle} ${lengthCm}см ${round2(weightGrams)}г`;
 }
 
+/**
+ * Склад для документа. altegioStorageId у відповіді — склад Altegio, куди пишемо операцію:
+ * для складу лише в Kresco («Волосся») це altegioWriteStorageId («Товари»).
+ * krescoOnly — ознака складу без власного складу Altegio.
+ */
 async function requireStorage(storageId: string) {
   const storage = await prisma.warehouseStorage.findUnique({ where: { id: storageId } });
   if (!storage) throw new Error("Склад не знайдено");
-  if (!(storage.altegioStorageId && storage.altegioStorageId > 0)) {
+  const altegioStorageId = altegioStorageIdForWrites(storage);
+  if (!altegioStorageId) {
     throw new Error("У цього складу немає id Altegio. Натисніть «Оновити з Altegio» на залишках.");
   }
-  return storage;
+  return { ...storage, altegioStorageId, krescoOnly: isKrescoOnlyStorage(storage) };
 }
 
 async function convertToUah(params: {
@@ -133,13 +140,15 @@ export async function retryWarehouseDocumentSync(documentId: string) {
   }));
 
   if (doc.type === "transfer") {
-    if (!doc.fromStorage?.altegioStorageId || !doc.toStorage?.altegioStorageId) {
+    const fromAltegioId = doc.fromStorage ? altegioStorageIdForWrites(doc.fromStorage) : null;
+    const toAltegioId = doc.toStorage ? altegioStorageIdForWrites(doc.toStorage) : null;
+    if (!fromAltegioId || !toAltegioId) {
       throw new Error("Немає складів Altegio для переміщення");
     }
     try {
       const op = await createAltegioStorageTransfer({
-        fromStorageId: doc.fromStorage.altegioStorageId,
-        toStorageId: doc.toStorage.altegioStorageId,
+        fromStorageId: fromAltegioId,
+        toStorageId: toAltegioId,
         date: doc.occurredAt,
         comment: doc.comment || doc.title || "Переміщення складу",
         lines: lines.map((line) => ({
@@ -168,13 +177,14 @@ export async function retryWarehouseDocumentSync(documentId: string) {
   }
 
   const storage = doc.type === "write_off" ? doc.fromStorage : doc.toStorage;
-  if (!storage?.altegioStorageId) throw new Error("Немає складу Altegio");
+  const storageAltegioId = storage ? altegioStorageIdForWrites(storage) : null;
+  if (!storageAltegioId) throw new Error("Немає складу Altegio");
   const typeId = doc.type === "write_off" ? ALTEGIO_STORAGE_OP.writeOff : ALTEGIO_STORAGE_OP.receipt;
 
   await postOperationAndApply({
     documentId: doc.id,
     typeId,
-    storageAltegioId: storage.altegioStorageId,
+    storageAltegioId,
     comment: doc.comment || doc.title || "Kresco",
     occurredAt: doc.occurredAt,
     lines,
@@ -628,6 +638,13 @@ export async function createStorageTransfer(input: {
   }
   const from = await requireStorage(input.fromStorageId);
   const to = await requireStorage(input.toStorageId);
+  // Склад лише в Kresco наповнюється за групами товарів (див. WarehouseProductGroup.storageId):
+  // ручне переміщення з / на нього в Altegio означало б реальний рух між складами Altegio.
+  if (from.krescoOnly || to.krescoOnly) {
+    throw new Error(
+      `Склад «${from.krescoOnly ? from.title : to.title}» є лише в Kresco: товари на ньому визначаються групою, переміщення не потрібне`,
+    );
+  }
 
   const merged = new Map<string, number>();
   for (const line of input.lines || []) {
