@@ -1284,12 +1284,14 @@ export default async function FinanceReportPage({
             
             // Розраховуємо в доларах (якщо курс встановлено)
             const ownerProfitUSD = exchangeRate > 0 ? ownerProfitLocal / exchangeRate : 0;
-            // «Потрібно закупити волосся» = різниця складу «Волосся» з попереднім місяцем (як у блоці складу).
-            // null — немає знімка залишків Kresco за котрийсь із двох місяців.
-            const hairCostForPurchaseDisplay: number | null =
+            // «Потрібно закупити волосся»: склад «Волосся» зменшився за місяць — закупка на суму зменшення,
+            // склад виріс або не змінився — 0. null — немає знімка залишків Kresco за котрийсь із двох місяців.
+            const hairStockDiff: number | null =
               warehouseGoodsHairSplit && previousWarehouseGoodsHairSplit
                 ? warehouseGoodsHairSplit.hairUah - previousWarehouseGoodsHairSplit.hairUah
                 : null;
+            const hairCostForPurchaseDisplay: number | null =
+              hairStockDiff == null ? null : hairStockDiff < 0 ? Math.abs(hairStockDiff) : 0;
             const hairCostForPurchaseDisplayUSD =
               hairCostForPurchaseDisplay != null && exchangeRate > 0 ? hairCostForPurchaseDisplay / exchangeRate : null;
 
