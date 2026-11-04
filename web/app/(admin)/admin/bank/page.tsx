@@ -561,6 +561,12 @@ export default function BankPage() {
   const [pendingDateFrom, setPendingDateFrom] = useState(() => initialFocus.from ?? initialRange.from);
   const [pendingDateTo, setPendingDateTo] = useState(() => initialFocus.to ?? initialRange.to);
   const [pendingTypeFilter, setPendingTypeFilter] = useState<"all" | "in" | "out">("all");
+  /** Фільтр колонки «Сума»: усі / зведені з Altegio / незведені (за paymentReconciled з API) */
+  const [reconcileFilter, setReconcileFilter] = useState<"all" | "reconciled" | "unreconciled">("all");
+  const [pendingReconcileFilter, setPendingReconcileFilter] = useState<"all" | "reconciled" | "unreconciled">("all");
+  const [isReconcileFilterOpen, setIsReconcileFilterOpen] = useState(false);
+  const reconcileFilterRef = useRef<HTMLDivElement | null>(null);
+  const reconcileFilterPopupRef = useRef<HTMLDivElement | null>(null);
   const [pendingSelectedAccountKeys, setPendingSelectedAccountKeys] = useState<string[]>([]);
   const [isDateFilterOpen, setIsDateFilterOpen] = useState(false);
   const [isTypeFilterOpen, setIsTypeFilterOpen] = useState(false);
@@ -968,7 +974,8 @@ export default function BankPage() {
     );
     observer.observe(sentinel);
     return () => observer.disconnect();
-  }, [operationsLoading, hasMoreOperations, nextOperationsCursor, isLoadingMore, dateFrom, dateTo]);
+    // reconcileFilter: після звуження фільтра рядків менше — сторож видно, догружаємо далі.
+  }, [operationsLoading, hasMoreOperations, nextOperationsCursor, isLoadingMore, dateFrom, dateTo, reconcileFilter]);
 
   /** Перехід зі зведення вхідних: прокрутити до операції та підсвітити рядок. */
   useEffect(() => {
@@ -1052,6 +1059,8 @@ export default function BankPage() {
         dateFilterRef.current?.contains(target) ||
         typeFilterRef.current?.contains(target) ||
         fopFilterRef.current?.contains(target) ||
+        reconcileFilterRef.current?.contains(target) ||
+        reconcileFilterPopupRef.current?.contains(target) ||
         dateFilterPopupRef.current?.contains(target) ||
         typeFilterPopupRef.current?.contains(target) ||
         fopFilterPopupRef.current?.contains(target)
@@ -1061,6 +1070,8 @@ export default function BankPage() {
       setIsDateFilterOpen(false);
       setIsTypeFilterOpen(false);
       setIsFopFilterOpen(false);
+      setIsReconcileFilterOpen(false);
+      setPendingReconcileFilter(reconcileFilter);
       setPendingDateFrom(dateFrom);
       setPendingDateTo(dateTo);
       setPendingTypeFilter(typeFilter);
@@ -1069,7 +1080,7 @@ export default function BankPage() {
       setIsLoginMenuOpen(false);
     };
 
-    if (isDateFilterOpen || isTypeFilterOpen || isFopFilterOpen || isAddMenuOpen || isLoginMenuOpen) {
+    if (isDateFilterOpen || isTypeFilterOpen || isFopFilterOpen || isReconcileFilterOpen || isAddMenuOpen || isLoginMenuOpen) {
       document.addEventListener("mousedown", handleOutside);
     }
     return () => document.removeEventListener("mousedown", handleOutside);
@@ -1077,6 +1088,8 @@ export default function BankPage() {
     isDateFilterOpen,
     isTypeFilterOpen,
     isFopFilterOpen,
+    isReconcileFilterOpen,
+    reconcileFilter,
     isAddMenuOpen,
     isLoginMenuOpen,
     dateFrom,
@@ -1120,6 +1133,9 @@ export default function BankPage() {
     const search = displaySearch.trim().toLowerCase();
 
     const filtered = operations.filter((op) => {
+      // Зведені / незведені — за готовою позначкою з API; решту рядків догрузить прокрутка.
+      if (reconcileFilter === "reconciled" && !op.paymentReconciled) return false;
+      if (reconcileFilter === "unreconciled" && op.paymentReconciled) return false;
       // Дата, тип і ФОП уже застосовані на сервері /api/bank/operations.
       // На клієнті лишаємо тільки текстовий пошук, щоб не ховати рядки через роз'їзд локального стану.
       if (search) {
@@ -1153,7 +1169,7 @@ export default function BankPage() {
       return (ab - bb) * dir;
     });
     return filtered;
-  }, [operations, sortBy, sortOrder, displaySearch]);
+  }, [operations, sortBy, sortOrder, displaySearch, reconcileFilter]);
 
   /** Індекс останнього рядка першого суцільного блоку «сьогодні» (Europe/Kyiv). */
   const todayBlockRowIndex = useMemo(() => {
@@ -1221,6 +1237,25 @@ export default function BankPage() {
     setDateFrom(from);
     setDateTo(to);
     setIsDateFilterOpen(false);
+  };
+
+  const openReconcileFilter = () => {
+    setPendingReconcileFilter(reconcileFilter);
+    setIsReconcileFilterOpen((v) => !v);
+    setIsDateFilterOpen(false);
+    setIsTypeFilterOpen(false);
+    setIsFopFilterOpen(false);
+  };
+
+  const applyReconcileFilter = () => {
+    setReconcileFilter(pendingReconcileFilter);
+    setIsReconcileFilterOpen(false);
+  };
+
+  const clearReconcileFilter = () => {
+    setPendingReconcileFilter("all");
+    setReconcileFilter("all");
+    setIsReconcileFilterOpen(false);
   };
 
   const applyTypeFilter = () => {
@@ -1458,10 +1493,57 @@ export default function BankPage() {
           </div>
         </th>
         <th
-          style={{ padding: "10px 12px", width: 90, textAlign: "right" }}
+          style={{ padding: "10px 12px", width: 90, textAlign: "right", position: "relative" }}
           title="Зведені платежі — сіра пігулка з синьою сумою"
         >
-          Сума
+          <div style={{ display: "flex", alignItems: "center", justifyContent: "flex-end", gap: 6 }}>
+            <span>Сума</span>
+            <div ref={reconcileFilterRef} style={{ position: "relative" }}>
+              <FilterIconButton active={reconcileFilter !== "all"} onClick={openReconcileFilter} title="Фільтри для Сума" />
+              {renderFilterPopup(
+                isReconcileFilterOpen,
+                reconcileFilterRef,
+                reconcileFilterPopupRef,
+                200,
+                <>
+                  <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 8, padding: "0 4px", fontSize: 12, color: "#374151", fontWeight: 600 }}>
+                    <span>Фільтри: Сума</span>
+                  </div>
+                  <div style={{ display: "grid", gap: 6 }}>
+                    {([
+                      { id: "all", label: "Усі" },
+                      { id: "reconciled", label: "Зведені" },
+                      { id: "unreconciled", label: "Не зведені" },
+                    ] as const).map((opt) => (
+                      <button
+                        key={opt.id}
+                        type="button"
+                        onClick={() => setPendingReconcileFilter(opt.id)}
+                        style={{
+                          width: "100%",
+                          textAlign: "left",
+                          padding: "6px 8px",
+                          borderRadius: 6,
+                          border: "1px solid #d1d5db",
+                          background: pendingReconcileFilter === opt.id ? "#eff6ff" : "#fff",
+                          color: "#374151",
+                          fontWeight: 600,
+                          cursor: "pointer",
+                          fontSize: 12,
+                        }}
+                      >
+                        {opt.label}
+                      </button>
+                    ))}
+                    <div style={{ display: "flex", gap: 6, marginTop: 2 }}>
+                      <button type="button" onClick={applyReconcileFilter} style={{ flex: 1, padding: "6px 8px", border: "none", borderRadius: 6, background: "#3b82f6", color: "#fff", fontSize: 12, fontWeight: 600, cursor: "pointer" }}>Застосувати</button>
+                      <button type="button" onClick={clearReconcileFilter} style={{ flex: 1, padding: "6px 8px", border: "none", borderRadius: 6, background: "#ec4899", color: "#fff", fontSize: 12, fontWeight: 600, cursor: "pointer" }}>Очистити</button>
+                    </div>
+                  </div>
+                </>
+              )}
+            </div>
+          </div>
         </th>
         <th
           style={{ padding: "10px 12px", width: 150 }}
