@@ -90,11 +90,13 @@ export async function getWebhook(token: string): Promise<string> {
   }
 }
 
-/** DELETE /personal/webhook — вимкнути вебхук */
+/** Вимкнути вебхук (POST /personal/webhook з порожньою адресою) */
 export async function deleteWebhook(token: string): Promise<void> {
+  // Monobank не має DELETE для вебхука: вимкнення — POST /personal/webhook з порожньою адресою.
   const res = await fetch(`${MONOBANK_API_BASE}/personal/webhook`, {
-    method: "DELETE",
+    method: "POST",
     headers: headers(token),
+    body: JSON.stringify({ webHookUrl: "" }),
   });
   if (!res.ok) {
     const text = await res.text();
