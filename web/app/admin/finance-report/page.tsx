@@ -27,7 +27,9 @@ import { EncashmentOwnerConfirmedPanel } from "./_components/EncashmentOwnerConf
 import {
   getPreviousMonth,
   getWarehouseBalanceForReportMonth,
+  getWarehouseGoodsHairSplit,
   type WarehouseBalanceSource,
+  type WarehouseGoodsHairSplit,
 } from "@/lib/finance/warehouse-balance";
 import {
   compareFinanceReportSnapshot,
@@ -381,6 +383,8 @@ async function getSummaryForMonth(
   previousMonthWarehouseBalance: number; // Баланс складу попереднього місяця для звірки руху
   warehouseBalanceDiff: number; // Різниця балансу складу між поточним та попереднім місяцем
   warehouseBalanceSource: WarehouseBalanceSource;
+  /** Розбивка балансу складу: Товари / Волосся (null — немає складу волосся або знімка Kresco) */
+  warehouseGoodsHairSplit: WarehouseGoodsHairSplit | null;
   hairPurchaseAmount: number; // Сума для закупівлі волосся з урахуванням різниці складу, округлена до більшого до 10000
   discountAmount: number; // Сума знижки Altegio за період (у блоці #2: окремий підрозділ "Знижки")
   discountDetails: DiscountVisitDetail[]; // Деталізація знижок по клієнтах/датах візитів
@@ -499,6 +503,11 @@ async function getSummaryForMonth(
   
   // Розраховуємо різницю
   const warehouseBalanceDiff = warehouseBalance - previousMonthBalance;
+
+  const warehouseGoodsHairSplit = await getWarehouseGoodsHairSplit(year, month, warehouseBalance).catch((err) => {
+    console.warn("[finance-report] Розбивка складу Товари/Волосся не вдалася:", err instanceof Error ? err.message : err);
+    return null;
+  });
 
   try {
     const financeFetchLabels = [
@@ -779,6 +788,7 @@ async function getSummaryForMonth(
       previousMonthWarehouseBalance: previousMonthBalance,
       warehouseBalanceDiff,
       warehouseBalanceSource,
+      warehouseGoodsHairSplit,
       hairPurchaseAmount,
       discountAmount,
       discountDetails,
@@ -818,6 +828,7 @@ async function getSummaryForMonth(
       previousMonthWarehouseBalance: 0,
       warehouseBalanceDiff: 0,
       warehouseBalanceSource: "missing",
+      warehouseGoodsHairSplit: null,
       hairPurchaseAmount: 0,
       discountAmount: 0,
       discountDetails: [],
@@ -919,6 +930,7 @@ export default async function FinanceReportPage({
     warehouseBalance,
     warehouseBalanceDiff,
     warehouseBalanceSource,
+    warehouseGoodsHairSplit,
     hairPurchaseAmount,
     discountAmount,
     discountDetails,
@@ -2088,9 +2100,34 @@ export default async function FinanceReportPage({
                       </div>
                       <div className="text-right">
                         <p className="text-xs font-bold tabular-nums">{formatMoney(warehouseBalance)} грн.</p>
+                        {exchangeRate > 0 ? (
+                          <p className="text-xs text-gray-500 tabular-nums">
+                            {formatMoney(warehouseBalance / exchangeRate)} $
+                          </p>
+                        ) : null}
                       </div>
                     </div>
                   </div>
+
+                  {/* Склади: Товари і Волосся (за знімком залишків Kresco; курс — звітного місяця). Без знімка — прочерк. */}
+                  {[
+                    { key: "goods", title: "Товари", uah: warehouseGoodsHairSplit?.goodsUah ?? null },
+                    {
+                      key: "hair",
+                      title: warehouseGoodsHairSplit?.hairStorageTitle || "Волосся",
+                      uah: warehouseGoodsHairSplit?.hairUah ?? null,
+                    },
+                  ].map((row) => (
+                    <div key={row.key} className="flex justify-between items-center bg-blue-50 px-1 py-0.5 pl-3 rounded">
+                      <span className="text-xs font-medium">Склад {row.title}</span>
+                      <div className="text-right">
+                        <p className="text-xs font-bold tabular-nums">{row.uah != null ? `${formatMoney(row.uah)} грн.` : "—"}</p>
+                        <p className="text-xs text-gray-500 tabular-nums">
+                          {row.uah != null && exchangeRate > 0 ? `${formatMoney(row.uah / exchangeRate)} $` : "—"}
+                        </p>
+                      </div>
+                    </div>
+                  ))}
                   
                   {/* Різниця балансу складу */}
                   <div className="pt-1 border-t bg-green-100 px-1 py-0.5 rounded">

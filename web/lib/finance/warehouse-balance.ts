@@ -442,3 +442,45 @@ export async function saveWarehouseBalanceSnapshot(params: {
     await tryUpsert(false);
   }
 }
+
+export type WarehouseGoodsHairSplit = {
+  /** Назва складу лише в Kresco, що облікує волосся («Волосся») */
+  hairStorageTitle: string;
+  hairUah: number;
+  /** Загальний баланс мінус волосся — щоб «Товари» + «Волосся» = рядок балансу */
+  goodsUah: number;
+};
+
+/**
+ * Розбивка балансу складу на «Товари» і «Волосся» за місячним знімком залишків Kresco.
+ * Волосся = вартість товарів груп, привʼязаних до складу «Волосся» (або вже на ньому),
+ * лише на складах, що входять у фінзвіт. Два запити; null — немає складу волосся або знімка.
+ */
+export async function getWarehouseGoodsHairSplit(
+  year: number,
+  month: number,
+  totalUah: number,
+): Promise<WarehouseGoodsHairSplit | null> {
+  const hairStorage = await prisma.warehouseStorage.findFirst({
+    where: { altegioStorageId: null, isActive: true, productGroups: { some: {} } },
+    select: { id: true, title: true },
+  });
+  if (!hairStorage) return null;
+
+  const rows = await prisma.warehouseStockMonthSnapshot.findMany({
+    where: {
+      year,
+      month,
+      storage: { includeInFinanceReport: true },
+      OR: [{ storageId: hairStorage.id }, { product: { group: { storageId: hairStorage.id } } }],
+    },
+    select: { valueUah: true },
+  });
+  if (rows.length === 0) {
+    console.log(`[finance/warehouse-balance] Немає знімка залишків Kresco за ${year}-${month} — без розбивки Товари/Волосся`);
+    return null;
+  }
+  const hairUah = Math.round(rows.reduce((sum, row) => sum + (Number(row.valueUah) || 0), 0) * 100) / 100;
+  const goodsUah = Math.round((totalUah - hairUah) * 100) / 100;
+  return { hairStorageTitle: hairStorage.title, hairUah, goodsUah };
+}
