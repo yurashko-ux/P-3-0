@@ -22,13 +22,16 @@ function LoginInner() {
 
   const isCresco = hostname === 'cresco-crm.vercel.app';
   const isP30 = hostname === 'p-3-0.vercel.app';
+  const isLocalDev =
+    hostname === 'localhost' || hostname === '127.0.0.1' || hostname === '[::1]';
   const isPreviewDeployment =
     hostname.endsWith('.vercel.app') &&
     hostname !== 'p-3-0.vercel.app' &&
     hostname !== 'cresco-crm.vercel.app';
-  // Cresco + p-3-0: користувачі з Доступів — логін+свій пароль. ADMIN_PASS — лише супер-адмін.
-  const showPasswordForm = isCresco || isP30 || isPreviewDeployment || !hostname;
-  const showTokenForm = isP30 || isPreviewDeployment || (!isCresco && !hostname);
+  // Cresco + p-3-0 + localhost: користувачі з Доступів — логін+свій пароль. ADMIN_PASS — супер-адмін.
+  // Без isLocalDev після hydration hostname=localhost ховав обидві форми → білий екран.
+  const showPasswordForm = isCresco || isP30 || isPreviewDeployment || isLocalDev || !hostname;
+  const showTokenForm = isP30 || isPreviewDeployment || isLocalDev || (!isCresco && !hostname);
   const nextRaw = sp.get('next') || '';
   const nextPath =
     nextRaw.startsWith('/') && !nextRaw.startsWith('//') && !nextRaw.includes('\\')
