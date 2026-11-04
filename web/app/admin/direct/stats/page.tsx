@@ -944,7 +944,9 @@ function DirectStatsPageContent() {
       .then((data) => {
         if (cancelled) return;
         const level = data?.permissions?.statsSection;
-        const allowed = data?.ok === true && level != null && level !== "none";
+        // Та сама умова, що й для кнопки «Статистика» в навігаційній панелі (getAdminNavItems):
+        // заборонено лише явне "none". Інакше кнопка є, а сторінка викидала в Direct.
+        const allowed = data?.ok === true && level !== "none";
         setCanViewStats(allowed);
         setAccessChecked(true);
         if (!allowed && typeof window !== "undefined") {
@@ -952,11 +954,12 @@ function DirectStatsPageContent() {
           window.location.replace(hasLeads ? "/admin/direct/stats/consultations" : "/admin/direct");
         }
       })
-      .catch(() => {
+      .catch((error) => {
         if (cancelled) return;
-        setCanViewStats(false);
+        // Збій мережі / відповіді — не перекидаємо в Direct; дані статистики API все одно перевіряє сам.
+        console.warn("[direct/stats] Не вдалося перевірити доступ, показую сторінку", error);
+        setCanViewStats(true);
         setAccessChecked(true);
-        if (typeof window !== "undefined") window.location.replace("/admin/direct");
       });
     return () => {
       cancelled = true;

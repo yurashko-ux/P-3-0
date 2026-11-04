@@ -138,6 +138,9 @@ export function AdminNavLinks({
           href={hrefOverrides?.[item.key] || item.href}
           className={`${NAV_LINK_CLASS} ${activeKey === item.key ? "bg-blue-50 text-blue-700" : ""}`}
           aria-current={activeKey === item.key ? "page" : undefined}
+          // Наскрізне правило: кожна кнопка панелі відкриває розділ у новій вкладці браузера.
+          target="_blank"
+          rel="noopener noreferrer"
         >
           {item.label}
         </Link>
@@ -232,6 +235,8 @@ export function AdminTopNav() {
       >
         <Link
           href="/admin/direct"
+          target="_blank"
+          rel="noopener noreferrer"
           className="flex h-8 w-8 shrink-0 items-center justify-center mr-1"
           title="CreSco — Direct"
           aria-label="CreSco — Direct"
