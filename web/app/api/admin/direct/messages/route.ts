@@ -97,7 +97,7 @@ async function findIdsByLastInstagramMessage(
           OR c."paidServiceDate" IS NOT NULL
         )`
       : Prisma.sql`(
-          c."includeInNewLeadsKpi" = true
+          (c."includeInNewLeadsKpi" = true OR c.state IN ('outgoing-first', 'comment'))
           AND c."paidServiceDate" IS NULL
           AND (c."consultationBookingDate" IS NULL OR c."consultationDeletedInAltegio" = true)
         )`;
@@ -141,7 +141,9 @@ function leadWhere(): Prisma.DirectClientWhereInput {
   return {
     AND: [
       instagramWhere(),
-      { includeInNewLeadsKpi: true },
+      // outgoing-first (розмову почали ми) і comment (лише коментар під постом) — у Переписках є,
+      // у Лідах ні (див. DIRECT_NOT_YET_LEAD_STATES).
+      { OR: [{ includeInNewLeadsKpi: true }, { state: { in: ["outgoing-first", "comment"] } }] },
       { paidServiceDate: null },
       { OR: [{ consultationBookingDate: null }, { consultationDeletedInAltegio: true }] },
     ],
@@ -163,7 +165,7 @@ async function countWaitingByAudience(audience: "clients" | "leads"): Promise<nu
           OR c."paidServiceDate" IS NOT NULL
         )`
       : Prisma.sql`(
-          c."includeInNewLeadsKpi" = true
+          (c."includeInNewLeadsKpi" = true OR c.state IN ('outgoing-first', 'comment'))
           AND c."paidServiceDate" IS NULL
           AND (c."consultationBookingDate" IS NULL OR c."consultationDeletedInAltegio" = true)
         )`;
@@ -271,6 +273,7 @@ export async function GET(req: NextRequest) {
             chatStatusCheckedAt: true,
             leadAgency: true,
             leadAdId: true,
+            state: true,
             spent: true,
             visits: true,
             altegioClientId: true,
@@ -303,6 +306,8 @@ export async function GET(req: NextRequest) {
         chatStatusCheckedAt: row.chatStatusCheckedAt ? row.chatStatusCheckedAt.toISOString() : null,
         leadAgency: row.leadAgency,
         leadAdId: row.leadAdId,
+        // comment / outgoing-first — у «Стан» показуємо 💬 / 📤 замість хмарки.
+        state: row.state,
         spent: row.spent,
         visits: row.visits,
         altegioClientId: row.altegioClientId,

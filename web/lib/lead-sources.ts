@@ -29,6 +29,8 @@ const DEFAULTS: Array<Omit<LeadSourceRow, "id">> = [
   { code: "agency_2", name: "Агенція 1", mark: "💙", kind: "ads", enabled: true, hidden: false, sortOrder: 10 },
   { code: "agency_1", name: "Агенція 2", mark: "*", kind: "ads", enabled: true, hidden: false, sortOrder: 20 },
   { code: "organic", name: "Органіка", mark: null, kind: "organic", enabled: true, hidden: false, sortOrder: 30 },
+  // Людина спершу прокоментувала пост / Reels, а потім написала в Direct (без ad_id і без мітки).
+  { code: "comment", name: "Коментар", mark: "💬", kind: "organic", enabled: true, hidden: false, sortOrder: 40 },
 ];
 
 function asKind(value: string): LeadSourceKind {
@@ -184,8 +186,9 @@ export async function assignLeadSourceFromFirstIncoming(input: {
   username?: string | null;
 }): Promise<string | null> {
   if (input.leadAgency) return input.leadAgency;
+  // Коментарі під постами — не перше вхідне в Direct.
   const prior = await prisma.directMessage.count({
-    where: { clientId: input.clientId, direction: "incoming" },
+    where: { clientId: input.clientId, direction: "incoming", NOT: { source: DIRECT_MESSAGE_SOURCE_COMMENT } },
   });
   if (prior > 0) return null;
 
@@ -340,16 +343,38 @@ export async function setLeadSourceEmoji(emoji: string, sourceCode: string | nul
   console.log("[leads] емодзі → джерело", { emoji: clean, sourceCode });
 }
 
+/**
+ * Стан картки, яку створило наше перше (вихідне) повідомлення: людина ще не писала сама.
+ * Видно в Переписках, але не в Лідах і не в KPI нових лідів (includeInNewLeadsKpi = false).
+ * Перше вхідне від неї робить картку звичайним лідом — promoteToLeadOnFirstDirect.
+ */
+export const DIRECT_STATE_OUTGOING_FIRST = "outgoing-first";
+
+/** Стан картки людини, яка лише прокоментувала пост / Reels. Як і outgoing-first — не лід, доки не напише в Direct. */
+export const DIRECT_STATE_COMMENT = "comment";
+
+/** source у DirectMessage для коментаря під постом / Reels (не повідомлення Direct). */
+export const DIRECT_MESSAGE_SOURCE_COMMENT = "instagram_comment";
+
+/** Стани карток, які видно в Переписках, але це ще не ліди. */
+export const DIRECT_NOT_YET_LEAD_STATES = [DIRECT_STATE_OUTGOING_FIRST, DIRECT_STATE_COMMENT];
+
 export async function ensureDirectLeadClient(input: {
   username: string;
   receivedAt: Date;
-}): Promise<{ id: string; leadAgency: string | null; lastMessageAt: Date | null }> {
+  /** Розмову почали ми (вихідне) — картка без ліда, доки людина не відповість. */
+  outgoingFirst?: boolean;
+  /** Людина лише прокоментувала пост — картка без ліда, доки не напише в Direct. */
+  fromComment?: boolean;
+}): Promise<{ id: string; leadAgency: string | null; lastMessageAt: Date | null; state: string | null }> {
   const existing = await prisma.directClient.findFirst({
     where: { instagramUsername: input.username },
-    select: { id: true, leadAgency: true, lastMessageAt: true },
+    select: { id: true, leadAgency: true, lastMessageAt: true, state: true },
   });
   if (existing) return existing;
 
+  const notYetLead = Boolean(input.outgoingFirst || input.fromComment);
+  const state = input.fromComment ? DIRECT_STATE_COMMENT : input.outgoingFirst ? DIRECT_STATE_OUTGOING_FIRST : "message";
   const manager = await getDirectManager().catch(() => null);
   const id = `direct_${Date.now()}_${Math.random().toString(36).slice(2, 11)}`;
   try {
@@ -358,25 +383,57 @@ export async function ensureDirectLeadClient(input: {
         id,
         instagramUsername: input.username,
         source: "instagram",
-        state: "message",
+        state,
+        includeInNewLeadsKpi: !notYetLead,
         firstContactDate: input.receivedAt,
         statusId: "lead",
         masterId: manager?.id ?? null,
         masterManuallySet: false,
         lastMessageAt: input.receivedAt,
       },
-      select: { id: true, leadAgency: true, lastMessageAt: true },
+      select: { id: true, leadAgency: true, lastMessageAt: true, state: true },
     });
-    console.log("[leads] Новий лід з Instagram", { id: created.id, username: input.username });
+    console.log(
+      input.fromComment
+        ? "[leads] Картка з коментаря під постом (не лід, доки не напише в Direct)"
+        : input.outgoingFirst
+          ? "[leads] Картка з нашого першого повідомлення (не лід, доки не відповість)"
+          : "[leads] Новий лід з Instagram",
+      { id: created.id, username: input.username },
+    );
     return created;
   } catch (error) {
     const again = await prisma.directClient.findFirst({
       where: { instagramUsername: input.username },
-      select: { id: true, leadAgency: true, lastMessageAt: true },
+      select: { id: true, leadAgency: true, lastMessageAt: true, state: true },
     });
     if (again) return again;
     throw error;
   }
+}
+
+/**
+ * Перше вхідне в Direct від людини, якій ми написали першими або яка лише коментувала: тепер це лід.
+ * Дата першого контакту — момент її повідомлення. Один update лише для карток у станах «ще не лід».
+ */
+export async function promoteToLeadOnFirstDirect(clientId: string, receivedAt: Date): Promise<void> {
+  const result = await prisma.directClient.updateMany({
+    where: { id: clientId, state: { in: DIRECT_NOT_YET_LEAD_STATES } },
+    data: { state: "message", includeInNewLeadsKpi: true, firstContactDate: receivedAt },
+  });
+  if (result.count > 0) {
+    console.log("[leads] Людина написала в Direct — тепер лід", { clientId });
+  }
+}
+
+/** Лід після коментаря, якщо ні ad_id, ні мітка не дали джерела: джерело «💬 Коментар». */
+export async function assignCommentLeadSource(clientId: string): Promise<void> {
+  await ensureLeadSources();
+  await prisma.directClient.updateMany({
+    where: { id: clientId, leadAgency: null },
+    data: { leadAgency: "comment" },
+  });
+  console.log("[leads] Джерело ліда — коментар", { clientId });
 }
 
 export type LeadSourceStat = LeadSourceRow & {

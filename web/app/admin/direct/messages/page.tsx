@@ -33,6 +33,8 @@ type MessageRow = {
   chatStatusId?: string | null;
   leadAgency?: string | null;
   leadAdId?: string | null;
+  /** Стан картки: comment (лише коментар) / outgoing-first (написали ми) — ще не лід. */
+  state?: string | null;
   sourceName?: string | null;
   sourceMark?: string | null;
   spent?: number | null;
@@ -73,20 +75,36 @@ function sourceLabel(leadAgency?: string | null, leadAdId?: string | null, sourc
   return leadAgency || "";
 }
 
+/** Стани «ще не лід»: замість хмарки — їхня іконка. */
+const NOT_YET_LEAD_TITLES: Record<string, string> = {
+  comment: "Лише коментар під постом / Reels — у Direct ще не писала (не лід)",
+  "outgoing-first": "Розмову почали ми — людина ще не відповіла (не лід)",
+};
+
 /** Хмарка як у Direct, знак джерела зверху. Без вибору. */
 function LeadSourceCloud({
+  state,
   firstContactDate,
   leadAgency,
   leadAdId,
   sourceName,
   sourceMark,
 }: {
+  state?: string | null;
   firstContactDate?: string | null;
   leadAgency?: string | null;
   leadAdId?: string | null;
   sourceName?: string | null;
   sourceMark?: string | null;
 }) {
+  const notYetLeadTitle = state ? NOT_YET_LEAD_TITLES[state] : undefined;
+  if (state && notYetLeadTitle) {
+    return (
+      <span className="inline-flex items-center justify-center text-[18px] leading-none" title={notYetLeadTitle}>
+        <StateIcon state={state} size={20} />
+      </span>
+    );
+  }
   const today = kyivDayFromISO(new Date().toISOString());
   const firstDay = firstContactDate ? kyivDayFromISO(firstContactDate) : "";
   const isNewToday = Boolean(firstDay && firstDay === today);
@@ -414,7 +432,8 @@ function ConversationTable({
   const borderIndex = todayBlockContinues ? -1 : todayBorderIndex;
 
   return (
-    <section className="min-w-0">
+    // Ширина обох таблиць — не більше за «Клієнтів» (довгі імена лідів обрізаємо).
+    <section className="min-w-0 max-w-[37rem]">
       <div className="mb-1 flex flex-wrap items-baseline gap-x-2 gap-y-0.5 px-1">
         <div className="inline-flex items-baseline gap-1">
           <h2 className="text-xs font-semibold leading-none">{title}</h2>
@@ -510,7 +529,8 @@ function ConversationTable({
                           <span className="inline-flex flex-col items-start leading-none">
                             <Link
                               href={buildDirectClientHref(c.id, getClientName(c))}
-                              className="link link-hover"
+                              className="link link-hover block max-w-[9.5rem] truncate"
+                              title={getClientName(c)}
                               target="_blank"
                               rel="noopener noreferrer"
                             >
@@ -556,6 +576,7 @@ function ConversationTable({
                       </td>
                       <td className="text-center !overflow-visible" style={cellStyle}>
                         <LeadSourceCloud
+                          state={c.state}
                           firstContactDate={c.firstContactDate}
                           leadAgency={c.leadAgency}
                           leadAdId={c.leadAdId}

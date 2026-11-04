@@ -7,7 +7,7 @@ export type DirectChatChannel = 'instagram' | 'telegram';
 export const TELEGRAM_CAMPAIGN_SOURCE = 'telegram_campaign';
 
 export const DIRECT_MESSAGE_SOURCES_BY_CHANNEL: Record<DirectChatChannel, readonly string[]> = {
-  instagram: ['manychat', 'instagram_graph', 'instagram_reaction', 'manual'],
+  instagram: ['manychat', 'instagram_graph', 'instagram_reaction', 'instagram_comment', 'manual'],
   telegram: ['telegram', TELEGRAM_CAMPAIGN_SOURCE],
 };
 

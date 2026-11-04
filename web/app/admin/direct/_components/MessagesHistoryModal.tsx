@@ -97,6 +97,22 @@ function parseReactionRaw(rawData: string | null | undefined): {
   }
 }
 
+/** Коментар під постом / Reels (source instagram_comment): куди саме написано і посилання. */
+function parseCommentRaw(message: Message): { place: string; permalink: string | null } | null {
+  if (String(message.source || '').toLowerCase() !== 'instagram_comment') return null;
+  let mediaType = '';
+  let permalink: string | null = null;
+  try {
+    const parsed = message.rawData ? (JSON.parse(message.rawData) as Record<string, unknown>) : null;
+    if (parsed && typeof parsed.mediaType === 'string') mediaType = parsed.mediaType;
+    if (parsed && typeof parsed.permalink === 'string') permalink = parsed.permalink;
+  } catch {
+    // rawData не JSON — показуємо без посилання
+  }
+  const place = mediaType === 'REELS' ? 'Reels' : mediaType === 'STORY' ? 'сторіс' : 'постом';
+  return { place, permalink };
+}
+
 /** Реакції Meta мають mid повідомлення — чіпляємо емодзі до бульбашки, окремі рядки ховаємо. */
 function mergeReactionsOntoMessages(list: Message[]): Message[] {
   const emojiByMid = new Map<string, string | null>();
@@ -1107,6 +1123,7 @@ export function MessagesHistoryModal({
                               !isAnchor && anchorMs != null && msgMs != null && Math.abs(msgMs - anchorMs) <= 2000
                             );
                             const reactionEmoji = (message.reactionEmoji || '').trim();
+                            const comment = parseCommentRaw(message);
                             return (
                               <div key={key} className={`flex items-end gap-2 ${isOutgoing ? 'justify-end' : 'justify-start'}`}>
                                 {!isOutgoing ? (
@@ -1121,7 +1138,9 @@ export function MessagesHistoryModal({
                                       ? isSystemOutgoing
                                         ? 'bg-sky-100 text-sky-900'
                                         : 'bg-lime-100 text-lime-900'
-                                      : 'bg-gray-100 text-gray-900'
+                                      : comment
+                                        ? 'bg-amber-50 text-gray-900 border border-amber-300'
+                                        : 'bg-gray-100 text-gray-900'
                                   }`}
                                   title={message.receivedAt ? formatDate(message.receivedAt) : ''}
                                 >
@@ -1139,6 +1158,23 @@ export function MessagesHistoryModal({
                                       }`}
                                     >
                                       {isSystemOutgoing ? 'Система' : 'Салон'}
+                                    </div>
+                                  ) : null}
+                                  {comment ? (
+                                    <div className="text-[10px] font-medium mb-0.5 text-amber-700">
+                                      💬 Коментар під{' '}
+                                      {comment.permalink ? (
+                                        <a
+                                          href={comment.permalink}
+                                          target="_blank"
+                                          rel="noopener noreferrer"
+                                          className="underline hover:text-amber-900"
+                                        >
+                                          {comment.place}
+                                        </a>
+                                      ) : (
+                                        comment.place
+                                      )}
                                     </div>
                                   ) : null}
                                   <div>{message.text}</div>

@@ -1,4 +1,5 @@
-// Вхід Meta: нове повідомлення Direct, луна відповіді салону або реакція (лайк) на повідомлення.
+// Вхід Meta: нове повідомлення Direct, луна відповіді салону, реакція (лайк) на повідомлення
+// або коментар під постом / Reels (поле comments — зберігаємо окремим source, ліда не створює).
 // Стару переписку не читаємо. Токен у відповідь не потрапляє.
 
 import { NextRequest, NextResponse } from "next/server";
@@ -26,7 +27,16 @@ import {
   storeDirectMessageMedia,
   type IncomingMedia,
 } from "@/lib/instagram-direct-media";
-import { assignLeadSourceFromFirstIncoming, ensureDirectLeadClient, recordLeadAdReferral } from "@/lib/lead-sources";
+import {
+  assignCommentLeadSource,
+  assignLeadSourceFromFirstIncoming,
+  DIRECT_MESSAGE_SOURCE_COMMENT,
+  DIRECT_NOT_YET_LEAD_STATES,
+  DIRECT_STATE_COMMENT,
+  ensureDirectLeadClient,
+  promoteToLeadOnFirstDirect,
+  recordLeadAdReferral,
+} from "@/lib/lead-sources";
 import { maybeSavePhoneFromInstagramForm } from "@/lib/instagram-form-phone";
 
 export const dynamic = "force-dynamic";
@@ -59,7 +69,27 @@ type MessagingItem = {
     source?: string;
     adTitle?: string;
   };
+  /// Коментар під постом / Reels (changes[].field = "comments"). message.mid = id коментаря.
+  comment?: {
+    mediaId?: string;
+    mediaType?: string;
+    parentId?: string;
+  };
 };
+
+/** Коментар: value містить from, id, text, media { id, media_product_type }, parent_id (відповідь на коментар). */
+function extractComment(value: Record<string, unknown>): NonNullable<MessagingItem["comment"]> {
+  const media = asRecord(value.media);
+  return {
+    mediaId: media?.id ? String(media.id) : undefined,
+    mediaType: typeof media?.media_product_type === "string" ? media.media_product_type : undefined,
+    parentId: value.parent_id ? String(value.parent_id) : undefined,
+  };
+}
+
+function commentPlaceLabel(mediaType?: string): string {
+  return mediaType === "REELS" ? "Reels" : mediaType === "STORY" ? "сторіс" : "пост";
+}
 
 function normText(value: string): string {
   return value.trim().toLowerCase().replace(/\s+/g, " ");
@@ -178,17 +208,22 @@ function collectItems(body: unknown): Array<{ item: MessagingItem; entryId: stri
       const entryRow = asRecord(entry);
       if (!entryRow) continue;
       const entryId = entryRow.id ? String(entryRow.id) : "";
-      const bags: unknown[] = [];
-      if (Array.isArray(entryRow.messaging)) bags.push(...entryRow.messaging);
+      const bags: Array<{ value: unknown; field?: string }> = [];
+      if (Array.isArray(entryRow.messaging)) bags.push(...entryRow.messaging.map((value) => ({ value })));
       if (Array.isArray(entryRow.changes)) {
         for (const change of entryRow.changes) {
           const changeRow = asRecord(change);
-          if (changeRow?.value) bags.push(changeRow.value);
+          if (changeRow?.value) {
+            bags.push({ value: changeRow.value, field: typeof changeRow.field === "string" ? changeRow.field : undefined });
+          }
         }
       }
       for (const bag of bags) {
-        const item = normalizeItem(bag);
-        if (item) found.push({ item, entryId });
+        const item = normalizeItem(bag.value);
+        if (!item) continue;
+        const value = asRecord(bag.value);
+        if (bag.field === "comments" && value && !item.reaction) item.comment = extractComment(value);
+        found.push({ item, entryId });
       }
     }
   }
@@ -389,6 +424,7 @@ async function acceptMessage(input: {
   const recipientId = input.item.recipient?.id ? String(input.item.recipient.id) : "";
   const salonIds = new Set([input.entryId, input.igId, input.pageId].filter(Boolean));
   const reaction = input.item.reaction;
+  const comment = input.item.comment;
   const outgoing =
     Boolean(input.item.message?.is_echo || input.item.message?.is_self) ||
     (Boolean(senderId) && salonIds.has(senderId));
@@ -403,8 +439,24 @@ async function acceptMessage(input: {
     : input.item.message?.mid
       ? String(input.item.message.mid)
       : "";
+  // Власні коментарі / відповіді салону під постами не пишемо: у payload немає співрозмовника.
+  if (comment && outgoing) {
+    await rememberInstagramWebhook({
+      receivedAt: receivedAt.toISOString(),
+      direction: "outgoing",
+      text: plainText.slice(0, 500),
+      messageId: messageId || null,
+      senderId: senderId || null,
+      recipientId: null,
+      username: null,
+      name: null,
+      status: "коментар салону — пропущено",
+    });
+    return;
+  }
   if (
     !reaction &&
+    !comment &&
     files.length === 0 &&
     messageId &&
     input.pageToken &&
@@ -428,7 +480,8 @@ async function acceptMessage(input: {
       if (username && input.igUsername && username === normalizeInstagram(input.igUsername)) username = null;
     }
   }
-  if (!username && input.pageToken && input.pageId) {
+  // Для коментаря останній діалог Direct не підходить — там може бути зовсім інша людина.
+  if (!username && !comment && input.pageToken && input.pageId) {
     username = await usernameFromLatestThread(
       input.pageId,
       input.pageToken,
@@ -444,6 +497,7 @@ async function acceptMessage(input: {
     id: string;
     lastMessageAt: Date | null;
     leadAgency: string | null;
+    state?: string | null;
     phone?: string | null;
     firstName?: string | null;
     lastName?: string | null;
@@ -482,30 +536,44 @@ async function acceptMessage(input: {
   if (!client && username) {
     client = await prisma.directClient.findFirst({
       where: { instagramUsername: username },
-      select: { id: true, lastMessageAt: true, leadAgency: true, phone: true, firstName: true, lastName: true },
+      select: { id: true, lastMessageAt: true, leadAgency: true, state: true, phone: true, firstName: true, lastName: true },
     });
     if (!client) {
-      client = await ensureDirectLeadClient({ username, receivedAt });
+      // Розмову почали ми або людина лише прокоментувала — картка для Переписок, але не лід,
+      // доки людина не напише в Direct.
+      client = await ensureDirectLeadClient({
+        username,
+        receivedAt,
+        outgoingFirst: outgoing,
+        fromComment: Boolean(comment),
+      });
     }
   }
   if (!client) {
     status = "отримано, клієнта в таблиці немає";
   } else {
-    // Реакції не вважаємо першим вхідним для джерела ліда.
-    if (!outgoing && !reaction) {
+    // Реакції й коментарі не вважаємо першим вхідним Direct для джерела ліда.
+    if (!outgoing && !reaction && !comment) {
+      const wasComment = client.state === DIRECT_STATE_COMMENT;
+      if (client.state && DIRECT_NOT_YET_LEAD_STATES.includes(client.state)) {
+        await promoteToLeadOnFirstDirect(client.id, receivedAt);
+      }
       const referralAdId = input.item.referral?.adId || null;
       if (referralAdId) {
         await recordLeadAdReferral(referralAdId, input.item.referral?.adTitle || null, username);
       }
-      await assignLeadSourceFromFirstIncoming({
+      const sourceCode = await assignLeadSourceFromFirstIncoming({
         clientId: client.id,
         leadAgency: client.leadAgency,
         text: plainText,
         adId: referralAdId,
         username: username || "",
       });
+      // Ні реклами, ні мітки, а перед тим був коментар — джерело «💬 Коментар».
+      if (!sourceCode && wasComment) await assignCommentLeadSource(client.id);
     }
-    const scopedId = outgoing ? recipientId : senderId;
+    // id з коментаря не є id співрозмовника Direct — не зберігаємо.
+    const scopedId = comment ? "" : outgoing ? recipientId : senderId;
     if (scopedId && !salonIds.has(scopedId)) {
       await prisma.directClient.update({
         where: { id: client.id },
@@ -552,7 +620,9 @@ async function acceptMessage(input: {
               reaction: reaction.reaction || null,
               reactedMessageId,
             }
-          : undefined,
+          : comment
+            ? await commentRaw(comment, input.pageToken)
+            : undefined,
       );
       status = saved.status;
       dbMessageId = saved.id;
@@ -561,7 +631,7 @@ async function acceptMessage(input: {
       text = await rememberMedia(dbMessageId, client.id, username || "", plainText, files, text);
     }
     // Instant Form Meta: телефон і імʼя дописуємо в картку, якщо їх ще немає.
-    if (!outgoing && !reaction) {
+    if (!outgoing && !reaction && !comment) {
       const saved = await maybeSavePhoneFromInstagramForm({
         clientId: client.id,
         text,
@@ -591,7 +661,9 @@ async function acceptMessage(input: {
     recipientId: recipientId || null,
     username,
     name,
-    status: reaction
+    status: comment
+      ? `${status} · коментар під ${commentPlaceLabel(comment.mediaType)}${comment.mediaId ? ` media=${comment.mediaId}` : ""}`
+      : reaction
       ? `${status} · реакція ${reaction.action}${reactedMessageId ? ` mid=${reactedMessageId}` : ""}`
       : input.item.referral?.adId
         ? `${status} · referral ad_id=${input.item.referral.adId}`
@@ -609,7 +681,33 @@ async function acceptMessage(input: {
       : null,
     referralAdId: input.item.referral?.adId || null,
     referralSource: input.item.referral?.source || null,
+    comment: comment ? { mediaId: comment.mediaId || null, mediaType: comment.mediaType || null } : null,
   });
+}
+
+/** rawData коментаря: пост / Reels і посилання на нього (один запит Graph, щоб показати в Переписках). */
+async function commentRaw(
+  comment: NonNullable<MessagingItem["comment"]>,
+  pageToken: string,
+): Promise<Record<string, unknown>> {
+  let permalink: string | null = null;
+  let mediaType = comment.mediaType || null;
+  if (comment.mediaId && pageToken) {
+    const media = await graphCall(comment.mediaId, pageToken, { fields: "permalink,media_product_type" });
+    if (!graphCallFailed(media)) {
+      permalink = typeof media.data.permalink === "string" ? media.data.permalink : null;
+      if (typeof media.data.media_product_type === "string") mediaType = media.data.media_product_type;
+    } else {
+      console.warn("[instagram/webhook] Пост коментаря не відкрився", media.message);
+    }
+  }
+  return {
+    kind: "comment",
+    mediaId: comment.mediaId || null,
+    mediaType,
+    permalink,
+    parentId: comment.parentId || null,
+  };
 }
 
 async function rememberMedia(
@@ -662,8 +760,9 @@ async function saveIfNew(
   extraRaw?: Record<string, unknown>,
 ): Promise<{ status: string; id: string | null }> {
   const direction = outgoing ? "outgoing" : "incoming";
-  // Реакції дедупликуємо лише за messageId (унікальний ключ події), не за текстом.
-  if (!extraRaw?.kind || extraRaw.kind !== "reaction") {
+  // Реакції й коментарі дедуплікуємо лише за messageId (унікальний ключ події), не за текстом:
+  // коментар «ціна» не має злитися з таким самим повідомленням у Direct.
+  if (!extraRaw?.kind || (extraRaw.kind !== "reaction" && extraRaw.kind !== "comment")) {
     const nearby = await prisma.directMessage.findMany({
       where: {
         clientId,
@@ -689,6 +788,7 @@ async function saveIfNew(
   }
 
   const isReaction = extraRaw?.kind === "reaction";
+  const isComment = extraRaw?.kind === "comment";
   const created = await prisma.directMessage.create({
     data: {
       clientId,
@@ -696,7 +796,7 @@ async function saveIfNew(
       text: text.slice(0, 4000),
       messageId: messageId || null,
       // Окремий source: вхідна реакція не стартує «очікує», вихідна (лайк салону) його знімає.
-      source: isReaction ? "instagram_reaction" : "instagram_graph",
+      source: isReaction ? "instagram_reaction" : isComment ? DIRECT_MESSAGE_SOURCE_COMMENT : "instagram_graph",
       receivedAt,
       rawData: JSON.stringify({ username, ...extraRaw }).slice(0, 2000),
     },

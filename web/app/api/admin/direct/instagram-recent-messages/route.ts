@@ -10,6 +10,10 @@ import { normalizeInstagram } from "@/lib/normalize";
 import {
   assignLeadSourceFromFirstIncoming,
   ensureDirectLeadClient,
+  assignCommentLeadSource,
+  DIRECT_MESSAGE_SOURCE_COMMENT,
+  DIRECT_STATE_COMMENT,
+  promoteToLeadOnFirstDirect,
 } from "@/lib/lead-sources";
 
 export const dynamic = "force-dynamic";
@@ -472,7 +476,8 @@ export async function POST(req: NextRequest) {
         .filter((item) => item.direction === "incoming" && normalizeInstagram(item.username || "") === username)
         .sort((a, b) => a.at.getTime() - b.at.getTime())[0];
       const receivedAt = firstIncoming?.at ?? new Date();
-      const created = await ensureDirectLeadClient({ username, receivedAt });
+      // Лише наші повідомлення (людина ще не писала) — картка для Переписок, не лід.
+      const created = await ensureDirectLeadClient({ username, receivedAt, outgoingFirst: !firstIncoming });
       createdLeads += 1;
       if (firstIncoming?.text) {
         await assignLeadSourceFromFirstIncoming({
@@ -498,6 +503,7 @@ export async function POST(req: NextRequest) {
             lastMessageAt: true,
             leadAgency: true,
             firstContactDate: true,
+            state: true,
           },
         })
       : [];
@@ -531,7 +537,10 @@ export async function POST(req: NextRequest) {
 
     const knownIds = new Set(existing.map((row) => row.messageId).filter(Boolean) as string[]);
     const hadIncomingBefore = new Set(
-      existing.filter((row) => row.direction === "incoming").map((row) => row.clientId),
+      // Коментарі під постами — не вхідне Direct.
+      existing
+        .filter((row) => row.direction === "incoming" && row.source !== DIRECT_MESSAGE_SOURCE_COMMENT)
+        .map((row) => row.clientId),
     );
     let incoming = 0;
     let outgoing = 0;
@@ -568,7 +577,8 @@ export async function POST(req: NextRequest) {
         rank = 4;
       } else {
         const same = existing.find((row) => {
-          if (row.source === "instagram_graph") return false;
+          // Коментар з тим самим текстом — не дубль повідомлення Direct.
+          if (row.source === "instagram_graph" || row.source === DIRECT_MESSAGE_SOURCE_COMMENT) return false;
           if (row.clientId !== client.id || row.direction !== item.direction) return false;
           if (Math.abs(row.receivedAt.getTime() - item.at.getTime()) > DEDUP_WINDOW_MS) return false;
           const left = normText(row.text || "");
@@ -658,16 +668,21 @@ export async function POST(req: NextRequest) {
           row.messageId === firstIncoming.graphId,
       );
       if (!savedIncoming) continue;
+      // Людина відповіла на наше перше повідомлення або написала після коментаря — тепер лід.
+      await promoteToLeadOnFirstDirect(client.id, firstIncoming.at);
+      let sourceCode: string | null = client.leadAgency;
       if (firstIncoming.text) {
-        await assignLeadSourceFromFirstIncoming({
+        sourceCode = await assignLeadSourceFromFirstIncoming({
           clientId: client.id,
           leadAgency: client.leadAgency,
           text: firstIncoming.text,
           username: client.instagramUsername,
         }).catch((err) => {
           console.warn("[instagram-recent] assignLeadSource recover:", err instanceof Error ? err.message : String(err));
+          return null;
         });
       }
+      if (!sourceCode && client.state === DIRECT_STATE_COMMENT) await assignCommentLeadSource(client.id);
       if (!client.firstContactDate || firstIncoming.at < client.firstContactDate) {
         await prisma.directClient.update({
           where: { id: client.id },

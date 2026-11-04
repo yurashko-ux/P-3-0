@@ -14,6 +14,10 @@ const STATE_EMOJI: Record<string, string> = {
   "all-good": "✅",
   "too-expensive": "💰",
   sold: "🔥",
+  // Розмову почали ми, людина ще не відповіла (не лід)
+  "outgoing-first": "📤",
+  // Лише коментар під постом / Reels, у Direct ще не писала (не лід)
+  comment: "💬",
 };
 
 /**
