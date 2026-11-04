@@ -1067,34 +1067,6 @@ return (
       return '';
       })()}
   </td>
-  <td
-    className="pl-0 pr-1.5 sm:pr-2 py-1 text-xs text-left align-top"
-    style={cellPxRow("callStatus", getColumnStyle(columnWidths.callStatus, true))}
-  >
-    <DirectStatusCell
-      client={client}
-      statuses={statuses}
-      showDot={showStatusDot}
-      dotTitle="Тригер: змінився/встановлений статус"
-      onStatusChange={async (u) => {
-        await onClientUpdate(u.clientId, {
-          statusId: u.statusId,
-          ...(client.instagramUsername && { _fallbackInstagram: client.instagramUsername }),
-        });
-      }}
-      onMenuOpen={onStatusMenuOpen}
-    />
-  </td>
-  {!hideCommunicationColumn && (
-    <td className="pl-0 pr-0.5 py-1 align-middle" style={cellPxRow("communication", getColumnStyle(columnWidths.communication, true))}>
-      <CommunicationChannelPicker
-        value={client.communicationChannel}
-        onChange={async (next) => {
-          await onClientUpdate(client.id, { communicationChannel: next });
-        }}
-      />
-    </td>
-  )}
   {/* Переписка: число повідомлень (клік → історія) + текст-статус */}
   <td
     className={
@@ -1201,6 +1173,34 @@ return (
       );
     })()}
   </td>
+  <td
+    className="pl-0 pr-1.5 sm:pr-2 py-1 text-xs text-left align-top"
+    style={cellPxRow("callStatus", getColumnStyle(columnWidths.callStatus, true))}
+  >
+    <DirectStatusCell
+      client={client}
+      statuses={statuses}
+      showDot={showStatusDot}
+      dotTitle="Тригер: змінився/встановлений статус"
+      onStatusChange={async (u) => {
+        await onClientUpdate(u.clientId, {
+          statusId: u.statusId,
+          ...(client.instagramUsername && { _fallbackInstagram: client.instagramUsername }),
+        });
+      }}
+      onMenuOpen={onStatusMenuOpen}
+    />
+  </td>
+  {!hideCommunicationColumn && (
+    <td className="pl-0 pr-0.5 py-1 align-middle" style={cellPxRow("communication", getColumnStyle(columnWidths.communication, true))}>
+      <CommunicationChannelPicker
+        value={client.communicationChannel}
+        onChange={async (next) => {
+          await onClientUpdate(client.id, { communicationChannel: next });
+        }}
+      />
+    </td>
+  )}
   <td
     className="pl-0 pr-1.5 sm:pr-2 py-1 text-xs text-left align-top"
     style={{ ...cellPxRow("calls", getColumnStyle(columnWidths.calls, true)), minHeight: instCallsCellMinHeight }}

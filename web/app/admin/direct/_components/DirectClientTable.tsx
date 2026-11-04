@@ -1722,29 +1722,6 @@ export function DirectClientTable({
                       />
                     </div>
                   </th>
-                  <th className="pl-0 pr-1.5 sm:pr-2 py-0 text-[10px] font-semibold text-center" style={getColumnStyle(layoutColumnWidths.callStatus, true)}>
-                    <div className="flex items-center justify-center gap-1">
-                      <span>Статус</span>
-                      <StatusFilterDropdown
-                        clients={clients}
-                        statuses={statuses}
-                        totalClientsCount={totalClientsCount}
-                        statusCounts={statusCounts}
-                        filters={filters}
-                        onFiltersChange={onFiltersChange}
-                        columnLabel="Статус"
-                      />
-                    </div>
-                  </th>
-                  {!hideCommunicationColumn && (
-                    <th
-                      className="pl-0 pr-0.5 sm:pr-1 py-0 text-[10px] font-semibold text-left whitespace-nowrap overflow-hidden text-ellipsis"
-                      style={getColumnStyle(layoutColumnWidths.communication, true)}
-                      title="Канал комунікації з клієнтом"
-                    >
-                      Комунікація
-                    </th>
-                  )}
                   <th className="pl-0 pr-1 sm:pr-1.5 py-0 text-[10px] font-semibold text-left" style={getColumnStyle(layoutColumnWidths.inst, true)}>
                     <div className="flex items-center gap-1">
                       <button
@@ -1771,6 +1748,29 @@ export function DirectClientTable({
                       />
                     </div>
                   </th>
+                  <th className="pl-0 pr-1.5 sm:pr-2 py-0 text-[10px] font-semibold text-center" style={getColumnStyle(layoutColumnWidths.callStatus, true)}>
+                    <div className="flex items-center justify-center gap-1">
+                      <span>Статус</span>
+                      <StatusFilterDropdown
+                        clients={clients}
+                        statuses={statuses}
+                        totalClientsCount={totalClientsCount}
+                        statusCounts={statusCounts}
+                        filters={filters}
+                        onFiltersChange={onFiltersChange}
+                        columnLabel="Статус"
+                      />
+                    </div>
+                  </th>
+                  {!hideCommunicationColumn && (
+                    <th
+                      className="pl-0 pr-0.5 sm:pr-1 py-0 text-[10px] font-semibold text-left whitespace-nowrap overflow-hidden text-ellipsis"
+                      style={getColumnStyle(layoutColumnWidths.communication, true)}
+                      title="Канал комунікації з клієнтом"
+                    >
+                      Комунікація
+                    </th>
+                  )}
                   <th className="pl-0 pr-1.5 sm:pr-2 py-0 text-[10px] font-semibold text-left" style={getColumnStyle(layoutColumnWidths.calls, true)}>
                     <div className="flex items-center gap-1">
                       <span>Дзвінки</span>
