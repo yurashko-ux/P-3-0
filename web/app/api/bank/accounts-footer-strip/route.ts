@@ -6,6 +6,7 @@ import { requireBankSection } from "@/app/api/bank/require-bank-auth";
 import { computeYtdIncomingKopThrough } from "@/lib/bank/fop-turnover";
 import { computeAltegioBalanceKopForFooter } from "@/lib/bank/altegio-opening-anchor";
 import { syncAltegioBalanceForBankAccount } from "@/lib/altegio/accounts";
+import { balanceWithoutExcluded, excludedAmountKopByAccount } from "@/lib/bank/excluded-payments";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
@@ -211,6 +212,8 @@ export async function GET(req: Request) {
     }));
   }
 
+  // Виключені (чужі) платежі не рахуємо в балансі банку
+  const excludedKop = await excludedAmountKopByAccount(accounts.map((a) => a.id));
   const rows = await Promise.all(
     accounts.map(async (a) => {
       const conn = a.connection;
@@ -275,7 +278,7 @@ export async function GET(req: Request) {
         accountId: a.id,
         label,
         currencyCode: a.currencyCode ?? UAH,
-        bankBalanceKop: a.balance.toString(),
+        bankBalanceKop: balanceWithoutExcluded(a.balance, a.id, excludedKop).toString(),
         altegioBalanceKop: ab.kop != null ? ab.kop.toString() : null,
         altegioIsEstimate: ab.isEstimate,
         ytdIncomingKop: ytdKop != null ? ytdKop.toString() : null,

@@ -105,6 +105,8 @@ export async function GET(req: NextRequest) {
   const accountIdsParam = req.nextUrl.searchParams.get("accountIds");
   const limitParam = req.nextUrl.searchParams.get("limit");
   const cursorParam = req.nextUrl.searchParams.get("cursor");
+  /** 1 — показати й виключені (чужі) платежі, щоб їх можна було повернути */
+  const showExcluded = req.nextUrl.searchParams.get("showExcluded") === "1";
 
   let fromDate: Date;
   let toDate: Date;
@@ -150,6 +152,8 @@ export async function GET(req: NextRequest) {
     const where: any = {
       time: { gte: fromDate, lte: toDate },
       account: accountWhere,
+      // Виключені (чужі) платежі в Банку не показуємо, якщо не просили явно
+      ...(showExcluded ? {} : { paymentsHiddenAt: null }),
     };
     if (accountIds.length > 0) {
       where.accountId = { in: accountIds };

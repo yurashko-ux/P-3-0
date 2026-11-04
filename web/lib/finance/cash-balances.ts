@@ -15,6 +15,7 @@ import {
 } from "@/lib/finance/cash-openings";
 import { hiddenFinanceAccountIds } from "@/lib/finance/account-archive";
 import { openCashNetsForAccounts } from "@/lib/finance/cash-posting";
+import { balanceWithoutExcluded, excludedAmountKopByAccount } from "@/lib/bank/excluded-payments";
 
 export type CashCurrency = "UAH" | "USD" | "EUR";
 
@@ -82,8 +83,23 @@ function kopToUah(kop: bigint): number {
   return money(Number(kop) / 100);
 }
 
+/** Рахунки Altegio, привʼязані до рахунків призупинених підключень monobank — у Касі їх не показуємо. */
+async function pausedBankAltegioAccountIds(): Promise<Set<number>> {
+  const rows = await prisma.bankAccount.findMany({
+    where: { connection: { pausedAt: { not: null } }, altegioAccountId: { not: null } },
+    select: { altegioAccountId: true },
+  });
+  return new Set(rows.map((row) => Number(row.altegioAccountId) || 0).filter((id) => id > 0));
+}
+
 export async function listCashBalances(): Promise<CashBalanceTile[]> {
-  const [accounts, hiddenIds] = await Promise.all([fetchAltegioAccounts(), hiddenFinanceAccountIds()]);
+  const [accounts, archivedIds, pausedIds] = await Promise.all([
+    fetchAltegioAccounts(),
+    hiddenFinanceAccountIds(),
+    pausedBankAltegioAccountIds(),
+  ]);
+  // Приховані: «Архів Altegio» + рахунки призупинених підключень банку (історію не чіпаємо).
+  const hiddenIds = new Set([...archivedIds, ...pausedIds]);
   const listed = accounts
     .map((account) => ({
       id: Number(account.id) || 0,
@@ -257,12 +273,15 @@ async function loadBankBalances(altegioIds: number[]): Promise<Map<number, numbe
       includeInOperationsTable: true,
       altegioAccountId: { in: altegioIds.map(String) },
     },
-    select: { altegioAccountId: true, balance: true },
+    select: { id: true, altegioAccountId: true, balance: true },
   });
+  // Виключені (чужі) платежі не рахуємо в балансі каси
+  const excludedKop = await excludedAmountKopByAccount(bankAccounts.map((account) => account.id));
   for (const account of bankAccounts) {
     const altegioId = Number(account.altegioAccountId) || 0;
     if (!(altegioId > 0)) continue;
-    out.set(altegioId, money((out.get(altegioId) || 0) + kopToUah(account.balance)));
+    const balance = balanceWithoutExcluded(account.balance, account.id, excludedKop);
+    out.set(altegioId, money((out.get(altegioId) || 0) + kopToUah(balance)));
   }
   return out;
 }

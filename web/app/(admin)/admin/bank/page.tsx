@@ -526,6 +526,8 @@ export default function BankPage() {
   const [connectionsLoading, setConnectionsLoading] = useState(true);
   const [operations, setOperations] = useState<OperationItem[]>([]);
   const [viewerCanHideZasadna, setViewerCanHideZasadna] = useState(false);
+  /** Показати виключені (чужі) платежі Засадної — щоб повернути помилково виключений */
+  const [showExcludedPayments, setShowExcludedPayments] = useState(false);
   const [hidingOperationId, setHidingOperationId] = useState<string | null>(null);
   const [operationsLoading, setOperationsLoading] = useState(true);
   const [isLoadingMore, setIsLoadingMore] = useState(false);
@@ -668,6 +670,7 @@ export default function BankPage() {
         const selectedAccountIds = selectedAccountKeys.map(accountIdFromKey).filter(Boolean) as string[];
         if (selectedAccountIds.length > 0) params.set("accountIds", selectedAccountIds.join(","));
         if (waitSec > 0) params.set("waitForReplica", String(waitSec));
+        if (showExcludedPayments) params.set("showExcluded", "1");
         const res = await fetch(`/api/bank/operations?${params}`, bankFetchInit);
         const data = await res.json().catch(() => ({}));
         if (data.ok && Array.isArray(data.items)) {
@@ -699,7 +702,7 @@ export default function BankPage() {
         }
       }
     },
-    [dateFrom, dateTo, typeFilter, selectedAccountKeys]
+    [dateFrom, dateTo, typeFilter, selectedAccountKeys, showExcludedPayments]
   );
 
   const refreshBankDataFromServer = useCallback(
@@ -881,6 +884,7 @@ export default function BankPage() {
       });
       const selectedAccountIds = selectedAccountKeys.map(accountIdFromKey).filter(Boolean) as string[];
       if (selectedAccountIds.length > 0) params.set("accountIds", selectedAccountIds.join(","));
+      if (showExcludedPayments) params.set("showExcluded", "1");
       const res = await fetch(`/api/bank/operations?${params}`, bankFetchInit);
       const data = await res.json().catch(() => ({}));
       if (data.ok && Array.isArray(data.items)) {
@@ -911,8 +915,8 @@ export default function BankPage() {
   const toggleZasadnaPayment = async (item: OperationItem) => {
     const nextHidden = !item.paymentsHidden;
     const question = nextHidden
-      ? "Сховати цей платіж Засадної? У розділ Платежі він більше не потрапить."
-      : "Повернути платіж у Платежі?";
+      ? "Виключити цей чужий платіж Засадної? Він зникне з Банку й Платежів, а баланс рахунку зміниться на його суму. Повернути можна через «показати виключені»."
+      : "Повернути платіж у Банк і Платежі? Баланс рахунку знову врахує його суму.";
     if (!window.confirm(question)) return;
     setHidingOperationId(item.id);
     try {
@@ -927,9 +931,14 @@ export default function BankPage() {
         window.alert(typeof data.error === "string" ? data.error : "Не вдалося змінити видимість платежу");
         return;
       }
+      // Виключений рядок прибираємо зі списку (якщо не показуємо виключені); баланси перечитуємо.
       setOperations((prev) =>
-        prev.map((row) => (row.id === item.id ? { ...row, paymentsHidden: nextHidden } : row)),
+        nextHidden && !showExcludedPayments
+          ? prev.filter((row) => row.id !== item.id)
+          : prev.map((row) => (row.id === item.id ? { ...row, paymentsHidden: nextHidden } : row)),
       );
+      void loadConnections();
+      void loadFooterStrip();
     } finally {
       setHidingOperationId(null);
     }
@@ -1482,7 +1491,19 @@ export default function BankPage() {
         <th style={{ padding: "10px 12px" }}>Опис / призначення</th>
         <th style={{ padding: "10px 12px" }}>Контрагент</th>
         {viewerCanHideZasadna ? (
-          <th style={{ padding: "10px 4px", width: 44 }} title="Сховати чужий платіж ФОП Засадна" />
+          <th style={{ padding: "10px 4px", width: 44, textAlign: "center" }} title="Виключити чужий платіж ФОП Засадна">
+            <label
+              style={{ display: "inline-flex", alignItems: "center", gap: 2, fontSize: 10, fontWeight: 400, cursor: "pointer", whiteSpace: "nowrap" }}
+              title="Показати виключені (чужі) платежі, щоб повернути"
+            >
+              <input
+                type="checkbox"
+                checked={showExcludedPayments}
+                onChange={(e) => setShowExcludedPayments(e.target.checked)}
+              />
+              викл.
+            </label>
+          </th>
         ) : null}
       </tr>
     </thead>
@@ -2086,7 +2107,7 @@ export default function BankPage() {
                               <button
                                 type="button"
                                 disabled={hidingOperationId === it.id}
-                                title={isHidden ? "Повернути платіж у Платежі" : "Сховати чужий платіж Засадної"}
+                                title={isHidden ? "Повернути платіж у Банк і Платежі" : "Виключити чужий платіж Засадної (зникне з Банку, зміниться баланс)"}
                                 onClick={() => void toggleZasadnaPayment(it)}
                                 style={{
                                   border: "none",

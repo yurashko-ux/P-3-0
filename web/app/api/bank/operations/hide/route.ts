@@ -6,7 +6,7 @@ import { prisma } from "@/lib/prisma";
 
 export const dynamic = "force-dynamic";
 
-/** Сховати або повернути платіж ФОП Засадна. Рядок у банку лишається, Платежі його не бачать. */
+/** Виключити або повернути чужий платіж ФОП Засадна: виключений не видно в Банку й Платежах, баланс рахунку без нього (рядок у базі лишається). */
 export async function POST(req: NextRequest) {
   const auth = await requireBankSection(req);
   if (auth instanceof NextResponse) return auth;
@@ -53,7 +53,7 @@ export async function POST(req: NextRequest) {
     data: { paymentsHiddenAt },
   });
   console.log(
-    `[bank/operations/hide] ${hidden ? "Сховано" : "Повернуто"} платіж ${statement.paymentNumber ?? id} ФОП Засадна`,
+    `[bank/operations/hide] ${hidden ? "Виключено" : "Повернуто"} платіж ${statement.paymentNumber ?? id} ФОП Засадна`,
   );
 
   return NextResponse.json({ ok: true, id, paymentsHidden: hidden });

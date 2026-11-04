@@ -3,6 +3,7 @@
 
 import { NextResponse } from "next/server";
 import { prisma, getDbHostForLog } from "@/lib/prisma";
+import { balanceWithoutExcluded, excludedAmountKopByAccount } from "@/lib/bank/excluded-payments";
 import { requireBankSection } from "@/app/api/bank/require-bank-auth";
 
 export const dynamic = "force-dynamic";
@@ -79,6 +80,8 @@ export async function GET(req: Request) {
       });
     }
 
+    // Виключені (чужі) платежі не рахуємо в балансі рахунку
+    const excludedKop = await excludedAmountKopByAccount(connections.flatMap((c) => c.accounts.map((a) => a.id)));
     const list = connections.map((c) => ({
       id: c.id,
       provider: c.provider,
@@ -114,7 +117,7 @@ export async function GET(req: Request) {
             : null;
         return {
           ...a,
-          balance: a.balance.toString(),
+          balance: balanceWithoutExcluded(a.balance, a.id, excludedKop).toString(),
           altegioOpeningBalanceManual: openingManual,
           altegioOpeningBalanceDate: openingDate,
           altegioMonthlyTurnoverManual: monthlyTurnover,
