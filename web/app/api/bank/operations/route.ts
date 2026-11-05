@@ -27,6 +27,9 @@ import { isZasadnaPartyTitle } from "@/lib/bank/zasadna-payments-window";
 import { canRevokeEncashmentConfirmation } from "@/lib/finance/encashment-confirmation";
 
 export const dynamic = "force-dynamic";
+// Без кешу fetch: запити Prisma (Accelerate, HTTP) з тими самими параметрами інакше віддавали застарілий список
+export const revalidate = 0;
+export const fetchCache = "force-no-store";
 export const runtime = "nodejs";
 const LIVE_ALTEGIO_SYNC_TTL_MS = 5 * 60 * 1000;
 /** Як у GET /api/bank/connections: пауза перед читанням після запису (Accelerate / read replica). */
