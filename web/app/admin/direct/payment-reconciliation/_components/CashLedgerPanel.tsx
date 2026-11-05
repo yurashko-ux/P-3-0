@@ -205,10 +205,14 @@ export function CashLedgerPanel({
                     {dayLabel(day.kyivDay)}
                   </th>
                   {/* Фільтр по рахунку — над колонкою «Рахунок», лише в першому дні */}
-                  <th colSpan={2} className="px-1 py-0.5 text-left font-normal">
-                    {dayIndex === 0 ? accountSelect : null}
-                  </th>
-                  <th className="px-2 py-1 text-right font-bold normal-case tracking-normal tabular-nums">
+                  {dayIndex === 0 ? (
+                    <th className="px-1 py-0.5 text-left font-normal">{accountSelect}</th>
+                  ) : null}
+                  {/* Сума дня займає вільні колонки праворуч і не переноситься */}
+                  <th
+                    colSpan={dayIndex === 0 ? 2 : 3}
+                    className="whitespace-nowrap px-2 py-1 text-right font-bold normal-case tracking-normal tabular-nums"
+                  >
                     {dayNetLabel(day.rows)}
                   </th>
                 </tr>

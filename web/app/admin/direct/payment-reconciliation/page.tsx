@@ -280,6 +280,7 @@ export default function PaymentReconciliationPage() {
   const [cashCounts, setCashCounts] = useState({ all: 0, open: 0, linked: 0 });
   const [cashReload, setCashReload] = useState(0);
   const [pullingCash, setPullingCash] = useState(false);
+  const [pullingAll, setPullingAll] = useState(false);
   const rows = useMemo(() => filterRows(data.rows, status), [data.rows, status]);
   const statusCounts = useMemo(() => {
     const linked = data.rows.filter(isLinked).length;
@@ -349,6 +350,57 @@ export default function PaymentReconciliationPage() {
       setActionMessage(error instanceof Error ? error.message : "Не вдалося підтягнути рахунки з Altegio");
     } finally {
       setPullingCash(false);
+    }
+  }
+
+  /** «Підтягнути всі платежі»: операції Altegio за останні 40 днів, частинами по 14 днів */
+  async function pullAllAltegioPayments() {
+    setPullingAll(true);
+    setActionMessage("Підтягую всі платежі з Альтеджіо...");
+    try {
+      const planRes = await fetch("/api/admin/bank/payment-reconciliation/pull-altegio-all", {
+        cache: "no-store",
+        credentials: "include",
+      });
+      const plan = (await planRes.json().catch(() => ({}))) as { ok?: boolean; startDate?: string; today?: string; error?: string };
+      if (!planRes.ok || !plan.ok || !plan.startDate || !plan.today) {
+        throw new Error(plan.error || "Не вдалося визначити період");
+      }
+      const chunks: Array<{ dateFrom: string; dateTo: string }> = [];
+      let cursor = new Date(`${plan.startDate}T00:00:00Z`);
+      const end = new Date(`${plan.today}T00:00:00Z`);
+      while (cursor <= end) {
+        const chunkEnd = new Date(Math.min(cursor.getTime() + 13 * 86_400_000, end.getTime()));
+        chunks.push({ dateFrom: cursor.toISOString().slice(0, 10), dateTo: chunkEnd.toISOString().slice(0, 10) });
+        cursor = new Date(chunkEnd.getTime() + 86_400_000);
+      }
+      let fetched = 0;
+      let upserted = 0;
+      // Від найновіших днів до старіших — свіжі платежі з’являються першими
+      for (const [index, chunk] of [...chunks].reverse().entries()) {
+        setActionMessage(`Підтягую всі платежі з Альтеджіо: ${index + 1}/${chunks.length} (${chunk.dateFrom} — ${chunk.dateTo})`);
+        const res = await fetch("/api/admin/bank/payment-reconciliation/pull-altegio-all", {
+          method: "POST",
+          credentials: "include",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(chunk),
+        });
+        const payload = (await res.json().catch(() => ({}))) as { ok?: boolean; fetched?: number; upserted?: number; error?: string };
+        if (!res.ok || payload.ok === false) {
+          throw new Error(`${chunk.dateFrom} — ${chunk.dateTo}: ${payload.error || "помилка"}`);
+        }
+        fetched += payload.fetched ?? 0;
+        upserted += payload.upserted ?? 0;
+      }
+      const [y, m, d] = plan.startDate.split("-");
+      setActionMessage(`Підтягнуто всі платежі з ${d}.${m}.${y}: отримано ${fetched}, оновлено ${upserted}`);
+      setCashReload((value) => value + 1);
+      if (direction === "in") incomingControls?.refresh();
+      if (direction === "out") await loadOutgoingData();
+    } catch (error) {
+      setActionMessage(error instanceof Error ? error.message : "Не вдалося підтягнути платежі з Altegio");
+    } finally {
+      setPullingAll(false);
     }
   }
 
@@ -512,8 +564,17 @@ export default function PaymentReconciliationPage() {
               ) : null}
               <button
                 type="button"
+                className="btn btn-outline btn-xs h-6 min-h-0 px-2 text-[10px]"
+                disabled={pullingAll || pullingCash}
+                onClick={() => void pullAllAltegioPayments()}
+                title="Підтягнути з Altegio всі платежі за останні 40 днів"
+              >
+                {pullingAll ? "Підтягую..." : "Підтягнути всі платежі"}
+              </button>
+              <button
+                type="button"
                 className="btn btn-primary btn-xs h-6 min-h-0 px-2 text-[10px]"
-                disabled={loading || pullingCash || Boolean(incomingControls?.loading) || Boolean(incomingControls?.reconciling)}
+                disabled={loading || pullingCash || pullingAll || Boolean(incomingControls?.loading) || Boolean(incomingControls?.reconciling)}
                 onClick={() => {
                   if (showCash) {
                     setCashReload((value) => value + 1);
