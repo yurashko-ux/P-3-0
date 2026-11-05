@@ -10,11 +10,12 @@ import { isEurCashAccountTitle, isUsdCashAccountTitle } from "@/lib/journal/chec
 import {
   CASH_OPENING_EUR,
   CASH_OPENING_KYIV_DAY,
+  CASH_RECONCILE_FROM_KYIV_DAY,
   CASH_OPENING_UAH,
   CASH_OPENING_USD,
 } from "@/lib/finance/cash-openings";
 import { hiddenFinanceAccountIds } from "@/lib/finance/account-archive";
-import { openCashNetsForAccounts } from "@/lib/finance/cash-posting";
+import { listCashLedger } from "@/lib/finance/cash-posting";
 import { balanceWithoutExcluded, excludedAmountKopByAccount } from "@/lib/bank/excluded-payments";
 
 export type CashCurrency = "UAH" | "USD" | "EUR";
@@ -195,58 +196,35 @@ export async function listCashBalances(): Promise<CashBalanceTile[]> {
     })
     .sort(sortTiles);
 
+  // Баланс готівкової каси = старт + усі рухи з дня старту (Kresco і Altegio), без «проведення».
+  // Касовка лише порівнює факт з балансом; її розбіжність показуємо до наступних рухів.
   const cashTiles = tiles.filter((tile) => tile.cash && !tile.openingPending);
   const countableIds = cashTiles.map((tile) => tile.id);
   if (countableIds.length > 0) {
-    const [counts, allCounts, openNets] = await Promise.all([
+    const [counts, ledger] = await Promise.all([
       prisma.cashTillCount.findMany({
-        where: {
-          accountId: { in: countableIds },
-          OR: [{ bookUah: { not: null } }, { matchedBook: true }],
-        },
+        where: { accountId: { in: countableIds }, kyivDay: { gte: CASH_RECONCILE_FROM_KYIV_DAY } },
         orderBy: { createdAt: "desc" },
-        select: { accountId: true, countedUah: true, bookUah: true, varianceUah: true },
+        select: { accountId: true, countedUah: true, varianceUah: true, bundledAmount: true },
       }),
-      prisma.cashTillCount.findMany({
-        where: { accountId: { in: countableIds } },
-        orderBy: { createdAt: "desc" },
-        select: { accountId: true, bundledAmount: true },
-      }),
-      openCashNetsForAccounts(
-        cashTiles.map((tile) => ({ id: tile.id, title: tile.title, currency: tile.currency })),
-      ),
+      listCashLedger(),
     ]);
-    const latest = new Map<number, { book: number; counted: number; variance: number | null }>();
-    for (const row of counts) {
-      if (latest.has(row.accountId)) continue;
-      const variance = row.varianceUah == null ? null : money(row.varianceUah);
-      latest.set(row.accountId, {
-        book: money(row.bookUah != null ? row.bookUah : row.countedUah),
-        counted: money(row.countedUah),
-        variance: variance != null && Math.abs(variance) >= 0.01 ? variance : null,
-      });
-    }
-    const latestBundled = new Map<number, number>();
-    for (const row of allCounts) {
-      if (!latestBundled.has(row.accountId)) {
-        latestBundled.set(row.accountId, money(row.bundledAmount || 0));
-      }
-    }
-    for (const tile of tiles) {
-      const counted = latest.get(tile.id);
-      if (counted != null) {
-        if (tile.currency === "UAH") tile.balanceUah = counted.book;
-        else tile.balanceFx = counted.book;
-        tile.countedUah = counted.counted;
-        tile.variance = counted.variance;
-      }
-      const bundled = latestBundled.get(tile.id);
-      if (bundled != null) tile.lastBundledAmount = bundled;
-      const open = openNets.get(tile.id);
-      if (open) {
-        tile.openPaymentsNet = open.net;
-        tile.openPaymentsCount = open.count;
-        tile.openPaymentsFromKyivDay = open.fromKyivDay;
+    const latest = new Map<number, (typeof counts)[number]>();
+    for (const row of counts) if (!latest.has(row.accountId)) latest.set(row.accountId, row);
+    for (const tile of cashTiles) {
+      const net = ledger
+        .filter((row) => row.accountId === tile.id && row.currency === tile.currency)
+        .reduce((sum, row) => sum + (row.direction === "out" ? -row.amount : row.amount), 0);
+      const opening = openingOf(tile.currency) ?? 0;
+      const balance = money(opening + net);
+      if (tile.currency === "UAH") tile.balanceUah = balance;
+      else tile.balanceFx = balance;
+      const count = latest.get(tile.id);
+      if (count) {
+        tile.countedUah = money(count.countedUah);
+        const variance = count.varianceUah == null ? null : money(count.varianceUah);
+        tile.variance = variance != null && Math.abs(variance) >= 0.01 ? variance : null;
+        tile.lastBundledAmount = money(count.bundledAmount || 0);
       }
     }
   }

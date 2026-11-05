@@ -333,13 +333,14 @@ export async function postCashCount(input: {
     });
   }
 
-  const movementNet = money(fresh.reduce((sum, movement) => sum + signed(movement), 0));
-  const expected = money(input.previous + movementNet);
+  // previous — баланс плитки, що вже містить усі рухи з дня старту. Нічого не притримуємо:
+  // касовка лише фіксує розбіжність; усі рухи до неї позначаємо проведеними.
+  const expected = money(input.previous);
   const rawVariance = money(input.counted - expected);
   const matched = cashAmountsEqual(input.counted, expected);
   const variance = matched ? 0 : rawVariance;
   const shortage = variance < 0 ? money(-variance) : 0;
-  const heldKeys = new Set(shortage > 0 ? selectInflowsToHold(fresh, shortage) : []);
+  const heldKeys = new Set<string>();
   const held = money(
     fresh.reduce((sum, movement) => (heldKeys.has(movement.key) ? sum + movement.amount : sum), 0),
   );

@@ -1,10 +1,11 @@
-// Початкові залишки готівки на кінець дня. Рухи Kresco рахуємо з наступного дня.
+// Початкові залишки готівки на кінець дня. Рухи Kresco й Altegio рахуємо з наступного дня.
+// Старт з нуля 04.11.2026 (стара схема з проводкою касовкою — з 08.10.2026).
 
-export const CASH_OPENING_KYIV_DAY = "2026-10-08";
+export const CASH_OPENING_KYIV_DAY = "2026-11-04";
 
-/** Касовкою зводимо готівку з цього дня. Раніші платежі вже всередині початкового залишку. */
-export const CASH_RECONCILE_FROM_KYIV_DAY = "2026-10-09";
+/** Баланс каси = старт + усі рухи з цього дня. Раніші платежі вже всередині початкового залишку. */
+export const CASH_RECONCILE_FROM_KYIV_DAY = "2026-11-05";
 
-export const CASH_OPENING_UAH: number | null = 473315;
-export const CASH_OPENING_USD: number | null = 2000;
-export const CASH_OPENING_EUR: number | null = 600;
+export const CASH_OPENING_UAH: number | null = 86384;
+export const CASH_OPENING_USD: number | null = 630;
+export const CASH_OPENING_EUR: number | null = 0;
