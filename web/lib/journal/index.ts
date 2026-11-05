@@ -309,7 +309,18 @@ export async function upsertSalonAppointmentFromAltegio(
   }
 
   const kyivDay = kyivYmdFromDateTimeInput(datetime) || "";
-  const lines = normalizeLines(servicesForLines);
+  const existingLineCosts = await prisma.salonAppointmentLine.findMany({
+    where: { appointment: { altegioRecordId: recordId } },
+    select: { altegioServiceId: true, cost: true },
+  });
+  // Список записів Altegio не віддає цін: не затираємо суму, уже взяту з картки запису.
+  const lines = normalizeLines(servicesForLines).map((line) => ({
+    ...line,
+    cost:
+      line.cost ||
+      existingLineCosts.find((l) => l.altegioServiceId === line.altegioServiceId)?.cost ||
+      0,
+  }));
   let seanceLength = normalizeSeanceLength(
     seanceHint,
     (servicesForLines || []).map((s) => Number((s as any).duration ?? (s as any).seance_length ?? (s as any).length) || 0),
@@ -1289,6 +1300,13 @@ function isJournalAppointmentUnchanged(
     clientPhone: existing.clientPhone,
     lines: existing.lines,
   });
+  const incomingLines = incoming.lines.map((line) => ({
+    ...line,
+    cost:
+      line.cost ||
+      existing.lines.find((l) => l.altegioServiceId === line.altegioServiceId)?.cost ||
+      0,
+  }));
   const incomingFp = journalSyncFingerprint({
     deleted: false,
     datetimeIso: incoming.datetime.toISOString(),
@@ -1300,7 +1318,7 @@ function isJournalAppointmentUnchanged(
     comment: incoming.comment,
     clientName: incoming.clientName,
     clientPhone: incoming.clientPhone,
-    lines: incoming.lines,
+    lines: incomingLines,
   });
 
   // seanceLength у fingerprint — якщо відрізняється лише seance і DB >= Altegio (каталог), вважаємо ок

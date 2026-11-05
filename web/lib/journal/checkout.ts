@@ -2,7 +2,7 @@
 
 import { prisma } from "@/lib/prisma";
 import { fetchAltegioAccounts } from "@/lib/altegio/accounts";
-import { fetchTimetableTransactionsForRecord } from "@/lib/altegio/record-payments";
+import { fetchRecordPaymentState } from "@/lib/altegio/record-payments";
 import {
   closeVisitInAltegio,
   resolveAltegioVisitId,
@@ -181,12 +181,14 @@ export async function getCheckoutContext(appointmentId: string, catalogSearch?: 
   let altegioPaid = 0;
   let altegioPayments: Array<{ amount: number; date: string | null }> = [];
   if (appointment.altegioRecordId && appointment.altegioRecordId > 0) {
-    const companyId = resolveJournalCompanyId();
-    const txs = await fetchTimetableTransactionsForRecord(companyId, appointment.altegioRecordId);
-    altegioPayments = txs
-      .filter((t) => !t.deleted && t.amount > 0)
-      .map((t) => ({ amount: t.amount, date: t.date }));
-    altegioPaid = toMoney(altegioPayments.reduce((s, t) => s + t.amount, 0));
+    const state = await fetchRecordPaymentState(
+      Number(resolveJournalCompanyId()),
+      appointment.altegioRecordId,
+    );
+    if (state?.paidFull && state.total > 0) {
+      altegioPayments = [{ amount: state.total, date: null }];
+      altegioPaid = state.total;
+    }
   }
 
   const servicesSum = toMoney(appointment.lines.reduce((s, l) => s + (Number(l.cost) || 0), 0));
@@ -243,12 +245,34 @@ export async function upsertCheckoutFromAltegioPayments(params: {
   kyivDay: string;
 }) {
   if (!isJournalAltegioImportEnabled()) return null;
-  const companyId = resolveJournalCompanyId();
-  const txs = await fetchTimetableTransactionsForRecord(companyId, params.altegioRecordId);
-  const live = txs.filter((t) => !t.deleted && t.amount > 0);
-  if (live.length === 0) return null;
+  const state = await fetchRecordPaymentState(Number(resolveJournalCompanyId()), params.altegioRecordId);
+  if (!state) return null;
 
-  const paidAmount = toMoney(live.reduce((s, t) => s + t.amount, 0));
+  // Список записів Altegio не віддає цін — доповнюємо нульові рядки з картки запису.
+  for (const service of state.services) {
+    if (service.cost > 0) {
+      await prisma.salonAppointmentLine.updateMany({
+        where: { appointmentId: params.appointmentId, altegioServiceId: service.id, cost: 0 },
+        data: { cost: service.cost, firstCost: service.cost },
+      });
+    }
+  }
+  if (!state.paidFull || !(state.total > 0)) return null;
+
+  // Кілька майстрів в одному візиті: товари рахуємо один раз, на першому записі.
+  const earlierInVisit = params.altegioVisitId
+    ? await prisma.salonAppointment.findFirst({
+        where: {
+          altegioVisitId: params.altegioVisitId,
+          altegioRecordId: { lt: params.altegioRecordId },
+          status: { not: "deleted" },
+        },
+        select: { id: true },
+      })
+    : null;
+  const totalGoods = earlierInVisit ? 0 : state.goodsTotal;
+  const paidAmount = toMoney(state.servicesTotal + totalGoods);
+  if (!(paidAmount > 0)) return null;
   const appointment = await prisma.salonAppointment.findUnique({
     where: { id: params.appointmentId },
     include: { lines: true, checkout: { include: checkoutInclude } },
@@ -257,7 +281,6 @@ export async function upsertCheckoutFromAltegioPayments(params: {
 
   const totalServices = toMoney(appointment.lines.reduce((s, l) => s + (Number(l.cost) || 0), 0));
   const existing = appointment.checkout;
-  const totalGoods = toMoney(existing?.totalGoods || 0);
 
   // Чек Kresco не перезаписуємо і поки він pending: вебхук приходить ще під час закриття візиту.
   if (existing?.source === "kresco" && existing.paidAmount >= paidAmount - 0.01) {
@@ -271,6 +294,7 @@ export async function upsertCheckoutFromAltegioPayments(params: {
           altegioRecordId: params.altegioRecordId,
           altegioVisitId: params.altegioVisitId || existing.altegioVisitId,
           totalServices: totalServices || Math.max(0, paidAmount - totalGoods),
+          totalGoods,
           paidAmount,
           status: "synced",
           syncError: null,
@@ -283,8 +307,8 @@ export async function upsertCheckoutFromAltegioPayments(params: {
           appointmentId: params.appointmentId,
           altegioRecordId: params.altegioRecordId,
           altegioVisitId: params.altegioVisitId || null,
-          totalServices: totalServices || paidAmount,
-          totalGoods: 0,
+          totalServices: totalServices || Math.max(0, paidAmount - totalGoods),
+          totalGoods,
           paidAmount,
           status: "synced",
           source: "altegio",
@@ -292,18 +316,16 @@ export async function upsertCheckoutFromAltegioPayments(params: {
         },
       });
 
+  // Рахунок технічний: реальні гроші по рахунках ведуть фінансові операції, у Касу цей рядок не йде.
   await prisma.salonCheckoutPayment.deleteMany({ where: { checkoutId: checkout.id } });
-  for (const t of live) {
-    await prisma.salonCheckoutPayment.create({
-      data: {
-        checkoutId: checkout.id,
-        accountId: 0,
-        accountTitle: "Altegio",
-        amount: t.amount,
-        altegioTransactionId: t.transactionId,
-      },
-    });
-  }
+  await prisma.salonCheckoutPayment.create({
+    data: {
+      checkoutId: checkout.id,
+      accountId: 0,
+      accountTitle: "Altegio",
+      amount: paidAmount,
+    },
+  });
 
   if (appointment.attendance !== 1) {
     await prisma.salonAppointment.update({
@@ -313,7 +335,7 @@ export async function upsertCheckoutFromAltegioPayments(params: {
   }
 
   console.log(
-    `[journal/checkout] Upsert з Altegio appointment=${params.appointmentId} paid=${paidAmount} txs=${live.length}`,
+    `[journal/checkout] Upsert з Altegio appointment=${params.appointmentId} paid=${paidAmount}`,
   );
   return prisma.salonCheckout.findUnique({
     where: { id: checkout.id },
@@ -635,11 +657,19 @@ export async function closeVisitFromKresco(input: CloseVisitInput) {
   // Ідемпотентність: уже оплачено на повну суму в Altegio або в Kresco.
   let altegioPaid = 0;
   if (!skipAltegioWrite && appointment.altegioRecordId && appointment.altegioRecordId > 0) {
-    const companyId = resolveJournalCompanyId();
-    const existingTxs = await fetchTimetableTransactionsForRecord(companyId, appointment.altegioRecordId);
-    altegioPaid = toMoney(
-      existingTxs.filter((t) => !t.deleted && t.amount > 0).reduce((s, t) => s + t.amount, 0),
+    const state = await fetchRecordPaymentState(
+      Number(resolveJournalCompanyId()),
+      appointment.altegioRecordId,
     );
+    if (!state) throw new Error("Не вдалося перевірити оплату в Altegio — спробуйте ще раз");
+    if (state.paidFull) {
+      altegioPaid = Math.max(state.total, paidAmount);
+    } else if (state.paidPartially) {
+      // Суми часткової оплати картка не дає. Після нашого збою це каса; інакше блокуємо закриття.
+      altegioPaid = appointment.checkout?.status === "sync_error"
+        ? toMoney(accountParts.reduce((s, p) => s + p.amount, 0))
+        : 0.01;
+    }
   }
 
   const alreadyFullyPaid =

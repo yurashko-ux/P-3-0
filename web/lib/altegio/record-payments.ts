@@ -173,3 +173,56 @@ export async function fetchTimetableTransactionsForRecordIds(
 
   return results;
 }
+
+export type RecordPaymentState = {
+  /** Запис оплачено повністю (paid_full). */
+  paidFull: boolean;
+  /** Оплата почата, але не повна. */
+  paidPartially: boolean;
+  /** Послуги + товари запису. */
+  total: number;
+  servicesTotal: number;
+  /** Товари Altegio належать візиту: при кількох майстрах однакові в кожному записі. */
+  goodsTotal: number;
+  services: Array<{ id: number; cost: number }>;
+};
+
+/**
+ * Стан оплати з картки запису. timetable/transactions віддає порожньо навіть для оплачених записів,
+ * а GET /record містить paid_full, payment_status і ціни послуг.
+ */
+export async function fetchRecordPaymentState(
+  locationId: number,
+  recordId: number
+): Promise<RecordPaymentState | null> {
+  if (!Number.isFinite(locationId) || locationId <= 0 || !Number.isFinite(recordId) || recordId <= 0) {
+    return null;
+  }
+  try {
+    const raw = await altegioFetch<any>(`/record/${locationId}/${recordId}`, { method: 'GET' }, 2, 200, 20000);
+    const data = raw?.data ?? raw;
+    if (!data || typeof data !== 'object') return null;
+    const services = (Array.isArray(data.services) ? data.services : [])
+      .map((s: any) => ({ id: Number(s?.id) || 0, cost: toMoney(s?.cost ?? s?.first_cost) }))
+      .filter((s: { id: number }) => s.id > 0);
+    const goods = Array.isArray(data.goods_transactions) ? data.goods_transactions : [];
+    const goodsTotal = goods.reduce((sum: number, g: any) => sum + Math.abs(toMoney(g?.cost)), 0);
+    const servicesTotal = services.reduce((sum: number, s: { cost: number }) => sum + s.cost, 0);
+    const paidFull = Number(data.paid_full) === 1;
+    return {
+      paidFull,
+      paidPartially: !paidFull && Number(data.payment_status) > 0,
+      total: toMoney(servicesTotal + goodsTotal),
+      servicesTotal: toMoney(servicesTotal),
+      goodsTotal: toMoney(goodsTotal),
+      services,
+    };
+  } catch (error) {
+    console.warn('[altegio/record-payments] ⚠️ Не вдалося прочитати стан оплати запису:', {
+      locationId,
+      recordId,
+      error: error instanceof Error ? error.message : String(error),
+    });
+    return null;
+  }
+}
