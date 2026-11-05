@@ -18,7 +18,7 @@ import { searchWarehouseProducts } from "@/lib/warehouse/catalog";
 import { createWriteOff } from "@/lib/warehouse/documents-kresco";
 import { getUsdUahRate } from "@/lib/warehouse/fx";
 import { resolveJournalCompanyId } from "./company-id";
-import { isJournalAltegioWriteSkipped } from "./altegio-write-gate";
+import { isJournalAltegioImportEnabled, isJournalAltegioWriteSkipped } from "./altegio-write-gate";
 import { hiddenFinanceAccountIds } from "@/lib/finance/account-archive";
 import { altegioStorageIdForWrites } from "@/lib/warehouse/storages";
 
@@ -242,6 +242,7 @@ export async function upsertCheckoutFromAltegioPayments(params: {
   altegioVisitId?: number | null;
   kyivDay: string;
 }) {
+  if (!isJournalAltegioImportEnabled()) return null;
   const companyId = resolveJournalCompanyId();
   const txs = await fetchTimetableTransactionsForRecord(companyId, params.altegioRecordId);
   const live = txs.filter((t) => !t.deleted && t.amount > 0);
@@ -258,11 +259,8 @@ export async function upsertCheckoutFromAltegioPayments(params: {
   const existing = appointment.checkout;
   const totalGoods = toMoney(existing?.totalGoods || 0);
 
-  if (
-    existing?.status === "synced" &&
-    existing.source === "kresco" &&
-    existing.paidAmount >= paidAmount - 0.01
-  ) {
+  // Чек Kresco не перезаписуємо і поки він pending: вебхук приходить ще під час закриття візиту.
+  if (existing?.source === "kresco" && existing.paidAmount >= paidAmount - 0.01) {
     return existing;
   }
 
@@ -484,6 +482,13 @@ export async function closeVisitFromKresco(input: CloseVisitInput) {
 
   if (services.length === 0) throw new Error("Додайте хоча б одну послугу");
 
+  const unmapped = services.filter((s) => !(s.altegioServiceId > 0));
+  if (!skipAltegioWrite && unmapped.length > 0) {
+    throw new Error(
+      `Послуга без звʼязку з Altegio: ${unmapped.map((s) => s.title || "без назви").join(", ")}. Звʼяжіть її в довіднику послуг, щоб закрити візит`,
+    );
+  }
+
   const goods = await normalizeGoods(input.goods);
   const totalServices = toMoney(services.reduce((s, l) => s + l.cost, 0));
   const totalGoods = toMoney(goods.reduce((s, g) => s + g.lineTotal, 0));
@@ -654,12 +659,20 @@ export async function closeVisitFromKresco(input: CloseVisitInput) {
           })
         : null;
     }
-    const synced = await upsertCheckoutFromAltegioPayments({
+    let synced = await upsertCheckoutFromAltegioPayments({
       appointmentId: appointment.id,
       altegioRecordId: appointment.altegioRecordId,
       altegioVisitId: appointment.altegioVisitId,
       kyivDay: appointment.kyivDay,
     });
+    // В Altegio вже оплачено повністю, а чек Kresco лишився після збою — завершуємо його.
+    if (synced && synced.status !== "synced") {
+      synced = await prisma.salonCheckout.update({
+        where: { id: synced.id },
+        data: { status: "synced", syncError: null },
+        include: checkoutInclude,
+      });
+    }
     // Добити списання, якщо оплата є, а складу ще немає.
     if (goods.length > 0 && synced && !synced.warehouseDocumentId) {
       const stock = await writeOffGoodsForCheckout({
@@ -685,6 +698,16 @@ export async function closeVisitFromKresco(input: CloseVisitInput) {
       `[journal/checkout] Ідемпотентний skip — уже оплачено ${altegioPaid || appointment.checkout?.paidAmount}`,
     );
     return synced;
+  }
+
+  // Повтор після збою: каса в Altegio вже пройшла, лишилось списати завдаток.
+  const accountPartsSum = toMoney(accountParts.reduce((s, p) => s + p.amount, 0));
+  const resumeDepositOnly =
+    depositParts.length === 1 && accountParts.length > 0 && altegioPaid + 0.009 >= accountPartsSum;
+  if (altegioPaid > 0.009 && !resumeDepositOnly) {
+    throw new Error(
+      `В Altegio вже є оплата ${altegioPaid.toLocaleString("uk-UA")} грн із ${paidAmount.toLocaleString("uk-UA")} — перевірте запис, щоб не задвоїти платіж`,
+    );
   }
 
   let visitId = Number(appointment.altegioVisitId) || 0;
@@ -829,19 +852,21 @@ export async function closeVisitFromKresco(input: CloseVisitInput) {
         });
       } else {
         // Каса/ФОП + завдаток: спочатку касові new_transactions, потім sale/payment deposit
-        const result = await closeVisitInAltegio({
-          visitId,
-          recordId: appointment.altegioRecordId!,
-          attendance: 1,
-          comment: input.comment ?? appointment.comment ?? "",
-          services: servicePayload,
-          payments: accountParts.map((p) => ({ accountId: p.accountId, amount: p.amount })),
-        });
-        transactionIds = [...result.transactionIds];
+        const result = resumeDepositOnly
+          ? null
+          : await closeVisitInAltegio({
+              visitId,
+              recordId: appointment.altegioRecordId!,
+              attendance: 1,
+              comment: input.comment ?? appointment.comment ?? "",
+              services: servicePayload,
+              payments: accountParts.map((p) => ({ accountId: p.accountId, amount: p.amount })),
+            });
+        transactionIds = [...(result?.transactionIds || [])];
         documentId = await resolveVisitSaleDocumentId({
           visitId,
           recordId: appointment.altegioRecordId!,
-          putRaw: result.raw,
+          putRaw: result?.raw,
         });
         if (!(documentId && documentId > 0)) {
           throw new Error("Не вдалося визначити document_id для часткової оплати з завдатку");

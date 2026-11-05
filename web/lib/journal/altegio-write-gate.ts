@@ -51,6 +51,16 @@ export function shouldWriteJournalAppointmentToAltegio(opts: {
   return false;
 }
 
+/**
+ * Імпорт журналу Altegio → Kresco (вебхук record, крон sync-journal-records, ручний синк дня,
+ * підхоплення оплат з Altegio у чек).
+ * JOURNAL_ALTEGIO_IMPORT (за замовчуванням «1»): адміни ще працюють в Altegio.
+ *   0 — журнал ведеться лише в Kresco.
+ */
+export function isJournalAltegioImportEnabled(): boolean {
+  return !isDisabledFlag(envFlag("JOURNAL_ALTEGIO_IMPORT", "1"));
+}
+
 export function isConsultationServiceKind(kind: string | null | undefined): boolean {
   return String(kind || "").trim().toLowerCase() === "consultation";
 }

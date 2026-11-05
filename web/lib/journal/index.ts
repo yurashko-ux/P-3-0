@@ -19,6 +19,7 @@ import { replaceAppointmentGoods, replaceAppointmentParticipants } from "./parti
 import { linePayable, serializeStaffIds } from "./line-staff";
 import {
   isConsultationServiceKind,
+  isJournalAltegioImportEnabled,
   shouldWriteJournalAppointmentToAltegio,
 } from "./altegio-write-gate";
 import { isKrescoRecordNumberConflict, nextKrescoRecordNumber } from "./kresco-record-number";
@@ -180,6 +181,36 @@ function normalizeLines(services: AltegioAppointmentSyncInput["services"]) {
   return rows;
 }
 
+/** Той самий набір послуг Altegio, що й у запису Kresco? Тоді рядки Kresco (виконавці, знижки) не чіпаємо. */
+async function krescoLinesMatchAltegio(
+  appointmentId: string,
+  incoming: Array<{ altegioServiceId: number | null }>,
+): Promise<boolean> {
+  const rows = await prisma.salonAppointmentLine.findMany({
+    where: { appointmentId },
+    select: { altegioServiceId: true },
+  });
+  if (rows.length === 0) return false;
+  const ids = (list: Array<{ altegioServiceId: number | null }>) =>
+    list
+      .map((l) => Number(l.altegioServiceId) || 0)
+      .filter((id) => id > 0)
+      .sort((a, b) => a - b)
+      .join(",");
+  return ids(rows) === ids(incoming);
+}
+
+/** Вебхук випередив Kresco: переносимо рядки чернетки у запис, створений вебхуком. */
+async function moveLinesToRacedAppointment(pendingId: string, racedId: string) {
+  const moved = await prisma.salonAppointmentLine.count({ where: { appointmentId: pendingId } });
+  if (moved === 0) return;
+  await prisma.salonAppointmentLine.deleteMany({ where: { appointmentId: racedId } });
+  await prisma.salonAppointmentLine.updateMany({
+    where: { appointmentId: pendingId },
+    data: { appointmentId: racedId },
+  });
+}
+
 function isBlankClientName(name: string | null | undefined): boolean {
   const s = String(name || "").trim().toLowerCase();
   if (!s) return true;
@@ -190,6 +221,10 @@ export async function upsertSalonAppointmentFromAltegio(
   input: AltegioAppointmentSyncInput,
   options?: { enrich?: boolean },
 ) {
+  if (!isJournalAltegioImportEnabled()) {
+    console.log(`[journal] Імпорт з Altegio вимкнено — запис ${input.altegioRecordId} пропущено`);
+    return null;
+  }
   const recordId = Number(input.altegioRecordId) || 0;
   const deleted = input.deleted === true || input.status === "delete";
 
@@ -309,11 +344,17 @@ export async function upsertSalonAppointmentFromAltegio(
     ? await prisma.salonAppointment.update({ where: { id: existing.id }, data })
     : await prisma.salonAppointment.create({ data });
 
-  await prisma.salonAppointmentLine.deleteMany({ where: { appointmentId: appointment.id } });
+  const keepKrescoLines =
+    existing?.source === "kresco" && (await krescoLinesMatchAltegio(appointment.id, lines));
+  if (keepKrescoLines) {
+    console.log(`[journal] Запис Altegio ${recordId}: послуги ті самі — рядки Kresco збережено`);
+  } else {
+    await prisma.salonAppointmentLine.deleteMany({ where: { appointmentId: appointment.id } });
+  }
   let catalogDuration = 0;
   const syncStaffIds =
     altegioStaffId && altegioStaffId > 0 ? serializeStaffIds([altegioStaffId]) : null;
-  for (const line of lines) {
+  for (const line of keepKrescoLines ? [] : lines) {
     const service = await ensureSalonServiceFromLine({
       altegioServiceId: line.altegioServiceId,
       title: line.title,
@@ -819,6 +860,7 @@ export async function createAppointmentFromKresco(input: KrescoAppointmentInput)
   // Якщо вебхук уже встиг upsert по altegioRecordId — зливаємо pending, щоб не було дубля.
   const raced = await prisma.salonAppointment.findUnique({ where: { altegioRecordId: created.id } });
   if (raced && raced.id !== pending.id) {
+    await moveLinesToRacedAppointment(pending.id, raced.id);
     await prisma.salonAppointment.delete({ where: { id: pending.id } });
     const saved = await prisma.salonAppointment.update({
       where: { id: raced.id },
@@ -870,6 +912,7 @@ export async function createAppointmentFromKresco(input: KrescoAppointmentInput)
   } catch (saveErr) {
     const racedAfter = await prisma.salonAppointment.findUnique({ where: { altegioRecordId: created.id } });
     if (racedAfter && racedAfter.id !== pending.id) {
+      await moveLinesToRacedAppointment(pending.id, racedAfter.id);
       await prisma.salonAppointment.delete({ where: { id: pending.id } }).catch(() => undefined);
       const merged = await prisma.salonAppointment.update({
         where: { id: racedAfter.id },
@@ -1283,6 +1326,10 @@ export async function syncAppointmentsRangeFromAltegio(params: {
   enrich?: boolean;
   mode?: "full" | "recent";
 }) {
+  if (!isJournalAltegioImportEnabled()) {
+    console.log(`[journal] Імпорт з Altegio вимкнено — синк ${params.startDate}…${params.endDate} пропущено`);
+    return { count: 0, upserted: 0, skipped: 0, importDisabled: true };
+  }
   const { fetchAllRecordsForLocation } = await import("@/lib/altegio/records");
   const { resolveJournalCompanyId } = await import("./company-id");
   clearJournalAltegioClientCache();
