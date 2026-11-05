@@ -29,6 +29,8 @@ type LedgerRow = {
   clientName: string;
   recordId: number | null;
   posted: boolean;
+  /** Сума валюти за курсом дня (у коментарі Altegio її не було) */
+  fxRate?: number | null;
   count: LedgerCount | null;
 };
 
@@ -80,6 +82,8 @@ export function CashLedgerPanel({
   const [rows, setRows] = useState<LedgerRow[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  /** Фільтр по рахунку (назва каси Altegio); "" — усі рахунки */
+  const [accountFilter, setAccountFilter] = useState("");
 
   useEffect(() => {
     let cancelled = false;
@@ -102,18 +106,27 @@ export function CashLedgerPanel({
     };
   }, [reloadToken]);
 
+  const accountOptions = useMemo(
+    () => [...new Set(rows.map((row) => row.accountTitle).filter(Boolean))].sort((a, b) => a.localeCompare(b, "uk")),
+    [rows],
+  );
+
   useEffect(() => {
-    const scoped = rows.filter((row) => direction === "both" || row.direction === direction);
+    const scoped = rows.filter(
+      (row) =>
+        (direction === "both" || row.direction === direction) && (!accountFilter || row.accountTitle === accountFilter),
+    );
     onCounts?.({
       all: aggregateOpenCashLedgerRows(scoped).length,
       open: aggregateOpenCashLedgerRows(scoped.filter((row) => !row.posted)).length,
       linked: aggregateOpenCashLedgerRows(scoped.filter((row) => row.posted)).length,
     });
-  }, [rows, direction, onCounts]);
+  }, [rows, direction, onCounts, accountFilter]);
 
   const days = useMemo(() => {
     const visible = rows.filter((row) => {
       if (direction !== "both" && row.direction !== direction) return false;
+      if (accountFilter && row.accountTitle !== accountFilter) return false;
       if (status === "linked") return row.posted;
       if (status === "open") return !row.posted;
       return true;
@@ -136,7 +149,7 @@ export function CashLedgerPanel({
         }
         return { kyivDay, rows: aggregateCashLedgerDayRows(dayRows), counts: [...counts.values()] };
       });
-  }, [rows, direction, status]);
+  }, [rows, direction, status, accountFilter]);
 
   if (loading) {
     return <p className="px-3 py-6 text-center text-sm text-gray-500">Завантаження готівки…</p>;
@@ -144,24 +157,56 @@ export function CashLedgerPanel({
   if (error) {
     return <div className="m-2 rounded border border-red-200 bg-red-50 px-3 py-2 text-xs text-red-800">{error}</div>;
   }
+  const accountSelect = (
+    <select
+      value={accountFilter}
+      onChange={(e) => setAccountFilter(e.target.value)}
+      className="max-w-full rounded border border-gray-400 bg-white px-1 py-0 text-[10px] font-medium normal-case text-gray-900"
+      title="Фільтр по рахунку"
+    >
+      <option value="">Усі рахунки</option>
+      {accountOptions.map((title) => (
+        <option key={title} value={title}>
+          {title}
+        </option>
+      ))}
+    </select>
+  );
+
   if (days.length === 0) {
     return (
-      <p className="px-3 py-6 text-center text-sm text-gray-500">
-        {status === "linked" ? "Зведених готівкових платежів немає." : "Готівкових платежів немає."}
-      </p>
+      <div className="px-3 py-6 text-center text-sm text-gray-500">
+        <p>{status === "linked" ? "Зведених готівкових платежів немає." : "Готівкових платежів немає."}</p>
+        {accountFilter ? <div className="mt-2 inline-block">{accountSelect}</div> : null}
+      </div>
     );
   }
 
   return (
     <div className="flex min-h-0 w-1/2 max-w-[50%] flex-1 flex-col self-start overflow-y-auto rounded-xl border border-gray-200 bg-white shadow-sm">
-      {days.map((day) => (
+      {days.map((day, dayIndex) => (
         <section key={day.kyivDay} className="border-t-2 border-gray-800 first:border-t-0">
-          <div className="grid grid-cols-[minmax(0,1fr)_minmax(180px,240px)]">
-            <table className="w-full text-left text-[10px]">
+          <div className="grid grid-cols-[minmax(0,1fr)_200px]">
+            {/* table-fixed + однакові ширини: колонки всіх днів стоять одна під одною */}
+            <table className="w-full table-fixed text-left text-[10px]">
+              <colgroup>
+                <col style={{ width: "6%" }} />
+                <col style={{ width: "17%" }} />
+                <col style={{ width: "19%" }} />
+                <col style={{ width: "8%" }} />
+                <col style={{ width: "14%" }} />
+                <col style={{ width: "14%" }} />
+                <col style={{ width: "5%" }} />
+                <col style={{ width: "17%" }} />
+              </colgroup>
               <thead>
                 <tr className="bg-slate-300 text-[10px] text-gray-900">
-                  <th colSpan={7} className="px-2 py-1 text-left font-bold uppercase tracking-wide">
+                  <th colSpan={5} className="px-2 py-1 text-left font-bold uppercase tracking-wide">
                     {dayLabel(day.kyivDay)}
+                  </th>
+                  {/* Фільтр по рахунку — над колонкою «Рахунок», лише в першому дні */}
+                  <th colSpan={2} className="px-1 py-0.5 text-left font-normal">
+                    {dayIndex === 0 ? accountSelect : null}
                   </th>
                   <th className="px-2 py-1 text-right font-bold normal-case tracking-normal tabular-nums">
                     {dayNetLabel(day.rows)}
@@ -186,15 +231,15 @@ export function CashLedgerPanel({
                   return (
                     <tr key={row.id} className="border-t border-gray-100">
                       <td className="px-2 py-1 tabular-nums text-gray-500">{index + 1}</td>
-                      <td className="px-2 py-1 text-gray-800">{row.clientName || "—"}</td>
-                      <td className="px-2 py-1 text-gray-700">{row.title}</td>
+                      <td className="break-words px-2 py-1 text-gray-800">{row.clientName || "—"}</td>
+                      <td className="break-words px-2 py-1 text-left text-gray-700">{row.title}</td>
                       <td className="whitespace-nowrap px-2 py-1 tabular-nums text-gray-600">
                         {timeLabel(row.occurredAt) || "—"}
                       </td>
                       <td className="whitespace-nowrap px-2 py-1 tabular-nums text-gray-600">
                         {row.recordId ? row.recordId : "—"}
                       </td>
-                      <td className="px-2 py-1 text-gray-700">{row.accountTitle}</td>
+                      <td className="truncate px-2 py-1 text-gray-700" title={row.accountTitle}>{row.accountTitle}</td>
                       <td className={`px-2 py-1 font-semibold ${incoming ? "text-green-700" : "text-red-600"}`}>
                         {incoming ? "↓" : "↑"}
                       </td>
@@ -203,7 +248,16 @@ export function CashLedgerPanel({
                           incoming ? "text-gray-900" : "text-red-600"
                         }`}
                       >
+                        {row.fxRate ? "≈ " : ""}
                         {money(signed)} {unit}
+                        {row.fxRate ? (
+                          <div
+                            className="text-[9px] font-normal text-amber-700"
+                            title="У коментарі Altegio немає суми у валюті — перераховано з гривні за робочим курсом дня платежу"
+                          >
+                            за курсом {money(row.fxRate)}
+                          </div>
+                        ) : null}
                       </td>
                     </tr>
                   );

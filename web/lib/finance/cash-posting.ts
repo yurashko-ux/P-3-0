@@ -54,6 +54,8 @@ export type CashLedgerRow = {
   clientName: string;
   recordId: number | null;
   posted: boolean;
+  /** Сума валюти взята за курсом дня (у коментарі Altegio її не було); null — точна сума */
+  fxRate?: number | null;
   count: CashLedgerCount | null;
 };
 
@@ -71,9 +73,32 @@ function currencyOfTitle(title: string): CashCurrency {
   return "UAH";
 }
 
+/** Робочі курси (USD / EUR) по київських днях: свій день або найближчий попередній. Один запит. */
+type WorkingRates = (kyivDay: string, currency: "USD" | "EUR") => number | null;
+
+async function loadWorkingRates(days: string[]): Promise<WorkingRates> {
+  const unique = [...new Set(days.filter(Boolean))].sort();
+  if (unique.length === 0) return () => null;
+  const rows = await prisma.dailyFxRate.findMany({
+    where: { kyivDay: { lte: unique[unique.length - 1] } },
+    orderBy: { kyivDay: "asc" },
+    select: { kyivDay: true, usdWorking: true, eurWorking: true },
+  });
+  return (kyivDay, currency) => {
+    let found: (typeof rows)[number] | null = null;
+    for (const row of rows) {
+      if (row.kyivDay > kyivDay) break;
+      found = row;
+    }
+    const rate = found ? (currency === "USD" ? found.usdWorking : found.eurWorking) : 0;
+    return rate > 0 ? rate : null;
+  };
+}
+
 /**
  * Готівкова каса в гривні бере суму платежу.
  * Долар і євро — кількість валюти з коментаря Altegio (200$, 520Є), не гривневий еквівалент.
+ * Немає суми в коментарі — гривні за робочим курсом дня платежу, до цілих (fxRate — курс, за яким рахували).
  */
 function signedCashAmountFromAltegio(
   currency: CashCurrency,
@@ -81,18 +106,24 @@ function signedCashAmountFromAltegio(
   amountKopiykas: bigint,
   altegioId: number,
   accountTitle: string,
-): number | null {
+  workingRate: number | null,
+): { amount: number; fxRate: number | null } | null {
   const hryvnia = kopToAmount(amountKopiykas);
-  if (currency === "UAH") return hryvnia === 0 ? null : hryvnia;
-  const foreign = extractCurrencyAmountFromComment(comment || "", currency === "USD" ? "usd" : "eur");
-  if (!(foreign > 0)) {
-    console.warn(
-      `[finance/cash-posting] Валютна каса «${accountTitle}»: у коментарі платежу ${altegioId} немає суми ${currency} («${comment || ""}»), гривню ${hryvnia} не підставляємо`,
-    );
-    return null;
-  }
+  if (currency === "UAH") return hryvnia === 0 ? null : { amount: hryvnia, fxRate: null };
   const sign = hryvnia < 0 ? -1 : 1;
-  return money(sign * foreign);
+  const foreign = extractCurrencyAmountFromComment(comment || "", currency === "USD" ? "usd" : "eur");
+  if (foreign > 0) return { amount: money(sign * foreign), fxRate: null };
+  if (workingRate && workingRate > 0 && hryvnia !== 0) {
+    const converted = Math.round(Math.abs(hryvnia) / workingRate);
+    console.warn(
+      `[finance/cash-posting] Валютна каса «${accountTitle}»: у коментарі платежу ${altegioId} немає суми ${currency} («${comment || ""}») — ${hryvnia} грн за курсом ${workingRate} ≈ ${converted} ${currency}`,
+    );
+    return converted > 0 ? { amount: sign * converted, fxRate: workingRate } : null;
+  }
+  console.warn(
+    `[finance/cash-posting] Валютна каса «${accountTitle}»: у коментарі платежу ${altegioId} немає суми ${currency} і немає курсу дня — платіж пропущено`,
+  );
+  return null;
 }
 
 /** Розбіжність менша за 5 копійок — той самий баланс, не надлишок і не недостача. */
@@ -381,6 +412,7 @@ async function loadUnpostedAltegioCash(
       AND "accountId" = ${String(accountId)}
   `;
   const out: AltegioPostingRow[] = [];
+  const workingRate = await loadWorkingRates(rows.map((tx) => tx.kyivDay));
   for (const tx of rows) {
     const title = tx.accountTitle?.trim() || accountTitle;
     if (!isCashAltegioAccount(title)) continue;
@@ -388,14 +420,17 @@ async function loadUnpostedAltegioCash(
     const altegioId = Number(tx.altegioId) || 0;
     if (!(altegioId > 0) || mirroredAltegioIds.has(altegioId)) continue;
     if (postedKeys.has(postingKey("altegio", String(altegioId), accountId))) continue;
-    const signedAmount = signedCashAmountFromAltegio(
-      currencyOfTitle(title),
+    const currency = currencyOfTitle(title);
+    const converted = signedCashAmountFromAltegio(
+      currency,
       tx.comment,
       typeof tx.amountKopiykas === "bigint" ? tx.amountKopiykas : BigInt(tx.amountKopiykas),
       altegioId,
       title,
+      currency === "UAH" ? null : workingRate(tx.kyivDay, currency),
     );
-    if (signedAmount == null) continue;
+    if (converted == null) continue;
+    const signedAmount = converted.amount;
     const amount = money(Math.abs(signedAmount));
     if (!(amount > 0)) continue;
     out.push({
@@ -539,6 +574,7 @@ export async function listCashLedger(): Promise<CashLedgerRow[]> {
     };
   });
 
+  const ledgerRate = await loadWorkingRates(altegioRows.map((tx) => tx.kyivDay));
   for (const tx of altegioRows) {
     const title = tx.accountTitle?.trim() || "";
     if (!isCashAltegioAccount(title)) continue;
@@ -547,14 +583,16 @@ export async function listCashLedger(): Promise<CashLedgerRow[]> {
     const accountId = Number(tx.accountId) || 0;
     if (hiddenIds.has(accountId)) continue;
     const currency = currencyOfTitle(title);
-    const signedAmount = signedCashAmountFromAltegio(
+    const converted = signedCashAmountFromAltegio(
       currency,
       tx.comment,
       typeof tx.amountKopiykas === "bigint" ? tx.amountKopiykas : BigInt(tx.amountKopiykas),
       tx.altegioId,
       title,
+      currency === "UAH" ? null : ledgerRate(tx.kyivDay, currency),
     );
-    if (signedAmount == null) continue;
+    if (converted == null) continue;
+    const signedAmount = converted.amount;
     const amount = money(Math.abs(signedAmount));
     if (!(amount > 0)) continue;
     // Знак суми — реальний рух каси. direction у базі хибний: стаття «Надання послуг» записана як витрата.
@@ -579,6 +617,7 @@ export async function listCashLedger(): Promise<CashLedgerRow[]> {
       clientName,
       recordId: Number.isFinite(recordId) && recordId > 0 ? recordId : null,
       posted: Boolean(posting),
+      fxRate: converted.fxRate,
       count: count
         ? {
             id: count.id,

@@ -53,6 +53,11 @@ export function aggregateCashLedgerDayRows<T extends CashLedgerAggregateSource>(
     }
     current.signed += signed;
     current.posted = current.posted && row.posted;
+    // Хоч одна частина за курсом — позначаємо весь рядок «≈ за курсом».
+    const rowFx = (row as { fxRate?: number | null }).fxRate;
+    if (rowFx && !(current as { fxRate?: number | null }).fxRate) {
+      (current as { fxRate?: number | null }).fxRate = rowFx;
+    }
     current.times.add(timeLabelKyiv(row.occurredAt));
     if (row.recordId) current.records.add(row.recordId);
     if (row.title) current.titles.add(row.title);
