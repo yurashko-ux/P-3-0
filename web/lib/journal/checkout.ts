@@ -6,7 +6,8 @@ import { fetchRecordPaymentState } from "@/lib/altegio/record-payments";
 import {
   closeVisitInAltegio,
   resolveAltegioVisitId,
-  fetchOtherVisitServices,
+  buildVisitGoodsSale,
+  fetchOtherVisitLines,
   type VisitCheckoutServiceLine,
 } from "@/lib/altegio/visit-checkout-write";
 import {
@@ -352,6 +353,7 @@ type NormalizedGood = {
   quantity: number;
   salePrice: number;
   altegioGoodId: number;
+  altegioStorageId: number;
   lineTotal: number;
 };
 
@@ -387,7 +389,8 @@ async function normalizeGoods(raw: CheckoutGoodLineInput[] | undefined): Promise
     const storage = storageById.get(row.storageId);
     if (!storage) throw new Error(`Склад не знайдено (${row.storageId})`);
     // Склад лише в Kresco («Волосся») продає через свій склад Altegio для запису («Товари»).
-    if (!altegioStorageIdForWrites(storage)) {
+    const altegioStorageId = altegioStorageIdForWrites(storage);
+    if (!altegioStorageId) {
       throw new Error(`Склад «${storage.title}» без id Altegio`);
     }
     if (!storage.isActive) throw new Error(`Склад «${storage.title}» вимкнено`);
@@ -398,6 +401,7 @@ async function normalizeGoods(raw: CheckoutGoodLineInput[] | undefined): Promise
       quantity: row.quantity,
       salePrice: row.salePrice,
       altegioGoodId: product.altegioGoodId,
+      altegioStorageId,
       lineTotal: toMoney(row.salePrice * row.quantity),
     });
   }
@@ -714,6 +718,7 @@ export async function closeVisitFromKresco(input: CloseVisitInput) {
         clientLabel,
         kyivDay: appointment.kyivDay,
         createdBy: input.createdBy,
+        localOnly: true,
       });
       if (stock.stockError) {
         await prisma.salonCheckout.update({
@@ -858,13 +863,26 @@ export async function closeVisitFromKresco(input: CloseVisitInput) {
         recordId: appointment.altegioRecordId!,
       }));
 
-      const otherVisitServices = await fetchOtherVisitServices(visitId, appointment.altegioRecordId!);
-      if (otherVisitServices.length > 0) {
+      const otherVisit = await fetchOtherVisitLines(visitId, appointment.altegioRecordId!);
+      if (otherVisit.services.length > 0) {
         console.log(
-          `[journal/checkout] Візит ${visitId}: додаємо ${otherVisitServices.length} послуг інших записів`,
+          `[journal/checkout] Візит ${visitId}: додаємо ${otherVisit.services.length} послуг інших записів`,
         );
-        servicePayload.push(...otherVisitServices);
+        servicePayload.push(...otherVisit.services);
       }
+      // Товар іде продажем у візиті: сума чека й списання складу в Altegio з одного рядка.
+      const goodsTransactions = [
+        ...otherVisit.goods,
+        ...goods.map((g) =>
+          buildVisitGoodsSale({
+            goodId: g.altegioGoodId,
+            storageId: g.altegioStorageId,
+            quantity: g.quantity,
+            unitPrice: g.salePrice,
+            masterId: appointment.altegioStaffId,
+          }),
+        ),
+      ];
 
       if (servicePayload.length === 0 && !skipAltegioWrite) {
         console.warn(
@@ -881,6 +899,7 @@ export async function closeVisitFromKresco(input: CloseVisitInput) {
           attendance: 1,
           comment: input.comment ?? appointment.comment ?? "",
           services: servicePayload,
+          goodsTransactions,
           depositId,
           amount: depositAmount,
         });
@@ -894,6 +913,7 @@ export async function closeVisitFromKresco(input: CloseVisitInput) {
           comment: input.comment ?? appointment.comment ?? "",
           services: servicePayload,
           payments: accountParts.map((p) => ({ accountId: p.accountId, amount: p.amount })),
+          goodsTransactions,
         });
         transactionIds = result.transactionIds;
         documentId = await resolveVisitSaleDocumentId({
@@ -912,6 +932,7 @@ export async function closeVisitFromKresco(input: CloseVisitInput) {
               comment: input.comment ?? appointment.comment ?? "",
               services: servicePayload,
               payments: accountParts.map((p) => ({ accountId: p.accountId, amount: p.amount })),
+              goodsTransactions,
             });
         transactionIds = [...(result?.transactionIds || [])];
         documentId = await resolveVisitSaleDocumentId({
@@ -973,7 +994,8 @@ export async function closeVisitFromKresco(input: CloseVisitInput) {
       clientLabel,
       kyivDay: appointment.kyivDay,
       createdBy: input.createdBy,
-      localOnly: skipAltegioWrite,
+      // В Altegio товар уже списаний продажем у візиті.
+      localOnly: true,
     });
 
     await prisma.salonCheckout.update({

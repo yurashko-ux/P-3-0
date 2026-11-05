@@ -4,7 +4,7 @@
 import { ALTEGIO_ENV } from "./env";
 import { altegioFetch, AltegioHttpError } from "./client";
 import { getVisitDetails } from "./visits";
-import type { VisitCheckoutServiceLine, VisitCheckoutWriteResult } from "./visit-checkout-write";
+import type { VisitGoodsTransaction, VisitCheckoutServiceLine, VisitCheckoutWriteResult } from "./visit-checkout-write";
 
 function resolveCompanyId(): string {
   const companyId =
@@ -185,6 +185,7 @@ export async function closeVisitPaidFromDeposit(params: {
   attendance?: number;
   comment?: string;
   services: VisitCheckoutServiceLine[];
+  goodsTransactions?: VisitGoodsTransaction[];
   depositId: number;
   amount: number;
 }): Promise<VisitCheckoutWriteResult & { documentId: number }> {
@@ -211,6 +212,7 @@ export async function closeVisitPaidFromDeposit(params: {
     comment: params.comment || "",
     services,
     new_transactions: [] as Array<{ amount: number; account_id: number }>,
+    ...(params.goodsTransactions?.length ? { goods_transactions: params.goodsTransactions } : {}),
   };
   console.log(
     `[altegio/visit-deposit] PUT ${putPath} services=${services.length} (без каси, далі deposit)`,

@@ -48,6 +48,31 @@ export type VisitCheckoutPaymentLine = {
   amount: number;
 };
 
+/** Рядок goods_transactions візиту. Нові без id; наявні передаємо як є. */
+export type VisitGoodsTransaction = Record<string, unknown>;
+
+/** Новий продаж товару у форматі goods_transactions (amount < 0 — продаж). */
+export function buildVisitGoodsSale(params: {
+  goodId: number;
+  storageId: number;
+  quantity: number;
+  unitPrice: number;
+  masterId: number | null;
+}): VisitGoodsTransaction {
+  const unitPrice = toMoney(params.unitPrice);
+  return {
+    good_id: params.goodId,
+    storage_id: params.storageId,
+    amount: -Math.abs(params.quantity),
+    cost_per_unit: unitPrice,
+    price: unitPrice,
+    cost: toMoney(unitPrice * Math.abs(params.quantity)),
+    discount: 0,
+    operation_unit_type: 1,
+    ...(params.masterId ? { master_id: params.masterId } : {}),
+  };
+}
+
 export type VisitCheckoutWriteInput = {
   visitId: number;
   recordId: number;
@@ -55,6 +80,7 @@ export type VisitCheckoutWriteInput = {
   comment?: string;
   services: VisitCheckoutServiceLine[];
   payments: VisitCheckoutPaymentLine[];
+  goodsTransactions?: VisitGoodsTransaction[];
 };
 
 export type VisitCheckoutWriteResult = {
@@ -100,16 +126,21 @@ export async function resolveAltegioVisitId(recordId: number): Promise<number | 
  * Послуги інших записів цього візиту. PUT /visits замінює послуги всього візиту,
  * тому без них закриття одного запису стирає послуги решти майстрів.
  */
-export async function fetchOtherVisitServices(
+export async function fetchOtherVisitLines(
   visitId: number,
   recordId: number,
-): Promise<VisitCheckoutServiceLine[]> {
+): Promise<{ services: VisitCheckoutServiceLine[]; goods: VisitGoodsTransaction[] }> {
   const visit = await getVisitWithRecords(visitId, Number(resolveCompanyId()));
   if (!visit) {
     throw new Error(`Не вдалося прочитати візит ${visitId} в Altegio — закриття зупинено, щоб не стерти послуги`);
   }
   const lines: VisitCheckoutServiceLine[] = [];
+  // Товари належать візиту й повторюються в кожному записі.
+  const goodsById = new Map<number, VisitGoodsTransaction>();
   for (const record of visit.records) {
+    for (const g of record.goods_transactions || []) {
+      if (Number(g?.id) > 0) goodsById.set(Number(g.id), g);
+    }
     if (Number(record.id) === recordId) continue;
     for (const s of record.services || []) {
       lines.push({
@@ -123,7 +154,7 @@ export async function fetchOtherVisitServices(
       });
     }
   }
-  return lines.filter((l) => l.id > 0);
+  return { services: lines.filter((l) => l.id > 0), goods: [...goodsById.values()] };
 }
 
 export async function closeVisitInAltegio(input: VisitCheckoutWriteInput): Promise<VisitCheckoutWriteResult> {
@@ -166,6 +197,7 @@ export async function closeVisitInAltegio(input: VisitCheckoutWriteInput): Promi
     comment: input.comment || "",
     services,
     new_transactions: newTransactions,
+    ...(input.goodsTransactions?.length ? { goods_transactions: input.goodsTransactions } : {}),
   };
 
   const path = `/visits/${visitId}/${recordId}`;
