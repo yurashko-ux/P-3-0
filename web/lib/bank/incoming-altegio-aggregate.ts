@@ -1513,31 +1513,48 @@ function mergeIncomeRows(liveRows: NormalizedAltegioIncomeRow[], dbRows: Normali
   return Array.from(byId.values());
 }
 
-export async function buildIncomingReconciliationPreview(params: {
-  dateFrom?: string;
-  dateTo?: string;
-  fetchLive?: boolean;
-} = {}): Promise<IncomingReconciliationPreview> {
+/** Діапазон дат для вхідних: не раніше INCOMING_RANGE_START_DATE, за замовчуванням до сьогодні. */
+export function resolveIncomingRange(params: { dateFrom?: string; dateTo?: string }): {
+  dateFrom: string;
+  dateTo: string;
+} {
   const requestedFrom = params.dateFrom?.trim() || INCOMING_RANGE_START_DATE;
   const dateFrom = requestedFrom < INCOMING_RANGE_START_DATE ? INCOMING_RANGE_START_DATE : requestedFrom;
   const dateTo = params.dateTo?.trim() || getKyivTodayYmd();
+  return { dateFrom, dateTo };
+}
+
+/**
+ * Доходи Altegio за діапазон (живий API за 30 днів + історія з БД), ті самі, що йдуть у зведення.
+ * Використовується і preview, і порівнянням з джерелом Kresco.
+ */
+export async function loadAltegioIncomeRows(params: {
+  dateFrom: string;
+  dateTo: string;
+  fetchLive?: boolean;
+}): Promise<{
+  rows: NormalizedAltegioIncomeRow[];
+  liveRows: number;
+  dbRows: number;
+  droppedMirrors: number;
+}> {
+  const { dateFrom, dateTo } = params;
   const altegioLiveWindowFrom = shiftYmd(getKyivTodayYmd(), -(ALTEGIO_LIVE_INCOME_WINDOW_DAYS - 1));
   const liveDateFrom = dateFrom > altegioLiveWindowFrom ? dateFrom : altegioLiveWindowFrom;
   const shouldFetchLive = params.fetchLive !== false && liveDateFrom <= dateTo;
 
-  const [liveFetch, dbRows, bankAgg] = await Promise.all([
+  const [liveFetch, dbRows] = await Promise.all([
     shouldFetchLive
       ? fetchLiveIncomeRowsRange(liveDateFrom, dateTo)
       : Promise.resolve({ rows: [], droppedMirrors: 0 }),
     fetchDbIncomeRowsRange(dateFrom, dateTo),
-    fetchBankIncomingByDayRange(dateFrom, dateTo),
   ]);
   const liveRows = liveFetch.rows.filter(isFinancialOperationIncomeRow);
   const financialDbRows = dbRows.filter(isFinancialOperationIncomeRow);
   // Свіжі 30 днів оновлюємо даними API, старіший запит доповнюємо вже збереженою історією з БД.
   const baseRows = mergeIncomeRows(liveRows, financialDbRows);
 
-  const incomeRows = enrichPlaceholderAccounts(
+  const rows = enrichPlaceholderAccounts(
     excludeTransferIncomeRows(
       baseRows.filter((row) =>
         isFinancialOperationIncomeRow(row)
@@ -1546,6 +1563,37 @@ export async function buildIncomingReconciliationPreview(params: {
       ),
     ).rows,
   );
+
+  console.log("[incoming-altegio-aggregate] Доходи Altegio", {
+    dateFrom,
+    dateTo,
+    altegioLiveFrom: shouldFetchLive ? liveDateFrom : null,
+    liveRows: liveRows.length,
+    dbRows: dbRows.length,
+    mergedRows: rows.length,
+    syncStartDate: ALTEGIO_FINANCE_SYNC_START_DATE,
+  });
+
+  return {
+    rows,
+    liveRows: liveRows.length,
+    dbRows: dbRows.length,
+    droppedMirrors: liveFetch.droppedMirrors,
+  };
+}
+
+export async function buildIncomingReconciliationPreview(params: {
+  dateFrom?: string;
+  dateTo?: string;
+  fetchLive?: boolean;
+} = {}): Promise<IncomingReconciliationPreview> {
+  const { dateFrom, dateTo } = resolveIncomingRange(params);
+
+  const [income, bankAgg] = await Promise.all([
+    loadAltegioIncomeRows({ dateFrom, dateTo, fetchLive: params.fetchLive }),
+    fetchBankIncomingByDayRange(dateFrom, dateTo),
+  ]);
+  const incomeRows = income.rows;
   const financeIndex = buildFinanceAccountIndex(incomeRows);
   const altegioByPayer = groupAltegioIncomeByPayer(incomeRows, financeIndex);
   const altegioTotalKop = sumKop(incomeRows.map((row) => row.amountKop));
@@ -1557,14 +1605,10 @@ export async function buildIncomingReconciliationPreview(params: {
   console.log("[incoming-altegio-aggregate] Preview", {
     dateFrom,
     dateTo,
-    altegioLiveFrom: shouldFetchLive ? liveDateFrom : null,
-    liveRows: liveRows.length,
-    dbRows: dbRows.length,
     mergedRows: incomeRows.length,
     altegioPayers: altegioByPayer.length,
     bankDays: bankAgg.byDay.length,
     source: altegioSource,
-    syncStartDate: ALTEGIO_FINANCE_SYNC_START_DATE,
   });
 
   return {
@@ -1575,10 +1619,10 @@ export async function buildIncomingReconciliationPreview(params: {
       source: altegioSource,
       byPayer: altegioByPayer,
       stats: {
-        liveRows: liveRows.length,
-        dbRows: dbRows.length,
+        liveRows: income.liveRows,
+        dbRows: income.dbRows,
         mergedRows: incomeRows.length,
-        droppedMirrors: liveFetch.droppedMirrors,
+        droppedMirrors: income.droppedMirrors,
       },
     },
     bank: {
