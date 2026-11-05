@@ -201,7 +201,7 @@ export async function closeVisitPaidFromDeposit(params: {
       discount: Number(s.discount) || 0,
       cost,
       cost_per_unit: amount > 0 ? toMoney(cost / amount) : cost,
-      record_id: params.recordId,
+      record_id: s.recordId || params.recordId,
     };
   });
 

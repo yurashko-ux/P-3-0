@@ -6,6 +6,8 @@ import { fetchRecordPaymentState } from "@/lib/altegio/record-payments";
 import {
   closeVisitInAltegio,
   resolveAltegioVisitId,
+  fetchOtherVisitServices,
+  type VisitCheckoutServiceLine,
 } from "@/lib/altegio/visit-checkout-write";
 import {
   closeVisitPaidFromDeposit,
@@ -730,6 +732,17 @@ export async function closeVisitFromKresco(input: CloseVisitInput) {
     return synced;
   }
 
+  // Часткову оплату картка запису не показує (payment_status лишається 0), тому після збою
+  // не відновлюємо автоматично: повтор міг би задвоїти касову частину.
+  if (
+    !skipAltegioWrite &&
+    appointment.checkout?.status === "sync_error" &&
+    depositParts.length === 1 &&
+    accountParts.length > 0
+  ) {
+    throw new Error("Попереднє закриття не завершилось — перевірте оплату в Altegio перед повтором");
+  }
+
   // Повтор після збою: каса в Altegio вже пройшла, лишилось списати завдаток.
   const accountPartsSum = toMoney(accountParts.reduce((s, p) => s + p.amount, 0));
   const resumeDepositOnly =
@@ -833,7 +846,7 @@ export async function closeVisitFromKresco(input: CloseVisitInput) {
         `[journal/checkout] JOURNAL_SKIP_ALTEGIO_WRITE: оплата ${pendingId} лише в Kresco, parts=${paymentLines.map((p) => `${p.paymentKind}:${p.accountId}=${p.amount}`).join(",")}`,
       );
     } else {
-      const servicePayload = services
+      const servicePayload: VisitCheckoutServiceLine[] = services
         .filter((s) => s.altegioServiceId > 0)
         .map((s) => ({
         id: s.altegioServiceId,
@@ -844,6 +857,14 @@ export async function closeVisitFromKresco(input: CloseVisitInput) {
         title: s.title,
         recordId: appointment.altegioRecordId!,
       }));
+
+      const otherVisitServices = await fetchOtherVisitServices(visitId, appointment.altegioRecordId!);
+      if (otherVisitServices.length > 0) {
+        console.log(
+          `[journal/checkout] Візит ${visitId}: додаємо ${otherVisitServices.length} послуг інших записів`,
+        );
+        servicePayload.push(...otherVisitServices);
+      }
 
       if (servicePayload.length === 0 && !skipAltegioWrite) {
         console.warn(

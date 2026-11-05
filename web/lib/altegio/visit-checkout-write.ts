@@ -3,6 +3,7 @@
 
 import { ALTEGIO_ENV } from "./env";
 import { altegioFetch, AltegioHttpError } from "./client";
+import { getVisitWithRecords } from "./visits";
 
 function resolveCompanyId(): string {
   const companyId =
@@ -95,6 +96,36 @@ export async function resolveAltegioVisitId(recordId: number): Promise<number | 
   return null;
 }
 
+/**
+ * Послуги інших записів цього візиту. PUT /visits замінює послуги всього візиту,
+ * тому без них закриття одного запису стирає послуги решти майстрів.
+ */
+export async function fetchOtherVisitServices(
+  visitId: number,
+  recordId: number,
+): Promise<VisitCheckoutServiceLine[]> {
+  const visit = await getVisitWithRecords(visitId, Number(resolveCompanyId()));
+  if (!visit) {
+    throw new Error(`Не вдалося прочитати візит ${visitId} в Altegio — закриття зупинено, щоб не стерти послуги`);
+  }
+  const lines: VisitCheckoutServiceLine[] = [];
+  for (const record of visit.records) {
+    if (Number(record.id) === recordId) continue;
+    for (const s of record.services || []) {
+      lines.push({
+        id: Number(s?.id) || 0,
+        amount: Number(s?.amount) || 1,
+        firstCost: Number(s?.first_cost) || Number(s?.cost) || 0,
+        cost: Number(s?.cost) || 0,
+        discount: Number(s?.discount) || 0,
+        title: s?.title ? String(s.title) : undefined,
+        recordId: Number(record.id),
+      });
+    }
+  }
+  return lines.filter((l) => l.id > 0);
+}
+
 export async function closeVisitInAltegio(input: VisitCheckoutWriteInput): Promise<VisitCheckoutWriteResult> {
   const visitId = Number(input.visitId) || 0;
   const recordId = Number(input.recordId) || 0;
@@ -121,7 +152,7 @@ export async function closeVisitInAltegio(input: VisitCheckoutWriteInput): Promi
       discount,
       cost,
       cost_per_unit: amount > 0 ? toMoney(cost / amount) : cost,
-      record_id: recordId,
+      record_id: s.recordId || recordId,
     };
   });
 
