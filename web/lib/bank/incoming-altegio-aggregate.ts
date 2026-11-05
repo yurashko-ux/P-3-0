@@ -750,20 +750,67 @@ function getAccountInfoFromRaw(raw: RawRecord): { accountTitle: string; accountI
   };
 }
 
-/** Платіж із «Фінансових операцій»: є документ (№ док-та). Рух без документа сюди не входить. */
+/** Готівкові рахунки Altegio (Каса, Долар, Євро, «Готівка») — з monobank не зводимо. */
+function isCashIncomeAccountTitle(accountTitle: string | null | undefined): boolean {
+  const normalized = (accountTitle || "").trim().toLowerCase();
+  if (!normalized) return false;
+  if (normalized === "каса" || normalized.startsWith("каса ")) return true;
+  return ["долар", "dollar", "євро", "евро", "euro", "готів"].some((part) => normalized.includes(part));
+}
+
+function isManualIncomePurpose(purpose: string | null | undefined): boolean {
+  return (purpose || "").toLowerCase().includes("доход");
+}
+
+/**
+ * Ручна операція «Доходи» без документа на безготівковому рахунку
+ * (наприклад, повернення коштів від постачальника на ФОП). Її теж зводимо з банком.
+ */
+function isManualNonCashIncomeRaw(raw: RawRecord, amountKop: bigint): boolean {
+  if (amountKop <= 0n || hasDocumentId(raw)) return false;
+  const purpose = getSalePurposeText(raw);
+  if (!isManualIncomePurpose(purpose)) return false;
+  if (isTransferPurpose(purpose) || isEncashmentRaw(raw)) return false;
+  const { accountTitle } = getAccountInfoFromRaw(raw);
+  return !isCashIncomeAccountTitle(accountTitle);
+}
+
+function isManualNonCashIncomeRow(row: NormalizedAltegioIncomeRow): boolean {
+  return (
+    row.documentId == null
+    && isManualIncomePurpose(row.paymentPurpose)
+    && !isTransferPurpose(row.paymentPurpose)
+    && !isCashIncomeAccountTitle(row.accountTitle)
+  );
+}
+
+/**
+ * Платіж із «Фінансових операцій»: є документ (№ док-та).
+ * Без документа входять лише безготівкові «Доходи» (isManualNonCashIncomeRow).
+ */
 function isFinancialOperationIncomeRow(row: NormalizedAltegioIncomeRow): boolean {
-  return row.documentId != null;
+  return row.documentId != null || isManualNonCashIncomeRow(row);
 }
 
 function isAltegioPaymentRow(raw: RawRecord, amountKop: bigint): boolean {
   if (amountKop <= 0n) return false;
-  if (!hasDocumentId(raw)) return false;
+  // Стаття «Доходи» — це expense_id, тож напрям за статтею тут не перевіряємо
+  if (!hasDocumentId(raw)) return isManualNonCashIncomeRaw(raw, amountKop);
   if (isEncashmentRaw(raw)) return false;
 
   const direction = detectDirectionFromRaw(raw, amountKop);
   if (direction === "out" || direction === "transfer") return false;
 
   return true;
+}
+
+/** Для ручних «Доходів» додаємо коментар: «Доходи · Повернули кошти за накладку». */
+function manualIncomePurposeWithComment(raw: RawRecord): string | null {
+  if (hasDocumentId(raw)) return null;
+  const purpose = getSalePurposeText(raw);
+  const comment = cleanText(raw.comment);
+  if (!purpose || !comment || purpose === comment) return null;
+  return `${purpose} · ${comment}`;
 }
 
 function normalizeIncomeRow(raw: RawRecord, source: "db" | "live"): NormalizedAltegioIncomeRow | null {
@@ -804,7 +851,7 @@ function normalizeIncomeRow(raw: RawRecord, source: "db" | "live"): NormalizedAl
     accountId,
     payerName: getPayerNameFromRaw(raw, counterpartyName),
     amountKop,
-    paymentPurpose: getSalePurposeText(raw),
+    paymentPurpose: manualIncomePurposeWithComment(raw) ?? getSalePurposeText(raw),
     paymentMethodUnknown: !hasPaymentTypeHint(raw),
     kyivDay: timing.kyivDay,
     operationTime: timing.operationTime,
@@ -844,7 +891,11 @@ function normalizeDbRow(row: {
         fromRaw.payerName !== NO_PAYER_LABEL
           ? fromRaw.payerName
           : getPayerNameFromRaw(row.rawData, row.counterpartyName),
-      paymentPurpose: row.paymentPurpose ?? fromRaw.paymentPurpose ?? resolveAltegioPaymentPurposeFromRaw(rawRecord),
+      paymentPurpose:
+        (fromRaw.documentId == null ? fromRaw.paymentPurpose : null)
+        ?? row.paymentPurpose
+        ?? fromRaw.paymentPurpose
+        ?? resolveAltegioPaymentPurposeFromRaw(rawRecord),
       kyivDay: timing.kyivDay,
       operationTime: timing.operationTime,
       source: "db",
@@ -1125,8 +1176,11 @@ async function fetchDbIncomeRowsRange(dateFrom: string, dateTo: string): Promise
       kyivDay: { gte: dateFrom, lte: dateTo },
       deletedInAltegio: false,
       amountKopiykas: { gt: 0 },
-      documentId: { not: null },
-      direction: { notIn: ["out", "transfer"] },
+      OR: [
+        { documentId: { not: null }, direction: { notIn: ["out", "transfer"] } },
+        // Ручні «Доходи» без документа: стаття = expense_id, тому в базі direction може бути «out»
+        { documentId: null, direction: { not: "transfer" } },
+      ],
     },
     select: {
       altegioId: true,
