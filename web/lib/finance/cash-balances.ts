@@ -213,7 +213,10 @@ export async function listCashBalances(): Promise<CashBalanceTile[]> {
     for (const row of counts) if (!latest.has(row.accountId)) latest.set(row.accountId, row);
     for (const tile of cashTiles) {
       const net = ledger
-        .filter((row) => row.accountId === tile.id && row.currency === tile.currency)
+        .filter(
+          (row) =>
+            row.accountId === tile.id && row.currency === tile.currency && row.kyivDay >= CASH_RECONCILE_FROM_KYIV_DAY,
+        )
         .reduce((sum, row) => sum + (row.direction === "out" ? -row.amount : row.amount), 0);
       const opening = openingOf(tile.currency) ?? 0;
       const balance = money(opening + net);

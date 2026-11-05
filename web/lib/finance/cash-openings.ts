@@ -9,3 +9,6 @@ export const CASH_RECONCILE_FROM_KYIV_DAY = "2026-11-05";
 export const CASH_OPENING_UAH: number | null = 86384;
 export const CASH_OPENING_USD: number | null = 630;
 export const CASH_OPENING_EUR: number | null = 0;
+
+/** Історія готівки у вкладці Платежі показується з цього дня (у баланс іде лише з CASH_RECONCILE_FROM_KYIV_DAY). */
+export const CASH_LEDGER_HISTORY_FROM_KYIV_DAY = "2026-10-09";

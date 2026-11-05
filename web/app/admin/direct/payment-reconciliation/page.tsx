@@ -425,7 +425,6 @@ export default function PaymentReconciliationPage() {
   const showIncomingSplit = direction === "in" && (status === "open" || status === "linked" || status === "deposits" || status === "all");
   const showCash = direction === "cash";
   const incomingStatusCounts = incomingControls?.statusCounts ?? { all: 0, open: 0, linked: 0, deposits: 0 };
-  const cashLedgerStatus = status === "linked" ? "linked" : status === "all" ? "all" : "open";
 
   return (
     <main
@@ -475,13 +474,16 @@ export default function PaymentReconciliationPage() {
 
           <div className="flex flex-wrap items-center gap-1.5 rounded-lg border border-amber-200 bg-amber-50/60 px-2 py-1">
             <span className="text-[10px] font-bold uppercase tracking-wide text-amber-900">Готівка</span>
-            <StatusButtonGroup
-              direction="cash"
-              activeDirection={direction}
-              activeStatus={status}
-              statusCounts={cashCounts}
-              onSelect={handleDirectionStatusSelect}
-            />
+            {/* Готівку більше не ділимо на зведену / незведену: баланс = старт + усі рухи */}
+            <button
+              type="button"
+              className={`rounded-full px-2.5 py-0.5 text-[10px] font-medium leading-4 ${
+                direction === "cash" ? "bg-amber-700 text-white" : "bg-gray-100 text-gray-700 hover:bg-gray-200"
+              }`}
+              onClick={() => handleDirectionStatusSelect("cash", "all")}
+            >
+              Усі ({cashCounts.all})
+            </button>
           </div>
 
           {(showOutgoingTable || showIncomingSplit || showCash || direction === "in") ? (
@@ -549,7 +551,7 @@ export default function PaymentReconciliationPage() {
       <div className={showCash ? "flex min-h-0 flex-1 flex-col p-2" : "hidden"} aria-hidden={!showCash}>
         <CashLedgerPanel
           direction="both"
-          status={cashLedgerStatus}
+          status="all"
           reloadToken={cashReload}
           onCounts={setCashCounts}
         />

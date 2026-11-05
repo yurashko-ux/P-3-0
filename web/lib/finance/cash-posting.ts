@@ -9,7 +9,11 @@ import { isCashAltegioAccount } from "@/lib/bank/incoming-reconcile-matching";
 import { extractCurrencyAmountFromComment } from "@/lib/finance/encashment-account-bucket";
 import { isDepositTopUpPaymentPurpose } from "@/lib/altegio/payment-purpose-labels";
 import { isEurCashAccountTitle, isUsdCashAccountTitle } from "@/lib/journal/checkout";
-import { CASH_OPENING_KYIV_DAY, CASH_RECONCILE_FROM_KYIV_DAY } from "@/lib/finance/cash-openings";
+import {
+  CASH_LEDGER_HISTORY_FROM_KYIV_DAY,
+  CASH_OPENING_KYIV_DAY,
+  CASH_RECONCILE_FROM_KYIV_DAY,
+} from "@/lib/finance/cash-openings";
 import { summarizeOpenCashForAccount } from "@/lib/finance/cash-ledger-aggregate";
 import { selectInflowsToHold } from "@/lib/finance/cash-shortage-hold";
 
@@ -133,6 +137,8 @@ export function cashAmountsEqual(a: number, b: number): boolean {
 
 export async function loadCashBookMovements(
   accounts: Array<{ id: number; title: string; currency: CashCurrency }>,
+  /** Рухи після цього дня (за замовчуванням — після старту каси) */
+  afterKyivDay: string = CASH_OPENING_KYIV_DAY,
 ): Promise<CashBookMovement[]> {
   const byId = new Map(accounts.map((account) => [account.id, account]));
   const ids = accounts.map((account) => account.id);
@@ -143,7 +149,7 @@ export async function loadCashBookMovements(
     prisma.salonCheckoutPayment.findMany({
       where: {
         accountId: { in: ids },
-        checkout: { kyivDay: { gt: CASH_OPENING_KYIV_DAY } },
+        checkout: { kyivDay: { gt: afterKyivDay } },
       },
       select: {
         id: true,
@@ -169,7 +175,7 @@ export async function loadCashBookMovements(
           where: {
             source: "kresco",
             status: { not: "void" },
-            kyivDay: { gt: CASH_OPENING_KYIV_DAY },
+            kyivDay: { gt: afterKyivDay },
             OR: [{ accountId: { in: uahIds } }, { counterAccountId: { in: uahIds } }],
           },
           select: {
@@ -491,11 +497,12 @@ export async function listCashLedger(): Promise<CashLedgerRow[]> {
 
   const cashAccountIds = cashAccounts.map((account) => String(account.id));
   const [movements, postings, altegioRows] = await Promise.all([
-    loadCashBookMovements(cashAccounts),
+    // Історія з 09.10 (у баланс каси плитки беруть лише рухи з дня старту)
+    loadCashBookMovements(cashAccounts, "2026-10-08"),
     prisma.cashTillPosting.findMany({
       where: {
         accountId: { in: cashAccounts.map((account) => account.id) },
-        kyivDay: { gte: CASH_RECONCILE_FROM_KYIV_DAY },
+        kyivDay: { gte: CASH_LEDGER_HISTORY_FROM_KYIV_DAY },
       },
       include: {
         count: {
@@ -528,7 +535,7 @@ export async function listCashLedger(): Promise<CashLedgerRow[]> {
             NULLIF("rawData"->>'record_id', '') AS "recordIdText"
           FROM "altegio_finance_transactions"
           WHERE "deletedInAltegio" = false
-            AND "kyivDay" >= ${CASH_RECONCILE_FROM_KYIV_DAY}
+            AND "kyivDay" >= ${CASH_LEDGER_HISTORY_FROM_KYIV_DAY}
             AND "accountId" IN (${Prisma.join(cashAccountIds)})
         `,
   ]);
