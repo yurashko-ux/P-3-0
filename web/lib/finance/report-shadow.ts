@@ -24,6 +24,13 @@ function isExpensePurpose(purpose: string): boolean {
   return !/^Переміщення/.test(purpose) && purpose !== "Без статті";
 }
 
+/** Графік Altegio віддає дату рядком або timestamp, хоч тип і каже string. */
+function incomeDay(date: unknown): string {
+  if (typeof date !== "number") return String(date).slice(0, 10);
+  const ms = date > 1e11 ? date : date * 1000;
+  return new Date(ms).toLocaleDateString("sv-SE", { timeZone: "Europe/Kyiv" });
+}
+
 export function monthRange(month: string): { from: string; to: string } | null {
   const match = month.match(/^(\d{4})-(\d{2})$/);
   if (!match) return null;
@@ -155,11 +162,11 @@ export async function loadFinanceReportShadow(from: string, to: string) {
       localTotal: [...localByCategory.values()].reduce((sum, value) => sum + value, 0),
       rows: expenseRows,
     },
-    days: [...new Set([...summary.incomeDaily.map((d) => d.date.slice(0, 10)), ...krescoByDay.keys()])]
+    days: [...new Set([...summary.incomeDaily.map((d) => incomeDay(d.date)), ...krescoByDay.keys()])]
       .sort()
       .map((day) => {
         const altegioDay = summary.incomeDaily
-          .filter((d) => d.date.slice(0, 10) === day)
+          .filter((d) => incomeDay(d.date) === day)
           .reduce((sum, d) => sum + (Number(d.value) || 0), 0);
         const krescoDay = krescoByDay.get(day) || 0;
         return { day, altegio: altegioDay, kresco: krescoDay, diff: Math.round((krescoDay - altegioDay) * 100) / 100 };
