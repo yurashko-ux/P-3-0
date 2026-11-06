@@ -61,8 +61,10 @@ export function deriveDirectFieldsFromJournal(
 
 type FieldDiff = "journalNewer" | "cardNewer" | "attendance";
 
-function sameMinute(a: Date, b: Date): boolean {
-  return Math.abs(a.getTime() - b.getTime()) < 60_000;
+/** Вебхук зберігає салонний час із позначкою UTC, журнал — справжній UTC: різниця 2 або 3 години не є розбіжністю. */
+function sameMinute(card: Date, journal: Date): boolean {
+  const diff = card.getTime() - journal.getTime();
+  return [0, 2, 3].some((hours) => Math.abs(diff - hours * 3_600_000) < 60_000);
 }
 
 function compareBlock(
@@ -70,10 +72,10 @@ function compareBlock(
   journal: { date: Date | null; attended: boolean | null },
 ): FieldDiff | null {
   if (!journal.date) return null;
-  if (!card.date || journal.date > card.date) {
-    return card.date && sameMinute(card.date, journal.date) ? null : "journalNewer";
+  if (!card.date) return "journalNewer";
+  if (!sameMinute(card.date, journal.date)) {
+    return journal.date > card.date ? "journalNewer" : "cardNewer";
   }
-  if (!sameMinute(card.date, journal.date)) return "cardNewer";
   return (card.attended ?? null) === journal.attended ? null : "attendance";
 }
 
