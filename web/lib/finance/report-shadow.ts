@@ -70,7 +70,8 @@ export async function loadFinanceReportShadow(from: string, to: string) {
       FROM "altegio_finance_transactions"
       WHERE "kyivDay" >= ${from} AND "kyivDay" <= ${to}
         AND "deletedInAltegio" = false
-        AND "direction" = 'in'
+        AND "amountKopiykas" > 0
+        AND "direction" <> 'transfer'
         AND "paymentPurpose" = 'Продаж товарів'
         AND COALESCE(NULLIF("rawData"->>'record_id', '0'), '') = ''
     `,

@@ -57,7 +57,13 @@ export async function fetchKrescoFinanceSummary(from: string, to: string): Promi
       },
     }),
     prisma.altegioFinanceTransaction.findMany({
-      where: { kyivDay: { gte: from, lte: to }, deletedInAltegio: false, direction: "in" },
+      // Стаття доходу приходить як expense_id, тому direction доходу буває «out»: орієнтир — знак суми.
+      where: {
+        kyivDay: { gte: from, lte: to },
+        deletedInAltegio: false,
+        amountKopiykas: { gt: 0 },
+        direction: { not: "transfer" },
+      },
       select: { kyivDay: true, amountKopiykas: true, paymentPurpose: true, rawData: true },
     }),
     // Поповнення, що є лише в Kresco; імпортовані вже прийшли з фінансових операцій.
