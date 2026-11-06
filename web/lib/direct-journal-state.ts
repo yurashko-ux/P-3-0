@@ -7,6 +7,7 @@ import { prisma } from "@/lib/prisma";
 export type JournalAppointment = {
   datetime: Date;
   attendance: number | null;
+  staffName?: string | null;
   lines: Array<{ title: string; cost: number; kind?: string | null }>;
 };
 
@@ -42,6 +43,22 @@ function attendedFromMark(attendance: number | null, confirmedCounts: boolean): 
   if (attendance === 1 || (attendance === 2 && confirmedCounts)) return true;
   if (attendance === -1) return false;
   return null;
+}
+
+/** Майстер, стан, сума й вогник поточного платного запису. Записи одного часу — це один візит кількох майстрів. */
+export function deriveDirectDetailsFromJournal(appointments: JournalAppointment[], now: Date = new Date()) {
+  const paidRows = appointments.filter(isPaid);
+  const current = currentAppointment(paidRows, now);
+  if (!current) return null;
+  const visit = paidRows.filter((a) => a.datetime.getTime() === current.datetime.getTime());
+  const rowTotal = (a: JournalAppointment) => a.lines.reduce((sum, line) => sum + (Number(line.cost) || 0), 0);
+  return {
+    state: determineStateFromServices(current.lines),
+    masters: [...new Set(visit.map((a) => a.staffName?.trim()).filter((name): name is string => !!name))],
+    // Рядки дублюються в записах кількох майстрів, тому допускаємо суму одного запису і всього візиту.
+    totals: [rowTotal(current), visit.reduce((sum, a) => sum + rowTotal(a), 0)],
+    hadPaidBefore: paidRows.some((a) => a.datetime < current.datetime && a.attendance === 1),
+  };
 }
 
 export function deriveDirectFieldsFromJournal(
@@ -89,6 +106,7 @@ export async function compareDirectWithJournal(days: number, sampleLimit = 40) {
       directClientId: true,
       datetime: true,
       attendance: true,
+      staffName: true,
       lines: { select: { title: true, cost: true, service: { select: { kind: true } } } },
     },
   });
@@ -98,6 +116,7 @@ export async function compareDirectWithJournal(days: number, sampleLimit = 40) {
     list.push({
       datetime: a.datetime,
       attendance: a.attendance,
+      staffName: a.staffName,
       lines: a.lines.map((l) => ({ title: l.title, cost: l.cost, kind: l.service?.kind })),
     });
     byClient.set(a.directClientId!, list);
@@ -115,6 +134,10 @@ export async function compareDirectWithJournal(days: number, sampleLimit = 40) {
       paidServiceAttended: true,
       consultationCancelled: true,
       paidServiceCancelled: true,
+      state: true,
+      serviceMasterName: true,
+      paidServiceTotalCost: true,
+      paidRecordsInHistoryCount: true,
     },
   });
 
@@ -123,6 +146,17 @@ export async function compareDirectWithJournal(days: number, sampleLimit = 40) {
     paid: { journalNewer: 0, cardNewer: 0, attendance: 0 },
   };
   const samples: Array<Record<string, unknown>> = [];
+  const details = {
+    compared: 0,
+    masterDiff: 0,
+    totalDiff: 0,
+    totalJournalZero: 0,
+    /** Картка каже «перший платний» (вогник), а в журналі вже був відвіданий платний запис. */
+    fireDiff: 0,
+    /** Пари «стан картки → стан із журналу»: стан картки має проміжні значення, тому без оцінки. */
+    statePairs: {} as Record<string, number>,
+  };
+  const detailSamples: Array<Record<string, unknown>> = [];
   let matched = 0;
   for (const client of clients) {
     const journal = deriveDirectFieldsFromJournal(byClient.get(client.id) ?? []);
@@ -135,6 +169,36 @@ export async function compareDirectWithJournal(days: number, sampleLimit = 40) {
       { date: journal.paidServiceDate, attended: journal.paidServiceAttended },
     );
     // -1 до дати візиту картка тримає як «скасовано», а не «не з'явився».
+    const detail = deriveDirectDetailsFromJournal(byClient.get(client.id) ?? []);
+    if (detail && !paid) {
+      details.compared += 1;
+      const stateKey = `${client.state ?? "—"} → ${detail.state ?? "—"}`;
+      details.statePairs[stateKey] = (details.statePairs[stateKey] || 0) + 1;
+      const cardMaster = client.serviceMasterName ?? "";
+      const masterDiff = detail.masters.length > 0 && !detail.masters.some((name) => cardMaster.includes(name));
+      const hasJournalTotal = detail.totals[0] > 0;
+      const totalDiff =
+        hasJournalTotal && client.paidServiceTotalCost != null && !detail.totals.includes(client.paidServiceTotalCost);
+      const fireDiff = client.paidRecordsInHistoryCount === 0 && detail.hadPaidBefore;
+      if (masterDiff) details.masterDiff += 1;
+      if (totalDiff) details.totalDiff += 1;
+      if (!hasJournalTotal) details.totalJournalZero += 1;
+      if (fireDiff) details.fireDiff += 1;
+      if ((masterDiff || totalDiff || fireDiff) && detailSamples.length < sampleLimit) {
+        detailSamples.push({
+          client: [client.lastName, client.firstName].filter(Boolean).join(" ") || client.instagramUsername,
+          masterDiff,
+          totalDiff,
+          fireDiff,
+          card: {
+            master: client.serviceMasterName,
+            total: client.paidServiceTotalCost,
+            paidBefore: client.paidRecordsInHistoryCount,
+          },
+          journal: detail,
+        });
+      }
+    }
     if (consultation) counts.consultation[consultation] += 1;
     if (paid) counts.paid[paid] += 1;
     if (!consultation && !paid) {
@@ -161,5 +225,5 @@ export async function compareDirectWithJournal(days: number, sampleLimit = 40) {
       });
     }
   }
-  return { days, compared: clients.length, matched, counts, samples };
+  return { days, compared: clients.length, matched, counts, samples, details, detailSamples };
 }
