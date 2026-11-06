@@ -69,7 +69,12 @@ export async function loadFinanceReportShadow(from: string, to: string) {
   ]);
 
   const kresco = { services: 0, goods: 0, total: 0, checkouts: checkouts.length };
+  const krescoByDay = new Map<string, number>();
   for (const c of checkouts) {
+    krescoByDay.set(
+      c.kyivDay,
+      (krescoByDay.get(c.kyivDay) || 0) + (Number(c.totalServices) || 0) + (Number(c.totalGoods) || 0),
+    );
     kresco.services += Number(c.totalServices) || 0;
     kresco.goods += Number(c.totalGoods) || 0;
     kresco.total += Number(c.paidAmount) || 0;
@@ -150,6 +155,16 @@ export async function loadFinanceReportShadow(from: string, to: string) {
       localTotal: [...localByCategory.values()].reduce((sum, value) => sum + value, 0),
       rows: expenseRows,
     },
+    days: [...new Set([...summary.incomeDaily.map((d) => d.date.slice(0, 10)), ...krescoByDay.keys()])]
+      .sort()
+      .map((day) => {
+        const altegioDay = summary.incomeDaily
+          .filter((d) => d.date.slice(0, 10) === day)
+          .reduce((sum, d) => sum + (Number(d.value) || 0), 0);
+        const krescoDay = krescoByDay.get(day) || 0;
+        return { day, altegio: altegioDay, kresco: krescoDay, diff: Math.round((krescoDay - altegioDay) * 100) / 100 };
+      })
+      .filter((row) => Math.abs(row.diff) >= 1),
     salesWithoutRecord: {
       uah: Number(salesWithoutRecord[0]?.kopiykas ?? 0) / 100,
       count: Number(salesWithoutRecord[0]?.count ?? 0),
