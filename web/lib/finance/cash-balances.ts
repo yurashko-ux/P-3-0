@@ -1,7 +1,6 @@
 // Залишки рахунків для розділу Каса.
-// Готівка: баланс після останньої касовки (bookUah). Надлишок у нього не входить.
-// Непроведені платежі і надлишок або недостача — окремими рядками знизу.
-// Якщо касовки ще не було — початковий залишок. Безготівка: фактичний баланс monobank.
+// Готівка: старт + усі рухи з дня старту. Розбіжність останньої касовки — окремим рядком знизу.
+// Безготівка: фактичний баланс monobank.
 
 import { prisma } from "@/lib/prisma";
 import { fetchAltegioAccounts } from "@/lib/altegio/accounts";
@@ -35,12 +34,8 @@ export type CashBalanceTile = {
   hasBank: boolean;
   /** Остання касовка цієї каси за сьогодні (Київ), у валюті каси. null — сьогодні не рахували. */
   countedUah: number | null;
-  /** Сума ще не проведених платежів після останньої збіжної касовки. */
-  openPaymentsNet: number;
-  /** Кількість ще не проведених платежів. */
-  openPaymentsCount: number;
-  /** Найстаріший день серед непроведених платежів (Europe/Kyiv). */
-  openPaymentsFromKyivDay: string | null;
+  /** День останньої касовки цієї каси (Europe/Kyiv), зокрема до дня старту. null — касовок не було. */
+  lastCountKyivDay: string | null;
   /** Останнє значення «Пораховані» з касовки цієї каси. */
   lastBundledAmount: number | null;
   /** Факт мінус очікувана за останньою касовкою. >0 надлишок, <0 недостача, null — розбіжності немає. */
@@ -133,9 +128,7 @@ export async function listCashBalances(): Promise<CashBalanceTile[]> {
           openingPending: false,
           hasBank: bank != null,
           countedUah: null,
-          openPaymentsNet: 0,
-          openPaymentsCount: 0,
-          openPaymentsFromKyivDay: null,
+          lastCountKyivDay: null,
           lastBundledAmount: null,
           variance: null,
         };
@@ -152,9 +145,7 @@ export async function listCashBalances(): Promise<CashBalanceTile[]> {
           openingPending: true,
           hasBank: false,
           countedUah: null,
-          openPaymentsNet: 0,
-          openPaymentsCount: 0,
-          openPaymentsFromKyivDay: null,
+          lastCountKyivDay: null,
           lastBundledAmount: null,
           variance: null,
         };
@@ -170,9 +161,7 @@ export async function listCashBalances(): Promise<CashBalanceTile[]> {
           openingPending: false,
           hasBank: false,
           countedUah: null,
-          openPaymentsNet: 0,
-          openPaymentsCount: 0,
-          openPaymentsFromKyivDay: null,
+          lastCountKyivDay: null,
           lastBundledAmount: null,
           variance: null,
         };
@@ -187,9 +176,7 @@ export async function listCashBalances(): Promise<CashBalanceTile[]> {
         openingPending: false,
         hasBank: false,
         countedUah: null,
-        openPaymentsNet: 0,
-        openPaymentsCount: 0,
-        openPaymentsFromKyivDay: null,
+        lastCountKyivDay: null,
         lastBundledAmount: null,
         variance: null,
       };
@@ -197,18 +184,25 @@ export async function listCashBalances(): Promise<CashBalanceTile[]> {
     .sort(sortTiles);
 
   // Баланс готівкової каси = старт + усі рухи з дня старту (Kresco і Altegio), без «проведення».
-  // Касовка лише порівнює факт з балансом; її розбіжність показуємо до наступних рухів.
+  // Касовка лише порівнює факт з балансом; її розбіжність показуємо до наступної касовки.
   const cashTiles = tiles.filter((tile) => tile.cash && !tile.openingPending);
   const countableIds = cashTiles.map((tile) => tile.id);
   if (countableIds.length > 0) {
-    const [counts, ledger] = await Promise.all([
+    const [counts, lastCounts, ledger] = await Promise.all([
       prisma.cashTillCount.findMany({
         where: { accountId: { in: countableIds }, kyivDay: { gte: CASH_RECONCILE_FROM_KYIV_DAY } },
         orderBy: { createdAt: "desc" },
         select: { accountId: true, countedUah: true, varianceUah: true, bundledAmount: true },
       }),
+      prisma.cashTillCount.findMany({
+        where: { accountId: { in: countableIds } },
+        orderBy: { createdAt: "desc" },
+        distinct: ["accountId"],
+        select: { accountId: true, kyivDay: true },
+      }),
       listCashLedger(),
     ]);
+    const lastCountDay = new Map(lastCounts.map((row) => [row.accountId, row.kyivDay]));
     const latest = new Map<number, (typeof counts)[number]>();
     for (const row of counts) if (!latest.has(row.accountId)) latest.set(row.accountId, row);
     for (const tile of cashTiles) {
@@ -222,6 +216,7 @@ export async function listCashBalances(): Promise<CashBalanceTile[]> {
       const balance = money(opening + net);
       if (tile.currency === "UAH") tile.balanceUah = balance;
       else tile.balanceFx = balance;
+      tile.lastCountKyivDay = lastCountDay.get(tile.id) ?? null;
       const count = latest.get(tile.id);
       if (count) {
         tile.countedUah = money(count.countedUah);

@@ -86,7 +86,6 @@ export async function saveCashTillCount(input: {
   const countedUah = Math.round((bundledAmount + looseTotal) * 100) / 100;
   const previous = bookAmount(tile);
   if (previous == null) throw new Error("Немає балансу каси");
-  const openNet = tile.openPaymentsNet || 0;
   const kyivDay = kyivCalendarTodayYmd();
   const saved = await prisma.cashTillCount.create({
     data: {
@@ -109,7 +108,7 @@ export async function saveCashTillCount(input: {
     previous,
   });
   console.log(
-    `[finance/cash-count] ${kyivDay} каса ${accountId} «${tile.title}»: попередня ${previous}, не проведено ${openNet}, очікувано ${posting.expected}, пораховані ${bundledAmount}, купюри ${looseTotal}, факт ${countedUah} ${currency}, розбіжність ${posting.variance}, проведено ${posting.posted}, лишили ${posting.held}`,
+    `[finance/cash-count] ${kyivDay} каса ${accountId} «${tile.title}»: очікувано ${posting.expected}, пораховані ${bundledAmount}, купюри ${looseTotal}, факт ${countedUah} ${currency}, розбіжність ${posting.variance}, позначено платежів ${posting.posted}`,
   );
   return { countedUah, bundledAmount, kyivDay };
 }
@@ -160,7 +159,7 @@ export async function listSavedCashCounts(limit = 200): Promise<SavedCashCountRo
   }));
 }
 
-/** Видаляє касовку і її проводки. Платежі знову стають незведеними. */
+/** Видаляє касовку і її позначки на платежах. Баланс каси від цього не змінюється. */
 export async function deleteCashTillCount(id: string): Promise<void> {
   const countId = id.trim();
   if (!countId) throw new Error("Немає id касовки");

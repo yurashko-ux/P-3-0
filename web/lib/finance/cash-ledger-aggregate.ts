@@ -96,33 +96,3 @@ export function aggregateOpenCashLedgerRows<T extends CashLedgerAggregateSource>
   }
   return aggregated;
 }
-
-export function summarizeAggregatedCashRows(
-  rows: Array<{ amount: number; direction: "in" | "out"; kyivDay: string }>,
-): { net: number; count: number; fromKyivDay: string | null } {
-  let net = 0;
-  let fromKyivDay: string | null = null;
-  for (const row of rows) {
-    net += row.direction === "out" ? -row.amount : row.amount;
-    if (!fromKyivDay || row.kyivDay < fromKyivDay) fromKyivDay = row.kyivDay;
-  }
-  return {
-    net: Math.round(net * 100) / 100,
-    count: rows.length,
-    fromKyivDay,
-  };
-}
-
-/** Непроведені рядки однієї каси — як «Не зведені» у вкладці Готівка, відфільтровані по рахунку. */
-export function summarizeOpenCashForAccount<
-  T extends CashLedgerAggregateSource & { accountId: number; posted: boolean },
->(
-  ledger: T[],
-  accountId: number,
-  currency: string,
-): { net: number; count: number; fromKyivDay: string | null } {
-  const open = ledger.filter(
-    (row) => row.accountId === accountId && row.currency === currency && !row.posted,
-  );
-  return summarizeAggregatedCashRows(aggregateOpenCashLedgerRows(open));
-}

@@ -1,7 +1,6 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
-import { summarizeOpenCashForAccount } from "@/lib/finance/cash-ledger-aggregate";
 import { CashCountModal } from "./CashCountModal";
 
 type CashTile = {
@@ -14,25 +13,9 @@ type CashTile = {
   openingPending: boolean;
   hasBank: boolean;
   countedUah: number | null;
-  openPaymentsNet: number;
-  openPaymentsCount: number;
-  openPaymentsFromKyivDay: string | null;
+  lastCountKyivDay: string | null;
   lastBundledAmount: number | null;
   variance: number | null;
-};
-
-type LedgerApiRow = {
-  accountId: number;
-  currency: string;
-  direction: "in" | "out";
-  amount: number;
-  kyivDay: string;
-  occurredAt: string;
-  title: string;
-  clientName: string;
-  recordId: number | null;
-  posted: boolean;
-  accountTitle: string;
 };
 
 /** На плитках показуємо до 1 грн / 1 од. валюти, без копійок. */
@@ -44,15 +27,6 @@ function fxSymbol(currency: CashTile["currency"]) {
   if (currency === "USD") return "$";
   if (currency === "EUR") return "€";
   return currency;
-}
-
-function paymentsWord(count: number): string {
-  const n = Math.abs(count) % 100;
-  const last = n % 10;
-  if (n >= 11 && n <= 14) return "платежів";
-  if (last === 1) return "платіж";
-  if (last >= 2 && last <= 4) return "платежі";
-  return "платежів";
 }
 
 function formatKyivDayShort(ymd: string | null | undefined): string | null {
@@ -94,31 +68,17 @@ function VarianceLine({ tile }: { tile: CashTile }) {
   return (
     <span
       className={`mt-0.5 text-[11px] font-medium leading-tight tabular-nums ${shortage ? "text-red-600" : "text-amber-700"}`}
-      title={shortage ? "У касі менше, ніж за проведеними платежами" : "У касі більше, ніж за проведеними платежами"}
+      title={shortage ? "За останньою касовкою в касі менше, ніж за балансом" : "За останньою касовкою в касі більше, ніж за балансом"}
     >
       {shortage ? "недостача −" : "надлишок"} {money(Math.abs(variance))} {unit}
     </span>
   );
 }
 
-function OpenPaymentsLine({ tile }: { tile: CashTile }) {
-  if (!tile.cash || !tile.openPaymentsCount) return null;
-  const count = tile.openPaymentsCount;
-  const net = tile.openPaymentsNet || 0;
-  const unit = tile.currency === "UAH" ? "грн" : fxSymbol(tile.currency);
-  const from = formatKyivDayShort(tile.openPaymentsFromKyivDay);
-  const tone = net < 0 ? "text-red-600" : "text-emerald-700";
-  return (
-    <span
-      className={`mt-0.5 text-[11px] font-medium leading-tight tabular-nums ${tone}`}
-      title="Непроведені платежі після останньої збіжної касовки"
-    >
-      {count} {paymentsWord(count)}
-      {from ? ` з ${from}` : ""}{" "}
-      {net > 0 ? "+" : ""}
-      {money(net)} {unit}
-    </span>
-  );
+function LastCountLine({ tile }: { tile: CashTile }) {
+  const day = formatKyivDayShort(tile.lastCountKyivDay);
+  if (!tile.cash || !day) return null;
+  return <span className="mt-0.5 text-[11px] leading-tight tabular-nums text-gray-500">касовка {day}</span>;
 }
 
 function TileFace({ tile }: { tile: CashTile }) {
@@ -135,13 +95,13 @@ function TileFace({ tile }: { tile: CashTile }) {
           <span className="mt-1 text-lg font-semibold tabular-nums text-gray-900">
             {money(tile.balanceFx)} {fxSymbol(tile.currency)}
           </span>
-          <OpenPaymentsLine tile={tile} />
+          <LastCountLine tile={tile} />
           <VarianceLine tile={tile} />
         </>
       ) : (
         <>
           <span className="mt-1 text-lg font-semibold tabular-nums text-gray-900">{money(book || 0)} грн</span>
-          <OpenPaymentsLine tile={tile} />
+          <LastCountLine tile={tile} />
           <VarianceLine tile={tile} />
         </>
       )}
@@ -159,39 +119,10 @@ export default function CashBalancesPage() {
     setLoading(true);
     setError(null);
     try {
-      // Баланс з /cash, непроведені — з того самого ledger, що вкладка «Готівка».
-      const [cashRes, ledgerRes] = await Promise.all([
-        fetch("/api/admin/finance/cash", { credentials: "include", cache: "no-store" }),
-        fetch("/api/admin/finance/cash/ledger", { credentials: "include", cache: "no-store" }),
-      ]);
+      const cashRes = await fetch("/api/admin/finance/cash", { credentials: "include", cache: "no-store" });
       const cashJson = await cashRes.json();
       if (!cashRes.ok || !cashJson.ok) throw new Error(cashJson.error || "Помилка завантаження");
-      const tilesRaw = (cashJson.tiles || []) as CashTile[];
-
-      let ledger: LedgerApiRow[] = [];
-      if (ledgerRes.ok) {
-        const ledgerJson = await ledgerRes.json();
-        if (ledgerJson.ok && Array.isArray(ledgerJson.rows)) {
-          ledger = ledgerJson.rows as LedgerApiRow[];
-        } else {
-          console.warn("[finance/cash] Ledger для непроведених не завантажився, лишаємо дані з /cash");
-        }
-      } else {
-        console.warn("[finance/cash] Ledger HTTP", ledgerRes.status);
-      }
-
-      setTiles(
-        tilesRaw.map((tile) => {
-          if (!tile.cash || tile.openingPending || ledger.length === 0) return tile;
-          const open = summarizeOpenCashForAccount(ledger, tile.id, tile.currency);
-          return {
-            ...tile,
-            openPaymentsNet: open.net,
-            openPaymentsCount: open.count,
-            openPaymentsFromKyivDay: open.fromKyivDay,
-          };
-        }),
-      );
+      setTiles((cashJson.tiles || []) as CashTile[]);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Помилка");
     } finally {
@@ -253,7 +184,7 @@ export default function CashBalancesPage() {
           currency={countTile.currency}
           initialBundledAmount={countTile.lastBundledAmount}
           book={bookAmount(countTile)}
-          openNet={countTile.openPaymentsNet || 0}
+          lastCountLabel={formatKyivDayShort(countTile.lastCountKyivDay)}
           onClose={() => setCountTile(null)}
           onSaved={() => {
             setCountTile(null);

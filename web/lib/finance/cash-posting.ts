@@ -1,7 +1,7 @@
-// Готівкові рухи каси і проводка касовкою.
-// Збіг і надлишок проводять усі очікуючі платежі. Недостача лишає непроведеними приходи,
-// які покривають різницю. Плитка показує баланс після проведення, не факт у шухляді.
-// Старі рядки Altegio до 09.10 у проводку не беремо: вони вже в початковому залишку.
+// Готівкові рухи каси і фіксація касовки.
+// Баланс каси = старт + усі рухи; касовка лише порівнює факт з балансом і записує розбіжність.
+// Усі рухи до касовки позначаємо нею — це лише зв'язок для вкладки Готівка, на баланс не впливає.
+// Рядки Altegio до дня старту в касовку не беремо: вони вже в початковому залишку.
 
 import { Prisma } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
@@ -14,8 +14,6 @@ import {
   CASH_OPENING_KYIV_DAY,
   CASH_RECONCILE_FROM_KYIV_DAY,
 } from "@/lib/finance/cash-openings";
-import { summarizeOpenCashForAccount } from "@/lib/finance/cash-ledger-aggregate";
-import { selectInflowsToHold } from "@/lib/finance/cash-shortage-hold";
 
 type CashCurrency = "UAH" | "USD" | "EUR";
 
@@ -256,31 +254,6 @@ export async function loadCashBookMovements(
   return movements;
 }
 
-function signed(movement: Pick<CashBookMovement, "direction" | "amount">): number {
-  return movement.direction === "out" ? -movement.amount : movement.amount;
-}
-
-export type OpenCashNet = {
-  net: number;
-  count: number;
-  /** Найстаріший київський день серед непроведених платежів. */
-  fromKyivDay: string | null;
-};
-
-export async function openCashNetsForAccounts(
-  accounts: Array<{ id: number; title: string; currency: CashCurrency }>,
-): Promise<Map<number, OpenCashNet>> {
-  const out = new Map<number, OpenCashNet>();
-  if (accounts.length === 0) return out;
-
-  // Ті самі дані, що вкладка «Готівка» (/api/admin/finance/cash/ledger).
-  const ledger = await listCashLedger();
-  for (const account of accounts) {
-    out.set(account.id, summarizeOpenCashForAccount(ledger, account.id, account.currency));
-  }
-  return out;
-}
-
 type FreshCashMovement = {
   key: string;
   sourceType: string;
@@ -297,9 +270,9 @@ export async function postCashCount(input: {
   accountTitle: string;
   currency: CashCurrency;
   counted: number;
-  /** Баланс плитки до цієї касовки, без непроведених платежів. */
+  /** Баланс плитки: старт + усі рухи. */
   previous: number;
-}): Promise<{ matched: boolean; posted: number; expected: number; variance: number; book: number; held: number }> {
+}): Promise<{ matched: boolean; posted: number; expected: number; variance: number; book: number }> {
   const movements = await loadCashBookMovements([
     { id: input.accountId, title: input.accountTitle, currency: input.currency },
   ]);
@@ -339,18 +312,12 @@ export async function postCashCount(input: {
     });
   }
 
-  // previous — баланс плитки, що вже містить усі рухи з дня старту. Нічого не притримуємо:
-  // касовка лише фіксує розбіжність; усі рухи до неї позначаємо проведеними.
+  // previous — баланс плитки, що вже містить усі рухи з дня старту.
   const expected = money(input.previous);
   const rawVariance = money(input.counted - expected);
   const matched = cashAmountsEqual(input.counted, expected);
   const variance = matched ? 0 : rawVariance;
-  const shortage = variance < 0 ? money(-variance) : 0;
-  const heldKeys = new Set<string>();
-  const held = money(
-    fresh.reduce((sum, movement) => (heldKeys.has(movement.key) ? sum + movement.amount : sum), 0),
-  );
-  const book = money(expected - held);
+  const book = expected;
 
   await prisma.cashTillCount.update({
     where: { id: input.countId },
@@ -362,17 +329,15 @@ export async function postCashCount(input: {
     },
   });
 
-  const toPost = fresh
-    .filter((movement) => !heldKeys.has(movement.key))
-    .map((movement) => ({
-      countId: input.countId,
-      accountId: movement.accountId,
-      sourceType: movement.sourceType,
-      sourceId: movement.sourceId,
-      direction: movement.direction,
-      amount: movement.amount,
-      kyivDay: movement.kyivDay,
-    }));
+  const toPost = fresh.map((movement) => ({
+    countId: input.countId,
+    accountId: movement.accountId,
+    sourceType: movement.sourceType,
+    sourceId: movement.sourceId,
+    direction: movement.direction,
+    amount: movement.amount,
+    kyivDay: movement.kyivDay,
+  }));
   if (toPost.length > 0) {
     await prisma.cashTillPosting.createMany({
       data: toPost,
@@ -380,11 +345,11 @@ export async function postCashCount(input: {
     });
   }
 
-  const gapLabel = matched ? "збіг" : variance > 0 ? `надлишок ${variance}` : `недостача ${shortage}, лишили приходи ${held}`;
+  const gapLabel = matched ? "збіг" : variance > 0 ? `надлишок ${variance}` : `недостача ${money(-variance)}`;
   console.log(
-    `[finance/cash-posting] Касовка ${input.countId} каси ${input.accountId} «${input.accountTitle}»: факт ${input.counted}, очікувано ${expected}, ${gapLabel}. Проведено ${toPost.length} з ${fresh.length}, баланс плитки ${book} ${input.currency}`,
+    `[finance/cash-posting] Касовка ${input.countId} каси ${input.accountId} «${input.accountTitle}»: факт ${input.counted}, очікувано ${expected}, ${gapLabel}. Позначено платежів ${toPost.length}, баланс плитки ${book} ${input.currency}`,
   );
-  return { matched, posted: toPost.length, expected, variance, book, held };
+  return { matched, posted: toPost.length, expected, variance, book };
 }
 
 type AltegioPostingRow = {
@@ -395,7 +360,7 @@ type AltegioPostingRow = {
   kyivDay: string;
 };
 
-/** Готівкові платежі Altegio цієї каси з 09.10, яких ще немає в проводці. */
+/** Готівкові платежі Altegio цієї каси з дня старту, яких ще немає в касовці. */
 async function loadUnpostedAltegioCash(
   accountId: number,
   accountTitle: string,

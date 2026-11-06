@@ -52,10 +52,10 @@ type Props = {
   currency: CashCountCurrency;
   /** Останнє збережене «Пораховані» — підставляємо, щоб не вводити скріплену пачку знову. */
   initialBundledAmount?: number | null;
-  /** Баланс плитки до проведення платежів. */
+  /** Баланс плитки: старт + усі рухи. Це і є очікувана сума в касі. */
   book?: number | null;
-  /** Сума ще непроведених платежів. Від'ємна, якщо виходів більше. */
-  openNet?: number;
+  /** Дата останньої касовки цієї каси, вже відформатована. */
+  lastCountLabel?: string | null;
   onClose: () => void;
   onSaved: () => void;
 };
@@ -66,7 +66,7 @@ export function CashCountModal({
   currency,
   initialBundledAmount = null,
   book = null,
-  openNet = 0,
+  lastCountLabel = null,
   onClose,
   onSaved,
 }: Props) {
@@ -99,8 +99,7 @@ export function CashCountModal({
   const bundledAmount = parseAmountInput(bundled);
   const looseTotal = denoms.reduce((sum, denomination, index) => sum + lineQty(index) * denomination, 0);
   const total = Math.round((bundledAmount + looseTotal) * 100) / 100;
-  const expected = book == null ? null : Math.round((book + openNet) * 100) / 100;
-  const showFormula = expected != null && book != null && Math.abs(openNet) >= 0.005;
+  const expected = book == null ? null : Math.round(book * 100) / 100;
 
   async function submit() {
     setBusy(true);
@@ -154,11 +153,9 @@ export function CashCountModal({
               <div className="text-xl font-semibold tabular-nums text-gray-900">
                 {money(expected)} {unit}
               </div>
-              {showFormula ? (
-                <div className="mt-0.5 text-[10px] tabular-nums text-gray-400">
-                  {money(book || 0)} {openNet < 0 ? "−" : "+"} {money(Math.abs(openNet))} = {money(expected)}
-                </div>
-              ) : null}
+              <div className="mt-0.5 text-[10px] tabular-nums text-gray-400">
+                {lastCountLabel ? `остання касовка ${lastCountLabel}` : "касовок ще не було"}
+              </div>
             </div>
           ) : null}
           <div className="rounded-2xl border border-slate-200/80 bg-white px-3 py-2.5 text-center shadow-[0_1px_2px_rgba(15,23,42,0.05),0_8px_18px_-10px_rgba(15,23,42,0.25)]">
