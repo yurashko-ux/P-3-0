@@ -185,6 +185,7 @@ export type RecordPaymentState = {
   /** Товари Altegio належать візиту: при кількох майстрах однакові в кожному записі. */
   goodsTotal: number;
   services: Array<{ id: number; cost: number }>;
+  goods: Array<{ goodId: number; storageId: number; title: string; quantity: number; total: number }>;
 };
 
 /**
@@ -212,6 +213,15 @@ export async function fetchRecordPaymentState(
       0,
     );
     const servicesTotal = services.reduce((sum: number, s: { cost: number }) => sum + s.cost, 0);
+    const goodsLines = goods
+      .map((g: any) => ({
+        goodId: Number(g?.good_id) || 0,
+        storageId: Number(g?.storage_id) || 0,
+        title: normalizeName(g?.title),
+        quantity: Math.abs(Number(g?.amount) || 0),
+        total: Math.abs(toMoney(g?.cost_to_pay ?? g?.cost)),
+      }))
+      .filter((g: { goodId: number; quantity: number }) => g.goodId > 0 && g.quantity > 0);
     const paidFull = Number(data.paid_full) === 1;
     return {
       paidFull,
@@ -220,6 +230,7 @@ export async function fetchRecordPaymentState(
       servicesTotal: toMoney(servicesTotal),
       goodsTotal: toMoney(goodsTotal),
       services,
+      goods: goodsLines,
     };
   } catch (error) {
     console.warn('[altegio/record-payments] ⚠️ Не вдалося прочитати стан оплати запису:', {

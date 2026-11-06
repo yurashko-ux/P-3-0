@@ -773,6 +773,8 @@ model SalonCheckoutGoodLine {
   title          String
   quantity       Float  @default(1)
   salePrice      Float  @default(0)
+  /// Собівартість за одиницю на момент продажу. null — у картці товару її не було.
+  costPerUnit    Float?
   altegioGoodId  Int?
 
   checkout SalonCheckout     @relation(fields: [checkoutId], references: [id], onDelete: Cascade)

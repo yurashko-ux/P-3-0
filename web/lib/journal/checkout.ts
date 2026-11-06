@@ -2,7 +2,7 @@
 
 import { prisma } from "@/lib/prisma";
 import { fetchAltegioAccounts } from "@/lib/altegio/accounts";
-import { fetchRecordPaymentState } from "@/lib/altegio/record-payments";
+import { fetchRecordPaymentState, type RecordPaymentState } from "@/lib/altegio/record-payments";
 import {
   closeVisitInAltegio,
   resolveAltegioVisitId,
@@ -329,6 +329,9 @@ export async function upsertCheckoutFromAltegioPayments(params: {
         },
       });
 
+  // Чек Kresco сюди не доходить: рядки товарів лише для імпортованих оплат.
+  await replaceImportedGoodLines(checkout.id, earlierInVisit ? [] : state.goods);
+
   // Рахунок технічний: реальні гроші по рахунках ведуть фінансові операції, у Касу цей рядок не йде.
   await prisma.salonCheckoutPayment.deleteMany({ where: { checkoutId: checkout.id } });
   await prisma.salonCheckoutPayment.create({
@@ -356,6 +359,41 @@ export async function upsertCheckoutFromAltegioPayments(params: {
   });
 }
 
+/** Товари візиту з картки Altegio → рядки чека з собівартістю із картки товару. */
+async function replaceImportedGoodLines(checkoutId: string, goods: RecordPaymentState["goods"]) {
+  await prisma.salonCheckoutGoodLine.deleteMany({ where: { checkoutId } });
+  if (goods.length === 0) return;
+  const [products, storages] = await Promise.all([
+    prisma.warehouseProduct.findMany({
+      where: { altegioGoodId: { in: goods.map((g) => g.goodId) } },
+      select: { id: true, altegioGoodId: true, title: true, costPerUnit: true },
+    }),
+    prisma.warehouseStorage.findMany({ where: { isActive: true } }),
+  ]);
+  const rows = [];
+  for (const good of goods) {
+    const product = products.find((p) => p.altegioGoodId === good.goodId);
+    const storage = storages.find((s) => altegioStorageIdForWrites(s) === good.storageId);
+    if (!product || !storage) {
+      console.warn(
+        `[journal/checkout] Товар Altegio ${good.goodId} (${good.title}) не знайдено на складі Kresco — рядок пропущено`,
+      );
+      continue;
+    }
+    rows.push({
+      checkoutId,
+      productId: product.id,
+      storageId: storage.id,
+      title: good.title || product.title,
+      quantity: good.quantity,
+      salePrice: toMoney(good.total / good.quantity),
+      costPerUnit: product.costPerUnit > 0 ? product.costPerUnit : null,
+      altegioGoodId: good.goodId,
+    });
+  }
+  if (rows.length > 0) await prisma.salonCheckoutGoodLine.createMany({ data: rows });
+}
+
 type NormalizedGood = {
   productId: string;
   storageId: string;
@@ -364,6 +402,7 @@ type NormalizedGood = {
   salePrice: number;
   altegioGoodId: number;
   altegioStorageId: number;
+  costPerUnit: number | null;
   lineTotal: number;
 };
 
@@ -412,6 +451,7 @@ async function normalizeGoods(raw: CheckoutGoodLineInput[] | undefined): Promise
       salePrice: row.salePrice,
       altegioGoodId: product.altegioGoodId,
       altegioStorageId,
+      costPerUnit: product.costPerUnit > 0 ? product.costPerUnit : null,
       lineTotal: toMoney(row.salePrice * row.quantity),
     });
   }
@@ -429,6 +469,7 @@ async function replaceCheckoutGoodLines(checkoutId: string, goods: NormalizedGoo
       title: g.title,
       quantity: g.quantity,
       salePrice: g.salePrice,
+      costPerUnit: g.costPerUnit,
       altegioGoodId: g.altegioGoodId,
     })),
   });

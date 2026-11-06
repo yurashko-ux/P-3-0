@@ -5,7 +5,7 @@ import { isDirectAdminAuthorizedAsync } from "@/lib/direct-admin-auth";
 import { loadFinanceReportShadow, monthRange } from "@/lib/finance/report-shadow";
 
 export const dynamic = "force-dynamic";
-export const maxDuration = 60;
+export const maxDuration = 180;
 
 export async function GET(req: NextRequest) {
   if (!(await isDirectAdminAuthorizedAsync(req))) {

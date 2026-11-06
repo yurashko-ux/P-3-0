@@ -234,6 +234,8 @@ export async function importWarehouseFromAltegio(params?: {
         const isHair = good.isHair || mappedTitle === KHVOSTY_GROUP_TITLE;
         const category = mappedTitle || good.categoryTitle || null;
         const existing = productByAltegio.get(good.altegioGoodId);
+        // Правило складу: картки без залишку не показуємо. Рядок лишається — на нього посилаються чеки.
+        const hasStock = good.stocks.some((stock) => Number(stock.quantity) > 0);
 
         if (existing) {
           const same =
@@ -247,7 +249,7 @@ export async function importWarehouseFromAltegio(params?: {
             existing.lengthCm === good.lengthCm &&
             existing.weightGrams === good.weightGrams &&
             existing.sku === good.altegioGoodId &&
-            existing.isActive === true;
+            existing.isActive === hasStock;
           if (same) {
             productIdByAltegio.set(good.altegioGoodId, existing.id);
             return;
@@ -265,13 +267,15 @@ export async function importWarehouseFromAltegio(params?: {
               lengthCm: good.lengthCm,
               weightGrams: good.weightGrams,
               sku: good.altegioGoodId,
-              isActive: true,
+              isActive: hasStock,
             },
           });
           productIdByAltegio.set(good.altegioGoodId, row.id);
           productsWritten += 1;
           return;
         }
+
+        if (!hasStock) return;
 
         const row = await prisma.warehouseProduct.create({
           data: {
