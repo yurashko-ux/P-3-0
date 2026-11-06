@@ -149,6 +149,11 @@ export async function compareDirectWithJournal(days: number, sampleLimit = 40) {
           paidServiceAttended: client.paidServiceAttended,
         },
         journal,
+        journalRows: (byClient.get(client.id) ?? []).map((a) => ({
+          datetime: a.datetime,
+          state: determineStateFromServices(a.lines),
+          lines: a.lines.map((l) => `${l.title}: ${l.cost}`),
+        })),
       });
     }
   }
