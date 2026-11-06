@@ -66,6 +66,9 @@ export type SyncAltegioFinanceTransactionsResult = {
   sourceEndpoint: string;
 };
 
+const DELETED_CHECK_DAYS = 7;
+const DELETED_CHECK_LIMIT = 50;
+
 function resolveCompanyId(): string {
   const fromEnv = process.env.ALTEGIO_COMPANY_ID?.trim();
   const fallback = ALTEGIO_ENV.PARTNER_ID || ALTEGIO_ENV.APPLICATION_ID;
@@ -350,6 +353,34 @@ async function syncPaymentPurposes(companyId: string): Promise<number> {
   return synced;
 }
 
+/**
+ * Пошук віддає лише живі операції, тому видалені в Altegio лишались би в БД назавжди.
+ * Рядки за останні дні, яких немає у відповіді, перевіряємо поодинці: позначаємо лише при 404 / deleted.
+ */
+async function markRecentlyDeletedTransactions(params: {
+  companyId: string;
+  dateFrom: string;
+  dateTo: string;
+  seenAltegioIds: Set<number>;
+}): Promise<number> {
+  const recentFrom = new Date(Date.now() - DELETED_CHECK_DAYS * 24 * 60 * 60 * 1000).toISOString().slice(0, 10);
+  const from = params.dateFrom > recentFrom ? params.dateFrom : recentFrom;
+  const candidates: Array<{ id: string; altegioId: number }> = await (prisma as any).altegioFinanceTransaction.findMany({
+    where: {
+      companyId: params.companyId,
+      deletedInAltegio: false,
+      kyivDay: { gte: from, lte: params.dateTo },
+      altegioId: { notIn: [...params.seenAltegioIds] },
+    },
+    select: { id: true, altegioId: true },
+    take: DELETED_CHECK_LIMIT,
+  });
+  if (candidates.length === 0) return 0;
+  const { pruneDeletedAltegioFinanceCandidates } = await import("@/lib/bank/altegio-payment-reconcile");
+  const alive = await pruneDeletedAltegioFinanceCandidates(candidates);
+  return candidates.length - alive.length;
+}
+
 export async function syncAltegioFinanceTransactions(params: {
   dateFrom?: string;
   dateTo?: string;
@@ -393,6 +424,9 @@ export async function syncAltegioFinanceTransactions(params: {
     string,
     { title: string; expenseId: number | null; raw: RawAltegioFinanceTransaction }
   >();
+
+  const seenAltegioIds = new Set<number>();
+  let reachedLastPage = false;
 
   try {
     for (let page = 1; page <= maxPages; page += 1) {
@@ -456,6 +490,7 @@ export async function syncAltegioFinanceTransactions(params: {
       }>;
 
       const pageIds = parsed.map((p) => p.altegioId);
+      for (const id of pageIds) seenAltegioIds.add(id);
       const existingRows =
         pageIds.length > 0
           ? await (prisma as any).altegioFinanceTransaction.findMany({
@@ -551,7 +586,10 @@ export async function syncAltegioFinanceTransactions(params: {
         upserted += 1;
       }
 
-      if (rows.length < count) break;
+      if (rows.length < count) {
+        reachedLastPage = true;
+        break;
+      }
     }
 
     // Призначення з транзакцій — один раз на унікальний title
@@ -577,6 +615,10 @@ export async function syncAltegioFinanceTransactions(params: {
       });
     }
 
+    const removedInAltegio = reachedLastPage
+      ? await markRecentlyDeletedTransactions({ companyId, dateFrom, dateTo, seenAltegioIds })
+      : 0;
+
     const purposesSynced = params.syncPurposes === false ? 0 : await syncPaymentPurposes(companyId);
     const balances = await recalculateAltegioFinanceTransactionBalances({ companyId });
     await (prisma as any).altegioFinanceSyncState.update({
@@ -598,6 +640,7 @@ export async function syncAltegioFinanceTransactions(params: {
       skippedUnchanged,
       purposesFromRows: purposesFromRows.size,
       purposesSynced,
+      removedInAltegio,
       balancesUpdated: balances.transactionsUpdated,
     });
 
