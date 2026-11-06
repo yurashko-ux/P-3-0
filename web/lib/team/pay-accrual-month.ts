@@ -190,6 +190,7 @@ export async function buildPayrollMonth(month: string): Promise<PayrollMonth> {
     where: {
       kyivDay: { gte: monthStart, lte: monthEnd },
       status: { not: "void" },
+      appointment: { status: { not: "deleted" } },
     },
     select: {
       id: true,

@@ -15,7 +15,11 @@ export async function loadFinanceReportShadow(from: string, to: string) {
   const [summary, checkouts, attended] = await Promise.all([
     fetchFinanceSummary({ date_from: from, date_to: to }),
     prisma.salonCheckout.findMany({
-      where: { kyivDay: { gte: from, lte: to }, status: { not: "void" } },
+      where: {
+        kyivDay: { gte: from, lte: to },
+        status: { not: "void" },
+        appointment: { status: { not: "deleted" } },
+      },
       select: { kyivDay: true, totalServices: true, totalGoods: true, paidAmount: true, source: true },
     }),
     prisma.salonAppointment.findMany({
