@@ -1,6 +1,7 @@
 // Тіньовий фінзвіт: виручка з чеків Kresco поруч із числами Altegio. Звіт не змінює.
 
 import { fetchExpensesSummary, fetchFinanceSummary, fetchGoodsSalesSummary } from "@/lib/altegio";
+import { fetchKrescoFinanceSummary } from "@/lib/finance/report-kresco";
 import { prisma } from "@/lib/prisma";
 
 /** Статті з API Altegio під назвами, що зберігаються в операціях Kresco. */
@@ -40,7 +41,7 @@ export function monthRange(month: string): { from: string; to: string } | null {
 }
 
 export async function loadFinanceReportShadow(from: string, to: string) {
-  const [summary, expenses, localExpenses, checkouts, attended, salesWithoutRecord] = await Promise.all([
+  const [summary, expenses, localExpenses, checkouts, attended, salesWithoutRecord, received] = await Promise.all([
     fetchFinanceSummary({ date_from: from, date_to: to }),
     fetchExpensesSummary({ date_from: from, date_to: to }),
     prisma.$queryRaw<Array<{ purpose: string | null; kopiykas: bigint | null }>>`
@@ -73,15 +74,12 @@ export async function loadFinanceReportShadow(from: string, to: string) {
         AND "paymentPurpose" = 'Продаж товарів'
         AND COALESCE(NULLIF("rawData"->>'record_id', '0'), '') = ''
     `,
+    fetchKrescoFinanceSummary(from, to),
   ]);
 
   const kresco = { services: 0, goods: 0, total: 0, checkouts: checkouts.length };
-  const krescoByDay = new Map<string, number>();
+  const krescoByDay = new Map(received.incomeDaily.map((d) => [String(d.date), Number(d.value) || 0]));
   for (const c of checkouts) {
-    krescoByDay.set(
-      c.kyivDay,
-      (krescoByDay.get(c.kyivDay) || 0) + (Number(c.totalServices) || 0) + (Number(c.totalGoods) || 0),
-    );
     kresco.services += Number(c.totalServices) || 0;
     kresco.goods += Number(c.totalGoods) || 0;
     kresco.total += Number(c.paidAmount) || 0;
@@ -148,10 +146,11 @@ export async function loadFinanceReportShadow(from: string, to: string) {
     altegio,
     kresco,
     diff: {
-      services: kresco.services - altegio.services,
-      goods: kresco.goods - altegio.goods,
-      total: kresco.total - altegio.total,
+      services: received.totals.services - altegio.services,
+      goods: received.totals.goods - altegio.goods,
+      total: received.totals.total - altegio.total,
     },
+    received: received.totals,
     cost: {
       altegio: { total: goodsSummary.cost, hair: goodsSummary.hairCost, source: goodsSummary.costSource },
       kresco: cost,
