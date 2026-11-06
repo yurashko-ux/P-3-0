@@ -13,6 +13,7 @@ import {
   getDepositsAttributedToMonth,
   type DepositAttributedItem,
 } from "@/lib/altegio/deposit-attribution";
+import { withFinanceReportArchive } from "@/lib/finance/report-archive";
 import { EditCostButton } from "./_components/EditCostButton";
 import { EditExpensesButton } from "./_components/EditExpensesButton";
 import { EditExpenseField } from "./_components/EditExpenseField";
@@ -522,10 +523,12 @@ async function getSummaryForMonth(
     ] as const;
 
     const summarySettled = await Promise.allSettled([
-      fetchFinanceSummary({
-        date_from: from,
-        date_to: to,
-      }),
+      withFinanceReportArchive(year, month, "summary", () =>
+        fetchFinanceSummary({
+          date_from: from,
+          date_to: to,
+        }),
+      ),
     ]);
 
     const failures: string[] = [];
@@ -546,16 +549,20 @@ async function getSummaryForMonth(
     const summary = (summarySettled[0] as PromiseFulfilledResult<FinanceSummary>).value;
 
     const settled = await Promise.allSettled([
-      fetchGoodsSalesSummary({
-        date_from: from,
-        date_to: to,
-        salonGoodsRevenueUah: summary.totals?.goods,
-        incomeGoodsStatsExtras: summary.incomeGoodsStatsExtras,
-      }),
-      fetchExpensesSummary({
-        date_from: from,
-        date_to: to,
-      }),
+      withFinanceReportArchive(year, month, "goods", () =>
+        fetchGoodsSalesSummary({
+          date_from: from,
+          date_to: to,
+          salonGoodsRevenueUah: summary.totals?.goods,
+          incomeGoodsStatsExtras: summary.incomeGoodsStatsExtras,
+        }),
+      ),
+      withFinanceReportArchive(year, month, "expenses", () =>
+        fetchExpensesSummary({
+          date_from: from,
+          date_to: to,
+        }),
+      ),
     ]);
 
     settled.forEach((result, i) => {
@@ -593,7 +600,9 @@ async function getSummaryForMonth(
           return isEncashmentPurposeLabel(purposeTitle) || isEncashmentPurposeLabel(comment);
         })
       : [];
-    const encashmentFactBreakdown = await calculateEncashmentFactBreakdown(encashmentTransactions);
+    const encashmentFactBreakdown = await withFinanceReportArchive(year, month, "encashment", () =>
+      calculateEncashmentFactBreakdown(encashmentTransactions),
+    );
     
     // Закупівля волосся потрібна лише на суму фактичного зменшення складу.
     const rawHairPurchaseAmount = warehouseBalanceDiff < 0 ? Math.abs(warehouseBalanceDiff) : 0;
@@ -614,9 +623,9 @@ async function getSummaryForMonth(
                        expenses?.byCategory["Інвестиції"] ||
                        0;
     const [discountAmount, discountDetails, depositsAttributed] = await Promise.all([
-      fetchFinanceReportDiscountTotal(year, month),
-      fetchFinanceReportDiscountDetails(year, month),
-      getDepositsAttributedToMonth({ year, month }),
+      withFinanceReportArchive(year, month, "discountTotal", () => fetchFinanceReportDiscountTotal(year, month)),
+      withFinanceReportArchive(year, month, "discountDetails", () => fetchFinanceReportDiscountDetails(year, month)),
+      withFinanceReportArchive(year, month, "deposits", () => getDepositsAttributedToMonth({ year, month })),
     ]);
     const deposits = depositsAttributed.total;
     const depositDetails = depositsAttributed.items;

@@ -1055,6 +1055,19 @@ model Function {
   @@map("functions")
 }
 
+/// Блоки Фінзвіту за закриті місяці: копія на випадок, коли Altegio не відповідає.
+model FinanceReportArchive {
+  id        String   @id @default(uuid())
+  /// YYYY-MM
+  month     String
+  block     String
+  payload   Json
+  updatedAt DateTime @default(now()) @updatedAt
+
+  @@unique([month, block])
+  @@map("finance_report_archive")
+}
+
 /// Робочий день майстра. Нема рядка — вихідний. teamMemberId заповнює тригер БД.
 model TeamWorkDay {
   id             String      @id @default(uuid())
