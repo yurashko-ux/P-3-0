@@ -144,8 +144,10 @@ export async function payVisitSaleFromDeposit(params: {
 
   const endpoint = `/company/${companyId}/sale/${params.documentId}/payment`;
   const payload = {
-    method: { slug: "deposit", deposit_id: params.depositId },
-    amount,
+    payment: {
+      method: { slug: "deposit", deposit_id: params.depositId },
+      amount,
+    },
   };
   console.log(
     `[altegio/visit-deposit] POST ${endpoint} deposit_id=${params.depositId} amount=${amount}`,
