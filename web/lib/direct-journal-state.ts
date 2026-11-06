@@ -31,11 +31,10 @@ function isPaid(appointment: JournalAppointment): boolean {
   });
 }
 
-function latest(appointments: JournalAppointment[]): JournalAppointment | null {
-  return appointments.reduce<JournalAppointment | null>(
-    (best, a) => (!best || a.datetime > best.datetime ? a : best),
-    null,
-  );
+/** Найближчий майбутній запис, а якщо його немає — останній минулий. */
+function currentAppointment(appointments: JournalAppointment[], now: Date): JournalAppointment | null {
+  const byDate = [...appointments].sort((a, b) => a.datetime.getTime() - b.datetime.getTime());
+  return byDate.find((a) => a.datetime >= now) ?? byDate[byDate.length - 1] ?? null;
 }
 
 /** 1 або 2 = прийшов, -1 = не з'явився. На консультації 2 до дати візиту означає лише підтвердження. */
@@ -49,8 +48,8 @@ export function deriveDirectFieldsFromJournal(
   appointments: JournalAppointment[],
   now: Date = new Date(),
 ): JournalDirectFields {
-  const paid = latest(appointments.filter(isPaid));
-  const consultation = latest(appointments.filter((a) => isConsultation(a) && !isPaid(a)));
+  const paid = currentAppointment(appointments.filter(isPaid), now);
+  const consultation = currentAppointment(appointments.filter((a) => isConsultation(a) && !isPaid(a)), now);
   return {
     consultationBookingDate: consultation?.datetime ?? null,
     consultationAttended: consultation
