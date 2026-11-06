@@ -771,7 +771,7 @@ export function AdminToolsModal({
     }
   };
 
-  // Кількість кнопок: 105. При додаванні нової кнопки завжди додавати її в кінець відповідної категорії та оновлювати цю кількість у коментарі.
+  // Кількість кнопок: 106. При додаванні нової кнопки завжди додавати її в кінець відповідної категорії та оновлювати цю кількість у коментарі.
   const tools = [
     {
       category: "Тести",
@@ -2565,6 +2565,19 @@ export function AdminToolsModal({
           method: "GET" as const,
           successMessage: (data: any) =>
             `⚖️ Звірка метрик\n\nЗвірено клієнтів: ${data.compared}\nРозбіжності у візитах: ${data.visitsDiff}\nРозбіжності у витратах: ${data.spentDiff}\n\n${JSON.stringify(data.rows, null, 2)}`,
+        },
+      ],
+    },
+    {
+      category: "Стани Direct (журнал Kresco)",
+      items: [
+        {
+          icon: "🧭",
+          label: "Звірити картки Direct із журналом",
+          endpoint: "/api/admin/direct/journal-state-compare",
+          method: "GET" as const,
+          successMessage: (data: any) =>
+            `🧭 Звірка станів за ${data.days} днів\n\nКлієнтів: ${data.compared}\nЗбіглось: ${data.matched}\n\nКонсультації: ${JSON.stringify(data.counts.consultation)}\nПлатні: ${JSON.stringify(data.counts.paid)}\n\n${JSON.stringify(data.samples, null, 2)}`,
         },
       ],
     },
