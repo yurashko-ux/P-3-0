@@ -17,7 +17,7 @@ export type ClientRecord = {
   /** Дата останньої зміни запису. */
   last_change_date: string | null;
   /** Послуги (для визначення консультація / платна). */
-  services: Array<{ id?: number; title?: string; name?: string; duration?: number }>;
+  services: Array<{ id?: number; title?: string; name?: string; duration?: number; cost?: number; first_cost?: number }>;
   /** Тривалість сеансу в секундах. */
   seance_length?: number | null;
   /** Імʼя клієнта з запису Altegio. */
@@ -206,6 +206,9 @@ function normalizeRecord(raw: any): ClientRecord {
       title: s?.title,
       name: s?.name,
       duration: Number(s?.seance_length ?? s?.length ?? s?.duration) || undefined,
+      // cost_to_pay — сума після знижки. Без цін імпорт журналу записував майбутні рядки з 0.
+      cost: Number(s?.cost_to_pay ?? s?.cost) || undefined,
+      first_cost: Number(s?.first_cost) || undefined,
     })),
     attendance,
     deleted,

@@ -8,6 +8,8 @@ export type JournalAppointment = {
   datetime: Date;
   attendance: number | null;
   staffName?: string | null;
+  /** Товари чека: додаються лише після візиту, при створенні запису їх немає. */
+  goodsTotal?: number;
   lines: Array<{ title: string; cost: number; kind?: string | null }>;
 };
 
@@ -51,12 +53,13 @@ export function deriveDirectDetailsFromJournal(appointments: JournalAppointment[
   const current = currentAppointment(paidRows, now);
   if (!current) return null;
   const visit = paidRows.filter((a) => a.datetime.getTime() === current.datetime.getTime());
+  const goods = Math.max(...visit.map((a) => a.goodsTotal ?? 0));
   const rowTotal = (a: JournalAppointment) => a.lines.reduce((sum, line) => sum + (Number(line.cost) || 0), 0);
   return {
     state: determineStateFromServices(current.lines),
     masters: [...new Set(visit.map((a) => a.staffName?.trim()).filter((name): name is string => !!name))],
     // Рядки дублюються в записах кількох майстрів, тому допускаємо суму одного запису і всього візиту.
-    totals: [rowTotal(current), visit.reduce((sum, a) => sum + rowTotal(a), 0)],
+    totals: [rowTotal(current), visit.reduce((sum, a) => sum + rowTotal(a), 0)].flatMap((total) => [total, total + goods]),
     hadPaidBefore: paidRows.some((a) => a.datetime < current.datetime && a.attendance === 1),
   };
 }
@@ -107,6 +110,7 @@ export async function compareDirectWithJournal(days: number, sampleLimit = 40) {
       datetime: true,
       attendance: true,
       staffName: true,
+      checkout: { select: { totalGoods: true, status: true } },
       lines: { select: { title: true, cost: true, service: { select: { kind: true } } } },
     },
   });
@@ -117,6 +121,7 @@ export async function compareDirectWithJournal(days: number, sampleLimit = 40) {
       datetime: a.datetime,
       attendance: a.attendance,
       staffName: a.staffName,
+      goodsTotal: a.checkout && a.checkout.status !== "void" ? Number(a.checkout.totalGoods) || 0 : 0,
       lines: a.lines.map((l) => ({ title: l.title, cost: l.cost, kind: l.service?.kind })),
     });
     byClient.set(a.directClientId!, list);
