@@ -12,6 +12,8 @@ export function buildAltegioRecordTimetableUrl(
   kyivDay?: string | null,
 ): string {
   const base = `https://app.alteg.io/timetable/${ALTEGIO_WEB_COMPANY_ID}`;
-  const path = kyivDay?.trim() ? `${base}/${kyivDay.trim()}` : base;
-  return `${path}#open_record_id=${recordId}`;
+  const day = kyivDay?.trim();
+  return day
+    ? `${base}#mode=1&main_date=${day}&open_record_id=${recordId}`
+    : `${base}#open_record_id=${recordId}`;
 }

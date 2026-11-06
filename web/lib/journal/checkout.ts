@@ -251,13 +251,23 @@ export async function upsertCheckoutFromAltegioPayments(params: {
   const state = await fetchRecordPaymentState(Number(resolveJournalCompanyId()), params.altegioRecordId);
   if (!state) return null;
 
-  // Список записів Altegio не віддає цін — доповнюємо нульові рядки з картки запису.
-  for (const service of state.services) {
-    if (service.cost > 0) {
-      await prisma.salonAppointmentLine.updateMany({
-        where: { appointmentId: params.appointmentId, altegioServiceId: service.id, cost: 0 },
-        data: { cost: service.cost, firstCost: service.cost },
-      });
+  // Список записів Altegio не віддає цін — беремо суми з картки запису. Рядки Kresco не чіпаємо.
+  const importedAppointment = await prisma.salonAppointment.findUnique({
+    where: { id: params.appointmentId },
+    select: { source: true },
+  });
+  if (importedAppointment?.source !== "kresco") {
+    for (const service of state.services) {
+      if (service.cost > 0) {
+        await prisma.salonAppointmentLine.updateMany({
+          where: {
+            appointmentId: params.appointmentId,
+            altegioServiceId: service.id,
+            cost: { not: service.cost },
+          },
+          data: { cost: service.cost },
+        });
+      }
     }
   }
   if (!state.paidFull || !(state.total > 0)) return null;
@@ -296,7 +306,7 @@ export async function upsertCheckoutFromAltegioPayments(params: {
         data: {
           altegioRecordId: params.altegioRecordId,
           altegioVisitId: params.altegioVisitId || existing.altegioVisitId,
-          totalServices: totalServices || Math.max(0, paidAmount - totalGoods),
+          totalServices: state.servicesTotal,
           totalGoods,
           paidAmount,
           status: "synced",
@@ -310,7 +320,7 @@ export async function upsertCheckoutFromAltegioPayments(params: {
           appointmentId: params.appointmentId,
           altegioRecordId: params.altegioRecordId,
           altegioVisitId: params.altegioVisitId || null,
-          totalServices: totalServices || Math.max(0, paidAmount - totalGoods),
+          totalServices: state.servicesTotal,
           totalGoods,
           paidAmount,
           status: "synced",

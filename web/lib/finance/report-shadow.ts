@@ -12,7 +12,7 @@ export function monthRange(month: string): { from: string; to: string } | null {
 }
 
 export async function loadFinanceReportShadow(from: string, to: string) {
-  const [summary, checkouts, attended] = await Promise.all([
+  const [summary, checkouts, attended, salesWithoutRecord] = await Promise.all([
     fetchFinanceSummary({ date_from: from, date_to: to }),
     prisma.salonCheckout.findMany({
       where: {
@@ -26,6 +26,16 @@ export async function loadFinanceReportShadow(from: string, to: string) {
       where: { kyivDay: { gte: from, lte: to }, attendance: 1, status: { not: "deleted" } },
       select: { kyivDay: true, checkout: { select: { id: true } } },
     }),
+    // Продаж товару без запису: у журнал не потрапляє, лише у фінансові операції.
+    prisma.$queryRaw<Array<{ kopiykas: bigint | null; count: bigint }>>`
+      SELECT SUM("amountKopiykas") AS kopiykas, COUNT(*) AS count
+      FROM "altegio_finance_transactions"
+      WHERE "kyivDay" >= ${from} AND "kyivDay" <= ${to}
+        AND "deletedInAltegio" = false
+        AND "direction" = 'in'
+        AND "paymentPurpose" = 'Продаж товарів'
+        AND COALESCE(NULLIF("rawData"->>'record_id', '0'), '') = ''
+    `,
   ]);
 
   const kresco = { services: 0, goods: 0, total: 0, checkouts: checkouts.length };
@@ -49,6 +59,10 @@ export async function loadFinanceReportShadow(from: string, to: string) {
       services: kresco.services - altegio.services,
       goods: kresco.goods - altegio.goods,
       total: kresco.total - altegio.total,
+    },
+    salesWithoutRecord: {
+      uah: Number(salesWithoutRecord[0]?.kopiykas ?? 0) / 100,
+      count: Number(salesWithoutRecord[0]?.count ?? 0),
     },
     coverage: {
       attended: attended.length,

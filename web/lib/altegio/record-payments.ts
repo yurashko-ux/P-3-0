@@ -203,10 +203,14 @@ export async function fetchRecordPaymentState(
     const data = raw?.data ?? raw;
     if (!data || typeof data !== 'object') return null;
     const services = (Array.isArray(data.services) ? data.services : [])
-      .map((s: any) => ({ id: Number(s?.id) || 0, cost: toMoney(s?.cost ?? s?.first_cost) }))
+      // cost_to_pay — сума після знижки; cost лишається ціною рядка.
+      .map((s: any) => ({ id: Number(s?.id) || 0, cost: toMoney(s?.cost_to_pay ?? s?.cost ?? s?.first_cost) }))
       .filter((s: { id: number }) => s.id > 0);
     const goods = Array.isArray(data.goods_transactions) ? data.goods_transactions : [];
-    const goodsTotal = goods.reduce((sum: number, g: any) => sum + Math.abs(toMoney(g?.cost)), 0);
+    const goodsTotal = goods.reduce(
+      (sum: number, g: any) => sum + Math.abs(toMoney(g?.cost_to_pay ?? g?.cost)),
+      0,
+    );
     const servicesTotal = services.reduce((sum: number, s: { cost: number }) => sum + s.cost, 0);
     const paidFull = Number(data.paid_full) === 1;
     return {
