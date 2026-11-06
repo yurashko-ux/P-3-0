@@ -1,6 +1,6 @@
 // Поля Direct, розраховані з журналу Kresco. У картки нічого не пише: поки лише для тіньової звірки.
 
-import { determineStateFromServices } from "@/lib/direct-state-helper";
+import { determineStateFromServices, isHairExtensionServiceTitle } from "@/lib/direct-state-helper";
 import { isConsultationServiceKind } from "@/lib/journal/altegio-write-gate";
 import { prisma } from "@/lib/prisma";
 
@@ -23,10 +23,12 @@ function isConsultation(appointment: JournalAppointment): boolean {
   );
 }
 
-/** Платний запис: нарощування має пріоритет навіть поруч із консультацією. */
+/** Платний запис — будь-яка послуга, крім консультації. Ціни майбутніх записів у журналі часто ще 0, тому суму не перевіряємо. */
 function isPaid(appointment: JournalAppointment): boolean {
-  const state = determineStateFromServices(appointment.lines);
-  return state === "hair-extension" || state === "other-services";
+  return appointment.lines.some((line) => {
+    if (!line.title.trim() || isConsultationServiceKind(line.kind)) return false;
+    return isHairExtensionServiceTitle(line.title) || !/консультаці/i.test(line.title);
+  });
 }
 
 function latest(appointments: JournalAppointment[]): JournalAppointment | null {
@@ -112,6 +114,8 @@ export async function compareDirectWithJournal(days: number, sampleLimit = 40) {
       consultationAttended: true,
       paidServiceDate: true,
       paidServiceAttended: true,
+      consultationCancelled: true,
+      paidServiceCancelled: true,
     },
   });
 
@@ -124,13 +128,14 @@ export async function compareDirectWithJournal(days: number, sampleLimit = 40) {
   for (const client of clients) {
     const journal = deriveDirectFieldsFromJournal(byClient.get(client.id) ?? []);
     const consultation = compareBlock(
-      { date: client.consultationBookingDate, attended: client.consultationAttended },
+      { date: client.consultationBookingDate, attended: client.consultationCancelled ? false : client.consultationAttended },
       { date: journal.consultationBookingDate, attended: journal.consultationAttended },
     );
     const paid = compareBlock(
-      { date: client.paidServiceDate, attended: client.paidServiceAttended },
+      { date: client.paidServiceDate, attended: client.paidServiceCancelled ? false : client.paidServiceAttended },
       { date: journal.paidServiceDate, attended: journal.paidServiceAttended },
     );
+    // -1 до дати візиту картка тримає як «скасовано», а не «не з'явився».
     if (consultation) counts.consultation[consultation] += 1;
     if (paid) counts.paid[paid] += 1;
     if (!consultation && !paid) {
