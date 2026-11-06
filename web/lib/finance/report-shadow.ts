@@ -3,6 +3,27 @@
 import { fetchExpensesSummary, fetchFinanceSummary, fetchGoodsSalesSummary } from "@/lib/altegio";
 import { prisma } from "@/lib/prisma";
 
+/** Статті з API Altegio під назвами, що зберігаються в операціях Kresco. */
+const EXPENSE_CATEGORY_ALIASES: Record<string, string> = {
+  "Miscellaneous expenses": "Інші витрати",
+  "Consumables purchase": "Закупівля матеріалів",
+  "Маркетинг": "Маркетинг CMM",
+  "Product purchase": "Закупівля товарів",
+  "Закуплено товару": "Закупівля товарів",
+  "Закуплений товар": "Закупівля товарів",
+  "Team salaries": "Зарплата співробітникам",
+  "Rent": "Оренда",
+  "Taxes and fees": "Податки та збори",
+};
+
+/** Direction у старих рядках ненадійний: доходи й перекази не є витратами звіту. */
+function isExpensePurpose(purpose: string): boolean {
+  if (/^(Надання послуг|Продаж товарів|Продаж абонементів|Продаж сертифікатів|Поповнення рахунку|Доходи)$/.test(purpose)) {
+    return false;
+  }
+  return !/^Переміщення/.test(purpose) && purpose !== "Без статті";
+}
+
 export function monthRange(month: string): { from: string; to: string } | null {
   const match = month.match(/^(\d{4})-(\d{2})$/);
   if (!match) return null;
@@ -89,13 +110,21 @@ export async function loadFinanceReportShadow(from: string, to: string) {
     else cost.goods += amount;
   }
 
-  const localByCategory = new Map(
-    localExpenses.map((row) => [row.purpose || "Без статті", Number(row.kopiykas ?? 0) / 100]),
-  );
-  const expenseCategories = new Set([...Object.keys(expenses.byCategory), ...localByCategory.keys()]);
+  const localByCategory = new Map<string, number>();
+  for (const row of localExpenses) {
+    const purpose = row.purpose || "Без статті";
+    if (!isExpensePurpose(purpose)) continue;
+    localByCategory.set(purpose, (localByCategory.get(purpose) || 0) + Number(row.kopiykas ?? 0) / 100);
+  }
+  const reportedByCategory = new Map<string, number>();
+  for (const [category, amount] of Object.entries(expenses.byCategory)) {
+    const name = EXPENSE_CATEGORY_ALIASES[category] || category;
+    reportedByCategory.set(name, (reportedByCategory.get(name) || 0) + Math.abs(Number(amount) || 0));
+  }
+  const expenseCategories = new Set([...reportedByCategory.keys(), ...localByCategory.keys()]);
   const expenseRows = [...expenseCategories]
     .map((category) => {
-      const reported = Math.abs(Number(expenses.byCategory[category]) || 0);
+      const reported = reportedByCategory.get(category) || 0;
       const local = localByCategory.get(category) || 0;
       return { category, altegio: reported, local, diff: Math.round((local - reported) * 100) / 100 };
     })
