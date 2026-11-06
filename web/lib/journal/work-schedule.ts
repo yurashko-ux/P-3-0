@@ -1,8 +1,10 @@
-// Графік змін майстрів з Altegio: читання і запис інтервалів робочого дня.
+// Графік змін: читаємо з Kresco, запис і в Kresco, і в Altegio. Зміни з Altegio підтягує cron.
 
 import { altegioFetch } from "@/lib/altegio/client";
+import { prisma } from "@/lib/prisma";
+import { readTeamMemberAvatar } from "@/lib/team/avatar";
 import { resolveJournalCompanyId } from "./company-id";
-import { hasAssignedPosition, isCalendarMaster, listJournalStaffFromAltegio, type JournalStaff } from "./staff";
+import { hasAssignedPosition, isCalendarMaster, listJournalStaff, type JournalStaff } from "./staff";
 
 export type WorkSlot = { from: string; to: string };
 
@@ -96,15 +98,74 @@ async function readSchedule(companyId: number, from: string, to: string): Promis
   throw lastError instanceof Error ? lastError : new Error("Altegio не віддав графік роботи");
 }
 
+async function readStoredSchedule(from: string, to: string): Promise<Map<string, WorkSlot[]>> {
+  const rows = await prisma.teamWorkDay.findMany({
+    where: { kyivDay: { gte: from, lte: to } },
+    select: { altegioStaffId: true, kyivDay: true, slots: true },
+  });
+  return new Map(rows.map((r) => [`${r.altegioStaffId}|${r.kyivDay}`, r.slots as WorkSlot[]]));
+}
+
+async function importedSchedule(from: string, to: string): Promise<Map<string, WorkSlot[]>> {
+  const fromAltegio = await readSchedule(resolveJournalCompanyId(), from, to);
+  await storeSchedule(fromAltegio, from, to);
+  return fromAltegio;
+}
+
+/** Пише лише змінені дні. Порожню відповідь Altegio не вважаємо «усі вихідні». */
+async function storeSchedule(incoming: Map<string, WorkSlot[]>, from: string, to: string) {
+  const working = new Map([...incoming].filter(([, slots]) => slots.length > 0));
+  const existing = await prisma.teamWorkDay.findMany({
+    where: { kyivDay: { gte: from, lte: to } },
+    select: { id: true, altegioStaffId: true, kyivDay: true, slots: true },
+  });
+  if (working.size === 0 && existing.length > 0) {
+    console.warn(`[journal/schedule] Altegio повернув порожній графік ${from}…${to} — Kresco не чіпаємо`);
+    return { written: 0, removed: 0 };
+  }
+  const byKey = new Map(existing.map((r) => [`${r.altegioStaffId}|${r.kyivDay}`, r]));
+  const removedIds = existing
+    .filter((r) => !working.has(`${r.altegioStaffId}|${r.kyivDay}`))
+    .map((r) => r.id);
+  if (removedIds.length > 0) {
+    await prisma.teamWorkDay.deleteMany({ where: { id: { in: removedIds } } });
+  }
+  let written = 0;
+  for (const [key, slots] of working) {
+    if (JSON.stringify(byKey.get(key)?.slots) === JSON.stringify(slots)) continue;
+    const [staffId, kyivDay] = key.split("|");
+    await upsertDay(Number(staffId), kyivDay, slots);
+    written += 1;
+  }
+  return { written, removed: removedIds.length };
+}
+
+async function upsertDay(altegioStaffId: number, kyivDay: string, slots: WorkSlot[]) {
+  await prisma.teamWorkDay.upsert({
+    where: { altegioStaffId_kyivDay: { altegioStaffId, kyivDay } },
+    create: { altegioStaffId, kyivDay, slots },
+    update: { slots },
+  });
+}
+
+export async function syncWorkScheduleFromAltegio(from: string, to: string) {
+  const fromAltegio = await readSchedule(resolveJournalCompanyId(), from, to);
+  const stats = await storeSchedule(fromAltegio, from, to);
+  return { days: fromAltegio.size, ...stats };
+}
+
 export async function loadWorkSchedule(from: string, to: string): Promise<WorkSchedule> {
-  const companyId = resolveJournalCompanyId();
-  const [staff, slots] = await Promise.all([
-    listJournalStaffFromAltegio(),
-    readSchedule(companyId, from, to),
-  ]);
+  const [staff, stored] = await Promise.all([listJournalStaff(), readStoredSchedule(from, to)]);
+  // Місяць ще не імпортовано: забираємо з Altegio і зберігаємо.
+  const slots = stored.size > 0 ? stored : await importedSchedule(from, to);
   const masters = staff.filter((row) => isCalendarMaster(row) && hasAssignedPosition(row));
+  const photos = await Promise.all(
+    masters.map((row) => (row.teamMemberId ? readTeamMemberAvatar(row.teamMemberId).catch(() => null) : null)),
+  );
   return {
-    staff: masters.map(toScheduleStaff),
+    staff: masters.map((row, i) =>
+      toScheduleStaff(photos[i] ? { ...row, avatarUrl: `/api/admin/team/members/${row.teamMemberId}/avatar` } : row),
+    ),
     slots: Object.fromEntries(slots),
   };
 }
@@ -163,6 +224,15 @@ export async function saveWorkSchedule(input: {
         `[journal/schedule] Збережено графік ${input.off ? "вихідний" : "зміна"} ` +
           `staff=${staffIds.join(",")} days=${dates.join(",")}`,
       );
+      if (input.off) {
+        await prisma.teamWorkDay.deleteMany({
+          where: { altegioStaffId: { in: staffIds }, kyivDay: { in: dates } },
+        });
+      } else {
+        for (const staffId of staffIds) {
+          for (const day of dates) await upsertDay(staffId, day, input.slots || []);
+        }
+      }
       return;
     } catch (err) {
       lastError = err;

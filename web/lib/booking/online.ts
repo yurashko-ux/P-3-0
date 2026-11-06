@@ -12,7 +12,7 @@ import {
   listAppointmentsForDay,
 } from "@/lib/journal";
 import {
-  listJournalStaffFromAltegio,
+  listJournalStaff,
   hasAssignedPosition,
   isCalendarMaster,
 } from "@/lib/journal/staff";
@@ -59,7 +59,7 @@ function rangesOverlap(aStart: number, aEnd: number, bStart: number, bEnd: numbe
 }
 
 export async function listBookableMasters() {
-  const [staff, hidden] = await Promise.all([listJournalStaffFromAltegio(), loadHiddenStaffIndex()]);
+  const [staff, hidden] = await Promise.all([listJournalStaff(), loadHiddenStaffIndex()]);
   return staff.filter((s) => hasAssignedPosition(s) && isCalendarMaster(s) && !isHiddenJournalStaff(hidden, s)).map((s) => ({
     id: String(s.altegioStaffId),
     name: s.name,

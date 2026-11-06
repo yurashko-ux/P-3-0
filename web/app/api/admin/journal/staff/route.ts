@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { requireJournalSection } from "@/lib/journal/require-journal-auth";
-import { listJournalStaffFromAltegio, hasAssignedPosition } from "@/lib/journal/staff";
+import { listJournalStaff, hasAssignedPosition } from "@/lib/journal/staff";
 import { isHiddenJournalStaff, loadHiddenStaffIndex } from "@/lib/team/hidden-staff";
 
 export const dynamic = "force-dynamic";
@@ -11,7 +11,7 @@ export async function GET(req: NextRequest) {
   if (auth instanceof NextResponse) return auth;
   try {
     const hidden = await loadHiddenStaffIndex();
-    const staff = (await listJournalStaffFromAltegio())
+    const staff = (await listJournalStaff())
       .filter(hasAssignedPosition)
       .filter((row) => !isHiddenJournalStaff(hidden, row));
     return NextResponse.json({ ok: true, staff });

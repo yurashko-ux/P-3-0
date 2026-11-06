@@ -2,6 +2,7 @@
 // Те саме вікно, що https://app.alteg.io/settings/sidebar/staff/{companyId}?fired=0&deleted=0
 
 import { altegioFetch } from "@/lib/altegio/client";
+import { prisma } from "@/lib/prisma";
 import { resolveJournalCompanyId } from "./company-id";
 
 export type JournalStaffKind = "master" | "assistant" | "admin" | "other";
@@ -13,6 +14,7 @@ export type JournalStaff = {
   positionTitle: string;
   positionKind: JournalStaffKind;
   avatarUrl?: string | null;
+  teamMemberId?: string;
 };
 
 const KIND_ORDER: Record<JournalStaffKind, number> = {
@@ -180,4 +182,39 @@ export async function listJournalStaffFromAltegio(): Promise<JournalStaff[]> {
     }
   }
   throw new Error("Altegio не повернув штат філії. Перевірте права GET /staff/{companyId}.");
+}
+
+const TEAM_ROLE_POSITIONS: Partial<Record<string, { kind: JournalStaffKind; title: string }>> = {
+  master: { kind: "master", title: "Майстер" },
+  assistant: { kind: "assistant", title: "Асистент" },
+  admin: { kind: "admin", title: "Адміністратор" },
+};
+
+/** Штат журналу з карток Команди. Altegio — лише якщо Команда порожня. */
+export async function listJournalStaff(): Promise<JournalStaff[]> {
+  const rows = await listJournalStaffFromTeam();
+  if (rows.length > 0) return rows;
+  console.warn("[journal/staff] У Команді немає людей з роллю — штат з Altegio");
+  return listJournalStaffFromAltegio();
+}
+
+async function listJournalStaffFromTeam(): Promise<JournalStaff[]> {
+  const members = await prisma.teamMember.findMany({
+    where: { isActive: true, hiddenAt: null, altegioStaffId: { not: null } },
+    orderBy: [{ order: "asc" }, { name: "asc" }],
+  });
+  const rows: JournalStaff[] = [];
+  for (const member of members) {
+    const position = TEAM_ROLE_POSITIONS[member.salonRole];
+    if (!position) continue;
+    rows.push({
+      id: String(member.altegioStaffId),
+      name: member.name,
+      altegioStaffId: member.altegioStaffId as number,
+      positionTitle: position.title,
+      positionKind: position.kind,
+      teamMemberId: member.id,
+    });
+  }
+  return rows.sort((a, b) => KIND_ORDER[a.positionKind] - KIND_ORDER[b.positionKind]);
 }

@@ -6,7 +6,7 @@ import {
   createAppointmentFromKresco,
   listAppointmentsForDay,
 } from "@/lib/journal";
-import { listJournalStaffFromAltegio, hasAssignedPosition, isCalendarColumn } from "@/lib/journal/staff";
+import { listJournalStaff, hasAssignedPosition, isCalendarColumn } from "@/lib/journal/staff";
 import { isHiddenJournalStaff, loadHiddenStaffIndex } from "@/lib/team/hidden-staff";
 import { readTeamMemberAvatar } from "@/lib/team/avatar";
 import { hasCachedClientAvatar } from "@/lib/journal/cached-client-avatar";
@@ -32,7 +32,7 @@ export async function GET(req: NextRequest) {
     await ensureCanonicalServicesSeeded();
     const [appointments, staffAll, servicesRaw] = await Promise.all([
       listAppointmentsForDay(day),
-      listJournalStaffFromAltegio(),
+      listJournalStaff(),
       prisma.salonService.findMany({
         where: { isActive: true },
         orderBy: [{ kind: "asc" }, { title: "asc" }],

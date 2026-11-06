@@ -12,7 +12,7 @@ import {
 import { altegioFetch } from "@/lib/altegio/client";
 import { pickAltegioClientSnapshot, pickAltegioRecordDateTime, pickAltegioSeanceLength } from "@/lib/altegio/records";
 import { ensureSalonServiceFromLine, resolveDefaultAltegioServiceId } from "./services";
-import { listJournalStaffFromAltegio, hasAssignedPosition } from "./staff";
+import { listJournalStaff, hasAssignedPosition } from "./staff";
 import { resolveJournalCompanyId } from "./company-id";
 import { appendAppointmentChangeLog } from "./change-log";
 import { replaceAppointmentGoods, replaceAppointmentParticipants } from "./participants";
@@ -564,7 +564,7 @@ async function loadWriteContext(input: KrescoAppointmentInput, opts?: { isCreate
   let client = await prisma.directClient.findUnique({ where: { id: input.directClientId } });
   if (!client) throw new Error("Клієнта Direct не знайдено");
 
-  const staffList = await listJournalStaffFromAltegio();
+  const staffList = await listJournalStaff();
   let altegioStaffId = 0;
   let staffName = "";
   let directMasterId: string | null = null;
@@ -584,7 +584,7 @@ async function loadWriteContext(input: KrescoAppointmentInput, opts?: { isCreate
   }
   const staff = staffList.find((s) => s.altegioStaffId === altegioStaffId);
   if (!staff || !hasAssignedPosition(staff)) {
-    throw new Error("Працівника немає в актуальному штаті Altegio з посадою");
+    throw new Error("Працівника немає в актуальному штаті з посадою");
   }
   staffName = staff.name;
   if (!directMasterId) {

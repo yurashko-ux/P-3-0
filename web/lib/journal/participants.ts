@@ -1,7 +1,7 @@
 // Учасники візиту (1–5) і товари в записі.
 
 import { prisma } from "@/lib/prisma";
-import { listJournalStaffFromAltegio, hasAssignedPosition } from "./staff";
+import { listJournalStaff, hasAssignedPosition } from "./staff";
 import { serializeStaffIds } from "./line-staff";
 
 export type ParticipantInput = {
@@ -41,7 +41,7 @@ export async function replaceAppointmentParticipants(
     }
   }
 
-  const staff = await listJournalStaffFromAltegio();
+  const staff = await listJournalStaff();
   for (const p of cleaned) {
     const hit = staff.find((s) => s.altegioStaffId === p.altegioStaffId);
     if (!hit || !hasAssignedPosition(hit)) {

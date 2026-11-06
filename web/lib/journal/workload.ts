@@ -1,7 +1,7 @@
 // Місячна завантаженість календаря журналу: графік Altegio + записи в базі.
 
 import { prisma } from "@/lib/prisma";
-import { hasAssignedPosition, isCalendarColumn, listJournalStaffFromAltegio } from "@/lib/journal/staff";
+import { hasAssignedPosition, isCalendarColumn, listJournalStaff } from "@/lib/journal/staff";
 import { isHiddenJournalStaff, loadHiddenStaffIndex } from "@/lib/team/hidden-staff";
 import { loadWorkSchedule } from "@/lib/journal/work-schedule";
 import {
@@ -30,7 +30,7 @@ export async function loadMonthWorkload(month: string): Promise<Record<string, D
 
   const [schedule, staffAll, hidden] = await Promise.all([
     loadWorkSchedule(bounds.from, bounds.to),
-    listJournalStaffFromAltegio(),
+    listJournalStaff(),
     loadHiddenStaffIndex(),
   ]);
   const staffIds = staffAll

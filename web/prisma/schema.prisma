@@ -1053,6 +1053,24 @@ model Function {
   @@map("functions")
 }
 
+/// Робочий день майстра. Нема рядка — вихідний. teamMemberId заповнює тригер БД.
+model TeamWorkDay {
+  id             String      @id @default(uuid())
+  altegioStaffId Int
+  teamMemberId   String?
+  kyivDay        String
+  /// [{ from: "10:00", to: "20:00" }]
+  slots          Json
+  createdAt      DateTime    @default(now())
+  updatedAt      DateTime    @default(now()) @updatedAt
+  teamMember     TeamMember? @relation(fields: [teamMemberId], references: [id], onDelete: SetNull)
+
+  @@unique([altegioStaffId, kyivDay])
+  @@index([kyivDay])
+  @@index([teamMemberId])
+  @@map("team_work_days")
+}
+
 /// ===== Команда (етап 2б): люди салону і схеми нарахування ЗП =====
 
 /// Довідник схем нарахування ЗП (не виплата).
@@ -1128,6 +1146,7 @@ model TeamMember {
   /// Хто бачить цю людину у своєму журналі бота (вона — ціль)
   journalVisibilityAsTarget TeamMemberJournalVisibility[] @relation("JournalVisibilityTarget")
   appointments              SalonAppointment[]            @relation("AppointmentTeamMember")
+  workDays                  TeamWorkDay[]
   appointmentRoles          SalonAppointmentParticipant[] @relation("ParticipantTeamMember")
   financeOperationLines     FinanceOperationLine[]        @relation("OperationLineTeamMember")
 
