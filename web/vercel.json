@@ -36,8 +36,8 @@
       "schedule": "0 * * * *"
     },
     {
-      "path": "/api/cron/sync-last-visit",
-      "schedule": "0 * * * *"
+      "path": "/api/cron/recompute-client-metrics",
+      "schedule": "30 * * * *"
     },
     {
       "path": "/api/cron/reconcile-direct-booking-kyiv-days",

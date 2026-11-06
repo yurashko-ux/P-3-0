@@ -6,6 +6,7 @@ import {
   listBookableMasters,
   listBookableServices,
 } from "@/lib/booking/online";
+import { isOnlineBookingEnabled } from "@/lib/booking/enabled";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 60;
@@ -25,6 +26,11 @@ function rateLimit(key: string, limit: number, windowMs: number): boolean {
   return true;
 }
 
+/** Онлайн-запис вимкнено — 404 для всіх методів. */
+function disabledResponse() {
+  return NextResponse.json({ ok: false, error: "Онлайн-запис вимкнено" }, { status: 404 });
+}
+
 function clientIp(req: NextRequest): string {
   return (
     req.headers.get("x-forwarded-for")?.split(",")[0]?.trim() ||
@@ -34,6 +40,7 @@ function clientIp(req: NextRequest): string {
 }
 
 export async function GET(req: NextRequest) {
+  if (!isOnlineBookingEnabled()) return disabledResponse();
   try {
     const ip = clientIp(req);
     if (!rateLimit(`book:get:${ip}`, 60, 60_000)) {
@@ -82,6 +89,7 @@ export async function GET(req: NextRequest) {
 }
 
 export async function POST(req: NextRequest) {
+  if (!isOnlineBookingEnabled()) return disabledResponse();
   try {
     const ip = clientIp(req);
     if (!rateLimit(`book:post:${ip}`, 8, 60_000)) {

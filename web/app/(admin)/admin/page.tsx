@@ -3,6 +3,7 @@
 
 import Link from 'next/link';
 import { useState, useEffect } from 'react';
+import { isOnlineBookingEnabled } from '@/lib/booking/enabled';
 
 type Permissions = Record<string, string>;
 
@@ -375,7 +376,7 @@ export default function AdminHome() {
         </Card>
         )}
 
-        {showJournal && (
+        {showJournal && isOnlineBookingEnabled() && (
         <Card>
           <CardHeader
             emoji="🔗"

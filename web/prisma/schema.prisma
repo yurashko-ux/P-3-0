@@ -41,6 +41,12 @@ model DirectClient {
   spent                                     Int? // Загальна сума витрат клієнта (з Altegio API)
   visits                                    Int? // Кількість візитів клієнта (з Altegio API)
   lastVisitAt                               DateTime? // Дата останнього успішного візиту (з Altegio last_visit_date)
+  metricsBaseVisits                         Int? // Візити на дату переходу на підрахунок у Kresco
+  metricsBaseSpent                          Int? // Витрати на дату переходу
+  metricsBaseLastVisitAt                    DateTime? // Останній візит на дату переходу
+  metricsBaseAt                             DateTime? // Дата переходу клієнта: далі visits/spent = база + журнал Kresco
+  altegioVisits                             Int? // Контрольне значення з Altegio (лише для звірки)
+  altegioSpent                              Int? // Контрольне значення з Altegio (лише для звірки)
   lastActivityAt                            DateTime? // Коли була остання “реальна активність” (що підняла клієнта вгору)
   lastActivityKeys                          Json? // Які поля/тригери змінились в останній активності
   source                                    String    @default("instagram") // Джерело: 'instagram' | 'tiktok' | 'other'
@@ -486,6 +492,8 @@ model SalonAppointment {
   altegioClientId Int?
   masterId        String?
   altegioStaffId  Int?
+  /// Власний id майстра (TeamMember). Тригер БД заповнює з altegioStaffId.
+  teamMemberId       String?
   staffName       String?
   clientName      String?
   clientPhone     String?
@@ -506,6 +514,7 @@ model SalonAppointment {
 
   directClient DirectClient?          @relation(fields: [directClientId], references: [id], onDelete: SetNull)
   master       DirectMaster?          @relation(fields: [masterId], references: [id], onDelete: SetNull)
+  teamMember           TeamMember?                   @relation("AppointmentTeamMember", fields: [teamMemberId], references: [id], onDelete: SetNull)
   lines        SalonAppointmentLine[]
   checkout     SalonCheckout?
   depositLedgerEntries ClientDepositLedgerEntry[]
@@ -519,6 +528,7 @@ model SalonAppointment {
   @@index([directClientId])
   @@index([altegioClientId])
   @@index([altegioStaffId])
+  @@index([teamMemberId])
   @@index([masterId])
   @@index([status])
   @@index([source])
@@ -530,6 +540,8 @@ model SalonAppointmentParticipant {
   id             String  @id @default(uuid())
   appointmentId  String
   altegioStaffId Int
+  /// Власний id учасника (TeamMember). Тригер БД заповнює з altegioStaffId.
+  teamMemberId   String?
   staffName      String?
   /// master | assistant | admin | other
   role           String  @default("master")
@@ -537,10 +549,12 @@ model SalonAppointmentParticipant {
   sortOrder      Int     @default(0)
 
   appointment SalonAppointment @relation(fields: [appointmentId], references: [id], onDelete: Cascade)
+  teamMember  TeamMember?      @relation("ParticipantTeamMember", fields: [teamMemberId], references: [id], onDelete: SetNull)
 
   @@unique([appointmentId, altegioStaffId])
   @@index([appointmentId])
   @@index([altegioStaffId])
+  @@index([teamMemberId])
   @@map("salon_appointment_participants")
 }
 
@@ -642,11 +656,36 @@ model SalonCheckout {
   @@map("salon_checkouts")
 }
 
+/// Власний довідник рахунків Kresco (каси, ФОП). altegioAccountId — лише для імпорту з Altegio.
+/// Нові рахунки з Altegio додає тригер БД при записі оплати, документа чи касовки.
+model FinanceAccount {
+  id             String   @id @default(uuid())
+  altegioAccountId Int?      @unique
+  title       String
+  /// cash | bank
+  kind             String    @default("bank")
+  currencyCode     String    @default("UAH")
+  archivedAt       DateTime?
+  createdAt DateTime @default(now())
+  updatedAt        DateTime  @default(now()) @updatedAt
+
+  checkoutPayments SalonCheckoutPayment[]
+  documents        FinanceDocument[]      @relation("FinanceDocumentAccount")
+  counterDocuments FinanceDocument[]      @relation("FinanceDocumentCounterAccount")
+  cashTillCounts   CashTillCount[]
+  bankAccounts     BankAccount[]
+
+  @@index([kind])
+  @@map("finance_accounts")
+}
+
 model SalonCheckoutPayment {
   id                   String  @id @default(uuid())
   checkoutId           String
   accountId            Int
   accountTitle         String?
+  /// Власний рахунок. Для paymentKind=deposit порожній: там accountId — id депозиту.
+  financeAccountId     String?
   /// Сума в грн (для зведення чека)
   amount               Float
   /// Сума у валюті рахунку (напр. долари), якщо currencyCode != UAH
@@ -662,6 +701,7 @@ model SalonCheckoutPayment {
 
   checkout       SalonCheckout         @relation(fields: [checkoutId], references: [id], onDelete: Cascade)
   depositAccount ClientDepositAccount? @relation(fields: [depositAccountId], references: [id], onDelete: SetNull)
+  financeAccount FinanceAccount?       @relation(fields: [financeAccountId], references: [id], onDelete: SetNull)
 
   @@index([checkoutId])
   @@index([accountId])
@@ -711,12 +751,16 @@ model FinanceOperationLine {
   amount         Float  @default(0)
   staffName      String?
   altegioStaffId Int?
+  /// Власний id виконавця (TeamMember). Тригер БД заповнює з altegioStaffId.
+  teamMemberId   String?
   sortOrder      Int    @default(0)
 
   operation FinanceOperation @relation(fields: [operationId], references: [id], onDelete: Cascade)
+  teamMember TeamMember?      @relation("OperationLineTeamMember", fields: [teamMemberId], references: [id], onDelete: SetNull)
 
   @@index([operationId])
   @@index([altegioStaffId])
+  @@index([teamMemberId])
   @@map("finance_operation_lines")
 }
 
@@ -828,9 +872,13 @@ model FinanceDocument {
   /// Altegio account id (каса/ФОП)
   accountId                   Int
   accountTitle                String?
+  financeAccountId            String?
+  financeAccount              FinanceAccount? @relation("FinanceDocumentAccount", fields: [financeAccountId], references: [id], onDelete: SetNull)
   /// Для transfer — рахунок призначення
   counterAccountId            Int?
   counterAccountTitle         String?
+  counterFinanceAccountId     String?
+  counterFinanceAccount       FinanceAccount? @relation("FinanceDocumentCounterAccount", fields: [counterFinanceAccountId], references: [id], onDelete: SetNull)
   purposeId                   String?
   purposeTitle                String?
   purposeExternalId           Int?
@@ -872,11 +920,11 @@ model LeadSource {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  @@index([kind])
-  @@map("lead_sources")
-
   adIds  LeadSourceAdId[]
   emojis LeadSourceEmoji[]
+
+  @@index([kind])
+  @@map("lead_sources")
 }
 
 /// Емодзі з першого вхідного повідомлення → джерело.
@@ -1079,6 +1127,9 @@ model TeamMember {
   journalVisibilityAsViewer TeamMemberJournalVisibility[] @relation("JournalVisibilityViewer")
   /// Хто бачить цю людину у своєму журналі бота (вона — ціль)
   journalVisibilityAsTarget TeamMemberJournalVisibility[] @relation("JournalVisibilityTarget")
+  appointments              SalonAppointment[]            @relation("AppointmentTeamMember")
+  appointmentRoles          SalonAppointmentParticipant[] @relation("ParticipantTeamMember")
+  financeOperationLines     FinanceOperationLine[]        @relation("OperationLineTeamMember")
 
   @@index([salonRole])
   @@index([isActive])
@@ -1174,6 +1225,8 @@ model BankAccount {
   /// Коли востаннє оновлено поточний баланс Monobank (client-info / webhook / sync).
   balanceUpdatedAt               DateTime?
   altegioAccountId               String?
+  financeAccountId               String?
+  financeAccount                 FinanceAccount? @relation(fields: [financeAccountId], references: [id], onDelete: SetNull)
   altegioAccountTitle            String?
   altegioBalance                 BigInt?
   altegioBalanceUpdatedAt        DateTime?
@@ -1948,6 +2001,8 @@ model CashTillCount {
   kyivDay      String
   accountId    Int
   accountTitle String
+  financeAccountId String?
+  financeAccount   FinanceAccount? @relation(fields: [financeAccountId], references: [id], onDelete: SetNull)
   /// Сума перерахунку у валюті каси (для долара і євро це не гривні).
   countedUah   Float
   /// Уже порахована і скріплена готівка; не перераховують щодня до інкасації.

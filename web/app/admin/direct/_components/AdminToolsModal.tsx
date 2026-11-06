@@ -771,7 +771,7 @@ export function AdminToolsModal({
     }
   };
 
-  // Кількість кнопок: 104. При додаванні нової кнопки завжди додавати її в кінець відповідної категорії та оновлювати цю кількість у коментарі.
+  // Кількість кнопок: 105. При додаванні нової кнопки завжди додавати її в кінець відповідної категорії та оновлювати цю кількість у коментарі.
   const tools = [
     {
       category: "Тести",
@@ -2552,6 +2552,19 @@ export function AdminToolsModal({
             }
             return `Токен не бачить сторінку.\n${data.error || "Невідома відповідь Meta."}`;
           },
+        },
+      ],
+    },
+    {
+      category: "Клієнти (метрики Kresco)",
+      items: [
+        {
+          icon: "⚖️",
+          label: "Звірити візити й витрати: Kresco ↔ Altegio",
+          endpoint: "/api/admin/direct/client-metrics-compare",
+          method: "GET" as const,
+          successMessage: (data: any) =>
+            `⚖️ Звірка метрик\n\nЗвірено клієнтів: ${data.compared}\nРозбіжності у візитах: ${data.visitsDiff}\nРозбіжності у витратах: ${data.spentDiff}\n\n${JSON.stringify(data.rows, null, 2)}`,
         },
       ],
     },

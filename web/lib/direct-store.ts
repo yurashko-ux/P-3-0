@@ -14,6 +14,7 @@ import { normalizeInstagram } from './normalize';
 import { namesMatch } from './name-normalize';
 import { logStateChange } from './direct-state-log';
 import { fetchAltegioClientMetrics } from './altegio/metrics';
+import { resetClientMetricsBase } from './direct-client-metrics';
 export { ensureDirectBookingKyivDayColumns, directKyivDayColumnsExist } from './direct-booking-kyiv-ensure';
 import {
   invalidateKyivDayColumnCache,
@@ -1112,7 +1113,7 @@ export async function updateInstagramForAltegioClient(
           const m = await fetchAltegioClientMetrics({ altegioClientId });
           if (m.ok) {
             const nextPhone = m.metrics.phone ? String(m.metrics.phone).trim() : '';
-            if (nextPhone && (!current.phone || current.phone.trim() !== nextPhone)) {
+            if (nextPhone && !current.phone?.trim()) {
               updates.phone = nextPhone;
             }
             if (m.metrics.visits !== null && m.metrics.visits !== undefined && current.visits !== m.metrics.visits) {
@@ -1154,6 +1155,7 @@ export async function updateInstagramForAltegioClient(
           { altegioClientId, changedKeys },
           { touchUpdatedAt: false, skipAltegioMetricsSync: true }
         );
+        await resetClientMetricsBase(directClientId);
       } catch {
         // ignore
       }
@@ -2683,7 +2685,7 @@ async function syncAltegioClientMetricsOnce(params: { directClientId: string; al
     const nextSpent = res.metrics.spent ?? null;
 
     const updates: Partial<DirectClient> = {};
-    if (nextPhone && (!current.phone || current.phone.trim() !== nextPhone)) {
+    if (nextPhone && !current.phone?.trim()) {
       updates.phone = nextPhone;
     }
     if (nextVisits !== null && current.visits !== nextVisits) {
@@ -2732,6 +2734,7 @@ async function syncAltegioClientMetricsOnce(params: { directClientId: string; al
       { altegioClientId: params.altegioClientId, changedKeys },
       { touchUpdatedAt: false, skipAltegioMetricsSync: true }
     );
+    await resetClientMetricsBase(params.directClientId);
 
     console.log('[direct-store] ✅ Altegio-метрики синхронізовано (перший раз)', {
       directClientId: params.directClientId,

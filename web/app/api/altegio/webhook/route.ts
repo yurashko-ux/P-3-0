@@ -211,30 +211,6 @@ function lastVisitAtFromWebhookDatetime(
   return visitIso;
 }
 
-/**
- * Синхронізує spent та visits з Altegio (lastVisitAt тепер з вебхука при attendance=1).
- */
-async function syncClientMetricsFromAltegio(altegioClientId: number): Promise<{
-  spent?: number | null;
-  visits?: number | null;
-}> {
-  const result: { spent?: number | null; visits?: number | null } = {};
-  
-  // Оновлюємо тільки spent та visits
-  try {
-    const { fetchAltegioClientMetrics } = await import('@/lib/altegio/metrics');
-    const metrics = await fetchAltegioClientMetrics({ altegioClientId });
-    if (metrics.ok) {
-      result.spent = metrics.metrics.spent ?? null;
-      result.visits = metrics.metrics.visits ?? null;
-    }
-  } catch (err) {
-    console.warn('[altegio/webhook] ⚠️ Не вдалося витягнути spent/visits з Altegio (не критично):', err);
-  }
-  
-  return result;
-}
-
 export async function POST(req: NextRequest) {
   try {
     const body = await req.json().catch(() => ({}));
@@ -1278,9 +1254,14 @@ export async function POST(req: NextRequest) {
                 // Sync spent при visit_attendance=1 для будь-якої платної послуги (не консультації)
                 // Працює для всіх типів послуг включно з "Невідома послуга", коли inner блок не спрацював
                 if (attendance === 1 && !hasConsultation && existingClient.altegioClientId) {
-                  const metrics = await syncClientMetricsFromAltegio(existingClient.altegioClientId);
-                  if (metrics.spent !== undefined) updates.spent = metrics.spent;
-                  if (metrics.visits !== undefined) updates.visits = metrics.visits;
+                  // Рахуємо з журналу Kresco; запис і чек уже імпортовані вище у цьому вебхуку.
+                  const { recomputeClientMetrics, readClientMetrics } = await import('@/lib/direct-client-metrics');
+                  await recomputeClientMetrics(existingClient.id);
+                  const metrics = await readClientMetrics(existingClient.id);
+                  if (metrics) {
+                    updates.spent = metrics.spent ?? undefined;
+                    updates.visits = metrics.visits ?? undefined;
+                  }
                 }
                 
                 // Автоматично призначаємо майстра, якщо:
@@ -2643,7 +2624,8 @@ export async function POST(req: NextRequest) {
                 // у CRM воно вводиться вручну українською, тому при merge/update перезаписуємо ним Direct.
                 ...(firstName && { firstName }),
                 ...(lastName && { lastName }),
-                ...(phoneFromAltegio && { phone: phoneFromAltegio }), // Додаємо телефон з Altegio
+                // Телефон ведемо в Kresco: з Altegio беремо лише якщо в картці порожньо.
+                ...(phoneFromAltegio && !existingClient.phone?.trim() && { phone: phoneFromAltegio }),
                 updatedAt: new Date().toISOString(),
               };
               

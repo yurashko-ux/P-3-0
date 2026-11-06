@@ -4,6 +4,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getAllDirectClients, saveDirectClient } from '@/lib/direct-store';
 import { fetchAltegioClientMetrics } from '@/lib/altegio/metrics';
+import { saveAltegioMetricsShadow } from '@/lib/direct-client-metrics';
 import { kvWrite } from '@/lib/kv';
 
 export const runtime = 'nodejs';
@@ -156,21 +157,14 @@ async function runSync(req: NextRequest) {
       const updates: any = {};
       const changedKeys: string[] = [];
 
-      if (nextPhone && (!client.phone || client.phone.trim() !== nextPhone)) {
+      // Значення Altegio лише для звірки: visits/spent рахує recompute-client-metrics.
+      await saveAltegioMetricsShadow(client.id, nextVisits, nextSpent);
+
+      // Телефон ведемо в Kresco: з Altegio беремо лише якщо в картці порожньо.
+      if (nextPhone && !client.phone?.trim()) {
         updates.phone = nextPhone;
         changedKeys.push('phone');
       }
-      // Використовуємо нормалізоване порівняння для visits (враховуємо null vs undefined)
-      if (nextVisits !== null && currentVisitsNormalized !== nextVisits) {
-        updates.visits = nextVisits;
-        changedKeys.push('visits');
-      }
-      // Використовуємо нормалізоване порівняння для spent (враховуємо null vs undefined)
-      if (nextSpent !== null && currentSpentNormalized !== nextSpent) {
-        updates.spent = nextSpent;
-        changedKeys.push('spent');
-      }
-      
 
       // lastVisitAt: оновлюємо, якщо Altegio дав last_visit_date для цього altegioClientId.
       // Не “затираємо” на null, якщо ключ не знайдений (щоб не втрачати дані при часткових вибірках).

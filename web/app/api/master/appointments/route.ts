@@ -67,9 +67,14 @@ export async function GET(req: NextRequest) {
         id: true,
         name: true,
         altegioStaffId: true,
-        journalVisibilityAsViewer: { select: { target: { select: { altegioStaffId: true } } } },
+        journalVisibilityAsViewer: { select: { target: { select: { id: true, altegioStaffId: true } } } },
       },
     });
+
+    // Власні id людей (TeamMember) — основний ключ; altegioStaffId лише для записів без teamMemberId.
+    const visibleMemberIds = new Set<string>();
+    if (member) visibleMemberIds.add(member.id);
+    for (const v of member?.journalVisibilityAsViewer || []) visibleMemberIds.add(v.target.id);
 
     // Видимість журналу — ручний список «кого я бачу» (адмінка «Команда»), не роль.
     // Себе бачимо завжди за замовчуванням, навіть якщо список видимості порожній.
@@ -79,7 +84,7 @@ export async function GET(req: NextRequest) {
       if (v.target.altegioStaffId) visibleStaffIds.add(v.target.altegioStaffId);
     }
 
-    if (!member || visibleStaffIds.size === 0) {
+    if (!member || visibleMemberIds.size === 0) {
       return NextResponse.json(
         { ok: false, error: "Акаунт не прив'язано. Зверніться до адміністратора." },
         { status: 403 },
@@ -96,9 +101,13 @@ export async function GET(req: NextRequest) {
     // participants заповнюються лише для записів, створених вручну через Kresco.
     // Перевіряємо обидва джерела, щоб не втратити звичайні Altegio-записи.
     // Бачимо запис, якщо хтось із задіяних у ньому людей є в нашому списку видимості.
-    const isMine = (a: { altegioStaffId: number | null; participants: Array<{ altegioStaffId: number }> }) =>
-      (a.altegioStaffId != null && visibleStaffIds.has(a.altegioStaffId)) ||
-      a.participants.some((p) => visibleStaffIds.has(p.altegioStaffId));
+    type StaffRef = { altegioStaffId: number | null; teamMemberId: string | null };
+    const isVisible = (ref: StaffRef) =>
+      ref.teamMemberId
+        ? visibleMemberIds.has(ref.teamMemberId)
+        : ref.altegioStaffId != null && visibleStaffIds.has(ref.altegioStaffId);
+    const isMine = (a: StaffRef & { participants: StaffRef[] }) =>
+      isVisible(a) || a.participants.some(isVisible);
 
     const appointments = await listAppointmentsForDay(day);
     const mine = appointments.filter(isMine);
@@ -150,7 +159,7 @@ export async function GET(req: NextRequest) {
       day,
       masterName: member.name,
       // true, якщо людина бачить ще когось крім себе (список видимості містить >1 altegioStaffId).
-      multiView: visibleStaffIds.size > 1,
+      multiView: visibleMemberIds.size > 1,
       appointments: rows,
       ...(weekDays ? { weekDays } : {}),
     });
