@@ -14,6 +14,11 @@ import {
   type DepositAttributedItem,
 } from "@/lib/altegio/deposit-attribution";
 import { withFinanceReportArchive } from "@/lib/finance/report-archive";
+import {
+  fetchKrescoExpensesSummary,
+  fetchKrescoFinanceSummary,
+  fetchKrescoGoodsSummary,
+} from "@/lib/finance/report-kresco";
 import { EditCostButton } from "./_components/EditCostButton";
 import { EditExpensesButton } from "./_components/EditExpensesButton";
 import { EditExpenseField } from "./_components/EditExpenseField";
@@ -373,6 +378,7 @@ async function getManualExpenseField(
 async function getSummaryForMonth(
   year: number,
   month: number,
+  useKresco = false,
 ): Promise<{
   summary: FinanceSummary | null;
   goods: GoodsSalesSummary | null;
@@ -523,12 +529,14 @@ async function getSummaryForMonth(
     ] as const;
 
     const summarySettled = await Promise.allSettled([
-      withFinanceReportArchive(year, month, "summary", () =>
-        fetchFinanceSummary({
-          date_from: from,
-          date_to: to,
-        }),
-      ),
+      useKresco
+        ? fetchKrescoFinanceSummary(from, to)
+        : withFinanceReportArchive(year, month, "summary", () =>
+            fetchFinanceSummary({
+              date_from: from,
+              date_to: to,
+            }),
+          ),
     ]);
 
     const failures: string[] = [];
@@ -549,20 +557,24 @@ async function getSummaryForMonth(
     const summary = (summarySettled[0] as PromiseFulfilledResult<FinanceSummary>).value;
 
     const settled = await Promise.allSettled([
-      withFinanceReportArchive(year, month, "goods", () =>
-        fetchGoodsSalesSummary({
-          date_from: from,
-          date_to: to,
-          salonGoodsRevenueUah: summary.totals?.goods,
-          incomeGoodsStatsExtras: summary.incomeGoodsStatsExtras,
-        }),
-      ),
-      withFinanceReportArchive(year, month, "expenses", () =>
-        fetchExpensesSummary({
-          date_from: from,
-          date_to: to,
-        }),
-      ),
+      useKresco
+        ? fetchKrescoGoodsSummary(from, to)
+        : withFinanceReportArchive(year, month, "goods", () =>
+            fetchGoodsSalesSummary({
+              date_from: from,
+              date_to: to,
+              salonGoodsRevenueUah: summary.totals?.goods,
+              incomeGoodsStatsExtras: summary.incomeGoodsStatsExtras,
+            }),
+          ),
+      useKresco
+        ? fetchKrescoExpensesSummary(from, to)
+        : withFinanceReportArchive(year, month, "expenses", () =>
+            fetchExpensesSummary({
+              date_from: from,
+              date_to: to,
+            }),
+          ),
     ]);
 
     settled.forEach((result, i) => {
@@ -892,7 +904,7 @@ async function getSummaryForMonth(
 export default async function FinanceReportPage({
   searchParams,
 }: {
-  searchParams?: { year?: string; month?: string };
+  searchParams?: { year?: string; month?: string; source?: string };
 }) {
   // Вимкнути кешування для завжди свіжих даних
   noStore();
@@ -919,6 +931,7 @@ export default async function FinanceReportPage({
   const today = new Date();
   const defaultReportMonth = getDefaultFinanceReportMonth(today);
 
+  const reportSource = searchParams?.source === "kresco" ? "kresco" : "altegio";
   const selectedYear = searchParams?.year
     ? Number(searchParams.year)
     : defaultReportMonth.year;
@@ -966,6 +979,7 @@ export default async function FinanceReportPage({
   } = await getSummaryForMonth(
     selectedYear,
     selectedMonth,
+    reportSource === "kresco",
   );
 
   const warehouseBalanceSourceLabel = getWarehouseBalanceSourceLabel(warehouseBalanceSource);
@@ -1034,6 +1048,12 @@ export default async function FinanceReportPage({
     <div className="mx-auto max-w-6xl px-2 py-2 space-y-2">
       <div className="flex flex-col gap-1 md:flex-row md:items-end md:justify-between">
         <div>
+          <Link
+            href={`/admin/finance-report?year=${selectedYear}&month=${selectedMonth}${reportSource === "kresco" ? "" : "&source=kresco"}`}
+            className="text-xs text-blue-600 underline"
+          >
+            {reportSource === "kresco" ? "Дані Kresco · показати Altegio" : "Показати дані Kresco"}
+          </Link>
           <h1 className="text-base sm:text-lg font-semibold">Фінансовий звіт (Altegio)</h1>
           {summary && (
             <p className="text-xs text-gray-500">

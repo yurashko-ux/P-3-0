@@ -352,6 +352,8 @@ async function getManualExpenses(year: number, month: number): Promise<number | 
 export async function fetchExpensesSummary(params: {
   date_from: string;
   date_to: string;
+  /** Рядки з локальної БД: той самий розрахунок без запитів до Altegio. */
+  localTransactions?: AltegioFinanceTransaction[];
 }): Promise<ExpensesSummary> {
   const { date_from, date_to } = params;
   const companyId = resolveCompanyId();
@@ -368,7 +370,7 @@ export async function fetchExpensesSummary(params: {
   const categoryMap = new Map<number, string>();
   
   try {
-    categories = await fetchExpenseCategories();
+    if (!params.localTransactions) categories = await fetchExpenseCategories();
     // Створюємо мапу category_id -> category_name для швидкого пошуку
     for (const cat of categories) {
       const name = cat.name || cat.title || cat.category || `Категорія ${cat.id}`;
@@ -597,7 +599,8 @@ export async function fetchExpensesSummary(params: {
     },
   ];
 
-  let transactions: AltegioFinanceTransaction[] = [];
+  let transactions: AltegioFinanceTransaction[] = params.localTransactions ?? [];
+  if (params.localTransactions) attempts.length = 0;
   let lastError: Error | null = null;
 
   for (const attempt of attempts) {
