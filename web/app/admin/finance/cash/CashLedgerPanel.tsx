@@ -247,6 +247,8 @@ export function CashLedgerPanel({
           ) : null}
           <div className="grid grid-cols-[minmax(0,1fr)_220px]">
             {/* table-fixed + однакові ширини: колонки всіх днів стоять одна під одною */}
+            {/* Обгортка: таблиця не розтягує рядки під висоту колонки «Касовка» */}
+            <div className="min-w-0">
             <table className="w-full table-fixed text-left text-[10px]">
               <colgroup>
                 <col style={{ width: "6%" }} />
@@ -340,6 +342,7 @@ export function CashLedgerPanel({
                 ) : null}
               </tbody>
             </table>
+            </div>
             <div className="border-l border-gray-200">
               <div className="border-b border-gray-300 bg-slate-300 px-2 py-1 text-right text-[10px] font-semibold text-emerald-900">
                 Касовка
@@ -350,7 +353,10 @@ export function CashLedgerPanel({
               ) : (
                 day.counts.map((count) => {
                   const unit = unitOf(count.currency);
-                  const diff = count.variance != null && Math.abs(count.variance) >= 0.01 ? count.variance : null;
+                  // До старту каси «мало бути» рахувала стара схема — ці числа не порівнюємо
+                  const current = count.kyivDay >= CASH_RECONCILE_FROM_KYIV_DAY;
+                  const diff =
+                    current && count.variance != null && Math.abs(count.variance) >= 0.01 ? count.variance : null;
                   return (
                     <div key={count.id} className="mb-2 border-b border-emerald-100 pb-1.5 last:mb-0 last:border-b-0 last:pb-0">
                       <div className="flex items-start justify-between gap-1">
@@ -370,7 +376,7 @@ export function CashLedgerPanel({
                       <div className="tabular-nums text-emerald-900">
                         {money(count.counted)} {unit}
                       </div>
-                      {count.expected != null ? (
+                      {current && count.expected != null ? (
                         <div className="tabular-nums text-gray-600">
                           мало бути {money(count.expected)} {unit}
                         </div>
