@@ -314,6 +314,7 @@ export async function compareDirectWithJournal(days: number, sampleLimit = 40, o
       serviceMasterName: true,
       paidServiceTotalCost: true,
       paidRecordsInHistoryCount: true,
+      metricsBaseVisits: true,
       updatedAt: true,
     },
   });
@@ -328,8 +329,10 @@ export async function compareDirectWithJournal(days: number, sampleLimit = 40, o
     masterDiff: 0,
     totalDiff: 0,
     totalJournalZero: 0,
-    /** Картка каже «перший платний» (вогник), а в журналі вже був відвіданий платний запис. */
+    /** Картка каже «перший платний» (вогник), а база на дату переходу або журнал кажуть, що вже були візити. */
     fireDiff: 0,
+    /** Навпаки: картка знає попередні платні, а база й журнал порожні. */
+    fireMissing: 0,
     /** Пари «стан картки → стан із журналу»: стан картки має проміжні значення, тому без оцінки. */
     statePairs: {} as Record<string, number>,
   };
@@ -370,7 +373,9 @@ export async function compareDirectWithJournal(days: number, sampleLimit = 40, o
       const hasJournalTotal = detail.totals[0] > 0;
       const totalDiff =
         hasJournalTotal && client.paidServiceTotalCost != null && !detail.totals.includes(client.paidServiceTotalCost);
-      const fireDiff = client.paidRecordsInHistoryCount === 0 && detail.hadPaidBefore;
+      const paidBefore = detail.hadPaidBefore || (client.metricsBaseVisits ?? 0) > 0;
+      const fireDiff = client.paidRecordsInHistoryCount === 0 && paidBefore;
+      if ((client.paidRecordsInHistoryCount ?? 0) > 0 && !paidBefore) details.fireMissing += 1;
       if (masterDiff) details.masterDiff += 1;
       if (totalDiff) details.totalDiff += 1;
       if (!hasJournalTotal) details.totalJournalZero += 1;

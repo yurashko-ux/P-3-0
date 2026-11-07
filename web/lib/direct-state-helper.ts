@@ -3,12 +3,14 @@
 
 /**
  * Чи назва послуги стосується нарощування (волосся).
- * У Altegio часто англійські назви: «Capsule hair extension», тоді як логіка була лише під UA «нарощування».
+ * У Altegio часто англійські назви: «Capsule hair extension», а українські бувають «нарощення», «загущення», «Стрічкове V_BIOTAPE».
  */
 export function isHairExtensionServiceTitle(title: string | undefined | null): boolean {
   const t = (title || '').trim();
   if (!t) return false;
-  return /нарощування|hair\s*extension|capsule\s+hair/i.test(t);
+  // Зняття — окрема послуга, навіть якщо в назві є «нарощування». «Капсулювання» — не «капсульне».
+  if (/зняття/i.test(t)) return false;
+  return /нарощування|нарощення|загущення|капсульне|стрічкове|hair\s*extension|capsule\s+hair/i.test(t);
 }
 
 /**
