@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { refreshDirectCardAfterJournalChange } from "@/lib/direct-journal-state";
 import { requireJournalSection } from "@/lib/journal/require-journal-auth";
 import {
   cancelAppointmentFromKresco,
@@ -42,6 +43,7 @@ export async function PATCH(req: NextRequest, { params }: { params: { id: string
       attendance: Number(body.attendance),
       actor: auth.type === "user" ? auth.login : auth.type,
     });
+    await refreshDirectCardAfterJournalChange(params.id);
     return NextResponse.json({ ok: true, appointment });
   } catch (err) {
     console.error("[api/admin/journal/appointments/:id] PATCH error:", err);
@@ -70,6 +72,7 @@ export async function PUT(req: NextRequest, { params }: { params: { id: string }
       goods: Array.isArray(body.goods) ? body.goods : undefined,
       actor: auth.type === "user" ? auth.login : auth.type,
     });
+    await refreshDirectCardAfterJournalChange(params.id);
     return NextResponse.json({ ok: true, appointment });
   } catch (err) {
     console.error("[api/admin/journal/appointments/:id] PUT error:", err);

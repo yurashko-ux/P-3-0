@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
+import { refreshDirectCardAfterJournalChange } from "@/lib/direct-journal-state";
 import { requireJournalSection } from "@/lib/journal/require-journal-auth";
 import { kyivCalendarTodayYmd } from "@/lib/direct-kyiv-today";
 import {
@@ -170,6 +171,7 @@ export async function POST(req: NextRequest) {
       goods: Array.isArray(body.goods) ? body.goods : undefined,
       actor: auth.type === "user" ? auth.login : auth.type,
     });
+    await refreshDirectCardAfterJournalChange(appointment.id);
     return NextResponse.json({ ok: true, appointment });
   } catch (err) {
     console.error("[api/admin/journal/appointments] POST error:", err);

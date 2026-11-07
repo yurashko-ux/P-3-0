@@ -120,6 +120,8 @@ function planCardChanges(
     consultationAttended: boolean | null;
     paidServiceDate: Date | null;
     paidServiceAttended: boolean | null;
+    consultationCancelled: boolean;
+    paidServiceCancelled: boolean;
     paidServiceTotalCost: number | null;
     serviceMasterName: string | null;
   },
@@ -135,7 +137,14 @@ function planCardChanges(
     attended: boolean | null,
     nextAttended: boolean | null,
   ) => {
-    if (!next || (current && (sameMinute(current, next) || sameKyivDay(current, next)))) return;
+    if (!next) return;
+    if (current && sameMinute(current, next)) {
+      if (attended !== true && nextAttended !== null && attended !== nextAttended) {
+        changes.push({ field: attendedField, from: attended, to: nextAttended });
+      }
+      return;
+    }
+    if (current && sameKyivDay(current, next)) return;
     // Минулу дату назад не рухаємо: картка могла бачити запис, який журнал рахує інакше.
     if (current && next < current && next < new Date()) return;
     changes.push({ field, from: current, to: toCardDate(next) });
@@ -144,8 +153,8 @@ function planCardChanges(
       changes.push({ field: attendedField, from: attended, to: nextAttended });
     }
   };
-  date("consultationBookingDate", card.consultationBookingDate, journal.consultationBookingDate, "consultationAttended", card.consultationAttended, journal.consultationAttended);
-  date("paidServiceDate", card.paidServiceDate, journal.paidServiceDate, "paidServiceAttended", card.paidServiceAttended, journal.paidServiceAttended);
+  date("consultationBookingDate", card.consultationBookingDate, journal.consultationBookingDate, "consultationAttended", card.consultationCancelled ? false : card.consultationAttended, journal.consultationAttended);
+  date("paidServiceDate", card.paidServiceDate, journal.paidServiceDate, "paidServiceAttended", card.paidServiceCancelled ? false : card.paidServiceAttended, journal.paidServiceAttended);
   if (detail) {
     const total = Math.round(detail.totals[3]);
     if (total > 0 && total !== card.paidServiceTotalCost) {
@@ -157,6 +166,77 @@ function planCardChanges(
     }
   }
   return changes;
+}
+
+/**
+ * Оновлює картку одного клієнта після зміни запису в Kresco. Три запити до БД, четвертий — лише якщо є зміни.
+ * Правила ті самі, що в №107. Помилка не має ламати збереження запису — її ловить той, хто викликає.
+ */
+export async function syncDirectCardFromJournal(appointmentId: string) {
+  const appointment = await prisma.salonAppointment.findUnique({
+    where: { id: appointmentId },
+    select: { directClientId: true },
+  });
+  const directClientId = appointment?.directClientId;
+  if (!directClientId) return { changes: [] as CardChange[] };
+  const [rows, client] = await Promise.all([
+    prisma.salonAppointment.findMany({
+      where: {
+        directClientId,
+        datetime: { gte: new Date(Date.now() - 60 * 24 * 60 * 60 * 1000) },
+        status: { not: "deleted" },
+      },
+      select: {
+        datetime: true,
+        attendance: true,
+        staffName: true,
+        checkout: { select: { totalGoods: true, status: true } },
+        lines: { select: { title: true, cost: true, service: { select: { kind: true } } } },
+      },
+    }),
+    prisma.directClient.findUnique({
+      where: { id: directClientId },
+      select: {
+        consultationBookingDate: true,
+        consultationAttended: true,
+        paidServiceDate: true,
+        paidServiceAttended: true,
+        consultationCancelled: true,
+        paidServiceCancelled: true,
+        paidServiceTotalCost: true,
+        serviceMasterName: true,
+        updatedAt: true,
+      },
+    }),
+  ]);
+  if (!client) return { changes: [] as CardChange[] };
+  const journalRows: JournalAppointment[] = rows.map((a) => ({
+    datetime: a.datetime,
+    attendance: a.attendance,
+    staffName: a.staffName,
+    goodsTotal: a.checkout && a.checkout.status !== "void" ? Number(a.checkout.totalGoods) || 0 : 0,
+    lines: a.lines.map((l) => ({ title: l.title, cost: l.cost, kind: l.service?.kind })),
+  }));
+  const changes = planCardChanges(
+    client,
+    deriveDirectFieldsFromJournal(journalRows),
+    deriveDirectDetailsFromJournal(journalRows),
+  );
+  if (changes.length === 0) return { changes };
+  const data: Record<string, unknown> = { updatedAt: client.updatedAt };
+  for (const change of changes) data[change.field] = change.to;
+  console.log("[direct-journal-state] Автооновлення картки з журналу", directClientId, JSON.stringify(changes));
+  await prisma.directClient.update({ where: { id: directClientId }, data });
+  return { changes };
+}
+
+/** Для маршрутів журналу: запис уже збережено, тому збій картки лише логуємо. */
+export async function refreshDirectCardAfterJournalChange(appointmentId: string) {
+  try {
+    await syncDirectCardFromJournal(appointmentId);
+  } catch (err) {
+    console.error("[direct-journal-state] Не вдалось оновити картку після зміни запису", appointmentId, err);
+  }
 }
 
 /** Два запити до БД на весь запуск. Лише читання. */

@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { refreshDirectCardAfterJournalChange } from "@/lib/direct-journal-state";
 import { requireJournalSection } from "@/lib/journal/require-journal-auth";
 import { closeVisitFromKresco, getCheckoutContext } from "@/lib/journal/checkout";
 
@@ -95,6 +96,7 @@ export async function POST(req: NextRequest, { params }: { params: { id: string 
       comment: typeof body.comment === "string" ? body.comment : undefined,
       createdBy,
     });
+    await refreshDirectCardAfterJournalChange(params.id);
     return NextResponse.json({ ok: true, checkout });
   } catch (err) {
     console.error("[api/admin/journal/appointments/:id/checkout] POST error:", err);
