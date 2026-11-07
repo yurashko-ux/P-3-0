@@ -26,7 +26,12 @@ export async function GET(req: NextRequest) {
       ok: true,
       documents,
       ...(options
-        ? { accounts: options.accounts, purposes: options.purposes, accountArchive: options.accountArchive }
+        ? {
+            accounts: options.accounts,
+            purposes: options.purposes,
+            accountArchive: options.accountArchive,
+            expenseGroups: options.expenseGroups,
+          }
         : {}),
     });
   } catch (err) {
