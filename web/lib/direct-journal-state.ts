@@ -63,6 +63,9 @@ export function deriveDirectDetailsFromJournal(appointments: JournalAppointment[
     // Рядки дублюються в записах кількох майстрів, тому допускаємо суму одного запису і всього візиту.
     totals: [rowTotal(current), visit.reduce((sum, a) => sum + rowTotal(a), 0)].flatMap((total) => [total, total + goods]),
     hadPaidBefore: paidRows.some((a) => a.datetime < current.datetime && a.attendance === 1),
+    paidBeforeDays: new Set(
+      paidRows.filter((a) => a.datetime < current.datetime && a.attendance === 1).map((a) => kyivDay(a.datetime)),
+    ).size,
   };
 }
 
@@ -125,6 +128,7 @@ function planCardChanges(
     paidServiceCancelled: boolean;
     paidServiceTotalCost: number | null;
     serviceMasterName: string | null;
+    paidRecordsInHistoryCount: number | null;
   },
   journal: JournalDirectFields,
   detail: ReturnType<typeof deriveDirectDetailsFromJournal>,
@@ -158,6 +162,10 @@ function planCardChanges(
     const total = Math.round(detail.totals[3]);
     if (total > 0 && total !== card.paidServiceTotalCost) {
       changes.push({ field: "paidServiceTotalCost", from: card.paidServiceTotalCost, to: total });
+    }
+    // Вогник: лічильник картки — база з повної історії Altegio, журнал лише знімає «перший платний».
+    if (card.paidRecordsInHistoryCount === 0 && detail.paidBeforeDays > 0) {
+      changes.push({ field: "paidRecordsInHistoryCount", from: 0, to: detail.paidBeforeDays });
     }
     const master = card.serviceMasterName ?? "";
     if (detail.masters.length > 0 && !detail.masters.some((name) => master.includes(name))) {
@@ -203,6 +211,7 @@ export async function syncDirectCardFromJournal(appointmentId: string, options?:
         paidServiceCancelled: true,
         paidServiceTotalCost: true,
         serviceMasterName: true,
+        paidRecordsInHistoryCount: true,
         updatedAt: true,
       },
     }),
