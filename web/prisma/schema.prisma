@@ -871,7 +871,16 @@ model FinanceDocument {
   /// kresco | altegio_import
   source                      String   @default("kresco")
   title                       String?
+  /// Гривневий еквівалент; для валютного документа — за робочим курсом дня або фактом обміну
   amountUah                   Float
+  /// UAH | USD | EUR — валюта рахунку accountId
+  currency                    String   @default("UAH")
+  /// Сума у валюті рахунку; для гривні порожньо
+  amountFx                    Float?
+  /// Для transfer — валюта рахунку призначення
+  counterCurrency             String?
+  /// Для transfer — сума у валюті рахунку призначення; для гривні порожньо
+  counterAmountFx             Float?
   kyivDay                     String
   occurredAt                  DateTime @default(now())
   /// Altegio account id (каса/ФОП)

@@ -1,10 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
-
-type AccountOpt = { id: number; title: string; type?: string | null };
-type ArchiveAccount = { id: number; title: string; hidden: boolean };
-type PurposeOpt = { id: string; title: string; externalId: number | null; source?: string | null };
+import { useCallback, useEffect, useState } from "react";
 
 type DocRow = {
   id: string;
@@ -14,6 +10,8 @@ type DocRow = {
   syncError: string | null;
   title: string | null;
   amountUah: number;
+  currency: string;
+  amountFx: number | null;
   kyivDay: string;
   occurredAt: string;
   accountId: number;
@@ -33,42 +31,23 @@ const TYPE_LABEL: Record<string, string> = {
   transfer: "Переміщення",
 };
 
-const emptyForm = {
-  type: "expense" as "income" | "expense" | "transfer",
-  amountUah: "",
-  accountId: "",
-  counterAccountId: "",
-  purposeId: "",
-  occurredAt: "",
-  comment: "",
-};
-
 function money(n: number) {
   return n.toLocaleString("uk-UA", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 }
 
 export default function FinanceDocumentsPage() {
   const [documents, setDocuments] = useState<DocRow[]>([]);
-  const [accounts, setAccounts] = useState<AccountOpt[]>([]);
-  const [accountArchive, setAccountArchive] = useState<ArchiveAccount[]>([]);
-  const [purposes, setPurposes] = useState<PurposeOpt[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
-  const [busy, setBusy] = useState(false);
-  const [showForm, setShowForm] = useState(false);
-  const [form, setForm] = useState(emptyForm);
 
   const load = useCallback(async () => {
     setLoading(true);
     setError(null);
     try {
-      const res = await fetch("/api/admin/finance/documents?options=1&limit=80", { credentials: "include" });
+      const res = await fetch("/api/admin/finance/documents?limit=80", { credentials: "include" });
       const json = await res.json();
       if (!res.ok || !json.ok) throw new Error(json.error || "Помилка завантаження");
       setDocuments(json.documents || []);
-      setAccounts(json.accounts || []);
-      setAccountArchive(json.accountArchive || []);
-      setPurposes((json.purposes || []).filter((p: PurposeOpt) => p.externalId != null));
     } catch (err) {
       setError(err instanceof Error ? err.message : "Помилка");
     } finally {
@@ -80,235 +59,17 @@ export default function FinanceDocumentsPage() {
     void load();
   }, [load]);
 
-  const purposeOptions = useMemo(() => {
-    return [...purposes].sort((a, b) => a.title.localeCompare(b.title, "uk"));
-  }, [purposes]);
-
-  function openCreate(type: "income" | "expense" | "transfer" = "expense") {
-    const now = new Date();
-    const local = new Date(now.getTime() - now.getTimezoneOffset() * 60000)
-      .toISOString()
-      .slice(0, 16);
-    setForm({ ...emptyForm, type, occurredAt: local });
-    setShowForm(true);
-  }
-
-  async function saveForm() {
-    setBusy(true);
-    setError(null);
-    try {
-      const payload: Record<string, unknown> = {
-        type: form.type,
-        amountUah: Number(String(form.amountUah).replace(",", ".")),
-        accountId: Number(form.accountId),
-        comment: form.comment || null,
-        occurredAt: form.occurredAt ? new Date(form.occurredAt).toISOString() : null,
-      };
-      if (form.type === "transfer") {
-        payload.counterAccountId = Number(form.counterAccountId);
-      } else {
-        payload.purposeId = form.purposeId || null;
-      }
-      const res = await fetch("/api/admin/finance/documents", {
-        method: "POST",
-        credentials: "include",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(payload),
-      });
-      const json = await res.json();
-      if (!res.ok || !json.ok) throw new Error(json.error || "Не створено");
-      setShowForm(false);
-      await load();
-    } catch (err) {
-      setError(err instanceof Error ? err.message : "Помилка збереження");
-    } finally {
-      setBusy(false);
-    }
-  }
-
-  async function setAccountHidden(account: ArchiveAccount, hidden: boolean) {
-    setBusy(true);
-    setError(null);
-    try {
-      const res = await fetch("/api/admin/finance/accounts/archive", {
-        method: "POST",
-        credentials: "include",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ accountId: account.id, title: account.title, hidden }),
-      });
-      const json = await res.json();
-      if (!res.ok || !json.ok) throw new Error(json.error || "Не вдалося змінити архів");
-      await load();
-    } catch (err) {
-      setError(err instanceof Error ? err.message : "Помилка архіву");
-    } finally {
-      setBusy(false);
-    }
-  }
-
-  const activeAccounts = accountArchive.filter((account) => !account.hidden);
-  const archivedAccounts = accountArchive.filter((account) => account.hidden);
-
   return (
     <main className="p-3 space-y-3 max-w-6xl">
-      <p className="text-xs text-gray-600 bg-white border rounded-xl px-3 py-2">
-        Прихід / розхід / переміщення з dual-write в Altegio. Зведення з банком поки на
-        AltegioFinanceTransaction — без змін у цьому етапі.
-      </p>
-      <div className="bg-white border rounded-xl p-3 space-y-2 max-w-xl">
-        <div className="font-semibold text-sm">Рахунки</div>
-        <p className="text-xs text-gray-500">
-          В архіві рахунок зникає з Каси, з оплати в журналі і з вибору тут. Уже записані оплати лишаються.
+      <div className="flex flex-wrap items-center gap-2">
+        <p className="text-xs text-gray-600">
+          Журнал ручних документів. Створюються вони в розділі Каса й лишаються лише в Креско, в Альтеджіо не йдуть.
         </p>
-        {activeAccounts.map((account) => (
-          <div key={account.id} className="flex items-center justify-between gap-2 text-sm">
-            <span>{account.title}</span>
-            <button
-              type="button"
-              className="btn btn-ghost btn-xs"
-              disabled={busy}
-              onClick={() => void setAccountHidden(account, true)}
-            >
-              В архів
-            </button>
-          </div>
-        ))}
-        {archivedAccounts.length > 0 && (
-          <div className="pt-2 border-t space-y-1">
-            <div className="text-xs text-gray-500">Архів</div>
-            {archivedAccounts.map((account) => (
-              <div key={account.id} className="flex items-center justify-between gap-2 text-sm text-gray-500">
-                <span>{account.title}</span>
-                <button
-                  type="button"
-                  className="btn btn-ghost btn-xs"
-                  disabled={busy}
-                  onClick={() => void setAccountHidden(account, false)}
-                >
-                  Повернути
-                </button>
-              </div>
-            ))}
-          </div>
-        )}
-        {!loading && accountArchive.length === 0 && (
-          <p className="text-xs text-gray-500">Рахунків немає.</p>
-        )}
-      </div>
-      {error && <div className="alert alert-error text-sm py-2">{error}</div>}
-      <div className="flex flex-wrap gap-2">
-        <button type="button" className="btn btn-sm btn-primary" onClick={() => openCreate("expense")} disabled={busy}>
-          + Розхід
-        </button>
-        <button type="button" className="btn btn-sm btn-success" onClick={() => openCreate("income")} disabled={busy}>
-          + Прихід
-        </button>
-        <button type="button" className="btn btn-sm" onClick={() => openCreate("transfer")} disabled={busy}>
-          + Переміщення
-        </button>
-        <button type="button" className="btn btn-sm btn-ghost" onClick={() => void load()} disabled={loading || busy}>
+        <button type="button" className="btn btn-sm btn-ghost ml-auto" onClick={() => void load()} disabled={loading}>
           Оновити
         </button>
       </div>
-
-      {showForm && (
-        <div className="bg-white border rounded-xl p-3 space-y-2 max-w-xl">
-          <div className="font-semibold text-sm">
-            Новий документ: {TYPE_LABEL[form.type] || form.type}
-          </div>
-          <label className="form-control">
-            <span className="label-text text-xs">Сума, грн</span>
-            <input
-              className="input input-bordered input-sm"
-              value={form.amountUah}
-              onChange={(e) => setForm((f) => ({ ...f, amountUah: e.target.value }))}
-              inputMode="decimal"
-            />
-          </label>
-          <label className="form-control">
-            <span className="label-text text-xs">
-              {form.type === "transfer" ? "З рахунку" : "Рахунок"}
-            </span>
-            <select
-              className="select select-bordered select-sm"
-              value={form.accountId}
-              onChange={(e) => setForm((f) => ({ ...f, accountId: e.target.value }))}
-            >
-              <option value="">—</option>
-              {accounts.map((a) => (
-                <option key={a.id} value={a.id}>
-                  {a.title}
-                </option>
-              ))}
-            </select>
-          </label>
-          {form.type === "transfer" ? (
-            <label className="form-control">
-              <span className="label-text text-xs">На рахунок</span>
-              <select
-                className="select select-bordered select-sm"
-                value={form.counterAccountId}
-                onChange={(e) => setForm((f) => ({ ...f, counterAccountId: e.target.value }))}
-              >
-                <option value="">—</option>
-                {accounts
-                  .filter((a) => String(a.id) !== form.accountId)
-                  .map((a) => (
-                    <option key={a.id} value={a.id}>
-                      {a.title}
-                    </option>
-                  ))}
-              </select>
-            </label>
-          ) : (
-            <label className="form-control">
-              <span className="label-text text-xs">Стаття</span>
-              <select
-                className="select select-bordered select-sm"
-                value={form.purposeId}
-                onChange={(e) => setForm((f) => ({ ...f, purposeId: e.target.value }))}
-              >
-                <option value="">—</option>
-                {purposeOptions.map((p) => (
-                  <option key={p.id} value={p.id}>
-                    {p.title}
-                  </option>
-                ))}
-              </select>
-            </label>
-          )}
-          <label className="form-control">
-            <span className="label-text text-xs">Дата / час</span>
-            <input
-              type="datetime-local"
-              className="input input-bordered input-sm"
-              value={form.occurredAt}
-              onChange={(e) => setForm((f) => ({ ...f, occurredAt: e.target.value }))}
-            />
-          </label>
-          <label className="form-control">
-            <span className="label-text text-xs">Коментар</span>
-            <input
-              className="input input-bordered input-sm"
-              value={form.comment}
-              onChange={(e) => setForm((f) => ({ ...f, comment: e.target.value }))}
-            />
-          </label>
-          <div className="flex gap-2 pt-1">
-            <button type="button" className="btn btn-sm btn-primary" onClick={() => void saveForm()} disabled={busy}>
-              {busy ? "Запис…" : "Створити в Kresco + Altegio"}
-            </button>
-            <button
-              type="button"
-              className="btn btn-sm btn-ghost"
-              onClick={() => setShowForm(false)}
-              disabled={busy}
-            >
-              Скасувати
-            </button>
-          </div>
-        </div>
-      )}
+      {error && <div className="alert alert-error text-sm py-2">{error}</div>}
 
       {loading ? (
         <p className="text-sm text-gray-500">Завантаження…</p>
@@ -333,7 +94,9 @@ export default function FinanceDocumentsPage() {
                 <tr key={d.id}>
                   <td className="whitespace-nowrap text-xs">{d.kyivDay}</td>
                   <td className="text-xs">{TYPE_LABEL[d.type] || d.type}</td>
-                  <td className="text-xs font-medium whitespace-nowrap">{money(d.amountUah)}</td>
+                  <td className="text-xs font-medium whitespace-nowrap">
+                    {d.amountFx != null ? `${money(d.amountFx)} ${d.currency === "USD" ? "$" : "€"}` : money(d.amountUah)}
+                  </td>
                   <td className="text-xs">
                     {d.accountTitle || d.accountId}
                     {d.type === "transfer" && d.counterAccountTitle

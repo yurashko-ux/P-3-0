@@ -5,6 +5,27 @@ import { kyivCalendarTodayYmd, kyivYmdFromDateTimeInput } from "@/lib/direct-kyi
 import { fetchAltegioAccounts } from "@/lib/altegio/accounts";
 import { ALTEGIO_ENV } from "@/lib/altegio/env";
 import { hiddenFinanceAccountIds, listFinanceAccountArchive } from "@/lib/finance/account-archive";
+import { isEurCashAccountTitle, isUsdCashAccountTitle } from "@/lib/journal/checkout";
+
+type DocumentCurrency = "UAH" | "USD" | "EUR";
+
+function documentCurrency(title: string): DocumentCurrency {
+  if (isUsdCashAccountTitle(title)) return "USD";
+  if (isEurCashAccountTitle(title)) return "EUR";
+  return "UAH";
+}
+
+/** Робочий курс із банку: свій день або найближчий попередній. Один запит. */
+async function workingRateOn(kyivDay: string, currency: "USD" | "EUR"): Promise<number> {
+  const row = await prisma.dailyFxRate.findFirst({
+    where: { kyivDay: { lte: kyivDay } },
+    orderBy: { kyivDay: "desc" },
+    select: { usdWorking: true, eurWorking: true },
+  });
+  const rate = row ? (currency === "USD" ? row.usdWorking : row.eurWorking) : 0;
+  if (!(rate > 0)) throw new Error(`Курс ${currency} на ${kyivDay} не знайдено`);
+  return rate;
+}
 
 function toMoney(n: number): number {
   return Math.round(n * 100) / 100;
@@ -23,7 +44,11 @@ export type FinanceDocType = "income" | "expense" | "transfer";
 
 export type CreateFinanceDocumentInput = {
   type: FinanceDocType;
-  amountUah: number;
+  amountUah?: number;
+  /** Сума у валюті рахунку */
+  amount?: number;
+  /** Для обміну між валютами: сума у валюті рахунку призначення */
+  counterAmount?: number;
   accountId: number;
   counterAccountId?: number | null;
   purposeId?: string | null;
@@ -80,8 +105,9 @@ export async function createFinanceDocument(input: CreateFinanceDocumentInput) {
     throw new Error("Тип: income | expense | transfer");
   }
 
-  const amountUah = toMoney(Number(input.amountUah) || 0);
-  if (!(amountUah > 0)) throw new Error("Сума має бути більше 0");
+  // amount — у валюті рахунку; amountUah лишається для старих викликів
+  const amount = toMoney(Number(input.amount ?? input.amountUah) || 0);
+  if (!(amount > 0)) throw new Error("Сума має бути більше 0");
 
   const accountId = Number(input.accountId) || 0;
   if (!(accountId > 0)) throw new Error("Оберіть рахунок");
@@ -130,6 +156,20 @@ export async function createFinanceDocument(input: CreateFinanceDocumentInput) {
   if (Number.isNaN(occurredAt.getTime())) throw new Error("Некоректна дата");
   const kyivDay = kyivYmdFromDateTimeInput(occurredAt) || kyivCalendarTodayYmd();
 
+  const currency = documentCurrency(account.title);
+  const counterCurrency = counterAccountTitle ? documentCurrency(counterAccountTitle) : null;
+  // Обмін між валютами: скільки реально зайшло на рахунок призначення вводить людина
+  const counterAmount =
+    counterCurrency == null || counterCurrency === currency ? amount : toMoney(Number(input.counterAmount) || 0);
+  if (counterCurrency != null && !(counterAmount > 0)) {
+    throw new Error("Сума на рахунку призначення має бути більше 0");
+  }
+  let amountUah = amount;
+  if (currency !== "UAH") {
+    amountUah =
+      counterCurrency === "UAH" ? counterAmount : toMoney(amount * (await workingRateOn(kyivDay, currency)));
+  }
+
   const doc = await prisma.financeDocument.create({
     data: {
       type,
@@ -139,6 +179,10 @@ export async function createFinanceDocument(input: CreateFinanceDocumentInput) {
       source: "kresco",
       title: purposeTitle,
       amountUah,
+      currency,
+      amountFx: currency === "UAH" ? null : amount,
+      counterCurrency,
+      counterAmountFx: counterCurrency == null || counterCurrency === "UAH" ? null : counterAmount,
       kyivDay,
       occurredAt,
       accountId,
@@ -153,6 +197,6 @@ export async function createFinanceDocument(input: CreateFinanceDocumentInput) {
     },
   });
 
-  console.log(`[finance/documents] ${type} ${amountUah} грн doc=${doc.id} лише Kresco`);
+  console.log(`[finance/documents] ${type} ${amount} ${currency} (${amountUah} грн) doc=${doc.id} лише Kresco`);
   return doc;
 }

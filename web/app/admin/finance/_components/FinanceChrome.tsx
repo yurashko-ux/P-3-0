@@ -30,10 +30,6 @@ export function FinanceChrome({ children }: { children: React.ReactNode }) {
     permissions == null ||
     permissions.financeDocsSection !== "none" ||
     permissions.financeReportSection !== "none";
-  const showCash =
-    permissions == null ||
-    permissions.cashSection !== "none" ||
-    permissions.financeDocsSection !== "none";
   const showOperations =
     permissions == null ||
     permissions.financeOperationsSection !== "none" ||
@@ -41,7 +37,6 @@ export function FinanceChrome({ children }: { children: React.ReactNode }) {
   const showReport = permissions == null || permissions.financeReportSection !== "none";
 
   const onDocs = pathname === "/admin/finance" || pathname === "/admin/finance/";
-  const onKasa = pathname?.startsWith("/admin/finance/kasa") || pathname?.startsWith("/admin/finance/cash");
   const onPayments = pathname?.startsWith("/admin/finance/payments");
   const onRecords = pathname?.startsWith("/admin/finance/records");
   const onOperations = pathname?.startsWith("/admin/finance/operations");
@@ -57,14 +52,6 @@ export function FinanceChrome({ children }: { children: React.ReactNode }) {
             className={`btn btn-sm min-h-0 h-8 ${onDocs ? "btn-neutral" : "btn-ghost"}`}
           >
             Документи
-          </Link>
-        )}
-        {showCash && (
-          <Link
-            href="/admin/finance/cash"
-            className={`btn btn-sm min-h-0 h-8 ${onKasa ? "btn-neutral" : "btn-ghost"}`}
-          >
-            Каса
           </Link>
         )}
         {showDocs && (

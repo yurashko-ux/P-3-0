@@ -3,6 +3,9 @@
 import { useCallback, useEffect, useState } from "react";
 import { CashCountModal } from "./CashCountModal";
 import { CashLedgerPanel } from "./CashLedgerPanel";
+import { BankAccountPanel } from "./BankAccountPanel";
+import { CashDocumentModal, type CashDocumentType } from "./CashDocumentModal";
+import { CashAccountsModal } from "./CashAccountsModal";
 
 type CashTile = {
   id: number;
@@ -55,6 +58,10 @@ const tileFaceClass =
   "relative flex w-full flex-col items-center justify-center min-h-[4.5rem] rounded-xl border border-slate-200/80 px-2 py-1.5 text-center text-gray-900 shadow-[0_1px_2px_rgba(15,23,42,0.05),0_8px_18px_-8px_rgba(15,23,42,0.28)]";
 
 const tileButtonClass = `${tileFaceClass} cursor-pointer select-none transition-[transform,box-shadow,filter] duration-150 ease-out hover:-translate-y-0.5 hover:shadow-[0_2px_4px_rgba(15,23,42,0.06),0_14px_24px_-8px_rgba(15,23,42,0.32)] active:translate-y-px active:scale-[0.97] active:brightness-[0.97] active:shadow-[inset_0_2px_8px_rgba(15,23,42,0.16),0_1px_2px_rgba(15,23,42,0.06)] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-slate-400`;
+
+/** Кнопки дій у тій самій палітрі й з тією самою тінню, що плитки. */
+const actionButtonClass =
+  "h-7 cursor-pointer select-none rounded-lg border border-slate-200/80 px-3 text-[11px] font-medium text-gray-800 shadow-[0_1px_2px_rgba(15,23,42,0.05),0_4px_10px_-6px_rgba(15,23,42,0.28)] transition-[transform,box-shadow,filter] duration-150 ease-out hover:-translate-y-0.5 hover:shadow-[0_2px_4px_rgba(15,23,42,0.06),0_8px_14px_-6px_rgba(15,23,42,0.32)] active:translate-y-px active:scale-[0.97] active:brightness-[0.97] disabled:cursor-default disabled:opacity-60 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-slate-400";
 
 function bookAmount(tile: CashTile): number | null {
   if (tile.currency === "UAH") return tile.balanceUah;
@@ -118,6 +125,10 @@ export default function CashBalancesPage() {
   const [ledgerReload, setLedgerReload] = useState(0);
   const [pulling, setPulling] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
+  /** Безготівковий рахунок, рухи якого показуємо замість готівки */
+  const [bankTile, setBankTile] = useState<CashTile | null>(null);
+  const [documentType, setDocumentType] = useState<CashDocumentType | null>(null);
+  const [accountsOpen, setAccountsOpen] = useState(false);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -166,10 +177,43 @@ export default function CashBalancesPage() {
 
   return (
     <main className="px-2 pb-6 pt-2 space-y-2">
-      <div className="flex flex-wrap items-center justify-end gap-1">
+      <div className="flex flex-wrap items-center justify-end gap-1.5">
         <button
           type="button"
-          className="btn btn-outline btn-xs h-6 min-h-0 px-2 text-[10px]"
+          className={actionButtonClass}
+          style={{ background: "#e5f2e9" }}
+          onClick={() => setDocumentType("income")}
+        >
+          + Прихід
+        </button>
+        <button
+          type="button"
+          className={actionButtonClass}
+          style={{ background: "#f8ebe8" }}
+          onClick={() => setDocumentType("expense")}
+        >
+          + Розхід
+        </button>
+        <button
+          type="button"
+          className={actionButtonClass}
+          style={{ background: "#e6eef8" }}
+          onClick={() => setDocumentType("transfer")}
+        >
+          + Переміщення
+        </button>
+        <button
+          type="button"
+          className={actionButtonClass}
+          style={{ background: "#f3f5f8" }}
+          onClick={() => setAccountsOpen(true)}
+        >
+          Рахунки
+        </button>
+        <button
+          type="button"
+          className={actionButtonClass}
+          style={{ background: "#f6f3ee" }}
           disabled={pulling}
           onClick={() => void pullFromAltegio()}
           title="Підтягнути з Altegio лише рахунки за поточний день"
@@ -178,7 +222,8 @@ export default function CashBalancesPage() {
         </button>
         <button
           type="button"
-          className="btn btn-primary btn-xs h-6 min-h-0 px-2 text-[10px]"
+          className={actionButtonClass}
+          style={{ background: "#e7eef6" }}
           disabled={loading || pulling}
           onClick={() => {
             void load();
@@ -207,6 +252,22 @@ export default function CashBalancesPage() {
         {tiles.map((tile, index) => {
           const face = <TileFace tile={tile} />;
           const tint = tileTint(tile, index);
+          if (!tile.cash && tile.hasBank) {
+            const selected = bankTile?.id === tile.id;
+            return (
+              <button
+                key={tile.id}
+                type="button"
+                className={`${tileButtonClass} ${selected ? "ring-2 ring-blue-500" : ""}`}
+                style={{ background: tint }}
+                aria-label={`Рухи рахунку ${tile.title}`}
+                title="Показати рухи рахунку"
+                onClick={() => setBankTile(selected ? null : tile)}
+              >
+                {face}
+              </button>
+            );
+          }
           if (!isCashTill(tile)) {
             return (
               <div key={tile.id} className={tileFaceClass} style={{ background: tint }}>
@@ -228,7 +289,36 @@ export default function CashBalancesPage() {
           );
         })}
       </div>
-      <CashLedgerPanel reloadToken={ledgerReload} onCountsChanged={() => void load()} />
+      {bankTile ? (
+        <BankAccountPanel
+          accountId={bankTile.id}
+          accountTitle={bankTile.title}
+          reloadToken={ledgerReload}
+          onClose={() => setBankTile(null)}
+        />
+      ) : (
+        <CashLedgerPanel reloadToken={ledgerReload} onCountsChanged={() => void load()} />
+      )}
+      {documentType && (
+        <CashDocumentModal
+          type={documentType}
+          onClose={() => setDocumentType(null)}
+          onSaved={() => {
+            setDocumentType(null);
+            void load();
+            setLedgerReload((value) => value + 1);
+          }}
+        />
+      )}
+      {accountsOpen && (
+        <CashAccountsModal
+          onClose={() => setAccountsOpen(false)}
+          onChanged={() => {
+            void load();
+            setLedgerReload((value) => value + 1);
+          }}
+        />
+      )}
       {countTile && (
         <CashCountModal
           accountId={countTile.id}

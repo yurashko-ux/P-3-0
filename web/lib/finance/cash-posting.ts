@@ -141,7 +141,6 @@ export async function loadCashBookMovements(
   const byId = new Map(accounts.map((account) => [account.id, account]));
   const ids = accounts.map((account) => account.id);
   if (ids.length === 0) return [];
-  const uahIds = accounts.filter((account) => account.currency === "UAH").map((account) => account.id);
 
   const [payments, documents] = await Promise.all([
     prisma.salonCheckoutPayment.findMany({
@@ -167,30 +166,31 @@ export async function loadCashBookMovements(
         },
       },
     }),
-    uahIds.length === 0
-      ? Promise.resolve([])
-      : prisma.financeDocument.findMany({
-          where: {
-            source: "kresco",
-            status: { not: "void" },
-            kyivDay: { gt: afterKyivDay },
-            OR: [{ accountId: { in: uahIds } }, { counterAccountId: { in: uahIds } }],
-          },
-          select: {
-            id: true,
-            type: true,
-            amountUah: true,
-            accountId: true,
-            counterAccountId: true,
-            accountTitle: true,
-            counterAccountTitle: true,
-            kyivDay: true,
-            occurredAt: true,
-            title: true,
-            purposeTitle: true,
-            altegioTransactionId: true,
-          },
-        }),
+    prisma.financeDocument.findMany({
+      where: {
+        source: "kresco",
+        status: { not: "void" },
+        kyivDay: { gt: afterKyivDay },
+        OR: [{ accountId: { in: ids } }, { counterAccountId: { in: ids } }],
+      },
+      select: {
+        id: true,
+        type: true,
+        amountUah: true,
+        amountFx: true,
+        counterAmountFx: true,
+        comment: true,
+        accountId: true,
+        counterAccountId: true,
+        accountTitle: true,
+        counterAccountTitle: true,
+        kyivDay: true,
+        occurredAt: true,
+        title: true,
+        purposeTitle: true,
+        altegioTransactionId: true,
+      },
+    }),
   ]);
 
   const movements: CashBookMovement[] = [];
@@ -221,19 +221,26 @@ export async function loadCashBookMovements(
   }
 
   for (const doc of documents) {
-    const amount = money(doc.amountUah);
-    if (!(amount > 0)) continue;
-    const label = doc.title?.trim() || doc.purposeTitle?.trim() || "Документ";
-    const push = (accountId: number | null | undefined, direction: "in" | "out", title: string | null | undefined) => {
+    const base = doc.title?.trim() || doc.purposeTitle?.trim() || "Документ";
+    const label = doc.comment?.trim() ? `${base} · ${doc.comment.trim()}` : base;
+    const push = (
+      accountId: number | null | undefined,
+      direction: "in" | "out",
+      title: string | null | undefined,
+      fxAmount: number | null,
+    ) => {
       const id = Number(accountId) || 0;
       const account = byId.get(id);
-      if (!account || account.currency !== "UAH") return;
+      if (!account) return;
+      // Гривнева каса бере гривні, валютна — кількість валюти з документа
+      const amount = money(account.currency === "UAH" ? doc.amountUah : (fxAmount ?? 0));
+      if (!(amount > 0)) return;
       movements.push({
         sourceType: "finance_document",
         sourceId: doc.id,
         accountId: id,
         accountTitle: title?.trim() || account.title,
-        currency: "UAH",
+        currency: account.currency,
         direction,
         amount,
         kyivDay: doc.kyivDay,
@@ -243,11 +250,11 @@ export async function loadCashBookMovements(
         altegioTransactionId: doc.altegioTransactionId ?? null,
       });
     };
-    if (doc.type === "income") push(doc.accountId, "in", doc.accountTitle);
-    else if (doc.type === "expense") push(doc.accountId, "out", doc.accountTitle);
+    if (doc.type === "income") push(doc.accountId, "in", doc.accountTitle, doc.amountFx);
+    else if (doc.type === "expense") push(doc.accountId, "out", doc.accountTitle, doc.amountFx);
     else if (doc.type === "transfer") {
-      push(doc.accountId, "out", doc.accountTitle);
-      push(doc.counterAccountId, "in", doc.counterAccountTitle);
+      push(doc.accountId, "out", doc.accountTitle, doc.amountFx);
+      push(doc.counterAccountId, "in", doc.counterAccountTitle, doc.counterAmountFx);
     }
   }
 
