@@ -90,6 +90,7 @@ export async function DELETE(req: NextRequest, { params }: { params: { id: strin
       params.id,
       auth.type === "user" ? auth.login : auth.type,
     );
+    await refreshDirectCardAfterJournalChange(params.id, { cancelled: true });
     return NextResponse.json({ ok: true, appointment });
   } catch (err) {
     console.error("[api/admin/journal/appointments/:id] DELETE error:", err);

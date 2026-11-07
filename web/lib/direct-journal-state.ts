@@ -2,6 +2,7 @@
 
 import { determineStateFromServices, isHairExtensionServiceTitle } from "@/lib/direct-state-helper";
 import { isConsultationServiceKind } from "@/lib/journal/altegio-write-gate";
+import { Prisma } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
 
 export type JournalAppointment = {
@@ -170,10 +171,10 @@ function planCardChanges(
  * Оновлює картку одного клієнта після зміни запису в Kresco. Три запити до БД, четвертий — лише якщо є зміни.
  * Правила ті самі, що в №107. Помилка не має ламати збереження запису — її ловить той, хто викликає.
  */
-export async function syncDirectCardFromJournal(appointmentId: string) {
+export async function syncDirectCardFromJournal(appointmentId: string, options?: { cancelled?: boolean }) {
   const appointment = await prisma.salonAppointment.findUnique({
     where: { id: appointmentId },
-    select: { directClientId: true },
+    select: { directClientId: true, datetime: true },
   });
   const directClientId = appointment?.directClientId;
   if (!directClientId) return { changes: [] as CardChange[] };
@@ -181,7 +182,6 @@ export async function syncDirectCardFromJournal(appointmentId: string) {
     prisma.salonAppointment.findMany({
       where: {
         directClientId,
-        datetime: { gte: new Date(Date.now() - 60 * 24 * 60 * 60 * 1000) },
         status: { not: "deleted" },
       },
       select: {
@@ -215,11 +215,45 @@ export async function syncDirectCardFromJournal(appointmentId: string) {
     goodsTotal: a.checkout && a.checkout.status !== "void" ? Number(a.checkout.totalGoods) || 0 : 0,
     lines: a.lines.map((l) => ({ title: l.title, cost: l.cost, kind: l.service?.kind })),
   }));
-  const changes = planCardChanges(
-    client,
-    deriveDirectFieldsFromJournal(journalRows),
-    deriveDirectDetailsFromJournal(journalRows),
-  );
+  const journal = deriveDirectFieldsFromJournal(journalRows);
+  // Скасовано саме той запис, що в картці: блок будуємо заново, інакше захист від руху дати назад лишить його.
+  const cancelledAt = appointment!.datetime;
+  const cancelledPaid =
+    options?.cancelled === true && client.paidServiceDate != null && sameMinute(client.paidServiceDate, cancelledAt);
+  const cancelledConsultation =
+    options?.cancelled === true &&
+    client.consultationBookingDate != null &&
+    sameMinute(client.consultationBookingDate, cancelledAt);
+  const card = {
+    ...client,
+    ...(cancelledPaid ? { paidServiceDate: null, paidServiceAttended: null, paidServiceCancelled: false } : {}),
+    ...(cancelledConsultation
+      ? { consultationBookingDate: null, consultationAttended: null, consultationCancelled: false }
+      : {}),
+  };
+  const changes = planCardChanges(card, journal, deriveDirectDetailsFromJournal(journalRows));
+  if (cancelledPaid && !journal.paidServiceDate) {
+    changes.push(
+      { field: "paidServiceDate", from: client.paidServiceDate, to: null },
+      { field: "paidServiceAttended", from: client.paidServiceAttended, to: null },
+      { field: "paidServiceTotalCost", from: client.paidServiceTotalCost, to: null },
+      { field: "signedUpForPaidService", from: true, to: false },
+      { field: "paidServiceVisitId", from: null, to: null },
+      { field: "paidServiceRecordId", from: null, to: null },
+      // Json-поле очищається лише через DbNull.
+      { field: "paidServiceVisitBreakdown", from: null, to: Prisma.DbNull },
+    );
+  }
+  if (cancelledConsultation && !journal.consultationBookingDate) {
+    changes.push(
+      { field: "consultationBookingDate", from: client.consultationBookingDate, to: null },
+      { field: "consultationAttended", from: client.consultationAttended, to: null },
+    );
+  }
+  if (cancelledPaid) changes.push({ field: "paidServiceCancelled", from: client.paidServiceCancelled, to: false });
+  if (cancelledConsultation) {
+    changes.push({ field: "consultationCancelled", from: client.consultationCancelled, to: false });
+  }
   if (changes.length === 0) return { changes };
   const data: Record<string, unknown> = { updatedAt: client.updatedAt };
   for (const change of changes) data[change.field] = change.to;
@@ -229,9 +263,9 @@ export async function syncDirectCardFromJournal(appointmentId: string) {
 }
 
 /** Для маршрутів журналу: запис уже збережено, тому збій картки лише логуємо. */
-export async function refreshDirectCardAfterJournalChange(appointmentId: string) {
+export async function refreshDirectCardAfterJournalChange(appointmentId: string, options?: { cancelled?: boolean }) {
   try {
-    await syncDirectCardFromJournal(appointmentId);
+    await syncDirectCardFromJournal(appointmentId, options);
   } catch (err) {
     console.error("[direct-journal-state] Не вдалось оновити картку після зміни запису", appointmentId, err);
   }
