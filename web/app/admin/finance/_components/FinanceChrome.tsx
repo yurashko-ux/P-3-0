@@ -7,6 +7,8 @@ import { navTileClass } from "@/app/admin/_components/nav-tile";
 
 type Permissions = Record<string, string>;
 
+export const FINANCE_HEADER_ACTIONS_ID = "finance-header-actions";
+
 export function FinanceChrome({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
   const [permissions, setPermissions] = useState<Permissions | null>(null);
@@ -97,6 +99,8 @@ export function FinanceChrome({ children }: { children: React.ReactNode }) {
             Звіт
           </Link>
         )}
+        {/* Сюди сторінка може поставити свою кнопку */}
+        <div id={FINANCE_HEADER_ACTIONS_ID} className="contents" />
       </header>
       {children}
     </div>

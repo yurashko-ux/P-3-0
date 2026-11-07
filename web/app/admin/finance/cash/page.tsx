@@ -1,6 +1,9 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
+import { createPortal } from "react-dom";
+import { navTileClass } from "@/app/admin/_components/nav-tile";
+import { FINANCE_HEADER_ACTIONS_ID } from "@/app/admin/finance/_components/FinanceChrome";
 import { CashCountModal } from "./CashCountModal";
 import { CashLedgerPanel } from "./CashLedgerPanel";
 import { BankAccountPanel } from "./BankAccountPanel";
@@ -62,10 +65,6 @@ const actionSectorClass =
   "flex cursor-pointer select-none items-center justify-center whitespace-nowrap px-0.5 text-[10px] font-medium tracking-tight text-gray-800 transition-[filter] duration-150 ease-out hover:brightness-[0.96] active:brightness-[0.92] focus-visible:outline focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-slate-400";
 
 const tileButtonClass = `${tileFaceClass} cursor-pointer select-none transition-[transform,box-shadow,filter] duration-150 ease-out hover:-translate-y-0.5 hover:shadow-[0_2px_4px_rgba(15,23,42,0.06),0_14px_24px_-8px_rgba(15,23,42,0.32)] active:translate-y-px active:scale-[0.97] active:brightness-[0.97] active:shadow-[inset_0_2px_8px_rgba(15,23,42,0.16),0_1px_2px_rgba(15,23,42,0.06)] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-slate-400`;
-
-/** Кнопки дій у тій самій палітрі й з тією самою тінню, що плитки. */
-const actionButtonClass =
-  "h-7 cursor-pointer select-none rounded-lg border border-slate-200/80 px-3 text-[11px] font-medium text-gray-800 shadow-[0_1px_2px_rgba(15,23,42,0.05),0_4px_10px_-6px_rgba(15,23,42,0.28)] transition-[transform,box-shadow,filter] duration-150 ease-out hover:-translate-y-0.5 hover:shadow-[0_2px_4px_rgba(15,23,42,0.06),0_8px_14px_-6px_rgba(15,23,42,0.32)] active:translate-y-px active:scale-[0.97] active:brightness-[0.97] disabled:cursor-default disabled:opacity-60 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-slate-400";
 
 function bookAmount(tile: CashTile): number | null {
   if (tile.currency === "UAH") return tile.balanceUah;
@@ -129,6 +128,8 @@ export default function CashBalancesPage() {
   const [ledgerReload, setLedgerReload] = useState(0);
   const [pulling, setPulling] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
+  /** Місце в панелі Фінансів після «Звіт» */
+  const [headerSlot, setHeaderSlot] = useState<HTMLElement | null>(null);
   /** Безготівковий рахунок, рухи якого показуємо замість готівки */
   const [bankTile, setBankTile] = useState<CashTile | null>(null);
   const [documentType, setDocumentType] = useState<CashDocumentType | null>(null);
@@ -152,6 +153,10 @@ export default function CashBalancesPage() {
   useEffect(() => {
     void load();
   }, [load]);
+
+  useEffect(() => {
+    setHeaderSlot(document.getElementById(FINANCE_HEADER_ACTIONS_ID));
+  }, []);
 
   async function pullFromAltegio() {
     setPulling(true);
@@ -181,31 +186,20 @@ export default function CashBalancesPage() {
 
   return (
     <main className="px-2 pb-6 pt-2 space-y-2">
-      <div className="flex flex-wrap items-center justify-end gap-1.5">
-        <button
-          type="button"
-          className={actionButtonClass}
-          style={{ background: "#f6f3ee" }}
-          disabled={pulling}
-          onClick={() => void pullFromAltegio()}
-          title="Підтягнути з Altegio лише рахунки за поточний день"
-        >
-          {pulling ? "Підтягую..." : "Підтягнути з Альтеджіо"}
-        </button>
-        <button
-          type="button"
-          className={actionButtonClass}
-          style={{ background: "#e7eef6" }}
-          disabled={loading || pulling}
-          onClick={() => {
-            void load();
-            setLedgerReload((value) => value + 1);
-          }}
-        >
-          Оновити
-        </button>
-      </div>
-
+      {headerSlot
+        ? createPortal(
+            <button
+              type="button"
+              className={navTileClass(false)}
+              disabled={pulling}
+              onClick={() => void pullFromAltegio()}
+              title="Підтягнути з Altegio лише рахунки за поточний день"
+            >
+              {pulling ? "Підтягую..." : "Підтягнути з Альтеджіо"}
+            </button>,
+            headerSlot,
+          )
+        : null}
       {message && (
         <div className="rounded border border-blue-200 bg-blue-50 px-2 py-1 text-xs text-blue-900">{message}</div>
       )}
