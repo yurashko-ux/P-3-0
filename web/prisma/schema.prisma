@@ -1392,6 +1392,8 @@ model AltegioPaymentPurpose {
   title           String
   normalizedTitle String
   source          String   @default("expense")
+  /// Група розходу (finance_expense_groups); порожньо — група за назвою статті або «Інше»
+  groupId         String?
   rawData         Json?
   isActive        Boolean  @default(true)
   syncedAt        DateTime @default(now())
@@ -1405,6 +1407,16 @@ model AltegioPaymentPurpose {
   @@index([externalId])
   @@index([isActive])
   @@map("altegio_payment_purposes")
+}
+
+/// Група розходу для статей (Каса → Розхід). Перші шість — групи фінзвіту.
+model FinanceExpenseGroup {
+  id        String   @id @default(uuid())
+  title     String   @unique
+  sortOrder Int      @default(0)
+  createdAt DateTime @default(now())
+
+  @@map("finance_expense_groups")
 }
 
 // Cursor/status останньої синхронізації фінансів Altegio.

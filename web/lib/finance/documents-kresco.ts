@@ -10,6 +10,14 @@ import {
   pausedBankAltegioAccountIds,
 } from "@/lib/finance/account-archive";
 import { isEurCashAccountTitle, isUsdCashAccountTitle } from "@/lib/journal/checkout";
+import { normalizePaymentPurposeTitle } from "@/lib/altegio/finance-transactions-sync";
+
+/** Статті, створені в Креско: без id Altegio, вид у source. */
+const KRESCO_PURPOSE_SOURCES = ["kresco_income", "kresco_expense"];
+
+function isKrescoPurposeSource(source: string | null | undefined): boolean {
+  return KRESCO_PURPOSE_SOURCES.includes(String(source || ""));
+}
 
 type DocumentCurrency = "UAH" | "USD" | "EUR";
 
@@ -74,13 +82,13 @@ export async function listFinanceDocuments(params?: { limit?: number; type?: str
 
 export async function listFinanceFormOptions() {
   const companyId = resolveCompanyId();
-  const [accounts, purposes, hiddenIds, pausedIds, accountArchive] = await Promise.all([
+  const [accounts, purposes, hiddenIds, pausedIds, accountArchive, expenseGroups] = await Promise.all([
     fetchAltegioAccounts(),
     prisma.altegioPaymentPurpose.findMany({
       where: {
         isActive: true,
         ...(companyId ? { companyId } : {}),
-        externalId: { not: null },
+        OR: [{ externalId: { not: null } }, { source: { in: KRESCO_PURPOSE_SOURCES } }],
       },
       orderBy: { title: "asc" },
       take: 500,
@@ -88,6 +96,7 @@ export async function listFinanceFormOptions() {
     hiddenFinanceAccountIds(),
     pausedBankAltegioAccountIds(),
     listFinanceAccountArchive(),
+    prisma.financeExpenseGroup.findMany({ orderBy: [{ sortOrder: "asc" }, { createdAt: "asc" }] }),
   ]);
 
   return {
@@ -95,11 +104,13 @@ export async function listFinanceFormOptions() {
       .map((a) => ({ id: Number(a.id), title: a.title, type: a.type }))
       .filter((a) => a.id > 0 && !hiddenIds.has(a.id) && !pausedIds.has(a.id)),
     accountArchive,
+    expenseGroups: expenseGroups.map((group) => ({ id: group.id, title: group.title })),
     purposes: purposes.map((p) => ({
       id: p.id,
       title: p.title,
       externalId: p.externalId ? Number(p.externalId) : null,
       source: p.source,
+      groupId: p.groupId,
     })),
   };
 }
@@ -143,8 +154,9 @@ export async function createFinanceDocument(input: CreateFinanceDocumentInput) {
         purposeExternalId = p.externalId;
       }
     }
-    if (!(purposeExternalId && purposeExternalId > 0)) {
-      throw new Error("Оберіть статтю з каталогу (потрібен id Altegio)");
+    const krescoPurpose = isKrescoPurposeSource(options.purposes.find((x) => x.id === purposeId)?.source);
+    if (!krescoPurpose && !(purposeExternalId && purposeExternalId > 0)) {
+      throw new Error("Оберіть статтю");
     }
     if (!purposeTitle) purposeTitle = "Стаття";
   } else {
@@ -204,4 +216,49 @@ export async function createFinanceDocument(input: CreateFinanceDocumentInput) {
 
   console.log(`[finance/documents] ${type} ${amount} ${currency} (${amountUah} грн) doc=${doc.id} лише Kresco`);
   return doc;
+}
+
+/** Нова стаття доходу чи витрати лише в Креско. Та сама назва повертає наявну статтю. */
+export async function createKrescoPaymentPurpose(input: { title: unknown; kind: unknown; groupId?: unknown }) {
+  const title = String(input.title || "").trim().replace(/\s+/g, " ").slice(0, 120);
+  if (!title) throw new Error("Вкажіть назву статті");
+  const kind = input.kind === "income" ? "income" : input.kind === "expense" ? "expense" : null;
+  if (!kind) throw new Error("Тип статті: income | expense");
+  // Стаття розходу завжди в групі
+  const groupId = kind === "expense" ? String(input.groupId || "").trim() : "";
+  if (kind === "expense") {
+    if (!groupId) throw new Error("Оберіть групу розходу");
+    const group = await prisma.financeExpenseGroup.findUnique({ where: { id: groupId }, select: { id: true } });
+    if (!group) throw new Error("Групу розходу не знайдено");
+  }
+  const companyId = resolveCompanyId();
+  const normalizedTitle = normalizePaymentPurposeTitle(title);
+  const existing = await prisma.altegioPaymentPurpose.findUnique({
+    where: { companyId_normalizedTitle: { companyId, normalizedTitle } },
+  });
+  if (existing) {
+    if (existing.isActive && (!groupId || existing.groupId === groupId)) return existing;
+    return prisma.altegioPaymentPurpose.update({
+      where: { id: existing.id },
+      data: { isActive: true, ...(groupId ? { groupId } : {}) },
+    });
+  }
+  const purpose = await prisma.altegioPaymentPurpose.create({
+    data: { companyId, title, normalizedTitle, source: `kresco_${kind}`, isActive: true, groupId: groupId || null },
+  });
+  console.log(`[finance/documents] Нова стаття Креско «${title}» (${kind}) id=${purpose.id}`);
+  return purpose;
+}
+
+/** Нова група розходу; стає перед «Інше». Та сама назва повертає наявну групу. */
+export async function createFinanceExpenseGroup(input: { title: unknown }) {
+  const title = String(input.title || "").trim().replace(/\s+/g, " ").slice(0, 80);
+  if (!title) throw new Error("Вкажіть назву групи");
+  if (title.toLowerCase() === "інше") throw new Error("Група «Інше» вже є");
+  const existing = await prisma.financeExpenseGroup.findUnique({ where: { title } });
+  if (existing) return existing;
+  const last = await prisma.financeExpenseGroup.findFirst({ orderBy: { sortOrder: "desc" }, select: { sortOrder: true } });
+  const group = await prisma.financeExpenseGroup.create({ data: { title, sortOrder: (last?.sortOrder ?? 0) + 10 } });
+  console.log(`[finance/documents] Нова група розходу «${title}» id=${group.id}`);
+  return group;
 }
