@@ -797,6 +797,9 @@ model ClientDepositAccount {
   altegioDepositId Int?     @unique
   title            String   @default("Особистий рахунок")
   balance          Float    @default(0)
+  /// Контрольний залишок з нічного знімка Altegio. Реєстр звіряється з ним, сам реєстр знімок не міняє.
+  altegioBalance   Float?
+  altegioBalanceAt DateTime?
   blocked          Boolean  @default(false)
   isActive         Boolean  @default(true)
   /// kresco | altegio_import
