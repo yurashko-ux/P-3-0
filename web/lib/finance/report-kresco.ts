@@ -24,7 +24,7 @@ function paidCheckouts(from: string, to: string) {
 }
 
 /** Чек, оплачений завдатком: гроші вже враховані в день поповнення, повторно не рахуємо. */
-function isPaidFromDeposit(
+export function isPaidFromDeposit(
   checkout: {
     source: string;
     payments: Array<{ paymentKind: string }>;

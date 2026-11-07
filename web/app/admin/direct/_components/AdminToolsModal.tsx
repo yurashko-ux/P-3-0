@@ -771,7 +771,7 @@ export function AdminToolsModal({
     }
   };
 
-  // Кількість кнопок: 107. При додаванні нової кнопки завжди додавати її в кінець відповідної категорії та оновлювати цю кількість у коментарі.
+  // Кількість кнопок: 109. При додаванні нової кнопки завжди додавати її в кінець відповідної категорії та оновлювати цю кількість у коментарі.
   const tools = [
     {
       category: "Тести",
@@ -2587,6 +2587,30 @@ export function AdminToolsModal({
           confirm: "Кнопка №107. Записати в картки Direct дати, суми й майстрів із журналу? Спершу перегляньте сухий прогін у кнопці №106.",
           successMessage: (data: any) =>
             `✍️ Оновлено карток: ${data.applied}\nПоля: ${JSON.stringify(data.plan.byField)}`,
+        },
+      ],
+    },
+    {
+      category: "Завдатки (реєстр Kresco)",
+      items: [
+        {
+          icon: "💰",
+          label: "Звірити реєстр завдатків зі знімком Altegio",
+          endpoint: "/api/admin/deposits/ledger-sync",
+          method: "GET" as const,
+          successMessage: (data: any) =>
+            data.ready
+              ? `💰 Сухий прогін від ${data.startDay}\n\nРахунків: ${data.accounts}, без старту: ${data.notAnchored}\nПоповнення: ${JSON.stringify(data.topups)}\nСписання: ${JSON.stringify(data.spends)}\nБез рахунку: ${data.unassigned.length}\n\nРеєстр: ${data.totalLedger}\nAltegio: ${data.totalAltegio}\nРозбіжностей: ${data.diffCount}\n\n${JSON.stringify(data.diffs, null, 2)}`
+              : `💰 ${data.reason}`,
+        },
+        {
+          icon: "✍️",
+          label: "Застосувати: записати старт і рухи в реєстр завдатків (спершу №108)",
+          endpoint: "/api/admin/deposits/ledger-sync",
+          method: "POST" as const,
+          confirm: "Кнопка №109. Записати в реєстр завдатків старт зі знімка й нові рухи? Спершу перегляньте сухий прогін у кнопці №108.",
+          successMessage: (data: any) =>
+            data.ready ? `✍️ Записано рухів: ${data.applied}\nРозбіжностей: ${data.diffCount}` : `💰 ${data.reason}`,
         },
       ],
     },

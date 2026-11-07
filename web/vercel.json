@@ -60,6 +60,10 @@
       "schedule": "30 1 * * *"
     },
     {
+      "path": "/api/cron/compare-client-deposits",
+      "schedule": "0 2 * * *"
+    },
+    {
       "path": "/api/cron/sync-journal-schedule",
       "schedule": "40 * * * *"
     },
