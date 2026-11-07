@@ -100,6 +100,62 @@ function compareBlock(
   return (card.attended ?? null) === journal.attended ? null : "attendance";
 }
 
+/** Картка тримає салонний час із позначкою UTC. */
+function toCardDate(date: Date): string {
+  return `${date.toLocaleString("sv-SE", { timeZone: "Europe/Kyiv" }).replace(" ", "T")}.000Z`;
+}
+
+function sameKyivDay(a: Date, b: Date): boolean {
+  const day = (d: Date) => d.toISOString().slice(0, 10);
+  return day(a) === day(new Date(toCardDate(b)));
+}
+
+type CardChange = { field: string; from: unknown; to: unknown };
+
+/** Що записав би крок 4. Той самий день не чіпаємо: це перенесення в межах дня або два записи одного візиту. */
+function planCardChanges(
+  card: {
+    consultationBookingDate: Date | null;
+    consultationAttended: boolean | null;
+    paidServiceDate: Date | null;
+    paidServiceAttended: boolean | null;
+    paidServiceTotalCost: number | null;
+    serviceMasterName: string | null;
+  },
+  journal: JournalDirectFields,
+  detail: ReturnType<typeof deriveDirectDetailsFromJournal>,
+): CardChange[] {
+  const changes: CardChange[] = [];
+  const date = (
+    field: string,
+    current: Date | null,
+    next: Date | null,
+    attendedField: string,
+    attended: boolean | null,
+    nextAttended: boolean | null,
+  ) => {
+    if (!next || (current && (sameMinute(current, next) || sameKyivDay(current, next)))) return;
+    changes.push({ field, from: current, to: toCardDate(next) });
+    // Захист: не перезаписуємо «прийшов» на «не прийшов».
+    if (attended !== nextAttended && attended !== true) {
+      changes.push({ field: attendedField, from: attended, to: nextAttended });
+    }
+  };
+  date("consultationBookingDate", card.consultationBookingDate, journal.consultationBookingDate, "consultationAttended", card.consultationAttended, journal.consultationAttended);
+  date("paidServiceDate", card.paidServiceDate, journal.paidServiceDate, "paidServiceAttended", card.paidServiceAttended, journal.paidServiceAttended);
+  if (detail) {
+    const total = Math.round(detail.totals[3]);
+    if (total > 0 && total !== card.paidServiceTotalCost) {
+      changes.push({ field: "paidServiceTotalCost", from: card.paidServiceTotalCost, to: total });
+    }
+    const master = card.serviceMasterName ?? "";
+    if (detail.masters.length > 0 && !detail.masters.some((name) => master.includes(name))) {
+      changes.push({ field: "serviceMasterName", from: card.serviceMasterName, to: detail.masters.join(", ") });
+    }
+  }
+  return changes;
+}
+
 /** Два запити до БД на весь запуск. Лише читання. */
 export async function compareDirectWithJournal(days: number, sampleLimit = 40) {
   const since = new Date(Date.now() - days * 24 * 60 * 60 * 1000);
@@ -162,6 +218,7 @@ export async function compareDirectWithJournal(days: number, sampleLimit = 40) {
     statePairs: {} as Record<string, number>,
   };
   const detailSamples: Array<Record<string, unknown>> = [];
+  const plan = { clients: 0, byField: {} as Record<string, number>, rows: [] as Array<Record<string, unknown>> };
   let matched = 0;
   for (const client of clients) {
     const journal = deriveDirectFieldsFromJournal(byClient.get(client.id) ?? []);
@@ -175,6 +232,17 @@ export async function compareDirectWithJournal(days: number, sampleLimit = 40) {
     );
     // -1 до дати візиту картка тримає як «скасовано», а не «не з'явився».
     const detail = deriveDirectDetailsFromJournal(byClient.get(client.id) ?? []);
+    const changes = planCardChanges(client, journal, detail);
+    if (changes.length > 0) {
+      plan.clients += 1;
+      for (const change of changes) plan.byField[change.field] = (plan.byField[change.field] || 0) + 1;
+      if (plan.rows.length < 200) {
+        plan.rows.push({
+          client: [client.lastName, client.firstName].filter(Boolean).join(" ") || client.instagramUsername,
+          changes,
+        });
+      }
+    }
     if (detail && !paid) {
       details.compared += 1;
       const stateKey = `${client.state ?? "—"} → ${detail.state ?? "—"}`;
@@ -230,5 +298,5 @@ export async function compareDirectWithJournal(days: number, sampleLimit = 40) {
       });
     }
   }
-  return { days, compared: clients.length, matched, counts, samples, details, detailSamples };
+  return { days, compared: clients.length, matched, counts, samples, details, detailSamples, plan };
 }

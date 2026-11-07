@@ -2577,7 +2577,7 @@ export function AdminToolsModal({
           endpoint: "/api/admin/direct/journal-state-compare",
           method: "GET" as const,
           successMessage: (data: any) =>
-            `🧭 Звірка станів за ${data.days} днів\n\nКлієнтів: ${data.compared}\nЗбіглось: ${data.matched}\n\nКонсультації: ${JSON.stringify(data.counts.consultation)}\nПлатні: ${JSON.stringify(data.counts.paid)}\nДеталі: ${JSON.stringify(data.details)}\n\n${JSON.stringify(data.samples, null, 2)}\n\n${JSON.stringify(data.detailSamples, null, 2)}`,
+            `🧭 Звірка станів за ${data.days} днів\n\nКлієнтів: ${data.compared}\nЗбіглось: ${data.matched}\n\nКонсультації: ${JSON.stringify(data.counts.consultation)}\nПлатні: ${JSON.stringify(data.counts.paid)}\nДеталі: ${JSON.stringify(data.details)}\n\nСухий прогін (нічого не записано): клієнтів ${data.plan.clients}, поля ${JSON.stringify(data.plan.byField)}\n${JSON.stringify(data.plan.rows, null, 2)}\n\n${JSON.stringify(data.samples, null, 2)}\n\n${JSON.stringify(data.detailSamples, null, 2)}`,
         },
       ],
     },
