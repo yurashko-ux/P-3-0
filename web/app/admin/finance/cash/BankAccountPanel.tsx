@@ -112,7 +112,7 @@ export function BankAccountPanel({
       ) : (
         <div className="overflow-hidden rounded-xl border border-gray-200 bg-white shadow-sm">
           {days.map((day) => (
-            <section key={day.kyivDay} className="border-t-2 border-gray-800 first:border-t-0">
+            <section key={day.kyivDay} className="border-t border-gray-200 first:border-t-0">
               <table className="w-full table-fixed text-left text-[10px]">
                 <colgroup>
                   <col style={{ width: "4%" }} />

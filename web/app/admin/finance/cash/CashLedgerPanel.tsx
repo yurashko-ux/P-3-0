@@ -234,11 +234,11 @@ export function CashLedgerPanel({
         ) : (
     <div className="overflow-hidden rounded-xl border border-gray-200 bg-white shadow-sm">
       {days.map((day, dayIndex) => (
-        <section key={day.kyivDay} className="border-t-2 border-gray-800 first:border-t-0">
+        <section key={day.kyivDay} className="border-t border-gray-200 first:border-t-0">
           {/* Старт каси: рухи нижче цієї смуги вже всередині початкового залишку */}
           {day.kyivDay < CASH_RECONCILE_FROM_KYIV_DAY &&
           (dayIndex === 0 || days[dayIndex - 1].kyivDay >= CASH_RECONCILE_FROM_KYIV_DAY) ? (
-            <div className="flex flex-wrap items-center gap-x-2 border-b-2 border-gray-800 bg-amber-100 px-2 py-1 text-[10px] font-semibold text-amber-950">
+            <div className="flex flex-wrap items-center gap-x-2 border-b border-amber-200 bg-amber-100 px-2 py-1 text-[10px] font-semibold text-amber-950">
               <span>Старт каси: кінець дня {dayLabel(CASH_OPENING_KYIV_DAY)}</span>
               <span className="tabular-nums">
                 {currencies.map((currency) => `${money(openingOf(currency))} ${unitOf(currency)}`).join(" · ")}

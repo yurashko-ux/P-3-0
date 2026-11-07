@@ -6,6 +6,7 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useEffect, useRef, useState } from "react";
 import type { Permissions } from "@/lib/auth-rbac";
+import { navTileClass } from "./nav-tile";
 
 /** Висота панелі; сторінки з власними sticky-шапками зсуваються на var(--admin-nav-h). */
 export const ADMIN_NAV_HEIGHT_PX = 40;
@@ -115,8 +116,6 @@ function findActiveKey(items: AdminNavItem[], pathname: string): string | null {
   return best?.key ?? null;
 }
 
-const NAV_LINK_CLASS = "btn btn-ghost min-h-0 py-0.5 text-[10px] px-1 leading-tight";
-
 /** Кнопки розділів — спільні для панелі та шапки Direct. */
 export function AdminNavLinks({
   permissions,
@@ -136,7 +135,7 @@ export function AdminNavLinks({
         <Link
           key={item.key}
           href={hrefOverrides?.[item.key] || item.href}
-          className={`${NAV_LINK_CLASS} ${activeKey === item.key ? "bg-blue-50 text-blue-700" : ""}`}
+          className={navTileClass(activeKey === item.key)}
           aria-current={activeKey === item.key ? "page" : undefined}
           // Наскрізне правило: кожна кнопка панелі відкриває розділ у новій вкладці браузера.
           target="_blank"
@@ -243,14 +242,15 @@ export function AdminTopNav() {
         >
           <img src="/icon-192.png" alt="" width={28} height={28} className="h-7 w-7 rounded-md" />
         </Link>
-        <div className="flex items-center gap-0.5 flex-1 min-w-0 justify-end whitespace-nowrap overflow-x-auto">
+        {/* ml-auto на першій кнопці, а не justify-end: інакше ліві кнопки обрізаються на вузькому екрані */}
+        <div className="flex items-center gap-1 flex-1 min-w-0 py-1 whitespace-nowrap overflow-x-auto [&>*:first-child]:ml-auto">
           {permissions !== undefined && <AdminNavLinks permissions={permissions} pathname={pathname} />}
         </div>
         {userLabel && (
           <div className="relative shrink-0" ref={userMenuRef}>
             <button
               type="button"
-              className="btn btn-ghost min-h-0 py-0.5 text-[10px] px-1.5 leading-tight"
+              className={navTileClass(false)}
               onClick={() => setIsUserMenuOpen((v) => !v)}
               title="Меню користувача"
             >

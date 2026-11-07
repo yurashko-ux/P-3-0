@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useEffect, useState } from "react";
+import { navTileClass } from "@/app/admin/_components/nav-tile";
 
 type Permissions = Record<string, string>;
 
@@ -49,7 +50,7 @@ export function FinanceChrome({ children }: { children: React.ReactNode }) {
         {showDocs && (
           <Link
             href="/admin/finance"
-            className={`btn btn-sm min-h-0 h-8 ${onDocs ? "btn-neutral" : "btn-ghost"}`}
+            className={navTileClass(Boolean(onDocs))}
           >
             Документи
           </Link>
@@ -57,7 +58,7 @@ export function FinanceChrome({ children }: { children: React.ReactNode }) {
         {showDocs && (
           <Link
             href="/admin/finance/payments"
-            className={`btn btn-sm min-h-0 h-8 ${onPayments ? "btn-neutral" : "btn-ghost"}`}
+            className={navTileClass(Boolean(onPayments))}
           >
             Фінансові операції
           </Link>
@@ -65,7 +66,7 @@ export function FinanceChrome({ children }: { children: React.ReactNode }) {
         {showDocs && (
           <Link
             href="/admin/finance/records"
-            className={`btn btn-sm min-h-0 h-8 ${onRecords ? "btn-neutral" : "btn-ghost"}`}
+            className={navTileClass(Boolean(onRecords))}
           >
             Записи
           </Link>
@@ -73,7 +74,7 @@ export function FinanceChrome({ children }: { children: React.ReactNode }) {
         {showOperations && (
           <Link
             href="/admin/finance/operations"
-            className={`btn btn-sm min-h-0 h-8 ${onOperations ? "btn-neutral" : "btn-ghost"}`}
+            className={navTileClass(Boolean(onOperations))}
           >
             Операції лідів
           </Link>
@@ -81,7 +82,7 @@ export function FinanceChrome({ children }: { children: React.ReactNode }) {
         {showDocs && (
           <Link
             href="/admin/finance/archive"
-            className={`btn btn-sm min-h-0 h-8 ${onArchive ? "btn-neutral" : "btn-ghost"}`}
+            className={navTileClass(Boolean(onArchive))}
           >
             Архів Altegio
           </Link>
@@ -89,7 +90,7 @@ export function FinanceChrome({ children }: { children: React.ReactNode }) {
         {showReport && (
           <Link
             href="/admin/finance-report"
-            className="btn btn-ghost btn-sm min-h-0 h-8"
+            className={navTileClass(false)}
             target="_blank"
             rel="noopener noreferrer"
           >

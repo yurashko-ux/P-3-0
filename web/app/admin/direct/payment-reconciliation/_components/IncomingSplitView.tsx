@@ -4026,7 +4026,7 @@ export function IncomingSplitView({
                 : new Set<string>();
 
               return (
-                <section key={day.kyivDay} className="border-t-2 border-gray-800 first:border-t-0">
+                <section key={day.kyivDay} className="border-t border-gray-200 first:border-t-0">
                   <div className={`${SPLIT_ROW_CLASS} bg-slate-300 text-[10px]`}>
                     <table className={`${ALT_TABLE_CLASS} border-r border-gray-300`}>
                       <AltegioColGroup showMetaColumns={showMetaColumns} />
