@@ -339,9 +339,9 @@ export function CashLedgerPanel({
         )}
       </div>
       {/* Касовки окремою колонкою: їхня висота не розтягує дні в таблиці */}
-      <aside className="min-w-0 overflow-hidden rounded-xl border border-gray-200 bg-white shadow-sm md:sticky md:top-[calc(var(--admin-nav-h,0px)+3.5rem)]">
+      <aside className="min-w-0 overflow-hidden rounded-xl border border-gray-200 bg-white shadow-sm md:sticky md:top-[calc(var(--admin-nav-h,0px)+var(--cash-sticky-top,0px)+0.5rem)]">
         <div className="bg-slate-300 px-2 py-1 text-[10px] font-semibold text-emerald-900">Касовки</div>
-        <div className="max-h-[calc(100vh-var(--admin-nav-h,0px)-6rem)] overflow-y-auto bg-emerald-50/40 px-2 py-2 text-[11px]">
+        <div className="max-h-[calc(100vh-var(--admin-nav-h,0px)-var(--cash-sticky-top,0px)-3rem)] overflow-y-auto bg-emerald-50/40 px-2 py-2 text-[11px]">
           {visibleCounts.length === 0 ? (
             <span className="text-gray-400">Касовок немає</span>
           ) : (

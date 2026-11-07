@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { navTileClass } from "@/app/admin/_components/nav-tile";
 import { FINANCE_HEADER_ACTIONS_ID } from "@/app/admin/finance/_components/FinanceChrome";
@@ -124,6 +124,10 @@ export default function CashBalancesPage() {
   const [ledgerReload, setLedgerReload] = useState(0);
   const [pulling, setPulling] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
+  /** Висота панелі Фінансів і плиток — щоб плитки й колонка касовок закріплювались під ними */
+  const [financeHeaderH, setFinanceHeaderH] = useState(0);
+  const [tilesH, setTilesH] = useState(0);
+  const tilesRef = useRef<HTMLDivElement>(null);
   /** Місце в панелі Фінансів після «Звіт» */
   const [headerSlot, setHeaderSlot] = useState<HTMLElement | null>(null);
   /** Безготівковий рахунок, рухи якого показуємо замість готівки */
@@ -151,7 +155,19 @@ export default function CashBalancesPage() {
   }, [load]);
 
   useEffect(() => {
-    setHeaderSlot(document.getElementById(FINANCE_HEADER_ACTIONS_ID));
+    const slot = document.getElementById(FINANCE_HEADER_ACTIONS_ID);
+    setHeaderSlot(slot);
+    const header = slot?.closest("header");
+    const tiles = tilesRef.current;
+    const measure = () => {
+      setFinanceHeaderH(header?.getBoundingClientRect().height ?? 0);
+      setTilesH(tiles?.getBoundingClientRect().height ?? 0);
+    };
+    measure();
+    const observer = new ResizeObserver(measure);
+    if (header) observer.observe(header);
+    if (tiles) observer.observe(tiles);
+    return () => observer.disconnect();
   }, []);
 
   async function pullFromAltegio() {
@@ -179,7 +195,10 @@ export default function CashBalancesPage() {
   }
 
   return (
-    <main className="px-2 pb-6 pt-2 space-y-2">
+    <main
+      className="px-2 pb-6 space-y-2"
+      style={{ "--cash-sticky-top": `${financeHeaderH + tilesH}px` } as React.CSSProperties}
+    >
       {headerSlot
         ? createPortal(
             <>
@@ -212,8 +231,12 @@ export default function CashBalancesPage() {
         <p className="text-sm text-gray-500">Рахунків немає.</p>
       )}
 
-      {/* Плитки на всю ширину: нові рахунки стають у той самий ряд */}
-      <div className="grid grid-cols-[repeat(auto-fill,minmax(150px,1fr))] gap-2">
+      {/* Плитки на всю ширину й закріплені під панеллю Фінансів: список рухів гортається під ними */}
+      <div
+        ref={tilesRef}
+        className="sticky z-10 -mx-2 grid grid-cols-[repeat(auto-fill,minmax(150px,1fr))] gap-2 bg-[#f6f7fb] px-2 py-2"
+        style={{ top: `calc(var(--admin-nav-h, 0px) + ${financeHeaderH}px)` }}
+      >
         {tiles.map((tile, index) => {
           const face = <TileFace tile={tile} />;
           const tint = tileTint(tile, index);

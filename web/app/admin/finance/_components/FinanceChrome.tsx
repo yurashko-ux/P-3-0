@@ -38,12 +38,17 @@ export function FinanceChrome({ children }: { children: React.ReactNode }) {
     permissions.financeOperationsSection !== "none" ||
     permissions.financeDocsSection !== "none";
   const showReport = permissions == null || permissions.financeReportSection !== "none";
+  const showCash =
+    permissions == null ||
+    permissions.cashSection !== "none" ||
+    permissions.financeDocsSection !== "none";
 
   const onDocs = pathname === "/admin/finance" || pathname === "/admin/finance/";
   const onPayments = pathname?.startsWith("/admin/finance/payments");
   const onRecords = pathname?.startsWith("/admin/finance/records");
   const onOperations = pathname?.startsWith("/admin/finance/operations");
   const onArchive = pathname?.startsWith("/admin/finance/archive");
+  const onCash = pathname?.startsWith("/admin/finance/cash");
 
   return (
     <div className="min-h-screen bg-[#f6f7fb] text-gray-900">
@@ -97,6 +102,11 @@ export function FinanceChrome({ children }: { children: React.ReactNode }) {
             rel="noopener noreferrer"
           >
             Звіт
+          </Link>
+        )}
+        {showCash && (
+          <Link href="/admin/finance/cash" className={navTileClass(Boolean(onCash))}>
+            Каса
           </Link>
         )}
         {/* Сюди сторінка може поставити свою кнопку */}
