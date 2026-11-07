@@ -47,12 +47,13 @@ function attendedFromMark(attendance: number | null, confirmedCounts: boolean): 
   return null;
 }
 
-/** Майстер, стан, сума й вогник поточного платного запису. Записи одного часу — це один візит кількох майстрів. */
+/** Майстер, стан, сума й вогник поточного платного запису. Усі записи клієнта за день — один візит: майстри йдуть і паралельно, і поспіль. */
 export function deriveDirectDetailsFromJournal(appointments: JournalAppointment[], now: Date = new Date()) {
   const paidRows = appointments.filter(isPaid);
   const current = currentAppointment(paidRows, now);
   if (!current) return null;
-  const visit = paidRows.filter((a) => a.datetime.getTime() === current.datetime.getTime());
+  const kyivDay = (d: Date) => d.toLocaleDateString("sv-SE", { timeZone: "Europe/Kyiv" });
+  const visit = paidRows.filter((a) => kyivDay(a.datetime) === kyivDay(current.datetime));
   const goods = Math.max(...visit.map((a) => a.goodsTotal ?? 0));
   const rowTotal = (a: JournalAppointment) => a.lines.reduce((sum, line) => sum + (Number(line.cost) || 0), 0);
   return {
@@ -135,6 +136,8 @@ function planCardChanges(
     nextAttended: boolean | null,
   ) => {
     if (!next || (current && (sameMinute(current, next) || sameKyivDay(current, next)))) return;
+    // Минулу дату назад не рухаємо: картка могла бачити запис, який журнал рахує інакше.
+    if (current && next < current && next < new Date()) return;
     changes.push({ field, from: current, to: toCardDate(next) });
     // Захист: не перезаписуємо «прийшов» на «не прийшов».
     if (attended !== nextAttended && attended !== true) {
