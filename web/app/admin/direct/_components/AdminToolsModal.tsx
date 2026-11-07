@@ -771,7 +771,7 @@ export function AdminToolsModal({
     }
   };
 
-  // Кількість кнопок: 106. При додаванні нової кнопки завжди додавати її в кінець відповідної категорії та оновлювати цю кількість у коментарі.
+  // Кількість кнопок: 107. При додаванні нової кнопки завжди додавати її в кінець відповідної категорії та оновлювати цю кількість у коментарі.
   const tools = [
     {
       category: "Тести",
@@ -2578,6 +2578,15 @@ export function AdminToolsModal({
           method: "GET" as const,
           successMessage: (data: any) =>
             `🧭 Звірка станів за ${data.days} днів\n\nКлієнтів: ${data.compared}\nЗбіглось: ${data.matched}\n\nКонсультації: ${JSON.stringify(data.counts.consultation)}\nПлатні: ${JSON.stringify(data.counts.paid)}\nДеталі: ${JSON.stringify(data.details)}\n\nСухий прогін (нічого не записано): клієнтів ${data.plan.clients}, поля ${JSON.stringify(data.plan.byField)}\n${JSON.stringify(data.plan.rows, null, 2)}\n\n${JSON.stringify(data.samples, null, 2)}\n\n${JSON.stringify(data.detailSamples, null, 2)}`,
+        },
+        {
+          icon: "✍️",
+          label: "Застосувати: записати в картки Direct дані журналу (спершу №106)",
+          endpoint: "/api/admin/direct/journal-state-compare",
+          method: "POST" as const,
+          confirm: "Кнопка №107. Записати в картки Direct дати, суми й майстрів із журналу? Спершу перегляньте сухий прогін у кнопці №106.",
+          successMessage: (data: any) =>
+            `✍️ Оновлено карток: ${data.applied}\nПоля: ${JSON.stringify(data.plan.byField)}`,
         },
       ],
     },

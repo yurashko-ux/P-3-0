@@ -160,7 +160,7 @@ function planCardChanges(
 }
 
 /** Два запити до БД на весь запуск. Лише читання. */
-export async function compareDirectWithJournal(days: number, sampleLimit = 40) {
+export async function compareDirectWithJournal(days: number, sampleLimit = 40, options?: { apply?: boolean }) {
   const since = new Date(Date.now() - days * 24 * 60 * 60 * 1000);
   const appointments = await prisma.salonAppointment.findMany({
     where: { datetime: { gte: since }, status: { not: "deleted" }, directClientId: { not: null } },
@@ -202,6 +202,7 @@ export async function compareDirectWithJournal(days: number, sampleLimit = 40) {
       serviceMasterName: true,
       paidServiceTotalCost: true,
       paidRecordsInHistoryCount: true,
+      updatedAt: true,
     },
   });
 
@@ -222,6 +223,7 @@ export async function compareDirectWithJournal(days: number, sampleLimit = 40) {
   };
   const detailSamples: Array<Record<string, unknown>> = [];
   const plan = { clients: 0, byField: {} as Record<string, number>, rows: [] as Array<Record<string, unknown>> };
+  const toApply: Array<{ id: string; updatedAt: Date; changes: CardChange[] }> = [];
   let matched = 0;
   for (const client of clients) {
     const journal = deriveDirectFieldsFromJournal(byClient.get(client.id) ?? []);
@@ -238,6 +240,7 @@ export async function compareDirectWithJournal(days: number, sampleLimit = 40) {
     const changes = planCardChanges(client, journal, detail);
     if (changes.length > 0) {
       plan.clients += 1;
+      toApply.push({ id: client.id, updatedAt: client.updatedAt, changes });
       for (const change of changes) plan.byField[change.field] = (plan.byField[change.field] || 0) + 1;
       if (plan.rows.length < 200) {
         plan.rows.push({
@@ -301,5 +304,16 @@ export async function compareDirectWithJournal(days: number, sampleLimit = 40) {
       });
     }
   }
-  return { days, compared: clients.length, matched, counts, samples, details, detailSamples, plan };
+  let applied = 0;
+  if (options?.apply) {
+    for (const item of toApply) {
+      const data: Record<string, unknown> = { updatedAt: item.updatedAt };
+      for (const change of item.changes) data[change.field] = change.to;
+      // Попередні значення в логах: за ними зміну можна відкотити.
+      console.log("[direct-journal-state] Оновлення картки з журналу", item.id, JSON.stringify(item.changes));
+      await prisma.directClient.update({ where: { id: item.id }, data });
+      applied += 1;
+    }
+  }
+  return { applied, days, compared: clients.length, matched, counts, samples, details, detailSamples, plan };
 }
