@@ -202,7 +202,8 @@ export default function CashBalancesPage() {
         <p className="text-sm text-gray-500">Рахунків немає.</p>
       )}
 
-      <div className="grid grid-cols-2 gap-2 sm:grid-cols-3 lg:grid-cols-6">
+      {/* Плитки на всю ширину: нові рахунки стають у той самий ряд */}
+      <div className="grid grid-cols-[repeat(auto-fill,minmax(150px,1fr))] gap-2">
         {tiles.map((tile, index) => {
           const face = <TileFace tile={tile} />;
           const tint = tileTint(tile, index);

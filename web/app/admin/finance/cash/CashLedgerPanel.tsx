@@ -147,9 +147,7 @@ export function CashLedgerPanel({
 
   const days = useMemo(() => {
     const visibleRows = rows.filter((row) => !accountFilter || row.accountTitle === accountFilter);
-    const visibleCounts = counts.filter((count) => !accountFilter || count.accountTitle === accountFilter);
-    const dayKeys = [...new Set([...visibleRows.map((row) => row.kyivDay), ...visibleCounts.map((count) => count.kyivDay)])];
-    return dayKeys
+    return [...new Set(visibleRows.map((row) => row.kyivDay))]
       .sort((a, b) => b.localeCompare(a))
       .map((kyivDay) => {
         // Залишок на кінець дня = старт + рухи від дня старту, як на плитках
@@ -171,10 +169,14 @@ export function CashLedgerPanel({
           kyivDay,
           balances,
           rows: aggregateCashLedgerDayRows(visibleRows.filter((row) => row.kyivDay === kyivDay)),
-          counts: visibleCounts.filter((count) => count.kyivDay === kyivDay),
         };
       });
-  }, [rows, counts, accountFilter, currencies]);
+  }, [rows, accountFilter, currencies]);
+
+  const visibleCounts = useMemo(
+    () => counts.filter((count) => !accountFilter || count.accountTitle === accountFilter),
+    [counts, accountFilter],
+  );
 
   async function removeCount(count: SavedCount) {
     const label = `${count.accountTitle} на ${money(count.counted)} ${unitOf(count.currency)} від ${dayLabel(count.kyivDay)} ${timeLabel(count.savedAt)}`;
@@ -221,16 +223,15 @@ export function CashLedgerPanel({
     </select>
   );
 
-  if (days.length === 0) {
-    return (
-      <div className="px-3 py-6 text-center text-sm text-gray-500">
-        <p>Готівкових платежів немає.</p>
-        {accountFilter ? <div className="mt-2 inline-block">{accountSelect}</div> : null}
-      </div>
-    );
-  }
-
   return (
+    <div className="grid grid-cols-1 items-start gap-2 md:grid-cols-[minmax(0,2fr)_minmax(0,1fr)]">
+      <div className="min-w-0">
+        {days.length === 0 ? (
+          <div className="rounded-xl border border-gray-200 bg-white px-3 py-6 text-center text-sm text-gray-500 shadow-sm">
+            <p>Готівкових платежів немає.</p>
+            {accountFilter ? <div className="mt-2 inline-block">{accountSelect}</div> : null}
+          </div>
+        ) : (
     <div className="overflow-hidden rounded-xl border border-gray-200 bg-white shadow-sm">
       {days.map((day, dayIndex) => (
         <section key={day.kyivDay} className="border-t-2 border-gray-800 first:border-t-0">
@@ -245,10 +246,7 @@ export function CashLedgerPanel({
               <span className="font-normal">Рухи нижче в баланс не входять</span>
             </div>
           ) : null}
-          <div className="grid grid-cols-[minmax(0,1fr)_220px]">
             {/* table-fixed + однакові ширини: колонки всіх днів стоять одна під одною */}
-            {/* Обгортка: таблиця не розтягує рядки під висоту колонки «Касовка» */}
-            <div className="min-w-0">
             <table className="w-full table-fixed text-left text-[10px]">
               <colgroup>
                 <col style={{ width: "6%" }} />
@@ -333,69 +331,62 @@ export function CashLedgerPanel({
                     </tr>
                   );
                 })}
-                {day.rows.length === 0 ? (
-                  <tr className="border-t border-gray-100">
-                    <td colSpan={8} className="px-2 py-1 text-gray-400">
-                      Рухів немає
-                    </td>
-                  </tr>
-                ) : null}
               </tbody>
             </table>
-            </div>
-            <div className="border-l border-gray-200">
-              <div className="border-b border-gray-300 bg-slate-300 px-2 py-1 text-right text-[10px] font-semibold text-emerald-900">
-                Касовка
-              </div>
-              <div className="bg-emerald-50/40 px-2 py-2 text-[11px]">
-              {day.counts.length === 0 ? (
-                <span className="text-gray-400">—</span>
-              ) : (
-                day.counts.map((count) => {
-                  const unit = unitOf(count.currency);
-                  // До старту каси «мало бути» рахувала стара схема — ці числа не порівнюємо
-                  const current = count.kyivDay >= CASH_RECONCILE_FROM_KYIV_DAY;
-                  const diff =
-                    current && count.variance != null && Math.abs(count.variance) >= 0.01 ? count.variance : null;
-                  return (
-                    <div key={count.id} className="mb-2 border-b border-emerald-100 pb-1.5 last:mb-0 last:border-b-0 last:pb-0">
-                      <div className="flex items-start justify-between gap-1">
-                        <div className="tabular-nums font-semibold text-gray-900">
-                          {timeLabel(count.savedAt)} · {count.accountTitle}
-                        </div>
-                        <button
-                          type="button"
-                          className="text-[10px] text-gray-400 hover:text-red-600 disabled:opacity-50"
-                          disabled={deletingId === count.id}
-                          title="Видалити касовку"
-                          onClick={() => void removeCount(count)}
-                        >
-                          {deletingId === count.id ? "…" : "🗑"}
-                        </button>
-                      </div>
-                      <div className="tabular-nums text-emerald-900">
-                        {money(count.counted)} {unit}
-                      </div>
-                      {current && count.expected != null ? (
-                        <div className="tabular-nums text-gray-600">
-                          мало бути {money(count.expected)} {unit}
-                        </div>
-                      ) : null}
-                      {diff != null ? (
-                        <div className={`tabular-nums font-medium ${diff < 0 ? "text-red-600" : "text-amber-700"}`}>
-                          {diff < 0 ? "недостача" : "надлишок"} {money(Math.abs(diff))} {unit}
-                        </div>
-                      ) : null}
-                      <div className="text-gray-600">{count.authorName || "—"}</div>
-                    </div>
-                  );
-                })
-              )}
-              </div>
-            </div>
-          </div>
         </section>
       ))}
+    </div>
+        )}
+      </div>
+      {/* Касовки окремою колонкою: їхня висота не розтягує дні в таблиці */}
+      <aside className="min-w-0 overflow-hidden rounded-xl border border-gray-200 bg-white shadow-sm md:sticky md:top-[calc(var(--admin-nav-h,0px)+3.5rem)]">
+        <div className="bg-slate-300 px-2 py-1 text-[10px] font-semibold text-emerald-900">Касовки</div>
+        <div className="max-h-[calc(100vh-var(--admin-nav-h,0px)-6rem)] overflow-y-auto bg-emerald-50/40 px-2 py-2 text-[11px]">
+          {visibleCounts.length === 0 ? (
+            <span className="text-gray-400">Касовок немає</span>
+          ) : (
+            visibleCounts.map((count) => {
+              const unit = unitOf(count.currency);
+              // До старту каси «мало бути» рахувала стара схема — ці числа не порівнюємо
+              const current = count.kyivDay >= CASH_RECONCILE_FROM_KYIV_DAY;
+              const diff =
+                current && count.variance != null && Math.abs(count.variance) >= 0.01 ? count.variance : null;
+              return (
+                <div key={count.id} className="mb-2 border-b border-emerald-100 pb-1.5 last:mb-0 last:border-b-0 last:pb-0">
+                  <div className="flex items-start justify-between gap-1">
+                    <div className="tabular-nums font-semibold text-gray-900">
+                      {dayLabel(count.kyivDay)} {timeLabel(count.savedAt)} · {count.accountTitle}
+                    </div>
+                    <button
+                      type="button"
+                      className="text-[10px] text-gray-400 hover:text-red-600 disabled:opacity-50"
+                      disabled={deletingId === count.id}
+                      title="Видалити касовку"
+                      onClick={() => void removeCount(count)}
+                    >
+                      {deletingId === count.id ? "…" : "🗑"}
+                    </button>
+                  </div>
+                  <div className="tabular-nums text-emerald-900">
+                    {money(count.counted)} {unit}
+                  </div>
+                  {current && count.expected != null ? (
+                    <div className="tabular-nums text-gray-600">
+                      мало бути {money(count.expected)} {unit}
+                    </div>
+                  ) : null}
+                  {diff != null ? (
+                    <div className={`tabular-nums font-medium ${diff < 0 ? "text-red-600" : "text-amber-700"}`}>
+                      {diff < 0 ? "недостача" : "надлишок"} {money(Math.abs(diff))} {unit}
+                    </div>
+                  ) : null}
+                  <div className="text-gray-600">{count.authorName || "—"}</div>
+                </div>
+              );
+            })
+          )}
+        </div>
+      </aside>
     </div>
   );
 }
