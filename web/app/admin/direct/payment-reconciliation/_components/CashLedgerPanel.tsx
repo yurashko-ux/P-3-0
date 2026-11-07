@@ -236,7 +236,8 @@ export function CashLedgerPanel({
                     <tr key={row.id} className="border-t border-gray-100">
                       <td className="px-2 py-1 tabular-nums text-gray-500">{index + 1}</td>
                       <td className="break-words px-2 py-1 text-gray-800">{row.clientName || "—"}</td>
-                      <td className="break-words px-2 py-1 text-left text-gray-700">{row.title}</td>
+                      {/* Довгий опис не роздуває рядок: один рядок, повний текст — при наведенні */}
+                      <td className="truncate px-2 py-1 text-left text-gray-700" title={row.title || undefined}>{row.title}</td>
                       <td className="whitespace-nowrap px-2 py-1 tabular-nums text-gray-600">
                         {timeLabel(row.occurredAt) || "—"}
                       </td>
