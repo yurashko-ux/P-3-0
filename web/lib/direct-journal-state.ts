@@ -148,10 +148,8 @@ function planCardChanges(
     // Минулу дату назад не рухаємо: картка могла бачити запис, який журнал рахує інакше.
     if (current && next < current && next < new Date()) return;
     changes.push({ field, from: current, to: toCardDate(next) });
-    // Захист: не перезаписуємо «прийшов» на «не прийшов».
-    if (attended !== nextAttended && attended !== true) {
-      changes.push({ field: attendedField, from: attended, to: nextAttended });
-    }
+    // Новий запис — нова відмітка: «прийшов» минулого запису до нього не стосується.
+    if (attended !== nextAttended) changes.push({ field: attendedField, from: attended, to: nextAttended });
   };
   date("consultationBookingDate", card.consultationBookingDate, journal.consultationBookingDate, "consultationAttended", card.consultationCancelled ? false : card.consultationAttended, journal.consultationAttended);
   date("paidServiceDate", card.paidServiceDate, journal.paidServiceDate, "paidServiceAttended", card.paidServiceCancelled ? false : card.paidServiceAttended, journal.paidServiceAttended);
