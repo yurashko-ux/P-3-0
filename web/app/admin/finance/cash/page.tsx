@@ -172,9 +172,7 @@ export default function CashBalancesPage() {
       if (!response.ok || payload.ok === false) {
         throw new Error(payload.error || "Не вдалося підтягнути рахунки з Altegio");
       }
-      const [year, month, date] = String(payload.day || "").split("-");
-      const dayLabel = year && month && date ? `${date}.${month}.${year}` : "сьогодні";
-      setMessage(`Підтягнуто рахунки за ${dayLabel}: ${payload.upserted ?? 0} операцій`);
+      // Успіх не показуємо окремим рядком: нові операції просто з’являються в таблиці
       void load();
       setLedgerReload((value) => value + 1);
     } catch (err) {
