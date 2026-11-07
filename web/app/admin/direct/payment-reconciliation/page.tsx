@@ -3,7 +3,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import { IncomingSplitView, type IncomingSplitControls } from "@/app/admin/direct/payment-reconciliation/_components/IncomingSplitView";
-import { CashLedgerPanel } from "@/app/admin/direct/payment-reconciliation/_components/CashLedgerPanel";
 
 type ReconciliationRow = {
   bank: {
@@ -85,7 +84,7 @@ const STATUS_OPTIONS = [
   { value: "linked", label: "Зведені" },
 ] as const;
 
-type PaymentDirection = "out" | "in" | "cash";
+type PaymentDirection = "out" | "in";
 type BasePaymentStatus = (typeof STATUS_OPTIONS)[number]["value"];
 type PaymentStatus = BasePaymentStatus | "deposits";
 
@@ -255,9 +254,7 @@ function StatusButtonGroup({
             isActiveGroup && !depositsActive && activeStatus === option.value
               ? direction === "out"
                 ? "bg-blue-600 text-white"
-                : direction === "cash"
-                  ? "bg-amber-700 text-white"
-                  : "bg-emerald-600 text-white"
+                : "bg-emerald-600 text-white"
               : "bg-gray-100 text-gray-700 hover:bg-gray-200"
           }`}
           onClick={() => onSelect(direction, option.value)}
@@ -277,9 +274,6 @@ export default function PaymentReconciliationPage() {
   const [loading, setLoading] = useState(false);
   const [actionMessage, setActionMessage] = useState<string | null>(null);
   const [incomingControls, setIncomingControls] = useState<IncomingSplitControls | null>(null);
-  const [cashCounts, setCashCounts] = useState({ all: 0, open: 0, linked: 0 });
-  const [cashReload, setCashReload] = useState(0);
-  const [pullingCash, setPullingCash] = useState(false);
   const [pullingAll, setPullingAll] = useState(false);
   const rows = useMemo(() => filterRows(data.rows, status), [data.rows, status]);
   const statusCounts = useMemo(() => {
@@ -328,31 +322,6 @@ export default function PaymentReconciliationPage() {
     if (direction === "out") void loadOutgoingData();
   }, [direction, loadOutgoingData]);
 
-  async function pullCashFromAltegio() {
-    setPullingCash(true);
-    setActionMessage(null);
-    try {
-      const response = await fetch("/api/admin/finance/cash/pull-today", { method: "POST" });
-      const payload = (await response.json().catch(() => ({}))) as {
-        ok?: boolean;
-        day?: string;
-        upserted?: number;
-        error?: string;
-      };
-      if (!response.ok || payload.ok === false) {
-        throw new Error(payload.error || "Не вдалося підтягнути рахунки з Altegio");
-      }
-      const [year, month, date] = String(payload.day || "").split("-");
-      const dayLabel = year && month && date ? `${date}.${month}.${year}` : "сьогодні";
-      setActionMessage(`Підтягнуто рахунки за ${dayLabel}: ${payload.upserted ?? 0} операцій`);
-      setCashReload((value) => value + 1);
-    } catch (error) {
-      setActionMessage(error instanceof Error ? error.message : "Не вдалося підтягнути рахунки з Altegio");
-    } finally {
-      setPullingCash(false);
-    }
-  }
-
   /** «Підтягнути всі платежі»: операції Altegio за останні 40 днів, частинами по 14 днів */
   async function pullAllAltegioPayments() {
     setPullingAll(true);
@@ -394,7 +363,6 @@ export default function PaymentReconciliationPage() {
       }
       const [y, m, d] = plan.startDate.split("-");
       setActionMessage(`Підтягнуто всі платежі з ${d}.${m}.${y}: отримано ${fetched}, оновлено ${upserted}`);
-      setCashReload((value) => value + 1);
       if (direction === "in") incomingControls?.refresh();
       if (direction === "out") await loadOutgoingData();
     } catch (error) {
@@ -406,7 +374,7 @@ export default function PaymentReconciliationPage() {
 
   function handleDirectionStatusSelect(nextDirection: PaymentDirection, nextStatus: PaymentStatus) {
     setDirection(nextDirection);
-    if ((nextDirection === "out" || nextDirection === "cash") && nextStatus === "deposits") {
+    if (nextDirection === "out" && nextStatus === "deposits") {
       setStatus("open");
     } else {
       setStatus(nextStatus);
@@ -475,13 +443,12 @@ export default function PaymentReconciliationPage() {
 
   const showOutgoingTable = direction === "out";
   const showIncomingSplit = direction === "in" && (status === "open" || status === "linked" || status === "deposits" || status === "all");
-  const showCash = direction === "cash";
   const incomingStatusCounts = incomingControls?.statusCounts ?? { all: 0, open: 0, linked: 0, deposits: 0 };
 
   return (
     <main
       className={`min-h-screen bg-base-200 text-gray-900 ${
-        showIncomingSplit || showCash ? "flex flex-col" : ""
+        showIncomingSplit ? "flex flex-col" : ""
       }`}
     >
       <div className="sticky top-[var(--admin-nav-h,0px)] z-20 border-b border-gray-200 bg-white/95 backdrop-blur">
@@ -522,23 +489,7 @@ export default function PaymentReconciliationPage() {
             </button>
           </div>
 
-          <div className="h-6 w-px bg-gray-300" aria-hidden />
-
-          <div className="flex flex-wrap items-center gap-1.5 rounded-lg border border-amber-200 bg-amber-50/60 px-2 py-1">
-            <span className="text-[10px] font-bold uppercase tracking-wide text-amber-900">Готівка</span>
-            {/* Готівку більше не ділимо на зведену / незведену: баланс = старт + усі рухи */}
-            <button
-              type="button"
-              className={`rounded-full px-2.5 py-0.5 text-[10px] font-medium leading-4 ${
-                direction === "cash" ? "bg-amber-700 text-white" : "bg-gray-100 text-gray-700 hover:bg-gray-200"
-              }`}
-              onClick={() => handleDirectionStatusSelect("cash", "all")}
-            >
-              Усі ({cashCounts.all})
-            </button>
-          </div>
-
-          {(showOutgoingTable || showIncomingSplit || showCash || direction === "in") ? (
+          {(showOutgoingTable || showIncomingSplit || direction === "in") ? (
             <div className="ml-auto flex flex-wrap items-center gap-1">
               {direction === "in" ? (
                 <button
@@ -551,21 +502,10 @@ export default function PaymentReconciliationPage() {
                   {incomingControls?.reconciling ? "Зводжу..." : "Звести"}
                 </button>
               ) : null}
-              {showCash ? (
-                <button
-                  type="button"
-                  className="btn btn-outline btn-xs h-6 min-h-0 px-2 text-[10px]"
-                  disabled={pullingCash}
-                  onClick={() => void pullCashFromAltegio()}
-                  title="Підтягнути з Altegio лише рахунки за поточний день"
-                >
-                  {pullingCash ? "Підтягую..." : "Підтягнути з Альтеджіо"}
-                </button>
-              ) : null}
               <button
                 type="button"
                 className="btn btn-outline btn-xs h-6 min-h-0 px-2 text-[10px]"
-                disabled={pullingAll || pullingCash}
+                disabled={pullingAll}
                 onClick={() => void pullAllAltegioPayments()}
                 title="Підтягнути з Altegio всі платежі за останні 40 днів"
               >
@@ -574,12 +514,8 @@ export default function PaymentReconciliationPage() {
               <button
                 type="button"
                 className="btn btn-primary btn-xs h-6 min-h-0 px-2 text-[10px]"
-                disabled={loading || pullingCash || pullingAll || Boolean(incomingControls?.loading) || Boolean(incomingControls?.reconciling)}
+                disabled={loading || pullingAll || Boolean(incomingControls?.loading) || Boolean(incomingControls?.reconciling)}
                 onClick={() => {
-                  if (showCash) {
-                    setCashReload((value) => value + 1);
-                    return;
-                  }
                   if (showIncomingSplit) {
                     incomingControls?.refresh();
                     return;
@@ -606,15 +542,6 @@ export default function PaymentReconciliationPage() {
           reconciliationStatus={
             status === "linked" ? "linked" : status === "deposits" ? "deposits" : status === "all" ? "all" : "open"
           }
-        />
-      </div>
-
-      <div className={showCash ? "flex min-h-0 flex-1 flex-col p-2" : "hidden"} aria-hidden={!showCash}>
-        <CashLedgerPanel
-          direction="both"
-          status="all"
-          reloadToken={cashReload}
-          onCounts={setCashCounts}
         />
       </div>
 

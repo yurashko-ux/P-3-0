@@ -9,7 +9,7 @@ export const START_SECTIONS = [
   { id: "finance", label: "Фінанси", path: "/admin/finance" },
   { id: "lead-operations", label: "Операції лідів", path: "/admin/finance/operations" },
   { id: "finance-report", label: "Фінансовий звіт", path: "/admin/finance-report" },
-  { id: "cash", label: "Каса", path: "/admin/finance/kasa" },
+  { id: "cash", label: "Каса", path: "/admin/finance/cash" },
   { id: "warehouse", label: "Склад", path: "/admin/warehouse" },
   { id: "journal", label: "Журнал", path: "/admin/journal" },
   { id: "team", label: "Команда", path: "/admin/team" },

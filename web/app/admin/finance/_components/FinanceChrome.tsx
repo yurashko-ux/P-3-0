@@ -61,7 +61,7 @@ export function FinanceChrome({ children }: { children: React.ReactNode }) {
         )}
         {showCash && (
           <Link
-            href="/admin/finance/kasa"
+            href="/admin/finance/cash"
             className={`btn btn-sm min-h-0 h-8 ${onKasa ? "btn-neutral" : "btn-ghost"}`}
           >
             Каса

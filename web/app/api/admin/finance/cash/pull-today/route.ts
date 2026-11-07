@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { requireBankSection } from "@/app/api/bank/require-bank-auth";
+import { requireFinanceDocsSection } from "@/lib/finance/require-finance-docs-auth";
 import { syncAltegioFinanceTransactions } from "@/lib/altegio/finance-transactions-sync";
 import { kyivCalendarTodayYmd } from "@/lib/direct-kyiv-today";
 
@@ -11,7 +11,7 @@ export const maxDuration = 60;
  * Історію з 2026-06-15 і банківські виписки не чіпаємо.
  */
 export async function POST(req: NextRequest) {
-  const auth = await requireBankSection(req);
+  const auth = await requireFinanceDocsSection(req, "view");
   if (auth instanceof NextResponse) return auth;
 
   const day = kyivCalendarTodayYmd();

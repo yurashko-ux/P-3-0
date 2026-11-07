@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { requireBankSection } from "@/app/api/bank/require-bank-auth";
+import { requireFinanceDocsSection } from "@/lib/finance/require-finance-docs-auth";
 import { listCashLedger } from "@/lib/finance/cash-posting";
 
 export const dynamic = "force-dynamic";
@@ -7,7 +7,7 @@ export const maxDuration = 60;
 
 /** Готівкові платежі і касовка, якою їх проведено. */
 export async function GET(req: NextRequest) {
-  const auth = await requireBankSection(req);
+  const auth = await requireFinanceDocsSection(req, "view");
   if (auth instanceof NextResponse) return auth;
   try {
     const rows = await listCashLedger();

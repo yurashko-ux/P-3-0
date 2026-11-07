@@ -118,9 +118,14 @@ export type SavedCashCountRow = {
   kyivDay: string;
   savedAt: string;
   authorName: string;
+  accountId: number;
   accountTitle: string;
   currency: string;
   counted: number;
+  /** Скільки мало бути в касі на момент касовки. */
+  expected: number | null;
+  /** Факт мінус очікувана: менше нуля — нестача. */
+  variance: number | null;
 };
 
 /** Усі натискання «Зберегти», новіші зверху. Дві касовки одного дня — два рядки. */
@@ -132,9 +137,12 @@ export async function listSavedCashCounts(limit = 200): Promise<SavedCashCountRo
     select: {
       id: true,
       kyivDay: true,
+      accountId: true,
       accountTitle: true,
       countedUah: true,
       currency: true,
+      expectedUah: true,
+      varianceUah: true,
       createdAt: true,
       createdBy: true,
     },
@@ -153,9 +161,12 @@ export async function listSavedCashCounts(limit = 200): Promise<SavedCashCountRo
     kyivDay: row.kyivDay,
     savedAt: row.createdAt.toISOString(),
     authorName: row.createdBy ? names.get(row.createdBy) || row.createdBy : "—",
+    accountId: row.accountId,
     accountTitle: row.accountTitle,
     currency: row.currency,
     counted: row.countedUah,
+    expected: row.expectedUah,
+    variance: row.varianceUah,
   }));
 }
 

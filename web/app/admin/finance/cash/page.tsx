@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useState } from "react";
 import { CashCountModal } from "./CashCountModal";
+import { CashLedgerPanel } from "./CashLedgerPanel";
 
 type CashTile = {
   id: number;
@@ -51,7 +52,7 @@ function tileTint(tile: CashTile, index: number): string {
 }
 
 const tileFaceClass =
-  "relative flex w-full flex-col items-center justify-center min-h-[6.5rem] rounded-2xl border border-slate-200/80 px-3 py-3 text-center text-gray-900 shadow-[0_1px_2px_rgba(15,23,42,0.05),0_8px_18px_-8px_rgba(15,23,42,0.28)]";
+  "relative flex w-full flex-col items-center justify-center min-h-[4.5rem] rounded-xl border border-slate-200/80 px-2 py-1.5 text-center text-gray-900 shadow-[0_1px_2px_rgba(15,23,42,0.05),0_8px_18px_-8px_rgba(15,23,42,0.28)]";
 
 const tileButtonClass = `${tileFaceClass} cursor-pointer select-none transition-[transform,box-shadow,filter] duration-150 ease-out hover:-translate-y-0.5 hover:shadow-[0_2px_4px_rgba(15,23,42,0.06),0_14px_24px_-8px_rgba(15,23,42,0.32)] active:translate-y-px active:scale-[0.97] active:brightness-[0.97] active:shadow-[inset_0_2px_8px_rgba(15,23,42,0.16),0_1px_2px_rgba(15,23,42,0.06)] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-slate-400`;
 
@@ -67,7 +68,7 @@ function VarianceLine({ tile }: { tile: CashTile }) {
   const shortage = variance < 0;
   return (
     <span
-      className={`mt-0.5 text-[11px] font-medium leading-tight tabular-nums ${shortage ? "text-red-600" : "text-amber-700"}`}
+      className={`mt-0.5 text-[10px] font-medium leading-tight tabular-nums ${shortage ? "text-red-600" : "text-amber-700"}`}
       title={shortage ? "За останньою касовкою в касі менше, ніж за балансом" : "За останньою касовкою в касі більше, ніж за балансом"}
     >
       {shortage ? "недостача −" : "надлишок"} {money(Math.abs(variance))} {unit}
@@ -78,21 +79,21 @@ function VarianceLine({ tile }: { tile: CashTile }) {
 function LastCountLine({ tile }: { tile: CashTile }) {
   const day = formatKyivDayShort(tile.lastCountKyivDay);
   if (!tile.cash || !day) return null;
-  return <span className="mt-0.5 text-[11px] leading-tight tabular-nums text-gray-500">касовка {day}</span>;
+  return <span className="mt-0.5 text-[10px] leading-tight tabular-nums text-gray-500">касовка {day}</span>;
 }
 
 function TileFace({ tile }: { tile: CashTile }) {
   const book = bookAmount(tile);
   return (
     <>
-      <span className="text-[11px] font-medium text-gray-700 leading-tight">{tile.title}</span>
+      <span className="text-[10px] font-medium text-gray-700 leading-tight">{tile.title}</span>
       {tile.openingPending ? (
         <span className="mt-1 text-[11px] text-gray-500">Початковий залишок ще не заданий</span>
       ) : !tile.cash && !tile.hasBank ? (
         <span className="mt-1 text-[11px] text-gray-500">Немає банківського рахунку</span>
       ) : tile.balanceFx != null ? (
         <>
-          <span className="mt-1 text-lg font-semibold tabular-nums text-gray-900">
+          <span className="mt-0.5 text-sm font-semibold tabular-nums text-gray-900">
             {money(tile.balanceFx)} {fxSymbol(tile.currency)}
           </span>
           <LastCountLine tile={tile} />
@@ -100,7 +101,7 @@ function TileFace({ tile }: { tile: CashTile }) {
         </>
       ) : (
         <>
-          <span className="mt-1 text-lg font-semibold tabular-nums text-gray-900">{money(book || 0)} грн</span>
+          <span className="mt-0.5 text-sm font-semibold tabular-nums text-gray-900">{money(book || 0)} грн</span>
           <LastCountLine tile={tile} />
           <VarianceLine tile={tile} />
         </>
@@ -114,6 +115,9 @@ export default function CashBalancesPage() {
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [countTile, setCountTile] = useState<CashTile | null>(null);
+  const [ledgerReload, setLedgerReload] = useState(0);
+  const [pulling, setPulling] = useState(false);
+  const [message, setMessage] = useState<string | null>(null);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -134,15 +138,61 @@ export default function CashBalancesPage() {
     void load();
   }, [load]);
 
+  async function pullFromAltegio() {
+    setPulling(true);
+    setMessage(null);
+    try {
+      const response = await fetch("/api/admin/finance/cash/pull-today", { method: "POST", credentials: "include" });
+      const payload = (await response.json().catch(() => ({}))) as {
+        ok?: boolean;
+        day?: string;
+        upserted?: number;
+        error?: string;
+      };
+      if (!response.ok || payload.ok === false) {
+        throw new Error(payload.error || "Не вдалося підтягнути рахунки з Altegio");
+      }
+      const [year, month, date] = String(payload.day || "").split("-");
+      const dayLabel = year && month && date ? `${date}.${month}.${year}` : "сьогодні";
+      setMessage(`Підтягнуто рахунки за ${dayLabel}: ${payload.upserted ?? 0} операцій`);
+      void load();
+      setLedgerReload((value) => value + 1);
+    } catch (err) {
+      setMessage(err instanceof Error ? err.message : "Не вдалося підтягнути рахунки з Altegio");
+    } finally {
+      setPulling(false);
+    }
+  }
+
   return (
-    <main className="px-3 pb-6 pt-2 space-y-3">
-      <div className="flex items-center">
-        <button type="button" className="btn btn-sm ml-auto" onClick={() => void load()} disabled={loading}>
-          {loading ? "…" : "Оновити"}
+    <main className="px-2 pb-6 pt-2 space-y-2">
+      <div className="flex flex-wrap items-center justify-end gap-1">
+        <button
+          type="button"
+          className="btn btn-outline btn-xs h-6 min-h-0 px-2 text-[10px]"
+          disabled={pulling}
+          onClick={() => void pullFromAltegio()}
+          title="Підтягнути з Altegio лише рахунки за поточний день"
+        >
+          {pulling ? "Підтягую..." : "Підтягнути з Альтеджіо"}
+        </button>
+        <button
+          type="button"
+          className="btn btn-primary btn-xs h-6 min-h-0 px-2 text-[10px]"
+          disabled={loading || pulling}
+          onClick={() => {
+            void load();
+            setLedgerReload((value) => value + 1);
+          }}
+        >
+          Оновити
         </button>
       </div>
 
-      {error && <div className="alert alert-error text-sm py-2">{error}</div>}
+      {message && (
+        <div className="rounded border border-blue-200 bg-blue-50 px-2 py-1 text-xs text-blue-900">{message}</div>
+      )}
+      {error && <div className="rounded border border-red-200 bg-red-50 px-3 py-2 text-xs text-red-800">{error}</div>}
 
       {loading && tiles.length === 0 && !error && (
         <p className="text-sm text-gray-500">Завантаження…</p>
@@ -152,7 +202,7 @@ export default function CashBalancesPage() {
         <p className="text-sm text-gray-500">Рахунків немає.</p>
       )}
 
-      <div className="grid grid-cols-2 sm:grid-cols-3 gap-3 max-w-3xl">
+      <div className="grid grid-cols-2 gap-2 sm:grid-cols-3 lg:grid-cols-6">
         {tiles.map((tile, index) => {
           const face = <TileFace tile={tile} />;
           const tint = tileTint(tile, index);
@@ -177,6 +227,7 @@ export default function CashBalancesPage() {
           );
         })}
       </div>
+      <CashLedgerPanel reloadToken={ledgerReload} onCountsChanged={() => void load()} />
       {countTile && (
         <CashCountModal
           accountId={countTile.id}
@@ -189,6 +240,7 @@ export default function CashBalancesPage() {
           onSaved={() => {
             setCountTile(null);
             void load();
+            setLedgerReload((value) => value + 1);
           }}
         />
       )}
