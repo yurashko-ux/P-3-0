@@ -4,7 +4,11 @@ import { prisma } from "@/lib/prisma";
 import { kyivCalendarTodayYmd, kyivYmdFromDateTimeInput } from "@/lib/direct-kyiv-today";
 import { fetchAltegioAccounts } from "@/lib/altegio/accounts";
 import { ALTEGIO_ENV } from "@/lib/altegio/env";
-import { hiddenFinanceAccountIds, listFinanceAccountArchive } from "@/lib/finance/account-archive";
+import {
+  hiddenFinanceAccountIds,
+  listFinanceAccountArchive,
+  pausedBankAltegioAccountIds,
+} from "@/lib/finance/account-archive";
 import { isEurCashAccountTitle, isUsdCashAccountTitle } from "@/lib/journal/checkout";
 
 type DocumentCurrency = "UAH" | "USD" | "EUR";
@@ -70,7 +74,7 @@ export async function listFinanceDocuments(params?: { limit?: number; type?: str
 
 export async function listFinanceFormOptions() {
   const companyId = resolveCompanyId();
-  const [accounts, purposes, hiddenIds, accountArchive] = await Promise.all([
+  const [accounts, purposes, hiddenIds, pausedIds, accountArchive] = await Promise.all([
     fetchAltegioAccounts(),
     prisma.altegioPaymentPurpose.findMany({
       where: {
@@ -82,13 +86,14 @@ export async function listFinanceFormOptions() {
       take: 500,
     }),
     hiddenFinanceAccountIds(),
+    pausedBankAltegioAccountIds(),
     listFinanceAccountArchive(),
   ]);
 
   return {
     accounts: accounts
       .map((a) => ({ id: Number(a.id), title: a.title, type: a.type }))
-      .filter((a) => a.id > 0 && !hiddenIds.has(a.id)),
+      .filter((a) => a.id > 0 && !hiddenIds.has(a.id) && !pausedIds.has(a.id)),
     accountArchive,
     purposes: purposes.map((p) => ({
       id: p.id,

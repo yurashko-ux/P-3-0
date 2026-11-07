@@ -13,7 +13,7 @@ import {
   CASH_OPENING_UAH,
   CASH_OPENING_USD,
 } from "@/lib/finance/cash-openings";
-import { hiddenFinanceAccountIds } from "@/lib/finance/account-archive";
+import { hiddenFinanceAccountIds, pausedBankAltegioAccountIds } from "@/lib/finance/account-archive";
 import { listCashLedger } from "@/lib/finance/cash-posting";
 import { balanceWithoutExcluded, excludedAmountKopByAccount } from "@/lib/bank/excluded-payments";
 
@@ -77,15 +77,6 @@ function sortTiles(a: CashBalanceTile, b: CashBalanceTile): number {
 
 function kopToUah(kop: bigint): number {
   return money(Number(kop) / 100);
-}
-
-/** Рахунки Altegio, привʼязані до рахунків призупинених підключень monobank — у Касі їх не показуємо. */
-async function pausedBankAltegioAccountIds(): Promise<Set<number>> {
-  const rows = await prisma.bankAccount.findMany({
-    where: { connection: { pausedAt: { not: null } }, altegioAccountId: { not: null } },
-    select: { altegioAccountId: true },
-  });
-  return new Set(rows.map((row) => Number(row.altegioAccountId) || 0).filter((id) => id > 0));
 }
 
 export async function listCashBalances(): Promise<CashBalanceTile[]> {

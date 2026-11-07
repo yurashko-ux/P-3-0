@@ -22,6 +22,15 @@ export async function hiddenFinanceAccountIds(): Promise<Set<number>> {
   return new Set(rows.map((row) => row.altegioAccountId));
 }
 
+/** Рахунки Altegio, привʼязані до рахунків призупинених підключень monobank — у Касі й формі документа їх не показуємо. */
+export async function pausedBankAltegioAccountIds(): Promise<Set<number>> {
+  const rows = await prisma.bankAccount.findMany({
+    where: { connection: { pausedAt: { not: null } }, altegioAccountId: { not: null } },
+    select: { altegioAccountId: true },
+  });
+  return new Set(rows.map((row) => Number(row.altegioAccountId) || 0).filter((id) => id > 0));
+}
+
 export async function listFinanceAccountArchive(): Promise<FinanceAccountArchiveRow[]> {
   const [accounts, hidden] = await Promise.all([fetchAltegioAccounts(), hiddenFinanceAccountIds()]);
   return accounts
