@@ -184,7 +184,7 @@ export async function createFinanceDocument(input: CreateFinanceDocumentInput) {
   let amountUah = amount;
   if (currency !== "UAH") {
     amountUah =
-      counterCurrency === "UAH" ? counterAmount : toMoney(amount * (await workingRateOn(kyivDay, currency)));
+      counterCurrency === "UAH" ? counterAmount : Math.round(amount * (await workingRateOn(kyivDay, currency)));
   }
 
   const doc = await prisma.financeDocument.create({

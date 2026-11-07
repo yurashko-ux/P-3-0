@@ -60,10 +60,6 @@ function tileTint(tile: CashTile, index: number): string {
 const tileFaceClass =
   "relative flex w-full flex-col items-center justify-center min-h-[4.5rem] rounded-xl border border-slate-200/80 px-2 py-1.5 text-center text-gray-900 shadow-[0_1px_2px_rgba(15,23,42,0.05),0_8px_18px_-8px_rgba(15,23,42,0.28)]";
 
-/** Сектор плитки дій: кнопка на чверть плитки. */
-const actionSectorClass =
-  "flex cursor-pointer select-none items-center justify-center whitespace-nowrap px-0.5 text-[10px] font-medium tracking-tight text-gray-800 transition-[filter] duration-150 ease-out hover:brightness-[0.96] active:brightness-[0.92] focus-visible:outline focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-slate-400";
-
 const tileButtonClass = `${tileFaceClass} cursor-pointer select-none transition-[transform,box-shadow,filter] duration-150 ease-out hover:-translate-y-0.5 hover:shadow-[0_2px_4px_rgba(15,23,42,0.06),0_14px_24px_-8px_rgba(15,23,42,0.32)] active:translate-y-px active:scale-[0.97] active:brightness-[0.97] active:shadow-[inset_0_2px_8px_rgba(15,23,42,0.16),0_1px_2px_rgba(15,23,42,0.06)] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-slate-400`;
 
 function bookAmount(tile: CashTile): number | null {
@@ -186,15 +182,20 @@ export default function CashBalancesPage() {
     <main className="px-2 pb-6 pt-2 space-y-2">
       {headerSlot
         ? createPortal(
-            <button
-              type="button"
-              className={navTileClass(false)}
-              disabled={pulling}
-              onClick={() => void pullFromAltegio()}
-              title="Підтягнути з Altegio лише рахунки за поточний день"
-            >
-              {pulling ? "Підтягую..." : "Підтягнути з Альтеджіо"}
-            </button>,
+            <>
+              <button
+                type="button"
+                className={navTileClass(false)}
+                disabled={pulling}
+                onClick={() => void pullFromAltegio()}
+                title="Підтягнути з Altegio лише рахунки за поточний день"
+              >
+                {pulling ? "Підтягую..." : "Підтягнути з Альтеджіо"}
+              </button>
+              <button type="button" className={navTileClass(false)} onClick={() => setAccountsOpen(true)}>
+                Архів рахунків
+              </button>
+            </>,
             headerSlot,
           )
         : null}
@@ -252,41 +253,15 @@ export default function CashBalancesPage() {
             </button>
           );
         })}
-        {/* Плитка дій: чотири сектори, остання в ряду */}
-        <div className="grid min-h-[4.5rem] grid-cols-2 grid-rows-2 gap-px overflow-hidden rounded-xl border border-slate-200/80 bg-slate-200/80 shadow-[0_1px_2px_rgba(15,23,42,0.05),0_8px_18px_-8px_rgba(15,23,42,0.28)]">
-          <button
-            type="button"
-            className={actionSectorClass}
-            style={{ background: "#e5f2e9" }}
-            onClick={() => setDocumentType("income")}
-          >
-            Прихід
-          </button>
-          <button
-            type="button"
-            className={actionSectorClass}
-            style={{ background: "#f8ebe8" }}
-            onClick={() => setDocumentType("expense")}
-          >
-            Розхід
-          </button>
-          <button
-            type="button"
-            className={actionSectorClass}
-            style={{ background: "#e6eef8" }}
-            onClick={() => setDocumentType("transfer")}
-          >
-            Переміщення
-          </button>
-          <button
-            type="button"
-            className={actionSectorClass}
-            style={{ background: "#f3f5f8" }}
-            onClick={() => setAccountsOpen(true)}
-          >
-            Рахунки
-          </button>
-        </div>
+        {/* Плитка «+ Рахунок»: картка доходу, розходу чи переміщення */}
+        <button
+          type="button"
+          className={tileButtonClass}
+          style={{ background: "#e3edf9" }}
+          onClick={() => setDocumentType("expense")}
+        >
+          <span className="text-sm font-semibold text-gray-800">+ Рахунок</span>
+        </button>
       </div>
       {bankTile ? (
         <BankAccountPanel

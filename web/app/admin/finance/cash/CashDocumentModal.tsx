@@ -99,11 +99,13 @@ function purposesFor(type: CashDocumentType, purposes: PurposeOpt[]): PurposeOpt
 }
 
 /** Ті самі кольори, що в секторах плитки дій. */
+/** Колір картки за видом платежу: як сектори плитки дій. */
 const TYPE_TINT: Record<CashDocumentType, string> = {
   income: "#e5f2e9",
   expense: "#f8ebe8",
-  transfer: "#e6eef8",
+  transfer: "#e3edf9",
 };
+
 
 const rowClass = "grid grid-cols-[150px_1fr] items-center gap-2";
 const labelClass = "text-xs text-gray-600";
@@ -123,7 +125,7 @@ const inlineAddClass =
 const inlineCloseClass = "h-8 rounded-lg px-2 text-xs text-gray-500 hover:bg-slate-100";
 
 const TYPE_LABEL: Record<CashDocumentType, string> = {
-  income: "Прихід",
+  income: "Дохід",
   expense: "Розхід",
   transfer: "Переміщення",
 };
@@ -156,7 +158,7 @@ function occurredAtFromDate(day: string): string | null {
 
 /** Ручний прихід / розхід / переміщення. Документ живе лише в Креско, в Altegio не йде. */
 export function CashDocumentModal({
-  type,
+  type: initialType,
   onClose,
   onSaved,
 }: {
@@ -164,10 +166,16 @@ export function CashDocumentModal({
   onClose: () => void;
   onSaved: () => void;
 }) {
+  /** Тип документа перемикається вкладками в шапці */
+  const [type, setTypeState] = useState<CashDocumentType>(initialType);
   const [accounts, setAccounts] = useState<AccountOpt[]>([]);
   const [purposes, setPurposes] = useState<PurposeOpt[]>([]);
   const [amount, setAmount] = useState("");
   const [counterAmount, setCounterAmount] = useState("");
+  /** Людина сама виправила суму «Зайшло» — більше не перераховуємо за курсом */
+  const [counterTouched, setCounterTouched] = useState(false);
+  /** Робочий курс дня з журналу: грн за 1 $ / 1 € */
+  const [fxRates, setFxRates] = useState<{ USD: number; EUR: number } | null>(null);
   const [accountId, setAccountId] = useState("");
   const [counterAccountId, setCounterAccountId] = useState("");
   const [purposeId, setPurposeId] = useState("");
@@ -202,6 +210,13 @@ export function CashDocumentModal({
     };
   }, []);
 
+  function setType(next: CashDocumentType) {
+    setTypeState(next);
+    setPurposeId("");
+    setNewPurpose(null);
+    setNewGroup(null);
+  }
+
   const purposeOptions = useMemo(() => purposesFor(type, purposes), [type, purposes]);
   const purposeGroups = useMemo(
     () => groupPurposes(type, purposeOptions, expenseGroups),
@@ -210,6 +225,46 @@ export function CashDocumentModal({
   const currency = accountCurrency(accounts.find((account) => String(account.id) === accountId)?.title);
   const counterCurrency = accountCurrency(accounts.find((account) => String(account.id) === counterAccountId)?.title);
   const exchange = type === "transfer" && Boolean(counterAccountId) && currency !== counterCurrency;
+
+  // Курс журналу на дату документа: той самий робочий курс, що й у журналі записів
+  useEffect(() => {
+    if (!exchange || !occurredAt) return;
+    let cancelled = false;
+    void (async () => {
+      try {
+        const res = await fetch(`/api/admin/journal/fx-rates?day=${encodeURIComponent(occurredAt)}`, {
+          credentials: "include",
+        });
+        const json = await res.json();
+        if (cancelled) return;
+        setFxRates(res.ok && json.ok ? { USD: Number(json.usdWorking) || 0, EUR: Number(json.eurWorking) || 0 } : null);
+      } catch {
+        if (!cancelled) setFxRates(null);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [exchange, occurredAt]);
+
+  /** Гривні за 1 одиницю валюти рахунку (для гривні — 1) */
+  const uahPer = (code: "UAH" | "USD" | "EUR") => (code === "UAH" ? 1 : fxRates?.[code] || 0);
+  const exchangeRate = exchange ? (currency === "UAH" ? uahPer(counterCurrency) : uahPer(currency)) : 0;
+
+  // Сума на рахунку призначення за курсом, поки людина не ввела її сама
+  useEffect(() => {
+    if (!exchange || counterTouched) return;
+    const source = Number(amount.replace(",", "."));
+    const from = uahPer(currency);
+    const to = uahPer(counterCurrency);
+    if (!(source > 0) || !(from > 0) || !(to > 0)) {
+      setCounterAmount("");
+      return;
+    }
+    // Перераховані суми — до цілих, і у валюті, і в гривні
+    setCounterAmount(String(Math.round((source * from) / to)));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [exchange, counterTouched, amount, currency, counterCurrency, fxRates]);
   async function addPurpose() {
     const title = (newPurpose || "").trim();
     if (!title) return;
@@ -310,15 +365,27 @@ export function CashDocumentModal({
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-3" onClick={onClose}>
       <div
-        className="flex max-h-[92vh] w-full max-w-lg flex-col overflow-hidden rounded-2xl border border-slate-200/80 bg-white shadow-[0_1px_2px_rgba(15,23,42,0.05),0_18px_40px_-12px_rgba(15,23,42,0.45)]"
+        className="flex h-[min(640px,92vh)] w-full max-w-lg flex-col overflow-hidden rounded-2xl border border-slate-200/80 bg-white shadow-[0_1px_2px_rgba(15,23,42,0.05),0_18px_40px_-12px_rgba(15,23,42,0.45)]"
         onClick={(e) => e.stopPropagation()}
       >
-        {/* Шапка в кольорі сектора плитки дій */}
-        <div
-          className="flex items-center justify-between px-4 py-2.5 text-sm font-semibold text-gray-900"
-          style={{ background: TYPE_TINT[type] }}
-        >
-          <span>{TYPE_LABEL[type]}</span>
+        {/* Шапка: вкладки типу документа */}
+        <div className="flex items-center justify-between gap-2 px-4 py-2.5" style={{ background: TYPE_TINT[type] }}>
+          <div className="flex gap-1 rounded-xl bg-white/50 p-0.5">
+            {(["income", "expense", "transfer"] as CashDocumentType[]).map((option) => (
+              <button
+                key={option}
+                type="button"
+                className={`rounded-lg px-3 py-1 text-xs font-semibold transition-colors ${
+                  option === type
+                    ? "bg-white text-gray-900 shadow-[0_1px_2px_rgba(15,23,42,0.08),0_3px_8px_-4px_rgba(15,23,42,0.25)]"
+                    : "text-gray-600 hover:text-gray-900"
+                }`}
+                onClick={() => setType(option)}
+              >
+                {TYPE_LABEL[option]}
+              </button>
+            ))}
+          </div>
           <div className="flex gap-1.5">
             {type === "expense" ? (
               <button
@@ -341,7 +408,8 @@ export function CashDocumentModal({
           </div>
         </div>
         {/* Довгий список статей гортається всередині картки, шапка лишається на місці */}
-        <div className="space-y-3 overflow-y-auto px-4 py-3">
+        {/* Висота картки стала: вміст гортається, вікно не стрибає при перемиканні вкладок */}
+        <div className="flex-1 space-y-3 overflow-y-auto px-4 py-3">
           {error && <div className="rounded border border-red-200 bg-red-50 px-2 py-1 text-xs text-red-800">{error}</div>}
           {/* Основне: сума, рахунок, дата — окремим відтіненим блоком */}
           <div className="space-y-2 rounded-xl border border-slate-200/80 bg-slate-50 p-3">
@@ -368,12 +436,20 @@ export function CashDocumentModal({
                 {exchange ? (
                   <div className={rowClass}>
                     <span className={labelClass}>Зайшло, {currencyUnit(counterCurrency)}</span>
-                    <input
-                      className={fieldClass}
-                      value={counterAmount}
-                      onChange={(e) => setCounterAmount(e.target.value)}
-                      inputMode="decimal"
-                    />
+                    <div className="flex items-center gap-2">
+                      <input
+                        className={fieldClass}
+                        value={counterAmount}
+                        onChange={(e) => {
+                          setCounterAmount(e.target.value);
+                          setCounterTouched(true);
+                        }}
+                        inputMode="decimal"
+                      />
+                      <span className="whitespace-nowrap text-[10px] text-gray-500">
+                        {exchangeRate > 0 ? `курс журналу ${exchangeRate}` : "курсу журналу немає"}
+                      </span>
+                    </div>
                   </div>
                 ) : null}
               </>
