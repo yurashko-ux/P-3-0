@@ -906,6 +906,7 @@ model FinanceDocument {
   updatedAt                   DateTime @updatedAt
 
   bankPaymentMatch            BankAltegioPaymentMatch?
+  automaticExpense            BankAutomaticAltegioExpense?
 
   @@index([type])
   @@index([status])
@@ -1668,6 +1669,8 @@ model BankAutomaticAltegioExpense {
   errorMessage                  String?
   altegioFinanceTransactionId   String?
   altegioTransactionId          Int?
+  /// Документ Креско на цю витрату (Розхід «Комісія за еквайринг» / «Термінал»)
+  financeDocumentId             String?   @unique
   telegramNotifiedAt            DateTime?
   createdAt                     DateTime  @default(now())
   updatedAt                     DateTime  @updatedAt
@@ -1675,6 +1678,7 @@ model BankAutomaticAltegioExpense {
   bankStatementItem           BankStatementItem?          @relation(fields: [bankStatementItemId], references: [id], onDelete: SetNull)
   bankAccount                 BankAccount                 @relation(fields: [bankAccountId], references: [id], onDelete: Cascade)
   altegioFinanceTransaction   AltegioFinanceTransaction?  @relation(fields: [altegioFinanceTransactionId], references: [id], onDelete: SetNull)
+  financeDocument             FinanceDocument?            @relation(fields: [financeDocumentId], references: [id], onDelete: SetNull)
 
   @@unique([bankAccountId, kind, kyivMonth])
   @@index([kind])

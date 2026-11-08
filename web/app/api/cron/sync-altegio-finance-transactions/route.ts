@@ -7,7 +7,10 @@ import { syncBankOutgoingStatementsForReconciliation, refreshStaleHoldBankStatem
 import { reconcileBankAltegioPayments } from "@/lib/bank/altegio-payment-reconcile";
 import { processOutgoingBankPaymentsHoldFinalized } from "@/lib/bank/payment-reconciliation-telegram";
 import { importAltegioPaymentPurposes } from "@/lib/altegio/payment-purpose-import";
-import { ensureKrescoDocumentsForReconciledPayments } from "@/lib/bank/kresco-payment-document";
+import {
+  ensureKrescoDocumentsForAutomaticExpenses,
+  ensureKrescoDocumentsForReconciledPayments,
+} from "@/lib/bank/kresco-payment-document";
 import { syncCheckoutPaymentsFromFinance } from "@/lib/journal/checkout-payments-from-finance";
 import { processPendingIncomingAcquiringCommissions, processPendingOutgoingTerminalRkoFees } from "@/lib/bank/automatic-altegio-payments";
 
@@ -75,6 +78,8 @@ export async function POST(req: NextRequest) {
       limit: 20,
       sendTelegram: true,
     });
+    // Документи Креско для комісій еквайрингу (після того, як автоматика їх створила)
+    const krescoFeeDocuments = await ensureKrescoDocumentsForAutomaticExpenses(100);
 
     return NextResponse.json({
       ok: true,
@@ -86,6 +91,7 @@ export async function POST(req: NextRequest) {
       reconcile,
       krescoDocuments,
       checkoutPayments,
+      krescoFeeDocuments,
       automaticAcquiring,
       automaticTerminal,
     });

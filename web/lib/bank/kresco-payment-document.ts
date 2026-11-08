@@ -226,3 +226,113 @@ export async function ensureKrescoDocumentsForReconciledPayments(limit = 100) {
   if (rows.length > 0) console.log("[bank/kresco-document] Документи для зведених платежів", { checked: rows.length, created, skipped });
   return { checked: rows.length, created, skipped };
 }
+
+const AUTOMATIC_EXPENSE_TITLE: Record<string, string> = {
+  acquiring_commission: "Комісія за еквайринг",
+  terminal_fee: "Термінал",
+};
+
+/**
+ * Документ Креско для автоматичної витрати банку: комісія еквайрингу (датою попереднього дня —
+ * термінал зараховує гроші наступного дня) або термінал (РКО, датою платежу).
+ * Для терміналу документ також стає зведенням вихідного платежу.
+ */
+export async function ensureKrescoDocumentForAutomaticExpense(expenseId: string): Promise<KrescoDocumentResult> {
+  const expense = await prisma.bankAutomaticAltegioExpense.findUnique({
+    where: { id: expenseId },
+    select: {
+      id: true,
+      kind: true,
+      amountKopiykas: true,
+      comment: true,
+      financeDocumentId: true,
+      altegioTransactionId: true,
+      bankStatementItemId: true,
+      bankStatementItem: {
+        select: { time: true, account: { select: { altegioAccountId: true, altegioAccountTitle: true } } },
+      },
+    },
+  });
+  if (!expense) return { created: false, reason: "no_expense" };
+  if (expense.financeDocumentId) return { created: false, reason: "exists", documentId: expense.financeDocumentId };
+  const statement = expense.bankStatementItem;
+  const accountId = Number(statement?.account.altegioAccountId) || 0;
+  if (!statement || !(accountId > 0)) return { created: false, reason: "no_account" };
+  if (!(expense.amountKopiykas > BigInt(0))) return { created: false, reason: "no_amount" };
+
+  const title = AUTOMATIC_EXPENSE_TITLE[expense.kind] || "Банківська комісія";
+  const occurredAt =
+    expense.kind === "acquiring_commission" ? new Date(statement.time.getTime() - 24 * 60 * 60 * 1000) : statement.time;
+  const document = await prisma.financeDocument.create({
+    data: {
+      type: "expense",
+      status: "posted",
+      syncStatus: expense.altegioTransactionId ? "synced" : "local",
+      source: BANK_DOCUMENT_SOURCE,
+      title,
+      amountUah: Number(expense.amountKopiykas) / 100,
+      currency: "UAH",
+      kyivDay: kyivDayOf(occurredAt),
+      occurredAt,
+      accountId,
+      accountTitle: statement.account.altegioAccountTitle,
+      purposeTitle: title,
+      comment: expense.comment ? `Банк: ${expense.comment}`.slice(0, 1000) : null,
+      createdBy: "bank-automatic",
+      altegioTransactionId: expense.altegioTransactionId ?? null,
+    },
+  });
+  const linked = await prisma.bankAutomaticAltegioExpense.updateMany({
+    where: { id: expense.id, financeDocumentId: null },
+    data: { financeDocumentId: document.id },
+  });
+  if (linked.count === 0) {
+    await prisma.financeDocument.delete({ where: { id: document.id } });
+    return { created: false, reason: "race" };
+  }
+  // Термінал — це вихідний платіж банку: документ одночасно його зведення
+  if (expense.kind === "terminal_fee" && expense.bankStatementItemId) {
+    await prisma.bankAltegioPaymentMatch.upsert({
+      where: { bankStatementItemId: expense.bankStatementItemId },
+      create: {
+        bankStatementItemId: expense.bankStatementItemId,
+        financeDocumentId: document.id,
+        status: "manual_matched",
+        matchType: "kresco",
+        matchedAt: new Date(),
+        matchedBy: "bank-automatic",
+      },
+      update: { financeDocumentId: document.id },
+    });
+  }
+  console.log(`[bank/kresco-document] ${title} ${document.amountUah} грн → документ ${document.id}`);
+  return { created: true, documentId: document.id };
+}
+
+/** Документи Креско для вже створених комісій еквайрингу (з 09.10.2026). Для cron, limit — бюджет БД. */
+export async function ensureKrescoDocumentsForAutomaticExpenses(limit = 100) {
+  const rows = await prisma.bankAutomaticAltegioExpense.findMany({
+    where: {
+      kind: "acquiring_commission",
+      status: "created",
+      financeDocumentId: null,
+      bankStatementItem: { time: { gte: KRESCO_DOCUMENTS_FROM } },
+    },
+    select: { id: true },
+    orderBy: { createdAt: "asc" },
+    take: limit,
+  });
+  let created = 0;
+  for (const row of rows) {
+    try {
+      const result = await ensureKrescoDocumentForAutomaticExpense(row.id);
+      if (!("reason" in result)) created += 1;
+    } catch (error) {
+      console.warn("[bank/kresco-document] Документ комісії не створено:", {
+        expenseId: row.id,
+        error: error instanceof Error ? error.message : String(error),
+      });
+    }
+  }
+  return { checked: rows.length, created };
+}

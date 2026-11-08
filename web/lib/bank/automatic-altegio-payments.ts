@@ -1,4 +1,5 @@
 import { prisma } from "@/lib/prisma";
+import { ensureKrescoDocumentForAutomaticExpense, isAltegioDisabled } from "@/lib/bank/kresco-payment-document";
 import {
   createIncomingAcquiringExpense,
   createAutomaticTerminalExpense,
@@ -251,6 +252,16 @@ export async function processIncomingAcquiringCommission(
     });
   }
 
+  if (isAltegioDisabled()) {
+    // Altegio вимкнено: комісія — лише документ Креско
+    await ensureKrescoDocumentForAutomaticExpense(expenseRecord.id);
+    await (prisma as any).bankAutomaticAltegioExpense.update({
+      where: { id: expenseRecord.id },
+      data: { status: "created", errorMessage: null },
+    });
+    return { processed: true, skipped: false, expenseId: expenseRecord.id, altegioTransactionId: null };
+  }
+
   try {
     const expense = await createIncomingAcquiringExpense({
       bankStatementItemId,
@@ -269,6 +280,10 @@ export async function processIncomingAcquiringCommission(
         altegioTransactionId: expense.transaction.altegioId,
       },
     });
+
+    await ensureKrescoDocumentForAutomaticExpense(expenseRecord.id).catch((error) =>
+      console.warn("[automatic-altegio-payments] Документ Креско для комісії не створено, спробує cron:", error),
+    );
 
     let telegramSent = 0;
     if (sendTelegram) {
@@ -416,6 +431,16 @@ export async function processOutgoingTerminalRkoFee(
       data: { status: "pending", errorMessage: null },
     });
     expenseRecord = { ...expenseRecord, status: "pending" };
+  }
+
+  if (isAltegioDisabled()) {
+    // Altegio вимкнено: термінал — документ Креско, він же зведення платежу
+    await ensureKrescoDocumentForAutomaticExpense(expenseRecord.id);
+    await (prisma as any).bankAutomaticAltegioExpense.update({
+      where: { id: expenseRecord.id },
+      data: { status: "created", errorMessage: null },
+    });
+    return { processed: true, skipped: false, expenseId: expenseRecord.id, altegioTransactionId: null };
   }
 
   try {
