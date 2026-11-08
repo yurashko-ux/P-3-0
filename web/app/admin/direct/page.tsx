@@ -546,7 +546,7 @@ function DirectPageContent() {
   
   const ALLOWED_SORT_BY = new Set([
     'updatedAt', 'createdAt', 'firstContactDate', 'spent', 'instagramUsername',
-    'daysSinceLastVisit', 'messagesTotal', 'consultationBookingDate', 'paidServiceDate',
+    'daysSinceLastVisit', 'messagesTotal', 'consultationBookingDate', 'paidServiceDate', 'recordSlotDate',
     'state', 'masterId', 'statusId', 'callbackReminderKyivDay',
   ]);
 
@@ -1317,9 +1317,8 @@ function DirectPageContent() {
       if (f.masterId) params.set("masterId", f.masterId);
       if (f.source) params.set("source", f.source);
       if (f.hasAppointment === "true") params.set("hasAppointment", "true");
-      if (f.clientType && f.clientType.length > 0) {
-        params.set("clientType", f.clientType.join(","));
-      }
+      // Ліди (без клієнта Altegio) у таблиці Direct приховані — завжди лише клієнти
+      params.set("clientType", Array.from(new Set(["clients", ...(f.clientType ?? [])])).join(","));
       if (f.act.mode === "current_month") params.set("actMode", "current_month");
       else if (f.act.mode === "year_month" && f.act.year && f.act.month) {
         params.set("actMode", "year_month");

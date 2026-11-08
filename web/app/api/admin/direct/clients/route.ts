@@ -76,6 +76,7 @@ import {
 import { hasPaidServiceVisitForInactiveBase } from '@/lib/inactive-base/is-inactive-client';
 import { computeInstInstagramCountsFromDb } from '@/lib/direct-instagram-filter-counts';
 import { normalizeInstInstagramCountsFromApi } from '@/lib/direct-instagram-presence-filter';
+import { directRecordSlotDate, todayKyivDay as recordSlotTodayKyivDay } from '@/lib/direct-record-slot';
 import {
   matchesInstInstagramFilter,
   parseInstInstagramFilterParam,
@@ -1962,6 +1963,7 @@ export async function GET(req: NextRequest) {
     const sortByDaysWhenDaysFilterActive = daysFilter && sortBy !== 'daysSinceLastVisit';
     // Активний режим (updatedAt desc): спочатку клієнти «сьогодні» — щоб перші 50 завжди включали блок сьогоднішніх
     const isActiveMode = sortBy === 'updatedAt' && sortOrder === 'desc';
+    const recordSlotToday = recordSlotTodayKyivDay();
     const todayKyivSort = isActiveMode ? kyivDayFromISO(new Date().toISOString()) : '';
     const hasTriggerSort = (c: any): boolean => {
       if (!todayKyivSort) return false;
@@ -1999,6 +2001,12 @@ export async function GET(req: NextRequest) {
         bVal = b.serviceMasterName || '';
         aVal = String(aVal).toLowerCase();
         bVal = String(bVal).toLowerCase();
+      } else if (sortBy === 'recordSlotDate') {
+        // Колонка «Запис»: дата платного запису або консультації — та, що показується в таблиці
+        const ad = directRecordSlotDate(a as any, recordSlotToday);
+        const bd = directRecordSlotDate(b as any, recordSlotToday);
+        aVal = ad ? new Date(ad).getTime() : 0;
+        bVal = bd ? new Date(bd).getTime() : 0;
       } else if (sortBy === 'consultationMasterName') {
         aVal = a.consultationMasterName || '';
         bVal = b.consultationMasterName || '';

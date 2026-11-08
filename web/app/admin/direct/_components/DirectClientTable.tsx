@@ -27,10 +27,8 @@ import { InstFilterDropdown } from "./InstFilterDropdown";
 import type { InstInstagramFilterValue, InstInstagramPresenceCounts } from "@/lib/direct-instagram-presence-filter";
 import { StateFilterDropdown } from "./StateFilterDropdown";
 import { StatusFilterDropdown } from "./StatusFilterDropdown";
-import { ConsultationFilterDropdown } from "./ConsultationFilterDropdown";
 import { RecordFilterDropdown } from "./RecordFilterDropdown";
 import { MasterFilterDropdown } from "./MasterFilterDropdown";
-import { ConsultMasterFilterDropdown } from "./ConsultMasterFilterDropdown";
 import type { GlobalMasterFilterPanelCounts } from "@/lib/master-filter-utils";
 import { kyivDayFromISO } from "@/lib/altegio/records-grouping";
 import { isKyivCalendarDayEqualToReference } from "@/lib/direct-kyiv-today";
@@ -631,7 +629,7 @@ export function DirectClientTable({
       if (k === 'callbackReminder') return Math.max(w, CALLBACK_REMINDER_COLUMN_MIN_WIDTH_PX);
       if (k === 'callStatus') return Math.max(w, CALL_STATUS_COLUMN_MIN_WIDTH_PX);
       if (k === 'state') return Math.max(w, STATE_MIN_WIDTH);
-      if (k === 'consultation') return Math.max(w, CONSULTATION_MIN_WIDTH);
+      if (k === 'consultation' || k === 'record') return Math.max(w, CONSULTATION_MIN_WIDTH);
       return w;
     });
   }, [layoutColumnWidths]);
@@ -647,7 +645,10 @@ export function DirectClientTable({
         (i) =>
           !(hideSalesColumn && COLUMN_KEYS[i] === 'sales') &&
           !(hideCommunicationColumn && COLUMN_KEYS[i] === 'communication') &&
-          !(hideActionsColumn && COLUMN_KEYS[i] === 'actions')
+          !(hideActionsColumn && COLUMN_KEYS[i] === 'actions') &&
+          // Консультація і її майстер показуються в колонках «Запис» / «Майстер», якщо немає платного запису
+          COLUMN_KEYS[i] !== 'consultation' &&
+          COLUMN_KEYS[i] !== 'consultMaster'
       ),
     [hideSalesColumn, hideCommunicationColumn, hideActionsColumn]
   );
@@ -848,12 +849,14 @@ export function DirectClientTable({
   }, [clientsWithChatOverrides]);
 
   // Фільтрація за clientType (AND логіка: клієнт має відповідати ВСІМ вибраним фільтрам)
+  // Ліди (без клієнта Altegio) приховані — показуємо лише клієнтів
   const filteredByClientType = useMemo(() => {
+    const onlyClients = uniqueClients.filter((client) => !!client.altegioClientId);
     if (!filters.clientType || filters.clientType.length === 0) {
-      return uniqueClients;
+      return onlyClients;
     }
 
-    return uniqueClients.filter((client) => {
+    return onlyClients.filter((client) => {
       const matches: boolean[] = [];
 
       for (const filterType of filters.clientType) {
@@ -1762,6 +1765,57 @@ export function DirectClientTable({
                       />
                     </div>
                   </th>
+                  <th className="pl-0 pr-1 sm:pr-1.5 py-0 text-[10px] font-semibold text-left" style={getColumnStyle(layoutColumnWidths.record, true)}>
+                    <div className="flex items-center gap-1">
+                      <button
+                        className={`hover:underline cursor-pointer text-left ${sortBy === "recordSlotDate" ? "text-blue-600 font-bold" : "text-gray-600"}`}
+                        title="Сортувати за датою, яку показує колонка: платний запис або консультація"
+                        onClick={() =>
+                          onSortChange(
+                            "recordSlotDate",
+                            sortBy === "recordSlotDate" && sortOrder === "desc" ? "asc" : "desc"
+                          )
+                        }
+                      >
+                        Запис {sortBy === "recordSlotDate" && (sortOrder === "asc" ? "↑" : "↓")}
+                      </button>
+                      <RecordFilterDropdown
+                        clients={clients}
+                        totalClientsCount={totalClientsCount}
+                        recordCounts={recordCounts}
+                        filters={filters}
+                        onFiltersChange={onFiltersChange}
+                        columnLabel="Запис"
+                        hideFinances={hideFinances}
+                        consultationCounts={consultationCounts}
+                      />
+                    </div>
+                  </th>
+                  <th className="pl-0 pr-1 sm:pr-1.5 py-0 text-[10px] font-semibold text-left" style={getColumnStyle(layoutColumnWidths.recordMaster, true)}>
+                    <div className="flex items-center gap-1">
+                      <button
+                        className={`hover:underline cursor-pointer text-left ${sortBy === "serviceMasterName" || sortBy === "masterId" ? "text-blue-600 font-bold" : "text-gray-600"}`}
+                        onClick={() =>
+                          onSortChange(
+                            "serviceMasterName",
+                            sortBy === "serviceMasterName" && sortOrder === "desc" ? "asc" : "desc"
+                          )
+                        }
+                      >
+                        Майстер {sortBy === "serviceMasterName" && (sortOrder === "asc" ? "↑" : "↓")}
+                      </button>
+                      <MasterFilterDropdown
+                        clients={clients}
+                        masters={masters}
+                        totalClientsCount={totalClientsCount}
+                        globalMasterFilterPanelCounts={masterFilterPanelCounts}
+                        filters={filters}
+                        onFiltersChange={onFiltersChange}
+                        columnLabel="Майстер запису"
+                        consultMasterFilterCounts={consultMasterFilterCounts}
+                      />
+                    </div>
+                  </th>
                   {!hideCommunicationColumn && (
                     <th
                       className="pl-0 pr-0.5 sm:pr-1 py-0 text-[10px] font-semibold text-left whitespace-nowrap overflow-hidden text-ellipsis"
@@ -1813,101 +1867,6 @@ export function DirectClientTable({
                         filters={filters}
                         onFiltersChange={onFiltersChange}
                         columnLabel="Передзвонити"
-                      />
-                    </div>
-                  </th>
-                  <th className="pl-0 pr-1 sm:pr-1.5 py-0 text-[10px] font-semibold text-left" style={getColumnStyle(layoutColumnWidths.record, true)}>
-                    <div className="flex items-center gap-1">
-                      <button
-                        className={`hover:underline cursor-pointer text-left ${sortBy === "paidServiceDate" ? "text-blue-600 font-bold" : "text-gray-600"}`}
-                        onClick={() =>
-                          onSortChange(
-                            "paidServiceDate",
-                            sortBy === "paidServiceDate" && sortOrder === "desc" ? "asc" : "desc"
-                          )
-                        }
-                      >
-                        Запис {sortBy === "paidServiceDate" && (sortOrder === "asc" ? "↑" : "↓")}
-                      </button>
-                      <RecordFilterDropdown
-                        clients={clients}
-                        totalClientsCount={totalClientsCount}
-                        recordCounts={recordCounts}
-                        filters={filters}
-                        onFiltersChange={onFiltersChange}
-                        columnLabel="Запис"
-                        hideFinances={hideFinances}
-                      />
-                    </div>
-                  </th>
-                  <th className="pl-0 pr-1 sm:pr-1.5 py-0 text-[10px] font-semibold text-left" style={getColumnStyle(layoutColumnWidths.recordMaster, true)}>
-                    <div className="flex items-center gap-1">
-                      <button
-                        className={`hover:underline cursor-pointer text-left ${sortBy === "serviceMasterName" || sortBy === "masterId" ? "text-blue-600 font-bold" : "text-gray-600"}`}
-                        onClick={() =>
-                          onSortChange(
-                            "serviceMasterName",
-                            sortBy === "serviceMasterName" && sortOrder === "desc" ? "asc" : "desc"
-                          )
-                        }
-                      >
-                        Майстер запису {sortBy === "serviceMasterName" && (sortOrder === "asc" ? "↑" : "↓")}
-                      </button>
-                      <MasterFilterDropdown
-                        clients={clients}
-                        masters={masters}
-                        totalClientsCount={totalClientsCount}
-                        globalMasterFilterPanelCounts={masterFilterPanelCounts}
-                        filters={filters}
-                        onFiltersChange={onFiltersChange}
-                        columnLabel="Майстер запису"
-                      />
-                    </div>
-                  </th>
-                  <th className="pl-0 pr-1 sm:pr-2 py-0 text-[10px] font-semibold text-left" style={getColumnStyle(layoutColumnWidths.consultation, true)}>
-                    <div className="flex items-center gap-1">
-                      <button
-                        className={`hover:underline cursor-pointer text-left ${sortBy === "consultationBookingDate" ? "text-blue-600 font-bold" : "text-gray-600"}`}
-                        onClick={() =>
-                          onSortChange(
-                            "consultationBookingDate",
-                            sortBy === "consultationBookingDate" && sortOrder === "desc" ? "asc" : "desc"
-                          )
-                        }
-                      >
-                        Консультація {sortBy === "consultationBookingDate" && (sortOrder === "asc" ? "↑" : "↓")}
-                      </button>
-                      <ConsultationFilterDropdown
-                        clients={clients}
-                        totalClientsCount={totalClientsCount}
-                        consultationCounts={consultationCounts}
-                        filters={filters}
-                        onFiltersChange={onFiltersChange}
-                        columnLabel="Консультація"
-                      />
-                    </div>
-                  </th>
-                  <th className="pl-0 pr-1 sm:pr-1.5 py-0 text-[10px] font-semibold text-left" style={getColumnStyle(layoutColumnWidths.consultMaster, true)}>
-                    <div className="flex items-center gap-1">
-                      <button
-                        className={`hover:underline cursor-pointer text-left ${sortBy === "consultationMasterName" ? "text-blue-600 font-bold" : "text-gray-600"}`}
-                        onClick={() =>
-                          onSortChange(
-                            "consultationMasterName",
-                            sortBy === "consultationMasterName" && sortOrder === "desc" ? "asc" : "desc"
-                          )
-                        }
-                      >
-                        Майстер консультацій {sortBy === "consultationMasterName" && (sortOrder === "asc" ? "↑" : "↓")}
-                      </button>
-                      <ConsultMasterFilterDropdown
-                        clients={clients}
-                        masters={masters}
-                        totalClientsCount={totalClientsCount}
-                        consultMasterFilterCounts={consultMasterFilterCounts}
-                        filters={filters}
-                        onFiltersChange={onFiltersChange}
-                        columnLabel="Майстер консультацій"
                       />
                     </div>
                   </th>

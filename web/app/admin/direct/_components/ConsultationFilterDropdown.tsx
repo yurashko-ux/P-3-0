@@ -45,6 +45,10 @@ interface ConsultationFilterDropdownProps {
   filters: DirectFilters;
   onFiltersChange: (f: DirectFilters) => void;
   columnLabel: string;
+  /** Вбудований режим: лише вміст панелі (для вкладки «Консультація» у фільтрі колонки «Запис») */
+  inline?: boolean;
+  /** Викликається після «Застосувати» / «Очистити» у вбудованому режимі */
+  onDone?: () => void;
 }
 
 export function ConsultationFilterDropdown({
@@ -54,6 +58,8 @@ export function ConsultationFilterDropdown({
   filters,
   onFiltersChange,
   columnLabel,
+  inline = false,
+  onDone,
 }: ConsultationFilterDropdownProps) {
   const [isOpen, setIsOpen] = useState(false);
   const [panelPosition, setPanelPosition] = useState<{ top: number; left: number } | null>(null);
@@ -154,6 +160,7 @@ export function ConsultationFilterDropdown({
       },
     });
     setIsOpen(false);
+    onDone?.();
   };
 
   const handleClear = () => {
@@ -181,6 +188,7 @@ export function ConsultationFilterDropdown({
       },
     });
     setIsOpen(false);
+    onDone?.();
   };
 
   const opt = (key: string, label: string, sel: boolean, onClick: () => void, count?: number) => (
@@ -290,6 +298,8 @@ export function ConsultationFilterDropdown({
             </div>
     </div>
   );
+
+  if (inline) return panelContent;
 
   const portalTarget =
     typeof document !== "undefined" ? document.getElementById("direct-filter-dropdown-root") ?? document.body : null;

@@ -5,6 +5,7 @@ import { createPortal } from "react-dom";
 import type { DirectClient } from "@/lib/direct-types";
 import type { DirectFilters } from "./DirectClientTable";
 import { FilterIconButton } from "./FilterIconButton";
+import { ConsultMasterFilterDropdown } from "./ConsultMasterFilterDropdown";
 import { getRecordMasterRawNames, groupByFirstToken, mergeMasterOptionsWithRegistry, type GlobalMasterFilterPanelCounts } from "@/lib/master-filter-utils";
 
 interface MasterFilterDropdownProps {
@@ -16,6 +17,8 @@ interface MasterFilterDropdownProps {
   filters: DirectFilters;
   onFiltersChange: (f: DirectFilters) => void;
   columnLabel: string;
+  /** Вкладка «Консультація»: майстер консультації (показується в колонці «Майстер», якщо немає платного запису) */
+  consultMasterFilterCounts?: Array<{ name: string; count: number }>;
 }
 
 export function MasterFilterDropdown({
@@ -26,8 +29,10 @@ export function MasterFilterDropdown({
   filters,
   onFiltersChange,
   columnLabel,
+  consultMasterFilterCounts,
 }: MasterFilterDropdownProps) {
   const [isOpen, setIsOpen] = useState(false);
+  const [tab, setTab] = useState<"record" | "consultation">("record");
   const [panelPosition, setPanelPosition] = useState<{ top: number; left: number } | null>(null);
   const dropdownRef = useRef<HTMLDivElement>(null);
   const panelRef = useRef<HTMLDivElement>(null);
@@ -80,7 +85,9 @@ export function MasterFilterDropdown({
     return () => document.removeEventListener("mousedown", handleClickOutside);
   }, [isOpen]);
 
-  const hasActive = m.hands !== null || m.primaryMasterIds.length > 0;
+  const recordActive = m.hands !== null || m.primaryMasterIds.length > 0;
+  const consultationActive = filters.consultMaster.masterIds.length > 0;
+  const hasActive = recordActive || consultationActive;
 
   const togglePrimary = (name: string) => {
     setPrimaryIds((prev) => (prev.includes(name) ? prev.filter((x) => x !== name) : [...prev, name]));
@@ -147,7 +154,7 @@ export function MasterFilterDropdown({
       {masterNames.length > 0 && section("Майстри", masterNames.map(({ name, count }) => opt(`master-${name}`, name, primaryIds.includes(name), () => togglePrimary(name), count)))}
       <div className="flex gap-2 mt-2">
         <button type="button" onClick={handleApply} className="flex-1 px-2 py-1.5 text-xs text-white bg-[#3b82f6] hover:bg-[#2563eb] rounded transition-colors font-medium">Застосувати</button>
-        {hasActive && (
+        {recordActive && (
           <button type="button" onClick={handleClear} className="flex-1 px-2 py-1.5 text-xs text-white bg-pink-500 hover:bg-pink-600 rounded transition-colors font-medium">Очистити</button>
         )}
       </div>
@@ -163,7 +170,37 @@ export function MasterFilterDropdown({
           className="bg-white border border-gray-300 rounded-lg shadow-lg min-w-[240px] max-h-[420px] overflow-y-auto pointer-events-auto"
           style={{ position: "fixed", top: panelPosition.top, left: panelPosition.left, zIndex: 999999 }}
         >
-          {panelContent}
+          <div className="flex gap-1 px-2 pt-2">
+            {([
+              ["record", "Запис", recordActive],
+              ["consultation", "Консультація", consultationActive],
+            ] as const).map(([key, label, active]) => (
+              <button
+                key={key}
+                type="button"
+                onClick={() => setTab(key)}
+                className={`flex-1 px-2 py-1 rounded text-xs transition-colors ${tab === key ? (key === "consultation" ? "bg-yellow-100 text-yellow-800 font-medium" : "bg-blue-100 text-blue-700 font-medium") : "hover:bg-gray-100 text-gray-600"}`}
+              >
+                {label}
+                {active ? " •" : ""}
+              </button>
+            ))}
+          </div>
+          {tab === "consultation" ? (
+            <ConsultMasterFilterDropdown
+              inline
+              clients={clients}
+              masters={masters}
+              totalClientsCount={totalClientsCount}
+              consultMasterFilterCounts={consultMasterFilterCounts}
+              filters={filters}
+              onFiltersChange={onFiltersChange}
+              columnLabel="Майстер консультації"
+              onDone={() => setIsOpen(false)}
+            />
+          ) : (
+            panelContent
+          )}
         </div>,
         portalTarget
       )}

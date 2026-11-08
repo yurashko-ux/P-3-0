@@ -47,6 +47,10 @@ import { ExitDaysCell } from "./ExitDaysCell";
 import { useDirectClientTableRowContext } from "./direct-client-table-row-context";
 import type { DirectTableColumnKey } from "./direct-client-table-column-layout";
 import { DirectClientTableRowConsultationCell } from "./DirectClientTableRowConsultationCell";
+import { pickDirectRecordSlot } from "@/lib/direct-record-slot";
+
+/** Фон консультації в колонках «Запис» / «Майстер» — як рядок «Очікуємо» в розділі Ліди (bg-yellow-100) */
+const CONSULTATION_SLOT_BG = "#fef9c3";
 import { effectiveAltegioAttendanceDisplay } from "./direct-attendance-display";
 import { CallbackReminderCell } from "./CallbackReminderCell";
 
@@ -156,6 +160,8 @@ const hasActivity = (k: string) => activityKeys.includes(k);
 const hasPrefix = (p: string) => activityKeys.some((k) => k.startsWith(p));
 const isActiveMode = sortBy === 'updatedAt' && sortOrder === 'desc';
 const todayKyivDayForDots = kyivDayFromISO(new Date().toISOString());
+// Колонка «Запис»: платний запис або консультація (взаємовиключні; консультація — доки немає запису)
+const recordSlot = pickDirectRecordSlot(client, todayKyivDayForDots);
 const activityIsToday = client.lastActivityAt
   ? kyivDayFromISO(client.lastActivityAt) === todayKyivDayForDots
   : false;
@@ -1191,105 +1197,22 @@ return (
       onMenuOpen={onStatusMenuOpen}
     />
   </td>
-  {!hideCommunicationColumn && (
-    <td className="pl-0 pr-0.5 py-1 align-middle" style={cellPxRow("communication", getColumnStyle(columnWidths.communication, true))}>
-      <CommunicationChannelPicker
-        value={client.communicationChannel}
-        onChange={async (next) => {
-          await onClientUpdate(client.id, { communicationChannel: next });
-        }}
-      />
-    </td>
-  )}
-  <td
-    className="pl-0 pr-1.5 sm:pr-2 py-1 text-xs text-left align-top"
-    style={{ ...cellPxRow("calls", getColumnStyle(columnWidths.calls, true)), minHeight: instCallsCellMinHeight }}
-  >
-    {(client as any).binotelCallsCount != null &&
-    (client as any).binotelCallsCount > 0 ? (
-      <span
-        className="inline-flex flex-col items-start gap-0.5"
-        title={formatDateDDMMYYHHMM((client as any).binotelLatestCallStartTime)}
-      >
-        <span className="inline-flex items-center justify-start gap-1">
-          <WithCornerRedDot
-            show={winningKey === 'binotel_call'}
-            title="Тригер: дзвінок Binotel"
-            dotClassName="-top-[5px] -right-[4px]"
-          >
-            <button
-              type="button"
-              onClick={() => setBinotelHistoryClient(client)}
-              className="inline-flex items-center"
-              title={`Історія дзвінків Binotel. Останній: ${formatDateDDMMYYHHMM((client as any).binotelLatestCallStartTime)}`}
-            >
-              <BinotelCallTypeIcon
-                callType={(client as any).binotelLatestCallType || "incoming"}
-                success={["ANSWER", "VM-SUCCESS", "SUCCESS"].includes(
-                  (client as any).binotelLatestCallDisposition || ""
-                )}
-                size={18}
-              />
-            </button>
-          </WithCornerRedDot>
-          {(() => {
-            const disp = (client as any).binotelLatestCallDisposition || "";
-            const isSuccess = ["ANSWER", "VM-SUCCESS", "SUCCESS"].includes(disp);
-            const hasRecording =
-              (client as any).binotelLatestCallRecordingUrl ||
-              (client as any).binotelLatestCallGeneralID;
-            const latestCallAt = (client as { binotelLatestCallStartTime?: string | null }).binotelLatestCallStartTime;
-            const latestCallDate = latestCallAt ? new Date(latestCallAt) : null;
-            const latestCallDay =
-              latestCallDate && !isNaN(latestCallDate.getTime())
-                ? new Intl.DateTimeFormat("en-CA", {
-                    timeZone: "Europe/Kyiv",
-                    year: "numeric",
-                    month: "2-digit",
-                    day: "2-digit",
-                  }).format(latestCallDate)
-                : "";
-            const todayKyivCall = new Intl.DateTimeFormat("en-CA", {
-              timeZone: "Europe/Kyiv",
-              year: "numeric",
-              month: "2-digit",
-              day: "2-digit",
-            }).format(new Date());
-            if (!hasRecording || !isSuccess || !latestCallDay || latestCallDay !== todayKyivCall) return null;
-            return (
-              <PlayRecordingButton
-                recordingUrl={(client as any).binotelLatestCallRecordingUrl}
-                generalCallID={(client as any).binotelLatestCallGeneralID}
-                title="Прослухати останній запис"
-                onPlayRequest={(url) => setInlineRecordingUrl(url)}
-                listenDisabled={!canListenCalls}
-              />
-            );
-          })()}
-        </span>
-        {(() => {
-          const startTime = (client as any).binotelLatestCallStartTime;
-          const dateStr = formatDateDDMMYY(startTime);
-          if (dateStr === '-') return null;
-          return (
-            <span
-              className="text-[10px] leading-none opacity-60"
-              title={formatDateDDMMYYHHMM(startTime)}
-            >
-              {dateStr}
-            </span>
-          );
-        })()}
-      </span>
-    ) : null}
-  </td>
-  <td
-    className="pl-0 pr-1 sm:pr-1.5 py-0.5 text-xs text-left align-middle"
-    style={cellPxRow("callbackReminder", getColumnStyle(columnWidths.callbackReminder, true))}
-  >
-    <CallbackReminderCell client={client} showActivityDot={winningKey === 'callbackReminder'} />
-  </td>
   {(() => {
+    if (recordSlot === 'consultation') {
+      return (
+        <DirectClientTableRowConsultationCell
+          client={client}
+          winningKey={winningKey}
+          todayKyivDayForDots={todayKyivDayForDots}
+          activityKeys={activityKeys}
+          cellStyle={{
+            ...cellPxRow("record", getColumnStyle(columnWidths.record, true)),
+            backgroundColor: CONSULTATION_SLOT_BG,
+          }}
+          onOpenConsultationHistory={openConsultationHistory}
+        />
+      );
+    }
     // Перевіряємо, чи запис платної послуги створено сьогодні (для фону колонки)
     const kyivDayFmt = new Intl.DateTimeFormat('en-CA', {
       timeZone: 'Europe/Kyiv',
@@ -1484,8 +1407,23 @@ return (
       </td>
     );
   })()}
-  <td className="pl-0 pr-1 sm:pr-1.5 py-1 text-xs whitespace-nowrap text-left" style={cellPxRow("recordMaster", getColumnStyle(columnWidths.recordMaster, true))}>
+  <td
+    className="pl-0 pr-1 sm:pr-1.5 py-1 text-xs whitespace-nowrap text-left"
+    style={{
+      ...cellPxRow("recordMaster", getColumnStyle(columnWidths.recordMaster, true)),
+      ...(recordSlot === 'consultation' ? { backgroundColor: CONSULTATION_SLOT_BG } : {}),
+    }}
+  >
     {(() => {
+      if (recordSlot === 'consultation') {
+        const name = getConsultationMasterDisplay(client);
+        if (!name) return "";
+        return (
+          <span className="text-left" title={`Майстер консультації: ${name}`}>
+            {name}
+          </span>
+        );
+      }
       const recordMaster = getRecordMasterDisplay(client);
       if (!recordMaster.hasContent) return "";
 
@@ -1533,24 +1471,103 @@ return (
       );
     })()}
   </td>
-  <DirectClientTableRowConsultationCell
-    client={client}
-    winningKey={winningKey}
-    todayKyivDayForDots={todayKyivDayForDots}
-    activityKeys={activityKeys}
-    cellStyle={cellPxRow("consultation", getColumnStyle(columnWidths.consultation, true))}
-    onOpenConsultationHistory={openConsultationHistory}
-  />
-  <td className="pl-0 pr-1 sm:pr-1.5 py-1 text-xs whitespace-nowrap text-left" style={cellPxRow("consultMaster", getColumnStyle(columnWidths.consultMaster, true))}>
-    {(() => {
-      const name = getConsultationMasterDisplay(client);
-      if (!name) return "";
-      return (
-        <span className="text-left" title={`Майстер консультації: ${name}`}>
-          {name}
+  {!hideCommunicationColumn && (
+    <td className="pl-0 pr-0.5 py-1 align-middle" style={cellPxRow("communication", getColumnStyle(columnWidths.communication, true))}>
+      <CommunicationChannelPicker
+        value={client.communicationChannel}
+        onChange={async (next) => {
+          await onClientUpdate(client.id, { communicationChannel: next });
+        }}
+      />
+    </td>
+  )}
+  <td
+    className="pl-0 pr-1.5 sm:pr-2 py-1 text-xs text-left align-top"
+    style={{ ...cellPxRow("calls", getColumnStyle(columnWidths.calls, true)), minHeight: instCallsCellMinHeight }}
+  >
+    {(client as any).binotelCallsCount != null &&
+    (client as any).binotelCallsCount > 0 ? (
+      <span
+        className="inline-flex flex-col items-start gap-0.5"
+        title={formatDateDDMMYYHHMM((client as any).binotelLatestCallStartTime)}
+      >
+        <span className="inline-flex items-center justify-start gap-1">
+          <WithCornerRedDot
+            show={winningKey === 'binotel_call'}
+            title="Тригер: дзвінок Binotel"
+            dotClassName="-top-[5px] -right-[4px]"
+          >
+            <button
+              type="button"
+              onClick={() => setBinotelHistoryClient(client)}
+              className="inline-flex items-center"
+              title={`Історія дзвінків Binotel. Останній: ${formatDateDDMMYYHHMM((client as any).binotelLatestCallStartTime)}`}
+            >
+              <BinotelCallTypeIcon
+                callType={(client as any).binotelLatestCallType || "incoming"}
+                success={["ANSWER", "VM-SUCCESS", "SUCCESS"].includes(
+                  (client as any).binotelLatestCallDisposition || ""
+                )}
+                size={18}
+              />
+            </button>
+          </WithCornerRedDot>
+          {(() => {
+            const disp = (client as any).binotelLatestCallDisposition || "";
+            const isSuccess = ["ANSWER", "VM-SUCCESS", "SUCCESS"].includes(disp);
+            const hasRecording =
+              (client as any).binotelLatestCallRecordingUrl ||
+              (client as any).binotelLatestCallGeneralID;
+            const latestCallAt = (client as { binotelLatestCallStartTime?: string | null }).binotelLatestCallStartTime;
+            const latestCallDate = latestCallAt ? new Date(latestCallAt) : null;
+            const latestCallDay =
+              latestCallDate && !isNaN(latestCallDate.getTime())
+                ? new Intl.DateTimeFormat("en-CA", {
+                    timeZone: "Europe/Kyiv",
+                    year: "numeric",
+                    month: "2-digit",
+                    day: "2-digit",
+                  }).format(latestCallDate)
+                : "";
+            const todayKyivCall = new Intl.DateTimeFormat("en-CA", {
+              timeZone: "Europe/Kyiv",
+              year: "numeric",
+              month: "2-digit",
+              day: "2-digit",
+            }).format(new Date());
+            if (!hasRecording || !isSuccess || !latestCallDay || latestCallDay !== todayKyivCall) return null;
+            return (
+              <PlayRecordingButton
+                recordingUrl={(client as any).binotelLatestCallRecordingUrl}
+                generalCallID={(client as any).binotelLatestCallGeneralID}
+                title="Прослухати останній запис"
+                onPlayRequest={(url) => setInlineRecordingUrl(url)}
+                listenDisabled={!canListenCalls}
+              />
+            );
+          })()}
         </span>
-      );
-    })()}
+        {(() => {
+          const startTime = (client as any).binotelLatestCallStartTime;
+          const dateStr = formatDateDDMMYY(startTime);
+          if (dateStr === '-') return null;
+          return (
+            <span
+              className="text-[10px] leading-none opacity-60"
+              title={formatDateDDMMYYHHMM(startTime)}
+            >
+              {dateStr}
+            </span>
+          );
+        })()}
+      </span>
+    ) : null}
+  </td>
+  <td
+    className="pl-0 pr-1 sm:pr-1.5 py-0.5 text-xs text-left align-middle"
+    style={cellPxRow("callbackReminder", getColumnStyle(columnWidths.callbackReminder, true))}
+  >
+    <CallbackReminderCell client={client} showActivityDot={winningKey === 'callbackReminder'} />
   </td>
   <td className="pl-0 pr-1 sm:pr-1.5 py-1 text-xs whitespace-nowrap text-left" style={cellPxRow("phone", getColumnStyle(columnWidths.phone, true))}>
     {client.phone ? (

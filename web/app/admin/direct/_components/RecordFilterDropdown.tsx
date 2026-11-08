@@ -5,6 +5,7 @@ import { createPortal } from "react-dom";
 import type { DirectClient } from "@/lib/direct-types";
 import type { DirectFilters } from "./DirectClientTable";
 import { FilterIconButton } from "./FilterIconButton";
+import { ConsultationFilterDropdown } from "./ConsultationFilterDropdown";
 
 const KYIV = "Europe/Kyiv";
 function toKyivYearMonth(iso: string): string {
@@ -55,6 +56,8 @@ interface RecordFilterDropdownProps {
   columnLabel: string;
   /** Приховати секцію «Сума запису» (право finances = none) */
   hideFinances?: boolean;
+  /** Кількості для вкладки «Консультація» (консультації показуються в колонці «Запис», якщо немає платного запису) */
+  consultationCounts?: Record<string, number>;
 }
 
 export function RecordFilterDropdown({
@@ -65,8 +68,10 @@ export function RecordFilterDropdown({
   onFiltersChange,
   columnLabel,
   hideFinances = false,
+  consultationCounts,
 }: RecordFilterDropdownProps) {
   const [isOpen, setIsOpen] = useState(false);
+  const [tab, setTab] = useState<"record" | "consultation">("record");
   const [panelPosition, setPanelPosition] = useState<{ top: number; left: number } | null>(null);
   const dropdownRef = useRef<HTMLDivElement>(null);
   const panelRef = useRef<HTMLDivElement>(null);
@@ -145,8 +150,12 @@ export function RecordFilterDropdown({
     return () => document.removeEventListener("mousedown", handleClickOutside);
   }, [isOpen]);
 
-  const hasActive =
+  const fc = filters.consultation;
+  const consultationActive =
+    fc.hasConsultation === true || fc.created.mode !== null || fc.createdPreset !== null || fc.appointed.mode !== null || fc.appointedPreset !== null || fc.attendance !== null || fc.type !== null;
+  const recordActive =
     r.hasRecord === true || r.newClient === true || r.created.mode !== null || r.createdPreset !== null || r.appointed.mode !== null || r.appointedPreset !== null || r.client !== null || r.sum !== null;
+  const hasActive = recordActive || consultationActive;
 
   const handleApply = () => {
     onFiltersChange({
@@ -233,6 +242,38 @@ export function RecordFilterDropdown({
     </div>
   );
 
+  const tabs = (
+    <div className="flex gap-1 px-2 pt-2">
+      {([
+        ["record", "Запис", recordActive],
+        ["consultation", "Консультація", consultationActive],
+      ] as const).map(([key, label, active]) => (
+        <button
+          key={key}
+          type="button"
+          onClick={() => setTab(key)}
+          className={`flex-1 px-2 py-1 rounded text-xs transition-colors ${tab === key ? (key === "consultation" ? "bg-yellow-100 text-yellow-800 font-medium" : "bg-blue-100 text-blue-700 font-medium") : "hover:bg-gray-100 text-gray-600"}`}
+        >
+          {label}
+          {active ? " •" : ""}
+        </button>
+      ))}
+    </div>
+  );
+
+  const consultationPanelContent = (
+    <ConsultationFilterDropdown
+      inline
+      clients={clients}
+      totalClientsCount={totalClientsCount}
+      consultationCounts={consultationCounts}
+      filters={filters}
+      onFiltersChange={onFiltersChange}
+      columnLabel="Консультація"
+      onDone={() => setIsOpen(false)}
+    />
+  );
+
   const panelContent = (
     <div className="p-2">
             <div className="flex items-center justify-between text-xs font-semibold text-gray-700 mb-2 px-2">
@@ -312,7 +353,7 @@ export function RecordFilterDropdown({
             ))}
             <div className="flex gap-2 mt-2">
               <button type="button" onClick={handleApply} className="flex-1 px-2 py-1.5 text-xs text-white bg-[#3b82f6] hover:bg-[#2563eb] rounded transition-colors font-medium">Застосувати</button>
-              {hasActive && (
+              {recordActive && (
                 <button type="button" onClick={handleClear} className="flex-1 px-2 py-1.5 text-xs text-white bg-pink-500 hover:bg-pink-600 rounded transition-colors font-medium">Очистити</button>
               )}
             </div>
@@ -334,7 +375,8 @@ export function RecordFilterDropdown({
             className="bg-white border border-gray-300 rounded-lg shadow-lg min-w-[220px] max-h-[420px] overflow-y-auto pointer-events-auto"
             style={{ position: "fixed", top: panelPosition.top, left: panelPosition.left, zIndex: 999999 }}
           >
-            {panelContent}
+            {tabs}
+            {tab === "consultation" ? consultationPanelContent : panelContent}
           </div>,
           portalTarget
         )}

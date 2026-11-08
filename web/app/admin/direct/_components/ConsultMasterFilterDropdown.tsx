@@ -16,6 +16,9 @@ interface ConsultMasterFilterDropdownProps {
   filters: DirectFilters;
   onFiltersChange: (f: DirectFilters) => void;
   columnLabel: string;
+  /** Вбудований режим: лише вміст панелі (вкладка «Консультація» у фільтрі колонки «Майстер») */
+  inline?: boolean;
+  onDone?: () => void;
 }
 
 export function ConsultMasterFilterDropdown({
@@ -26,6 +29,8 @@ export function ConsultMasterFilterDropdown({
   filters,
   onFiltersChange,
   columnLabel,
+  inline = false,
+  onDone,
 }: ConsultMasterFilterDropdownProps) {
   const [isOpen, setIsOpen] = useState(false);
   const [panelPosition, setPanelPosition] = useState<{ top: number; left: number } | null>(null);
@@ -79,6 +84,7 @@ export function ConsultMasterFilterDropdown({
       consultMaster: { masterIds: [...masterIds] },
     });
     setIsOpen(false);
+    onDone?.();
   };
 
   const handleClear = () => {
@@ -88,6 +94,7 @@ export function ConsultMasterFilterDropdown({
       consultMaster: { masterIds: [] },
     });
     setIsOpen(false);
+    onDone?.();
   };
 
   const opt = (key: string, label: string, sel: boolean, onClick: () => void, count?: number) => (
@@ -132,6 +139,8 @@ export function ConsultMasterFilterDropdown({
       </div>
     </div>
   );
+
+  if (inline) return panelContent;
 
   return (
     <div className="relative inline-block" ref={dropdownRef}>

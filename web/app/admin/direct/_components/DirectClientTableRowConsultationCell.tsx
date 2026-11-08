@@ -50,7 +50,8 @@ function consultationCellPropsEqual(
     ps.minWidth === ns.minWidth &&
     ps.maxWidth === ns.maxWidth &&
     ps.boxSizing === ns.boxSizing &&
-    ps.boxShadow === ns.boxShadow
+    ps.boxShadow === ns.boxShadow &&
+    ps.backgroundColor === ns.backgroundColor
   );
 }
 
