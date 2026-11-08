@@ -103,8 +103,8 @@ const CALL_STATUS_COLUMN_MIN_WIDTH_PX = 205;
 const RECORD_MASTER_COLUMN_MIN_WIDTH_PX = 90;
 /** «Телефон»: +380XXXXXXXXX моноширинним шрифтом без наїзду на «Дії». */
 const PHONE_COLUMN_MIN_WIDTH_PX = 108;
-/** «Дії»: кнопка «Записати» + олівець. */
-const ACTIONS_COLUMN_MIN_WIDTH_PX = 150;
+/** «Дії»: лише олівець (редагування клієнта). */
+const ACTIONS_COLUMN_MIN_WIDTH_PX = 48;
 
 const DEFAULT_COLUMN_CONFIG: ColumnWidthConfig = {
   number: { width: 28, mode: 'min' },

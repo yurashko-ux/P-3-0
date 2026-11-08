@@ -127,8 +127,6 @@ function DirectClientTableRowInner({
     setRecordHistoryType,
     setMasterHistoryClient,
     setEditingClient,
-    showJournal,
-    setBookAppointmentClient,
     bodyTableTotalWidthPx,
     enforceExplicitCellWidthsPx,
     getEffectiveColumnWidthPx,
@@ -1598,15 +1596,6 @@ return (
   {!hideActionsColumn && (
     <td className="pl-0 pr-1 sm:pr-1.5 py-1 text-xs text-left" style={cellPxRow("actions", getColumnStyle(columnWidths.actions, true))}>
       <div className="flex justify-start gap-1">
-        {showJournal && (
-          <button
-            className="btn btn-xs btn-ghost"
-            onClick={() => setBookAppointmentClient(client)}
-            title="Записати в журнал"
-          >
-            Записати
-          </button>
-        )}
         <button
           className="btn btn-xs btn-ghost"
           onClick={() => setEditingClient(client)}
