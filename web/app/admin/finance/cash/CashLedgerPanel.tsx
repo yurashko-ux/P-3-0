@@ -370,49 +370,79 @@ export function CashLedgerPanel({
       {/* Касовки окремою колонкою: їхня висота не розтягує дні в таблиці */}
       <aside className="min-w-0 overflow-hidden rounded-xl border border-gray-200 bg-white shadow-sm md:sticky md:top-[calc(var(--admin-nav-h,0px)+var(--cash-sticky-top,0px)+0.5rem)]">
         <div className="bg-slate-300 px-2 py-1 text-[10px] font-semibold text-emerald-900">Касовки</div>
-        <div className="max-h-[calc(100vh-var(--admin-nav-h,0px)-var(--cash-sticky-top,0px)-3rem)] overflow-y-auto bg-emerald-50/40 px-2 py-2 text-[11px]">
+        <div className="max-h-[calc(100vh-var(--admin-nav-h,0px)-var(--cash-sticky-top,0px)-3rem)] overflow-y-auto">
           {visibleCounts.length === 0 ? (
-            <span className="text-gray-400">Касовок немає</span>
+            <p className="px-2 py-2 text-[11px] text-gray-400">Касовок немає</p>
           ) : (
-            visibleCounts.map((count) => {
-              const unit = unitOf(count.currency);
-              // До старту каси «мало бути» рахувала стара схема — ці числа не порівнюємо
-              const current = count.kyivDay >= CASH_RECONCILE_FROM_KYIV_DAY;
-              const diff =
-                current && count.variance != null && Math.abs(count.variance) >= 0.01 ? count.variance : null;
-              return (
-                <div key={count.id} className="mb-2 border-b border-emerald-100 pb-1.5 last:mb-0 last:border-b-0 last:pb-0">
-                  <div className="flex items-start justify-between gap-1">
-                    <div className="tabular-nums font-semibold text-gray-900">
-                      {dayLabel(count.kyivDay)} {timeLabel(count.savedAt)} · {count.accountTitle}
-                    </div>
-                    <button
-                      type="button"
-                      className="text-[10px] text-gray-400 hover:text-red-600 disabled:opacity-50"
-                      disabled={deletingId === count.id}
-                      title="Видалити касовку"
-                      onClick={() => void removeCount(count)}
-                    >
-                      {deletingId === count.id ? "…" : "🗑"}
-                    </button>
-                  </div>
-                  <div className="tabular-nums text-emerald-900">
-                    {money(count.counted)} {unit}
-                  </div>
-                  {current && count.expected != null ? (
-                    <div className="tabular-nums text-gray-600">
-                      мало бути {money(count.expected)} {unit}
-                    </div>
-                  ) : null}
-                  {diff != null ? (
-                    <div className={`tabular-nums font-medium ${diff < 0 ? "text-red-600" : "text-amber-700"}`}>
-                      {diff < 0 ? "недостача" : "надлишок"} {money(Math.abs(diff))} {unit}
-                    </div>
-                  ) : null}
-                  <div className="text-gray-600">{count.authorName || "—"}</div>
-                </div>
-              );
-            })
+            // Одна касовка — один рядок; «мало бути» — у підказці до різниці
+            <table className="w-full table-fixed text-left text-[10px]">
+              <colgroup>
+                <col style={{ width: "24%" }} />
+                <col style={{ width: "15%" }} />
+                <col style={{ width: "21%" }} />
+                <col style={{ width: "15%" }} />
+                <col style={{ width: "19%" }} />
+                <col style={{ width: "6%" }} />
+              </colgroup>
+              <thead className="sticky top-0 bg-gray-50 text-[9px] uppercase text-gray-500">
+                <tr>
+                  <th className="px-2 py-1 font-medium">Дата</th>
+                  <th className="px-1 py-1 font-medium">Каса</th>
+                  <th className="px-1 py-1 text-right font-medium" title="Пораховано в касі">Факт</th>
+                  <th className="px-1 py-1 text-right font-medium" title="Факт мінус «мало бути»">Різн.</th>
+                  <th className="px-1 py-1 font-medium">Хто</th>
+                  <th />
+                </tr>
+              </thead>
+              <tbody>
+                {visibleCounts.map((count) => {
+                  const unit = unitOf(count.currency);
+                  // До старту каси «мало бути» рахувала стара схема — ці числа не порівнюємо
+                  const current = count.kyivDay >= CASH_RECONCILE_FROM_KYIV_DAY;
+                  const diff =
+                    current && count.variance != null && Math.abs(count.variance) >= 0.01 ? count.variance : null;
+                  const diffTitle =
+                    current && count.expected != null
+                      ? `Мало бути ${money(count.expected)} ${unit}${diff != null ? ` · ${diff < 0 ? "недостача" : "надлишок"}` : ""}`
+                      : "Касовка до старту каси — не порівнюємо";
+                  return (
+                    <tr key={count.id} className="border-t border-gray-100">
+                      <td className="whitespace-nowrap px-2 py-1 tabular-nums text-gray-700">
+                        {dayLabel(count.kyivDay).slice(0, 5)} {timeLabel(count.savedAt)}
+                      </td>
+                      <td className="truncate px-1 py-1 text-gray-700" title={count.accountTitle}>
+                        {count.accountTitle}
+                      </td>
+                      <td className="whitespace-nowrap px-1 py-1 text-right font-semibold tabular-nums text-emerald-900">
+                        {money(count.counted)} {unit}
+                      </td>
+                      <td
+                        className={`whitespace-nowrap px-1 py-1 text-right font-semibold tabular-nums ${
+                          diff == null ? "text-gray-400" : diff < 0 ? "text-red-600" : "text-amber-700"
+                        }`}
+                        title={diffTitle}
+                      >
+                        {diff == null ? "—" : `${diff > 0 ? "+" : "−"}${money(Math.abs(diff))}`}
+                      </td>
+                      <td className="truncate px-1 py-1 text-gray-600" title={count.authorName || undefined}>
+                        {count.authorName || "—"}
+                      </td>
+                      <td className="px-1 py-1 text-right">
+                        <button
+                          type="button"
+                          className="text-[10px] text-gray-400 hover:text-red-600 disabled:opacity-50"
+                          disabled={deletingId === count.id}
+                          title="Видалити касовку"
+                          onClick={() => void removeCount(count)}
+                        >
+                          {deletingId === count.id ? "…" : "🗑"}
+                        </button>
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
           )}
         </div>
       </aside>
