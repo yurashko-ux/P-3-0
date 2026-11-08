@@ -187,11 +187,11 @@ export function BankAccountPanel({
               <table className="w-full table-fixed text-left text-[10px]">
                 <colgroup>
                   <col style={{ width: "4%" }} />
+                  <col style={{ width: "8%" }} />
                   <col style={{ width: "5%" }} />
                   <col style={{ width: "4%" }} />
                   <col style={{ width: "27%" }} />
                   <col style={{ width: "38%" }} />
-                  <col style={{ width: "8%" }} />
                   <col style={{ width: "14%" }} />
                 </colgroup>
                 <thead>
@@ -219,11 +219,11 @@ export function BankAccountPanel({
                   </tr>
                   <tr className="bg-gray-50 text-[9px] uppercase text-gray-500">
                     <th className="px-2 py-1 font-medium">№</th>
+                    <th className="px-2 py-1 font-medium">Час</th>
                     <th className="px-1 py-1 text-center font-medium" title="Зведено з документами">Зв.</th>
                     <th className="px-2 py-1 font-medium">Тип</th>
                     <th className="px-2 py-1 font-medium">Контрагент</th>
                     <th className="px-2 py-1 font-medium">Призначення</th>
-                    <th className="px-2 py-1 font-medium">Час</th>
                     <th className="px-2 py-1 text-right font-medium">Сума</th>
                   </tr>
                 </thead>
@@ -236,6 +236,7 @@ export function BankAccountPanel({
                       <Fragment key={row.id}>
                         <tr className="border-t border-gray-100">
                           <td className="px-2 py-1 tabular-nums text-gray-500">{index + 1}</td>
+                          <td className="whitespace-nowrap px-2 py-1 tabular-nums text-gray-600">{timeLabel(row.time)}</td>
                           <td className="px-1 py-1 text-center">
                             <ReconciledDot
                               status={row.status}
@@ -262,7 +263,6 @@ export function BankAccountPanel({
                           >
                             {transferTitle(row.title, row, incoming, accountTitle) ?? (row.title || "—")}
                           </td>
-                          <td className="whitespace-nowrap px-2 py-1 tabular-nums text-gray-600">{timeLabel(row.time)}</td>
                           <td
                             className={`whitespace-nowrap px-2 py-1 text-right font-semibold tabular-nums ${
                               incoming ? "text-gray-900" : "text-red-600"
@@ -276,6 +276,7 @@ export function BankAccountPanel({
                             {row.documents.map((doc) => (
                               <tr key={doc.id} className="bg-slate-50/70 text-gray-600">
                                 <td />
+                                <td className="whitespace-nowrap px-2 py-0.5 tabular-nums">{dayLabel(doc.kyivDay).slice(0, 5)}</td>
                                 <td className="px-1 py-0.5 text-center text-gray-400">↳</td>
                                 <td />
                                 <td className="truncate px-2 py-0.5 italic" title={DOCUMENT_KIND_LABEL[doc.kind]}>
@@ -284,15 +285,15 @@ export function BankAccountPanel({
                                 <td className="truncate px-2 py-0.5" title={doc.title}>
                                   {doc.title}
                                 </td>
-                                <td className="whitespace-nowrap px-2 py-0.5 tabular-nums">{dayLabel(doc.kyivDay).slice(0, 5)}</td>
                                 <td className="whitespace-nowrap px-2 py-0.5 text-right tabular-nums">{money(doc.amount)} грн</td>
                               </tr>
                             ))}
                             {row.groupNote || row.documents.length === 0 ? (
                               <tr className="bg-slate-50/70 text-gray-500">
                                 <td />
+                                <td />
                                 <td className="px-1 py-0.5 text-center text-gray-400">↳</td>
-                                <td colSpan={5} className="px-2 py-0.5 italic">
+                                <td colSpan={4} className="px-2 py-0.5 italic">
                                   {row.groupNote || "Документів немає"}
                                 </td>
                               </tr>
@@ -318,6 +319,7 @@ export function BankAccountPanel({
                   {day.unlinked.map((doc) => (
                     <tr key={doc.id} className="border-t border-dashed border-gray-200 text-gray-500">
                       <td />
+                      <td className="whitespace-nowrap px-2 py-1 tabular-nums">{timeLabel(doc.time)}</td>
                       <td className="px-1 py-1 text-center">
                         <span
                           className="inline-block h-2.5 w-2.5 rounded-full border border-gray-400"
@@ -329,7 +331,6 @@ export function BankAccountPanel({
                       <td className="truncate px-2 py-1" title={doc.comment ? `${doc.title}\n${doc.comment}` : doc.title}>
                         {doc.title} · <span className="italic">без платежу</span>
                       </td>
-                      <td className="whitespace-nowrap px-2 py-1 tabular-nums">{timeLabel(doc.time)}</td>
                       <td className="whitespace-nowrap px-2 py-1 text-right italic tabular-nums">{money(doc.amount)} грн</td>
                     </tr>
                   ))}

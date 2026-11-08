@@ -39,6 +39,8 @@ type LedgerRow = {
   posted: boolean;
   /** Сума валюти за курсом дня (у коментарі Altegio її не було) */
   fxRate?: number | null;
+  /** Запис у журналі Креско (за номером запису Altegio) — для посилання з колонки «Запис» */
+  appointmentId?: string | null;
   /** Переміщення: з якого рахунку на який */
   transferFrom?: string | null;
   transferTo?: string | null;
@@ -284,7 +286,8 @@ export function CashLedgerPanel({
         }
         const items: DayItem[] = [
           ...aggregateCashLedgerDayRows(visibleRows.filter((row) => row.kyivDay === kyivDay)).map(
-            (row): DayItem => ({ kind: "cash", key: `cash:${row.id}`, at: row.occurredAt, row }),
+            // Кілька платежів клієнта з різним часом — без часу; для порядку беремо полудень дня
+            (row): DayItem => ({ kind: "cash", key: `cash:${row.id}`, at: row.occurredAt || `${row.kyivDay}T10:00:00.000Z`, row }),
           ),
           ...bankItems.filter((item) => itemDay(item) === kyivDay),
         ].sort((a, b) => new Date(b.at).getTime() - new Date(a.at).getTime());
@@ -369,11 +372,11 @@ export function CashLedgerPanel({
             <table className="w-full table-fixed text-left text-[10px]">
               <colgroup>
                 <col style={{ width: "5%" }} />
+                <col style={{ width: "8%" }} />
                 <col style={{ width: "5%" }} />
                 <col style={{ width: "5%" }} />
                 <col style={{ width: "16%" }} />
                 <col style={{ width: "18%" }} />
-                <col style={{ width: "8%" }} />
                 <col style={{ width: "13%" }} />
                 <col style={{ width: "13%" }} />
                 <col style={{ width: "17%" }} />
@@ -404,11 +407,11 @@ export function CashLedgerPanel({
                 </tr>
                 <tr className="bg-gray-50 text-[9px] uppercase text-gray-500">
                   <th className="px-2 py-1 font-medium">№</th>
+                  <th className="px-2 py-1 font-medium">Час</th>
                   <th className="px-1 py-1 text-center font-medium" title="Чи була касовка після платежу">Зв.</th>
                   <th className="px-2 py-1 font-medium">Тип</th>
                   <th className="px-2 py-1 font-medium">Клієнт</th>
                   <th className="px-2 py-1 font-medium">Призначення</th>
-                  <th className="px-2 py-1 font-medium">Час</th>
                   <th className="px-2 py-1 font-medium">Запис</th>
                   <th className="px-2 py-1 font-medium">Рахунок</th>
                   <th className="px-2 py-1 text-right font-medium">Сума</th>
@@ -422,6 +425,7 @@ export function CashLedgerPanel({
                     return (
                       <tr key={item.key} className="border-t border-dashed border-gray-200 text-gray-500">
                         <td className="px-2 py-1 tabular-nums">{index + 1}</td>
+                        <td className="whitespace-nowrap px-2 py-1 tabular-nums">{timeLabel(doc.time)}</td>
                         <td className="px-1 py-1 text-center">
                           <span
                             className="inline-block h-2.5 w-2.5 rounded-full border border-gray-400"
@@ -433,7 +437,6 @@ export function CashLedgerPanel({
                         <td className="truncate px-2 py-1" title={doc.comment ? `${doc.title}\n${doc.comment}` : doc.title}>
                           {doc.title} · <span className="italic">без платежу</span>
                         </td>
-                        <td className="whitespace-nowrap px-2 py-1 tabular-nums">{timeLabel(doc.time)}</td>
                         <td className="px-2 py-1">—</td>
                         <td className="truncate px-2 py-1" title={item.accountTitle}>{item.accountTitle}</td>
                         <td className="whitespace-nowrap px-2 py-1 text-right italic tabular-nums">{money(doc.amount)} грн</td>
@@ -449,6 +452,7 @@ export function CashLedgerPanel({
                       <Fragment key={item.key}>
                         <tr className="border-t border-gray-100">
                           <td className="px-2 py-1 tabular-nums text-gray-500">{index + 1}</td>
+                          <td className="whitespace-nowrap px-2 py-1 tabular-nums text-gray-600">{timeLabel(row.time)}</td>
                           <td className="px-1 py-1 text-center">
                             <ReconciledDot
                               status={row.status}
@@ -472,7 +476,6 @@ export function CashLedgerPanel({
                           >
                             {transferTitle(row.title, row, incoming, item.accountTitle) ?? (row.title || "—")}
                           </td>
-                          <td className="whitespace-nowrap px-2 py-1 tabular-nums text-gray-600">{timeLabel(row.time)}</td>
                           <td className="whitespace-nowrap px-2 py-1 tabular-nums text-gray-600">—</td>
                           <td className="truncate px-2 py-1 text-gray-700" title={item.accountTitle}>{item.accountTitle}</td>
                           <td
@@ -488,6 +491,7 @@ export function CashLedgerPanel({
                             {row.documents.map((doc) => (
                               <tr key={doc.id} className="bg-slate-50/70 text-gray-600">
                                 <td />
+                                <td className="whitespace-nowrap px-2 py-0.5 tabular-nums">{dayLabel(doc.kyivDay).slice(0, 5)}</td>
                                 <td className="px-1 py-0.5 text-center text-gray-400">↳</td>
                                 <td />
                                 <td className="truncate px-2 py-0.5 italic" title={DOCUMENT_KIND_LABEL[doc.kind]}>
@@ -496,7 +500,6 @@ export function CashLedgerPanel({
                                 <td className="truncate px-2 py-0.5" title={doc.title}>
                                   {doc.title}
                                 </td>
-                                <td className="whitespace-nowrap px-2 py-0.5 tabular-nums">{dayLabel(doc.kyivDay).slice(0, 5)}</td>
                                 <td colSpan={2} />
                                 <td className="whitespace-nowrap px-2 py-0.5 text-right tabular-nums">{money(doc.amount)} грн</td>
                               </tr>
@@ -504,8 +507,9 @@ export function CashLedgerPanel({
                             {row.groupNote || row.documents.length === 0 ? (
                               <tr className="bg-slate-50/70 text-gray-500">
                                 <td />
+                                <td />
                                 <td className="px-1 py-0.5 text-center text-gray-400">↳</td>
-                                <td colSpan={7} className="px-2 py-0.5 italic">
+                                <td colSpan={6} className="px-2 py-0.5 italic">
                                   {row.groupNote || "Документів немає"}
                                 </td>
                               </tr>
@@ -534,6 +538,9 @@ export function CashLedgerPanel({
                   return (
                     <tr key={item.key} className="border-t border-gray-100">
                       <td className="px-2 py-1 tabular-nums text-gray-500">{index + 1}</td>
+                      <td className="whitespace-nowrap px-2 py-1 tabular-nums text-gray-600">
+                        {rowTimeLabel(row) || "—"}
+                      </td>
                       <td className="px-1 py-1 text-center">
                         <ReconciledDot
                           done={new Date(row.occurredAt).getTime() <= (lastCountAt.get(row.accountTitle) ?? 0)}
@@ -550,10 +557,21 @@ export function CashLedgerPanel({
                         {transferTitle(row.title, row, incoming, row.accountTitle) ?? row.title}
                       </td>
                       <td className="whitespace-nowrap px-2 py-1 tabular-nums text-gray-600">
-                        {rowTimeLabel(row) || "—"}
-                      </td>
-                      <td className="whitespace-nowrap px-2 py-1 tabular-nums text-gray-600">
-                        {row.recordId ? row.recordId : "—"}
+                        {row.recordId && row.appointmentId ? (
+                          <a
+                            href={`/admin/journal?day=${row.kyivDay}&appointment=${row.appointmentId}`}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="text-blue-600 hover:underline"
+                            title="Відкрити запис у журналі"
+                          >
+                            {row.recordId}
+                          </a>
+                        ) : row.recordId ? (
+                          row.recordId
+                        ) : (
+                          "—"
+                        )}
                       </td>
                       <td className="truncate px-2 py-1 text-gray-700" title={row.accountTitle}>{row.accountTitle}</td>
                       <td

@@ -24,7 +24,8 @@ function timeLabelKyiv(iso: string): string {
 }
 
 /**
- * Один клієнт, один рахунок, одне призначення і один напрямок за день — один рядок.
+ * Один клієнт, один рахунок і один напрямок за день — один рядок (призначення через кому:
+ * «Продаж товарів, Надання послуг»). Рядки без клієнта (переміщення, витрати) — окремо за призначенням.
  * Викликати вже в межах одного kyivDay (як у вкладці «Готівка»).
  */
 export function aggregateCashLedgerDayRows<T extends CashLedgerAggregateSource>(
@@ -37,7 +38,7 @@ export function aggregateCashLedgerDayRows<T extends CashLedgerAggregateSource>(
   for (const row of dayRows) {
     const client = row.clientName.trim();
     const purpose = row.title.trim();
-    const key = `${client}\0${row.accountTitle}\0${row.currency}\0${row.direction}\0${purpose}`;
+    const key = `${client}\0${row.accountTitle}\0${row.currency}\0${row.direction}\0${client ? "" : purpose}`;
     const signed = row.direction === "out" ? -row.amount : row.amount;
     const current = groups.get(key);
     if (!current) {
