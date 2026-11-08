@@ -372,8 +372,8 @@ export function CashLedgerPanel({
             <table className="w-full table-fixed text-left text-[10px]">
               <colgroup>
                 <col style={{ width: "5%" }} />
-                <col style={{ width: "8%" }} />
                 <col style={{ width: "5%" }} />
+                <col style={{ width: "8%" }} />
                 <col style={{ width: "5%" }} />
                 <col style={{ width: "16%" }} />
                 <col style={{ width: "18%" }} />
@@ -407,9 +407,9 @@ export function CashLedgerPanel({
                 </tr>
                 <tr className="bg-gray-50 text-[9px] uppercase text-gray-500">
                   <th className="px-2 py-1 font-medium">№</th>
+                  <th className="px-2 py-1 font-medium">Тип</th>
                   <th className="px-2 py-1 font-medium">Час</th>
                   <th className="px-1 py-1 text-center font-medium" title="Чи була касовка після платежу">Зв.</th>
-                  <th className="px-2 py-1 font-medium">Тип</th>
                   <th className="px-2 py-1 font-medium">Клієнт</th>
                   <th className="px-2 py-1 font-medium">Призначення</th>
                   <th className="px-2 py-1 font-medium">Запис</th>
@@ -425,6 +425,7 @@ export function CashLedgerPanel({
                     return (
                       <tr key={item.key} className="border-t border-dashed border-gray-200 text-gray-500">
                         <td className="px-2 py-1 tabular-nums">{index + 1}</td>
+                        <td />
                         <td className="whitespace-nowrap px-2 py-1 tabular-nums">{timeLabel(doc.time)}</td>
                         <td className="px-1 py-1 text-center">
                           <span
@@ -432,7 +433,6 @@ export function CashLedgerPanel({
                             title="Документ без банківського платежу"
                           />
                         </td>
-                        <td />
                         <td className="truncate px-2 py-1 italic">Документ Креско</td>
                         <td className="truncate px-2 py-1" title={doc.comment ? `${doc.title}\n${doc.comment}` : doc.title}>
                           {doc.title} · <span className="italic">без платежу</span>
@@ -452,6 +452,9 @@ export function CashLedgerPanel({
                       <Fragment key={item.key}>
                         <tr className="border-t border-gray-100">
                           <td className="px-2 py-1 tabular-nums text-gray-500">{index + 1}</td>
+                          <td className={`px-2 py-1 font-semibold ${incoming ? "text-green-700" : "text-red-600"}`}>
+                            {incoming ? "↓" : "↑"}
+                          </td>
                           <td className="whitespace-nowrap px-2 py-1 tabular-nums text-gray-600">{timeLabel(row.time)}</td>
                           <td className="px-1 py-1 text-center">
                             <ReconciledDot
@@ -462,9 +465,6 @@ export function CashLedgerPanel({
                               expanded={open}
                               onClick={canExpand ? () => toggle(item.key) : undefined}
                             />
-                          </td>
-                          <td className={`px-2 py-1 font-semibold ${incoming ? "text-green-700" : "text-red-600"}`}>
-                            {incoming ? "↓" : "↑"}
                           </td>
                           {/* Колонка «Клієнт»: контрагент вихідного платежу (власниця ФОП, постачальник) — не клієнт */}
                           <td className="truncate px-2 py-1 text-gray-800" title={incoming ? row.counterName || undefined : undefined}>
@@ -491,9 +491,9 @@ export function CashLedgerPanel({
                             {row.documents.map((doc) => (
                               <tr key={doc.id} className="bg-slate-50/70 text-gray-600">
                                 <td />
+                                <td />
                                 <td className="whitespace-nowrap px-2 py-0.5 tabular-nums">{dayLabel(doc.kyivDay).slice(0, 5)}</td>
                                 <td className="px-1 py-0.5 text-center text-gray-400">↳</td>
-                                <td />
                                 <td className="truncate px-2 py-0.5 italic" title={DOCUMENT_KIND_LABEL[doc.kind]}>
                                   {DOCUMENT_KIND_LABEL[doc.kind]}
                                 </td>
@@ -508,8 +508,9 @@ export function CashLedgerPanel({
                               <tr className="bg-slate-50/70 text-gray-500">
                                 <td />
                                 <td />
+                                <td />
                                 <td className="px-1 py-0.5 text-center text-gray-400">↳</td>
-                                <td colSpan={6} className="px-2 py-0.5 italic">
+                                <td colSpan={5} className="px-2 py-0.5 italic">
                                   {row.groupNote || "Документів немає"}
                                 </td>
                               </tr>
@@ -538,6 +539,9 @@ export function CashLedgerPanel({
                   return (
                     <tr key={item.key} className="border-t border-gray-100">
                       <td className="px-2 py-1 tabular-nums text-gray-500">{index + 1}</td>
+                      <td className={`px-2 py-1 font-semibold ${incoming ? "text-green-700" : "text-red-600"}`}>
+                        {incoming ? "↓" : "↑"}
+                      </td>
                       <td className="whitespace-nowrap px-2 py-1 tabular-nums text-gray-600">
                         {rowTimeLabel(row) || "—"}
                       </td>
@@ -547,9 +551,6 @@ export function CashLedgerPanel({
                           doneTitle="Після платежу була касовка"
                           openTitle="Після платежу касовки ще не було"
                         />
-                      </td>
-                      <td className={`px-2 py-1 font-semibold ${incoming ? "text-green-700" : "text-red-600"}`}>
-                        {incoming ? "↓" : "↑"}
                       </td>
                       <td className="break-words px-2 py-1 text-gray-800">{row.clientName || "—"}</td>
                       {/* Довгий опис не роздуває рядок: один рядок, повний текст — при наведенні */}
