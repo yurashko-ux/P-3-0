@@ -5,7 +5,7 @@ import { ReconciledDot, type ReconcileStatus } from "./ReconciledDot";
 
 type LinkedDocument = {
   id: string;
-  kind: "kresco" | "altegio" | "fee";
+  kind: "kresco" | "altegio" | "fee" | "visit" | "payment" | "deposit";
   title: string;
   amount: number;
   kyivDay: string;
@@ -24,6 +24,8 @@ type StatementRow = {
   /** Скільки не вистачає документів до суми платежу (часткове зведення) */
   missing: number;
   documents: LinkedDocument[];
+  /** Вхідні одного дня зведені разом — пояснення під рядком */
+  groupNote?: string;
 };
 
 /** Документ Креско на рахунку без банківського платежу */
@@ -40,6 +42,9 @@ const DOCUMENT_KIND_LABEL: Record<LinkedDocument["kind"], string> = {
   kresco: "Документ Креско",
   altegio: "Операція Altegio",
   fee: "Документ комісії",
+  visit: "Оплата візиту",
+  payment: "Оплата (копія Altegio)",
+  deposit: "Завдаток",
 };
 
 function money(n: number): string {
@@ -204,7 +209,7 @@ export function BankAccountPanel({
                   {day.rows.map((row, index) => {
                     const incoming = row.amount >= 0;
                     const open = expanded.has(row.id);
-                    const canExpand = row.documents.length > 0 || row.status !== "none";
+                    const canExpand = row.documents.length > 0 || Boolean(row.groupNote) || row.status !== "none";
                     return (
                       <Fragment key={row.id}>
                         <tr className="border-t border-gray-100">
@@ -261,12 +266,12 @@ export function BankAccountPanel({
                                 <td className="whitespace-nowrap px-2 py-0.5 text-right tabular-nums">{money(doc.amount)} грн</td>
                               </tr>
                             ))}
-                            {row.documents.length === 0 ? (
+                            {row.groupNote || row.documents.length === 0 ? (
                               <tr className="bg-slate-50/70 text-gray-500">
                                 <td />
                                 <td className="px-1 py-0.5 text-center text-gray-400">↳</td>
                                 <td colSpan={5} className="px-2 py-0.5 italic">
-                                  Оплати візитів із журналу покажемо наступним кроком
+                                  {row.groupNote || "Документів немає"}
                                 </td>
                               </tr>
                             ) : null}

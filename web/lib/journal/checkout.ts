@@ -332,16 +332,22 @@ export async function upsertCheckoutFromAltegioPayments(params: {
   // Чек Kresco сюди не доходить: рядки товарів лише для імпортованих оплат.
   await replaceImportedGoodLines(checkout.id, earlierInVisit ? [] : state.goods);
 
-  // Рахунок технічний: реальні гроші по рахунках ведуть фінансові операції, у Касу цей рядок не йде.
-  await prisma.salonCheckoutPayment.deleteMany({ where: { checkoutId: checkout.id } });
-  await prisma.salonCheckoutPayment.create({
-    data: {
-      checkoutId: checkout.id,
-      accountId: 0,
-      accountTitle: "Altegio",
-      amount: paidAmount,
-    },
+  // Технічна оплата «Altegio» лише поки немає оплат по рахунках: з 08.11.2026 їх пише
+  // syncCheckoutPaymentsFromFinance із фінансових операцій Altegio — їх не затираємо.
+  const realPayments = await prisma.salonCheckoutPayment.count({
+    where: { checkoutId: checkout.id, accountId: { gt: 0 }, altegioTransactionId: { not: null } },
   });
+  if (realPayments === 0) {
+    await prisma.salonCheckoutPayment.deleteMany({ where: { checkoutId: checkout.id } });
+    await prisma.salonCheckoutPayment.create({
+      data: {
+        checkoutId: checkout.id,
+        accountId: 0,
+        accountTitle: "Altegio",
+        amount: paidAmount,
+      },
+    });
+  }
 
   if (appointment.attendance !== 1) {
     await prisma.salonAppointment.update({

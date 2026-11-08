@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { requireFinanceDocsSection } from "@/lib/finance/require-finance-docs-auth";
 import { isReconciledBankPaymentMatch, resolveBankPaymentExpenseArticle } from "@/lib/bank/altegio-payment-reconcile";
+import { isDepositTopUpPaymentPurpose } from "@/lib/altegio/payment-purpose-labels";
 import {
   isIncomingReconcileMarkByBankTime,
   isLinkedIncomingMatchStatus,
@@ -30,8 +31,10 @@ function kyivDayOf(date: Date): string {
 
 type LinkedDocument = {
   id: string;
-  /** kresco — документ Креско; altegio — лише операція Altegio (перехідний період); fee — комісія еквайрингу */
-  kind: "kresco" | "altegio" | "fee";
+  /** kresco — документ Креско; altegio — лише операція Altegio (перехідний період); fee — комісія еквайрингу;
+   * visit — оплата візиту з журналу Креско; payment — оплата клієнта з копії Altegio в базі Креско;
+   * deposit — завдаток клієнта */
+  kind: "kresco" | "altegio" | "fee" | "visit" | "payment" | "deposit";
   title: string;
   amount: number;
   kyivDay: string;
@@ -90,8 +93,8 @@ export async function GET(req: NextRequest) {
             pendingPayments: { take: 1, orderBy: { createdAt: "desc" }, select: { purposeTitle: true } },
           },
         },
-        altegioIncomingMatch: { select: { status: true, matchType: true } },
-        altegioDepositMatch: { select: { status: true } },
+        altegioIncomingMatch: { select: { status: true, matchType: true, kyivDay: true } },
+        altegioDepositMatch: { select: { status: true, payerName: true, amountKopiykas: true, paymentKyivDay: true } },
         // Комісія еквайрингу: документ на утриманий % із зарахування терміналу
         automaticAltegioExpense: { select: { id: true, kind: true, status: true, amountKopiykas: true } },
       },
@@ -130,6 +133,13 @@ export async function GET(req: NextRequest) {
         if (item.altegioDepositMatch && isLinkedIncomingMatchStatus(item.altegioDepositMatch.status)) {
           reconciledInBank = true;
           article = resolveIncomingBankExpenseArticle({ isDepositMatch: true });
+          documents.push({
+            id: `deposit-${item.id}`,
+            kind: "deposit",
+            title: `Завдаток: ${item.altegioDepositMatch.payerName}`,
+            amount: kopToUah(item.altegioDepositMatch.amountKopiykas),
+            kyivDay: item.altegioDepositMatch.paymentKyivDay,
+          });
         } else if (item.altegioIncomingMatch && isLinkedIncomingMatchStatus(item.altegioIncomingMatch.status)) {
           reconciledInBank = true;
           article = resolveIncomingBankExpenseArticle({ incomingMatchType: item.altegioIncomingMatch.matchType });
@@ -152,8 +162,8 @@ export async function GET(req: NextRequest) {
       // (оплати візитів із журналу додамо наступним кроком).
       let status: "full" | "partial" | "none" = reconciledInBank ? "full" : "none";
       let missing = 0;
-      if (bankAmount < 0) {
-        const linkedSum = documents.reduce((sum, doc) => sum + Math.abs(doc.amount), 0);
+      if (bankAmount < 0 || documents.some((doc) => doc.kind === "deposit")) {
+        const linkedSum = Math.abs(documents.reduce((sum, doc) => sum + (doc.kind === "fee" ? 0 : doc.amount), 0));
         missing = Math.round((Math.abs(bankAmount) - linkedSum) * 100) / 100;
         if (documents.length === 0) status = "none";
         else status = Math.abs(missing) < FULL_TOLERANCE_UAH ? "full" : "partial";
@@ -171,8 +181,97 @@ export async function GET(req: NextRequest) {
         status,
         missing: status === "partial" ? missing : 0,
         documents,
+        /** День оплат, з яким зведено вхідний (еквайринг — попередній день) */
+        incomingDay:
+          !item.altegioDepositMatch && item.altegioIncomingMatch && isLinkedIncomingMatchStatus(item.altegioIncomingMatch.status)
+            ? item.altegioIncomingMatch.kyivDay
+            : null,
+        groupNote: "",
       };
     });
+
+    // Вхідні зводяться днем: усі зарахування одного дня оплат разом з оплатами візитів цього дня на рахунку.
+    // Документи — оплати візитів із журналу Креско; сума зарахувань + утримана комісія = сума оплат.
+    const incomingDays = [...new Set(rows.map((row) => row.incomingDay).filter((day): day is string => Boolean(day)))];
+    if (incomingDays.length > 0) {
+      // Джерело оплат: журнал Креско, коли в ньому є рахунок (імпорт з 08.11.2026);
+      // інакше — фінансові операції Altegio, збережені в Креско (за ними й зводиться зараз)
+      const [journalPayments, altegioPayments] = await Promise.all([
+        prisma.salonCheckoutPayment.findMany({
+          where: {
+            accountId: Number(altegioAccountId),
+            checkout: { kyivDay: { in: incomingDays }, status: { not: "void" } },
+          },
+          select: {
+            id: true,
+            amount: true,
+            checkout: { select: { kyivDay: true, appointment: { select: { clientName: true } } } },
+          },
+        }),
+        prisma.altegioFinanceTransaction.findMany({
+          where: {
+            accountId: altegioAccountId,
+            kyivDay: { in: incomingDays },
+            deletedInAltegio: false,
+            amountKopiykas: { gt: BigInt(0) },
+            direction: { not: "transfer" },
+          },
+          select: { altegioId: true, amountKopiykas: true, kyivDay: true, counterpartyName: true, paymentPurpose: true },
+        }),
+      ]);
+      const paymentsByDay = (day: string): LinkedDocument[] => {
+        const journal = journalPayments.filter((payment) => payment.checkout.kyivDay === day);
+        if (journal.length > 0) {
+          return journal.map((payment) => ({
+            id: `visit-${payment.id}`,
+            kind: "visit" as const,
+            title: payment.checkout.appointment?.clientName?.trim() || "Оплата візиту",
+            amount: payment.amount,
+            kyivDay: day,
+          }));
+        }
+        return altegioPayments
+          .filter(
+            (payment) =>
+              payment.kyivDay === day &&
+              !isDepositTopUpPaymentPurpose(payment.paymentPurpose || "") &&
+              !/переміщ/i.test(payment.paymentPurpose || ""),
+          )
+          .map((payment) => ({
+            id: `payment-${payment.altegioId}`,
+            kind: "payment" as const,
+            title: payment.counterpartyName?.trim() || payment.paymentPurpose?.trim() || "Оплата",
+            amount: kopToUah(payment.amountKopiykas),
+            kyivDay: day,
+          }));
+      };
+      for (const day of incomingDays) {
+        const groupRows = rows.filter((row) => row.incomingDay === day);
+        const visits = paymentsByDay(day).sort((a, b) => b.amount - a.amount);
+        const bankSum = groupRows.reduce((sum, row) => sum + row.amount, 0);
+        const feeSum = groupRows.reduce(
+          (sum, row) => sum + row.documents.filter((doc) => doc.kind === "fee").reduce((acc, doc) => acc + Math.abs(doc.amount), 0),
+          0,
+        );
+        const visitsSum = visits.reduce((sum, doc) => sum + doc.amount, 0);
+        const missing = Math.round((bankSum + feeSum - visitsSum) * 100) / 100;
+        const status: "full" | "partial" | "none" =
+          visits.length === 0 ? "none" : Math.abs(missing) < FULL_TOLERANCE_UAH ? "full" : "partial";
+        // Оплати показуємо під першим зарахуванням дня, інші рядки посилаються на нього
+        groupRows.forEach((row, index) => {
+          row.status = status;
+          if (index === 0) {
+            row.documents = [...visits, ...row.documents];
+            row.missing = status === "partial" ? missing : 0;
+            if (groupRows.length > 1) {
+              row.groupNote = `Зведено разом з ${groupRows.length - 1} ${groupRows.length - 1 === 1 ? "зарахуванням" : "зарахуваннями"} за ${day.slice(8, 10)}.${day.slice(5, 7)}`;
+            }
+          } else {
+            row.groupNote = `Оплати ${day.slice(8, 10)}.${day.slice(5, 7)} — під першим зарахуванням цього дня`;
+          }
+        });
+      }
+    }
 
     // Документи Креско на цьому рахунку без банківського платежу (ручні Розхід / Прихід / Переміщення)
     const oldest = items.length > 0 ? items[items.length - 1].time : new Date();
