@@ -299,7 +299,10 @@ const showBorder = index === todayBlockRowIndices.firstTodayIndex;
 // Inset-тінь на <tr> перекривається sticky-комірками з backgroundColor — лінія на кожній td (cellPxRow).
 const TODAY_ROW_SEPARATOR_INSET = "inset 0 -3px 0 #d1d5db";
 const cellPxRow = (key: DirectTableColumnKey, base: CSSProperties): CSSProperties => {
-  const out = cellPx(key, base);
+  let out = cellPx(key, base);
+  // Клієнт лише з консультацією (без платного запису) — увесь рядок жовтим, як «Очікуємо» в Лідах.
+  // Фон на кожній td: sticky-комірки мають власний білий фон і перекрили б фон <tr>.
+  if (recordSlot === 'consultation') out = { ...out, backgroundColor: CONSULTATION_SLOT_BG };
   if (!showBorder) return out;
   return { ...out, boxShadow: TODAY_ROW_SEPARATOR_INSET };
 };

@@ -1608,42 +1608,8 @@ function DirectPageContent() {
         // Основний список завжди запитується з skipPanelCounts=1, тому daysCounts тут є лише нульовою заглушкою.
         // Реальні кількості для dropdown підтягує scheduleDeferredFilterPanelCounts(), а до того DaysFilterDropdown рахує з clients.
         if (data.statusCounts && typeof data.statusCounts === 'object') setStatusCounts(data.statusCounts);
-        if (data.stateCounts != null && typeof data.stateCounts === 'object') setStateCounts(data.stateCounts);
-        // instCounts / instInstagramCounts — лише з filterCountsOnly (skipPanelCounts дає порожню заглушку).
-        if (data.clientTypeCounts != null && typeof data.clientTypeCounts === 'object') {
-          setClientTypeCounts(data.clientTypeCounts);
-        }
-        if (data.consultationCounts != null && typeof data.consultationCounts === 'object') {
-          setConsultationCounts(data.consultationCounts);
-        }
-        if (data.recordCounts != null && typeof data.recordCounts === 'object') setRecordCounts(data.recordCounts);
-        if (data.binotelCallsFilterCounts != null && typeof data.binotelCallsFilterCounts === 'object') {
-          setBinotelCallsFilterCounts({
-            incoming: Number(data.binotelCallsFilterCounts.incoming ?? 0),
-            outgoing: Number(data.binotelCallsFilterCounts.outgoing ?? 0),
-            success: Number(data.binotelCallsFilterCounts.success ?? 0),
-            fail: Number(data.binotelCallsFilterCounts.fail ?? 0),
-            onlyNew: Number(data.binotelCallsFilterCounts.onlyNew ?? 0),
-          });
-        }
-        if (data.masterFilterPanelCounts != null && typeof data.masterFilterPanelCounts === 'object') {
-          const m = data.masterFilterPanelCounts as GlobalMasterFilterPanelCounts;
-          const h = m.handsCounts;
-          if (h && typeof h === 'object') {
-            setMasterFilterPanelCounts({
-              handsCounts: {
-                '2': Number(h['2'] ?? 0),
-                '4': Number(h['4'] ?? 0),
-                '6': Number(h['6'] ?? 0),
-              },
-              primaryNames: Array.isArray(m.primaryNames) ? m.primaryNames : [],
-              secondaryNames: Array.isArray(m.secondaryNames) ? m.secondaryNames : [],
-            });
-          }
-        }
-        if (Array.isArray(data.consultMasterFilterCounts)) {
-          setConsultMasterFilterCounts(data.consultMasterFilterCounts);
-        }
+        // Лічильники колонкових фільтрів (Стан, Тип, Консультація, Запис, Binotel, Майстри) беремо лише з filterCountsOnly:
+        // у відповіді списку (skipPanelCounts=1) це нульові заглушки — тихе оновлення затирало ними справжні кількості.
         if (!append && !silentRefresh) {
           scheduleDeferredFilterPanelCounts();
         }

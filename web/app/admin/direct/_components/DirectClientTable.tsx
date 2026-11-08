@@ -99,6 +99,12 @@ const ACT_COLUMN_MIN_WIDTH_PX = 84;
 const NAME_COLUMN_MIN_WIDTH_PX = 165;
 /** Колонка «Статус»: найдовша назва статусу в один рядок (місце від прихованих «Продажі» / «Комунікація»). */
 const CALL_STATUS_COLUMN_MIN_WIDTH_PX = 205;
+/** «Майстер»: два імені в стовпчик (напр. «Олександра») без наїзду на «Дзвінки». */
+const RECORD_MASTER_COLUMN_MIN_WIDTH_PX = 90;
+/** «Телефон»: +380XXXXXXXXX моноширинним шрифтом без наїзду на «Дії». */
+const PHONE_COLUMN_MIN_WIDTH_PX = 108;
+/** «Дії»: кнопка «Записати» + олівець. */
+const ACTIONS_COLUMN_MIN_WIDTH_PX = 150;
 
 const DEFAULT_COLUMN_CONFIG: ColumnWidthConfig = {
   number: { width: 28, mode: 'min' },
@@ -116,9 +122,9 @@ const DEFAULT_COLUMN_CONFIG: ColumnWidthConfig = {
   consultation: { width: 110, mode: 'min' },
   consultMaster: { width: 72, mode: 'min' },
   record: { width: 100, mode: 'min' },
-  recordMaster: { width: 72, mode: 'min' },
-  phone: { width: 80, mode: 'min' },
-  actions: { width: 44, mode: 'min' },
+  recordMaster: { width: RECORD_MASTER_COLUMN_MIN_WIDTH_PX, mode: 'min' },
+  phone: { width: PHONE_COLUMN_MIN_WIDTH_PX, mode: 'min' },
+  actions: { width: ACTIONS_COLUMN_MIN_WIDTH_PX, mode: 'min' },
 };
 
 /** Локальний аліас — порядок у DIRECT_TABLE_COLUMN_KEYS */
@@ -629,6 +635,9 @@ export function DirectClientTable({
       if (k === 'callbackReminder') return Math.max(w, CALLBACK_REMINDER_COLUMN_MIN_WIDTH_PX);
       if (k === 'callStatus') return Math.max(w, CALL_STATUS_COLUMN_MIN_WIDTH_PX);
       if (k === 'state') return Math.max(w, STATE_MIN_WIDTH);
+      if (k === 'recordMaster') return Math.max(w, RECORD_MASTER_COLUMN_MIN_WIDTH_PX);
+      if (k === 'phone') return Math.max(w, PHONE_COLUMN_MIN_WIDTH_PX);
+      if (k === 'actions') return Math.max(w, ACTIONS_COLUMN_MIN_WIDTH_PX);
       if (k === 'consultation' || k === 'record') return Math.max(w, CONSULTATION_MIN_WIDTH);
       return w;
     });
