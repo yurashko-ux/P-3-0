@@ -1,4 +1,5 @@
 import { prisma } from "@/lib/prisma";
+import { ensureKrescoDocumentForPayment, isAltegioDisabled } from "@/lib/bank/kresco-payment-document";
 import { kvRead, kvWrite } from "@/lib/kv";
 import { sendMessage, answerCallbackQuery, editMessageText, deleteMessage } from "@/lib/telegram/api";
 import { TELEGRAM_ENV } from "@/lib/telegram/env";
@@ -1068,6 +1069,18 @@ async function markAltegioCreationError(bankStatementItemId: string, error: unkn
   return message;
 }
 
+/** Документ Креско після документа Altegio; помилка не ламає зведення — підхопить cron. */
+async function linkKrescoDocumentSafely(bankStatementItemId: string, createdBy?: string | null) {
+  try {
+    await ensureKrescoDocumentForPayment(bankStatementItemId, { createdBy });
+  } catch (error) {
+    console.warn("[payment-reconciliation-telegram] Документ Креско не створено, спробує cron:", {
+      bankStatementItemId,
+      error: error instanceof Error ? error.message : String(error),
+    });
+  }
+}
+
 /** Створює витрату в Altegio за збереженим Telegram-вибором статті (повторна спроба з адмінки). */
 export async function finalizePendingPaymentFromTelegram(params: {
   bankStatementItemId: string;
@@ -1098,12 +1111,23 @@ export async function finalizePendingPaymentFromTelegram(params: {
     return { ok: true, skipped: true, reason: "already_linked" as const };
   }
 
+  // Altegio вимкнено: зводимо платіж документом Креско за обраною статтею
+  if (isAltegioDisabled()) {
+    const kresco = await ensureKrescoDocumentForPayment(params.bankStatementItemId, {
+      fromPending: true,
+      createdBy: params.createdBy ?? "admin",
+    });
+    await deleteReconciledPaymentTelegramMessages(params.bankStatementItemId, { kinds: ["needs_review"] });
+    return { ok: true, skipped: false, result: null, kresco };
+  }
+
   const result = await createAltegioExpenseFromPendingPayment({
     bankStatementItemId: params.bankStatementItemId,
     comment: params.comment ?? null,
     createdAt: new Date(),
     createdBy: params.createdBy ?? "admin",
   });
+  await linkKrescoDocumentSafely(params.bankStatementItemId, params.createdBy ?? "admin");
 
   await deleteReconciledPaymentTelegramMessages(params.bankStatementItemId, {
     kinds: ["needs_review"],
@@ -1121,6 +1145,30 @@ async function createExpenseAndNotifyTelegram(params: {
   interactionMessageId?: number;
 }) {
   const botToken = getPaymentReconciliationBotToken();
+  if (isAltegioDisabled()) {
+    // Altegio вимкнено: документ лише в Креско
+    const kresco = await ensureKrescoDocumentForPayment(params.bankStatementItemId, {
+      fromPending: true,
+      createdBy: params.createdBy,
+    });
+    await clearCommentWaitForPayment(params.bankStatementItemId);
+    await deleteReconciledPaymentTelegramMessages(params.bankStatementItemId, {
+      kinds: ["needs_review", "match_proposal"],
+      logAction: "deleted_after_reconcile",
+    });
+    if (params.interactionMessageId != null) {
+      await deleteTelegramMessageSafe(params.chatId, params.interactionMessageId, botToken);
+    }
+    await sendMessage(
+      params.chatId,
+      "reason" in kresco && kresco.reason !== "exists"
+        ? `Не вдалося звести платіж у Креско (${escapeHtml(kresco.reason)}).`
+        : "✅ Платіж зведено в Креско.",
+      {},
+      botToken,
+    );
+    return null;
+  }
   try {
     const result = await createAltegioExpenseFromPendingPayment({
       bankStatementItemId: params.bankStatementItemId,
@@ -1128,6 +1176,7 @@ async function createExpenseAndNotifyTelegram(params: {
       createdAt: params.createdAt,
       createdBy: params.createdBy,
     });
+    await linkKrescoDocumentSafely(params.bankStatementItemId, params.createdBy);
     await clearCommentWaitForPayment(params.bankStatementItemId);
     await deleteReconciledPaymentTelegramMessages(params.bankStatementItemId, {
       kinds: ["needs_review", "match_proposal"],
@@ -2241,6 +2290,10 @@ export async function handleBankPaymentTelegramCallback(callback: {
         comment: automaticComment,
         createdBy: callback.from?.username || callback.from?.id?.toString() || "telegram",
       });
+      await linkKrescoDocumentSafely(
+        payload.bankStatementItemId,
+        callback.from?.username || callback.from?.id?.toString() || "telegram",
+      );
 
       await deleteReconciledPaymentTelegramMessages(payload.bankStatementItemId, {
         kinds: ["needs_review"],

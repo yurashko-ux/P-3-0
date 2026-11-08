@@ -199,6 +199,8 @@ export async function GET(req: NextRequest) {
             select: {
               status: true,
               altegioFinanceTransactionId: true,
+              financeDocumentId: true,
+              financeDocument: { select: { purposeTitle: true } },
               reconciliationNumber: true,
               matchedAt: true,
               altegioFinanceTransaction: {
@@ -277,6 +279,8 @@ export async function GET(req: NextRequest) {
             select: {
               status: true,
               altegioFinanceTransactionId: true,
+              financeDocumentId: true,
+              financeDocument: { select: { purposeTitle: true } },
               reconciliationNumber: true,
               matchedAt: true,
               altegioFinanceTransaction: {

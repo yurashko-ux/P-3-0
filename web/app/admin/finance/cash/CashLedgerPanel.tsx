@@ -10,6 +10,7 @@ import {
   CASH_RECONCILE_FROM_KYIV_DAY,
 } from "@/lib/finance/cash-openings";
 import { aggregateCashLedgerDayRows } from "@/lib/finance/cash-ledger-aggregate";
+import { ReconciledDot } from "./ReconciledDot";
 
 type SavedCount = {
   id: string;
@@ -182,6 +183,16 @@ export function CashLedgerPanel({
       });
   }, [rows, activeTitles, currencies]);
 
+  /** Час останньої касовки по кожній касі: платіж до неї — «зведений» */
+  const lastCountAt = useMemo(() => {
+    const map = new Map<string, number>();
+    for (const count of counts) {
+      const at = new Date(count.savedAt).getTime();
+      if (at > (map.get(count.accountTitle) ?? 0)) map.set(count.accountTitle, at);
+    }
+    return map;
+  }, [counts]);
+
   const visibleCounts = useMemo(
     () => counts.filter((count) => !activeTitles || activeTitles.has(count.accountTitle)),
     [counts, activeTitles],
@@ -258,18 +269,19 @@ export function CashLedgerPanel({
             {/* table-fixed + однакові ширини: колонки всіх днів стоять одна під одною */}
             <table className="w-full table-fixed text-left text-[10px]">
               <colgroup>
-                <col style={{ width: "6%" }} />
-                <col style={{ width: "17%" }} />
-                <col style={{ width: "19%" }} />
+                <col style={{ width: "5%" }} />
+                <col style={{ width: "5%" }} />
+                <col style={{ width: "16%" }} />
+                <col style={{ width: "18%" }} />
                 <col style={{ width: "8%" }} />
-                <col style={{ width: "14%" }} />
-                <col style={{ width: "14%" }} />
+                <col style={{ width: "13%" }} />
+                <col style={{ width: "13%" }} />
                 <col style={{ width: "5%" }} />
                 <col style={{ width: "17%" }} />
               </colgroup>
               <thead>
                 <tr className="bg-slate-300 text-[10px] text-gray-900">
-                  <th colSpan={5} className="px-2 py-1 text-left font-bold uppercase tracking-wide">
+                  <th colSpan={6} className="px-2 py-1 text-left font-bold uppercase tracking-wide">
                     {dayLabel(day.kyivDay)}
                     {day.balances.length > 0 ? (
                       <span className="ml-3 font-medium normal-case tracking-normal tabular-nums">
@@ -291,6 +303,7 @@ export function CashLedgerPanel({
                 </tr>
                 <tr className="bg-gray-50 text-[9px] uppercase text-gray-500">
                   <th className="px-2 py-1 font-medium">№</th>
+                  <th className="px-1 py-1 text-center font-medium" title="Чи була касовка після платежу">Зв.</th>
                   <th className="px-2 py-1 font-medium">Клієнт</th>
                   <th className="px-2 py-1 font-medium">Призначення</th>
                   <th className="px-2 py-1 font-medium">Час</th>
@@ -308,6 +321,13 @@ export function CashLedgerPanel({
                   return (
                     <tr key={row.id} className="border-t border-gray-100">
                       <td className="px-2 py-1 tabular-nums text-gray-500">{index + 1}</td>
+                      <td className="px-1 py-1 text-center">
+                        <ReconciledDot
+                          done={new Date(row.occurredAt).getTime() <= (lastCountAt.get(row.accountTitle) ?? 0)}
+                          doneTitle="Після платежу була касовка"
+                          openTitle="Після платежу касовки ще не було"
+                        />
+                      </td>
                       <td className="break-words px-2 py-1 text-gray-800">{row.clientName || "—"}</td>
                       {/* Довгий опис не роздуває рядок: один рядок, повний текст — при наведенні */}
                       <td className="truncate px-2 py-1 text-left text-gray-700" title={row.title || undefined}>{row.title}</td>

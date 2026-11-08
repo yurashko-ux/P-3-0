@@ -7,6 +7,7 @@ import { syncBankOutgoingStatementsForReconciliation, refreshStaleHoldBankStatem
 import { reconcileBankAltegioPayments } from "@/lib/bank/altegio-payment-reconcile";
 import { processOutgoingBankPaymentsHoldFinalized } from "@/lib/bank/payment-reconciliation-telegram";
 import { importAltegioPaymentPurposes } from "@/lib/altegio/payment-purpose-import";
+import { ensureKrescoDocumentsForReconciledPayments } from "@/lib/bank/kresco-payment-document";
 import { processPendingIncomingAcquiringCommissions, processPendingOutgoingTerminalRkoFees } from "@/lib/bank/automatic-altegio-payments";
 
 export const dynamic = "force-dynamic";
@@ -59,6 +60,8 @@ export async function POST(req: NextRequest) {
     const holdFinalizedIds = [...new Set([...staleHolds.holdFinalizedIds, ...bank.holdFinalizedIds])];
     const holdFinalized = await processOutgoingBankPaymentsHoldFinalized(holdFinalizedIds);
     const reconcile = await reconcileBankAltegioPayments({ from: dateFrom, to: dateTo, limit: 500 });
+    // Документи Креско для зведених платежів (перехідний період: Altegio + Креско)
+    const krescoDocuments = await ensureKrescoDocumentsForReconciledPayments(100);
     const automaticAcquiring = await processPendingIncomingAcquiringCommissions({
       lookbackDays: 3,
       limit: 20,
@@ -78,6 +81,7 @@ export async function POST(req: NextRequest) {
       bank,
       holdFinalized,
       reconcile,
+      krescoDocuments,
       automaticAcquiring,
       automaticTerminal,
     });

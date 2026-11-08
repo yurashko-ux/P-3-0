@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
+import { ReconciledDot } from "./ReconciledDot";
 
 type StatementRow = {
   id: string;
@@ -9,6 +10,9 @@ type StatementRow = {
   balance: number | null;
   counterName: string;
   title: string;
+  /** Опис із банку — у підказці, якщо призначення обрав адмін */
+  bankTitle?: string;
+  reconciled?: boolean;
 };
 
 function money(n: number): string {
@@ -109,15 +113,16 @@ export function BankAccountPanel({
               <table className="w-full table-fixed text-left text-[10px]">
                 <colgroup>
                   <col style={{ width: "4%" }} />
-                  <col style={{ width: "28%" }} />
-                  <col style={{ width: "42%" }} />
+                  <col style={{ width: "5%" }} />
+                  <col style={{ width: "27%" }} />
+                  <col style={{ width: "38%" }} />
                   <col style={{ width: "8%" }} />
                   <col style={{ width: "4%" }} />
                   <col style={{ width: "14%" }} />
                 </colgroup>
                 <thead>
                   <tr className="bg-slate-300 text-[10px] text-gray-900">
-                    <th colSpan={4} className="px-2 py-1 text-left font-bold uppercase tracking-wide">
+                    <th colSpan={5} className="px-2 py-1 text-left font-bold uppercase tracking-wide">
                       {dayLabel(day.kyivDay)}
                       {day.balance != null ? (
                         <span className="ml-3 font-medium normal-case tracking-normal tabular-nums">
@@ -134,6 +139,7 @@ export function BankAccountPanel({
                   </tr>
                   <tr className="bg-gray-50 text-[9px] uppercase text-gray-500">
                     <th className="px-2 py-1 font-medium">№</th>
+                    <th className="px-1 py-1 text-center font-medium" title="Зведено з Альтеджіо">Зв.</th>
                     <th className="px-2 py-1 font-medium">Контрагент</th>
                     <th className="px-2 py-1 font-medium">Призначення</th>
                     <th className="px-2 py-1 font-medium">Час</th>
@@ -147,10 +153,20 @@ export function BankAccountPanel({
                     return (
                       <tr key={row.id} className="border-t border-gray-100">
                         <td className="px-2 py-1 tabular-nums text-gray-500">{index + 1}</td>
+                        <td className="px-1 py-1 text-center">
+                          <ReconciledDot done={Boolean(row.reconciled)} doneTitle="Зведено" openTitle="Не зведено" />
+                        </td>
                         <td className="truncate px-2 py-1 text-gray-800" title={row.counterName || undefined}>
                           {row.counterName || "—"}
                         </td>
-                        <td className="truncate px-2 py-1 text-gray-700" title={row.title || undefined}>
+                        <td
+                          className="truncate px-2 py-1 text-gray-700"
+                          title={
+                            row.bankTitle && row.bankTitle !== row.title
+                              ? `${row.title}\nБанк: ${row.bankTitle}`
+                              : row.title || undefined
+                          }
+                        >
                           {row.title || "—"}
                         </td>
                         <td className="whitespace-nowrap px-2 py-1 tabular-nums text-gray-600">{timeLabel(row.time)}</td>

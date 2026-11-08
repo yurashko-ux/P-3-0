@@ -9,6 +9,7 @@ import { isCashAltegioAccount } from "@/lib/bank/incoming-reconcile-matching";
 import { extractCurrencyAmountFromComment } from "@/lib/finance/encashment-account-bucket";
 import { isDepositTopUpPaymentPurpose } from "@/lib/altegio/payment-purpose-labels";
 import { isEurCashAccountTitle, isUsdCashAccountTitle } from "@/lib/journal/checkout";
+import { BANK_DOCUMENT_SOURCE } from "@/lib/bank/bank-document-source";
 import {
   CASH_LEDGER_HISTORY_FROM_KYIV_DAY,
   CASH_OPENING_KYIV_DAY,
@@ -168,7 +169,8 @@ export async function loadCashBookMovements(
     }),
     prisma.financeDocument.findMany({
       where: {
-        source: "kresco",
+        // Ручні документи Каси і документи зі зведення банку
+        source: { in: ["kresco", BANK_DOCUMENT_SOURCE] },
         status: { not: "void" },
         kyivDay: { gt: afterKyivDay },
         OR: [{ accountId: { in: ids } }, { counterAccountId: { in: ids } }],
@@ -189,6 +191,7 @@ export async function loadCashBookMovements(
         title: true,
         purposeTitle: true,
         altegioTransactionId: true,
+        altegioCounterTransactionId: true,
       },
     }),
   ]);
@@ -228,6 +231,7 @@ export async function loadCashBookMovements(
       direction: "in" | "out",
       title: string | null | undefined,
       fxAmount: number | null,
+      altegioTransactionId: number | null,
     ) => {
       const id = Number(accountId) || 0;
       const account = byId.get(id);
@@ -247,14 +251,22 @@ export async function loadCashBookMovements(
         occurredAt: doc.occurredAt,
         title: label,
         recordId: null,
-        altegioTransactionId: doc.altegioTransactionId ?? null,
+        // Та сама операція Altegio не рахується вдруге (переміщення: друга нога має свій номер)
+        altegioTransactionId,
       });
     };
-    if (doc.type === "income") push(doc.accountId, "in", doc.accountTitle, doc.amountFx);
-    else if (doc.type === "expense") push(doc.accountId, "out", doc.accountTitle, doc.amountFx);
+    const sourceAltegioId = doc.altegioTransactionId ?? null;
+    if (doc.type === "income") push(doc.accountId, "in", doc.accountTitle, doc.amountFx, sourceAltegioId);
+    else if (doc.type === "expense") push(doc.accountId, "out", doc.accountTitle, doc.amountFx, sourceAltegioId);
     else if (doc.type === "transfer") {
-      push(doc.accountId, "out", doc.accountTitle, doc.amountFx);
-      push(doc.counterAccountId, "in", doc.counterAccountTitle, doc.counterAmountFx);
+      push(doc.accountId, "out", doc.accountTitle, doc.amountFx, sourceAltegioId);
+      push(
+        doc.counterAccountId,
+        "in",
+        doc.counterAccountTitle,
+        doc.counterAmountFx,
+        doc.altegioCounterTransactionId ?? sourceAltegioId,
+      );
     }
   }
 

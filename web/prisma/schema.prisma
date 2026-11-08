@@ -905,6 +905,8 @@ model FinanceDocument {
   createdAt                   DateTime @default(now())
   updatedAt                   DateTime @updatedAt
 
+  bankPaymentMatch            BankAltegioPaymentMatch?
+
   @@index([type])
   @@index([status])
   @@index([syncStatus])
@@ -1572,6 +1574,8 @@ model BankAltegioPaymentMatch {
   id                          String    @id @default(uuid())
   bankStatementItemId         String    @unique
   altegioFinanceTransactionId String?   @unique
+  /// Документ Креско (Розхід / Переміщення) для цього платежу; з ним платіж зведений і без Altegio
+  financeDocumentId           String?   @unique
   status                      String    @default("needs_review") // auto_matched | manual_matched | needs_review | conflict | ignored | awaiting_altegio_document
   matchType                   String    @default("system") // auto | manual | telegram | system
   matchScore                  Int?
@@ -1588,6 +1592,7 @@ model BankAltegioPaymentMatch {
 
   bankStatementItem         BankStatementItem           @relation(fields: [bankStatementItemId], references: [id], onDelete: Cascade)
   altegioFinanceTransaction AltegioFinanceTransaction?  @relation(fields: [altegioFinanceTransactionId], references: [id], onDelete: SetNull)
+  financeDocument           FinanceDocument?            @relation(fields: [financeDocumentId], references: [id], onDelete: SetNull)
   pendingPayments           BankAltegioPendingPayment[]
 
   @@index([status])

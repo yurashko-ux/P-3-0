@@ -113,6 +113,8 @@ const LINKED_RECONCILE_STATUSES = ["auto_matched", "manual_matched"] as const;
 export type BankPaymentMatchReconcileSnapshot = {
   status?: string | null;
   altegioFinanceTransactionId?: string | null;
+  /** Документ Креско: платіж зведений і без операції Altegio */
+  financeDocumentId?: string | null;
   reconciliationNumber?: number | null;
   matchedAt?: Date | string | null;
 };
@@ -121,7 +123,7 @@ export type BankPaymentMatchReconcileSnapshot = {
 export function isReconciledBankPaymentMatch(
   match: BankPaymentMatchReconcileSnapshot | null | undefined,
 ): boolean {
-  if (!match?.altegioFinanceTransactionId) return false;
+  if (!match?.altegioFinanceTransactionId && !match?.financeDocumentId) return false;
   if (match.status === "ignored") return false;
   return true;
 }
@@ -133,6 +135,7 @@ export type BankPaymentExpenseArticleMatch = BankPaymentMatchReconcileSnapshot &
     expenseId: number | null;
   } | null;
   pendingPayments?: Array<{ purposeTitle: string }> | null;
+  financeDocument?: { purposeTitle: string | null } | null;
 };
 
 /** Стаття витрат для зведеного платежу (як колонка «Стаття» у вкладці Платежі). */
@@ -140,6 +143,10 @@ export function resolveBankPaymentExpenseArticle(
   match: BankPaymentExpenseArticleMatch | null | undefined,
 ): string | null {
   if (!isReconciledBankPaymentMatch(match)) return null;
+
+  // Документ Креско — головне джерело статті; Altegio лише запас на перехідний період
+  const krescoTitle = match?.financeDocument?.purposeTitle?.trim();
+  if (krescoTitle) return krescoTitle;
 
   const altegio = match?.altegioFinanceTransaction;
   if (altegio) {
