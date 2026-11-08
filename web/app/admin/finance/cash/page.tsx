@@ -51,10 +51,24 @@ function tileTint(tile: CashTile, index: number): string {
   if (tile.cash) {
     if (tile.currency === "USD") return "#e5f2e9";
     if (tile.currency === "EUR") return "#e6eef8";
-    return "#e7eef6";
+    return "#f6efdf";
   }
   const bank = ["#f3f5f8", "#f6f3ee", "#f2f6f3", "#f5f3f7", "#f2f4f6"];
   return bank[index % bank.length];
+}
+
+/** Той самий колір, темніший: рамка обраної плитки. */
+function deeperTint(hex: string): string {
+  const value = hex.replace("#", "");
+  const channel = (index: number) => Math.round(parseInt(value.slice(index, index + 2), 16) * 0.8);
+  return `rgb(${channel(0)}, ${channel(2)}, ${channel(4)})`;
+}
+
+/** Квадрат касовки: той самий відтінок, що плитка, трохи насиченіший. */
+function countButtonTint(tile: CashTile): string {
+  if (tile.currency === "USD") return "#cfe6d7";
+  if (tile.currency === "EUR") return "#d0dff2";
+  return "#ead9b4";
 }
 
 const tileFaceClass =
@@ -92,7 +106,8 @@ function TileFace({ tile }: { tile: CashTile }) {
   const book = bookAmount(tile);
   return (
     <>
-      <span className="text-[10px] font-medium text-gray-700 leading-tight">{tile.title}</span>
+      {/* Назву каси показує символ валюти в квадраті касовки; рахунки ФОП лишаються з назвою */}
+      {tile.cash ? null : <span className="text-[10px] font-medium text-gray-700 leading-tight">{tile.title}</span>}
       {tile.openingPending ? (
         <span className="mt-1 text-[11px] text-gray-500">Початковий залишок ще не заданий</span>
       ) : !tile.cash && !tile.hasBank ? (
@@ -100,14 +115,17 @@ function TileFace({ tile }: { tile: CashTile }) {
       ) : tile.balanceFx != null ? (
         <>
           <span className="mt-0.5 text-sm font-semibold tabular-nums text-gray-900">
-            {money(tile.balanceFx)} {fxSymbol(tile.currency)}
+            {/* Валюту каси показує квадрат касовки — після суми її не пишемо */}
+            {money(tile.balanceFx)}
           </span>
           <LastCountLine tile={tile} />
           <VarianceLine tile={tile} />
         </>
       ) : (
         <>
-          <span className="mt-0.5 text-sm font-semibold tabular-nums text-gray-900">{money(book || 0)} грн</span>
+          <span className="mt-0.5 text-sm font-semibold tabular-nums text-gray-900">{money(book || 0)}
+            {tile.cash ? "" : " грн"}
+          </span>
           <LastCountLine tile={tile} />
           <VarianceLine tile={tile} />
         </>
@@ -131,7 +149,14 @@ export default function CashBalancesPage() {
   /** Місце в панелі Фінансів після «Звіт» */
   const [headerSlot, setHeaderSlot] = useState<HTMLElement | null>(null);
   /** Безготівковий рахунок, рухи якого показуємо замість готівки */
-  const [bankTile, setBankTile] = useState<CashTile | null>(null);
+  /** Обрані плитки: натискання додає або знімає плитку, кілька можна обрати разом */
+  const [selectedIds, setSelectedIds] = useState<number[]>([]);
+  const toggleTile = (id: number) =>
+    setSelectedIds((prev) => (prev.includes(id) ? prev.filter((value) => value !== id) : [...prev, id]));
+  const selectedBankTiles = tiles.filter((tile) => !tile.cash && tile.hasBank && selectedIds.includes(tile.id));
+  const selectedCashTitles = tiles
+    .filter((tile) => isCashTill(tile) && selectedIds.includes(tile.id))
+    .map((tile) => tile.title);
   const [documentType, setDocumentType] = useState<CashDocumentType | null>(null);
   const [accountsOpen, setAccountsOpen] = useState(false);
 
@@ -241,16 +266,17 @@ export default function CashBalancesPage() {
           const face = <TileFace tile={tile} />;
           const tint = tileTint(tile, index);
           if (!tile.cash && tile.hasBank) {
-            const selected = bankTile?.id === tile.id;
+            const selected = selectedIds.includes(tile.id);
             return (
               <button
                 key={tile.id}
                 type="button"
-                className={`${tileButtonClass} ${selected ? "ring-2 ring-blue-500" : ""}`}
-                style={{ background: tint }}
+                className={tileButtonClass}
+                style={{ background: tint, boxShadow: selected ? `0 0 0 2px ${deeperTint(tint)}` : undefined }}
                 aria-label={`Рухи рахунку ${tile.title}`}
+                aria-pressed={selected}
                 title="Показати рухи рахунку"
-                onClick={() => setBankTile(selected ? null : tile)}
+                onClick={() => toggleTile(tile.id)}
               >
                 {face}
               </button>
@@ -263,17 +289,32 @@ export default function CashBalancesPage() {
               </div>
             );
           }
+          // Плитка каси: натискання показує її рухи, маленький квадрат у куті — касовка
+          const selected = selectedIds.includes(tile.id);
           return (
-            <button
-              key={tile.id}
-              type="button"
-              className={tileButtonClass}
-              style={{ background: tint }}
-              aria-label={`Перерахунок ${tile.title}`}
-              onClick={() => setCountTile(tile)}
-            >
-              {face}
-            </button>
+            <div key={tile.id} className="relative">
+              <button
+                type="button"
+                className={tileButtonClass}
+                style={{ background: tint, boxShadow: selected ? `0 0 0 2px ${deeperTint(countButtonTint(tile))}` : undefined }}
+                aria-label={`Рухи каси ${tile.title}`}
+                aria-pressed={selected}
+                title="Показати рухи каси"
+                onClick={() => toggleTile(tile.id)}
+              >
+                {face}
+              </button>
+              <button
+                type="button"
+                className="absolute bottom-1.5 right-1.5 flex h-6 w-6 items-center justify-center text-[15px] font-semibold leading-none text-gray-700 rounded-md border border-slate-300/80 shadow-[0_1px_2px_rgba(15,23,42,0.08)] transition hover:brightness-95 active:scale-95"
+                style={{ background: countButtonTint(tile) }}
+                aria-label={`Касовка ${tile.title}`}
+                title="Касовка"
+                onClick={() => setCountTile(tile)}
+              >
+                {tile.currency === "USD" ? "$" : tile.currency === "EUR" ? "€" : "₴"}
+              </button>
+            </div>
           );
         })}
         {/* Плитка «+ Рахунок»: картка доходу, розходу чи переміщення */}
@@ -286,16 +327,22 @@ export default function CashBalancesPage() {
           <span className="text-sm font-semibold text-gray-800">+ Рахунок</span>
         </button>
       </div>
-      {bankTile ? (
-        <BankAccountPanel
-          accountId={bankTile.id}
-          accountTitle={bankTile.title}
+      {/* Готівка показується, якщо не обрано лише ФОП-и; кожен обраний ФОП — своєю таблицею нижче */}
+      {selectedBankTiles.length === 0 || selectedCashTitles.length > 0 ? (
+        <CashLedgerPanel
           reloadToken={ledgerReload}
-          onClose={() => setBankTile(null)}
+          onCountsChanged={() => void load()}
+          accountTitles={selectedCashTitles}
         />
-      ) : (
-        <CashLedgerPanel reloadToken={ledgerReload} onCountsChanged={() => void load()} />
-      )}
+      ) : null}
+      {selectedBankTiles.map((tile) => (
+        <BankAccountPanel
+          key={tile.id}
+          accountId={tile.id}
+          accountTitle={tile.title}
+          reloadToken={ledgerReload}
+        />
+      ))}
       {documentType && (
         <CashDocumentModal
           type={documentType}

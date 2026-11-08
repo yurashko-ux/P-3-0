@@ -88,8 +88,11 @@ function rowTimeLabel(row: LedgerRow): string {
 export function CashLedgerPanel({
   reloadToken = 0,
   onCountsChanged,
+  accountTitles = [],
 }: {
   reloadToken?: number;
+  /** Обрані плитки кас: показуємо лише їхні рухи; порожньо — фільтр зі списку або всі */
+  accountTitles?: string[];
   /** Касовку видалено — плитки треба перечитати */
   onCountsChanged?: () => void;
 }) {
@@ -100,6 +103,12 @@ export function CashLedgerPanel({
   const [deletingId, setDeletingId] = useState<string | null>(null);
   /** Фільтр по рахунку (назва каси Altegio); "" — усі рахунки */
   const [accountFilter, setAccountFilter] = useState("");
+  /** Плитки мають перевагу над списком «Усі рахунки»; null — без фільтра */
+  const tilesKey = accountTitles.join("|");
+  const activeTitles = useMemo(() => {
+    if (tilesKey) return new Set(tilesKey.split("|"));
+    return accountFilter ? new Set([accountFilter]) : null;
+  }, [tilesKey, accountFilter]);
 
   useEffect(() => {
     let cancelled = false;
@@ -138,15 +147,15 @@ export function CashLedgerPanel({
 
   /** Валюти, для яких показуємо залишок: усі або валюта вибраного рахунку */
   const currencies = useMemo(() => {
-    if (!accountFilter) return CASH_CURRENCIES;
+    if (!activeTitles) return CASH_CURRENCIES;
     const own = new Set<string>();
-    for (const row of rows) if (row.accountTitle === accountFilter) own.add(row.currency);
-    for (const count of counts) if (count.accountTitle === accountFilter) own.add(count.currency);
+    for (const row of rows) if (activeTitles.has(row.accountTitle)) own.add(row.currency);
+    for (const count of counts) if (activeTitles.has(count.accountTitle)) own.add(count.currency);
     return CASH_CURRENCIES.filter((currency) => own.has(currency));
-  }, [rows, counts, accountFilter]);
+  }, [rows, counts, activeTitles]);
 
   const days = useMemo(() => {
-    const visibleRows = rows.filter((row) => !accountFilter || row.accountTitle === accountFilter);
+    const visibleRows = rows.filter((row) => !activeTitles || activeTitles.has(row.accountTitle));
     return [...new Set(visibleRows.map((row) => row.kyivDay))]
       .sort((a, b) => b.localeCompare(a))
       .map((kyivDay) => {
@@ -171,11 +180,11 @@ export function CashLedgerPanel({
           rows: aggregateCashLedgerDayRows(visibleRows.filter((row) => row.kyivDay === kyivDay)),
         };
       });
-  }, [rows, accountFilter, currencies]);
+  }, [rows, activeTitles, currencies]);
 
   const visibleCounts = useMemo(
-    () => counts.filter((count) => !accountFilter || count.accountTitle === accountFilter),
-    [counts, accountFilter],
+    () => counts.filter((count) => !activeTitles || activeTitles.has(count.accountTitle)),
+    [counts, activeTitles],
   );
 
   async function removeCount(count: SavedCount) {

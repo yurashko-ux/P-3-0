@@ -45,12 +45,10 @@ export function BankAccountPanel({
   accountId,
   accountTitle,
   reloadToken,
-  onClose,
 }: {
   accountId: number;
   accountTitle: string;
   reloadToken: number;
-  onClose: () => void;
 }) {
   const [rows, setRows] = useState<StatementRow[]>([]);
   const [loading, setLoading] = useState(true);
@@ -96,13 +94,8 @@ export function BankAccountPanel({
   }, [rows]);
 
   return (
-    <div className="space-y-2">
-      <div className="flex items-center gap-2 text-xs">
-        <span className="font-semibold text-gray-900">Рухи рахунку: {accountTitle}</span>
-        <button type="button" className="btn btn-outline btn-xs h-6 min-h-0 px-2 text-[10px]" onClick={onClose}>
-          До готівки
-        </button>
-      </div>
+    // Ширина як у таблиці готівки: ліва колонка 2/3 (сітка 2fr/1fr з проміжком 0.5rem)
+    <div className="space-y-2 md:w-[calc((100%-0.5rem)*2/3)]" aria-label={`Рухи рахунку ${accountTitle}`}>
       {error ? (
         <div className="rounded border border-red-200 bg-red-50 px-3 py-2 text-xs text-red-800">{error}</div>
       ) : loading && rows.length === 0 ? (
