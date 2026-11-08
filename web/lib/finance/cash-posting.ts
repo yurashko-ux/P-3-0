@@ -31,6 +31,9 @@ export type CashBookMovement = {
   title: string;
   recordId: number | null;
   altegioTransactionId: number | null;
+  /** Переміщення: з якого рахунку на який */
+  transferFrom?: string | null;
+  transferTo?: string | null;
 };
 
 export type CashLedgerCount = {
@@ -57,6 +60,9 @@ export type CashLedgerRow = {
   clientName: string;
   recordId: number | null;
   posted: boolean;
+  /** Переміщення: з якого рахунку на який */
+  transferFrom?: string | null;
+  transferTo?: string | null;
   /** Сума валюти взята за курсом дня (у коментарі Altegio її не було); null — точна сума */
   fxRate?: number | null;
   count: CashLedgerCount | null;
@@ -253,6 +259,8 @@ export async function loadCashBookMovements(
         recordId: null,
         // Та сама операція Altegio не рахується вдруге (переміщення: друга нога має свій номер)
         altegioTransactionId,
+        transferFrom: doc.type === "transfer" ? doc.accountTitle?.trim() || null : null,
+        transferTo: doc.type === "transfer" ? doc.counterAccountTitle?.trim() || null : null,
       });
     };
     const sourceAltegioId = doc.altegioTransactionId ?? null;
@@ -552,6 +560,8 @@ export async function listCashLedger(): Promise<CashLedgerRow[]> {
       title: movement.sourceType === "checkout_payment" ? "Оплата запису" : movement.title,
       clientName: movement.sourceType === "checkout_payment" ? movement.title : "",
       recordId: movement.recordId,
+      transferFrom: movement.transferFrom ?? null,
+      transferTo: movement.transferTo ?? null,
       posted: Boolean(posting) || movement.kyivDay < CASH_RECONCILE_FROM_KYIV_DAY,
       count: count
         ? {

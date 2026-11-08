@@ -3,7 +3,7 @@
 import { Fragment, useEffect, useMemo, useState } from "react";
 import { ReconciledDot, type ReconcileStatus } from "./ReconciledDot";
 
-type LinkedDocument = {
+export type LinkedDocument = {
   id: string;
   kind: "kresco" | "altegio" | "fee" | "visit" | "payment" | "deposit";
   title: string;
@@ -11,7 +11,7 @@ type LinkedDocument = {
   kyivDay: string;
 };
 
-type StatementRow = {
+export type StatementRow = {
   id: string;
   time: string;
   amount: number;
@@ -20,6 +20,9 @@ type StatementRow = {
   title: string;
   /** Опис із банку — у підказці, якщо призначення обрав адмін */
   bankTitle?: string;
+  /** Переміщення: з якого рахунку на який */
+  transferFrom?: string | null;
+  transferTo?: string | null;
   status: ReconcileStatus;
   /** Скільки не вистачає документів до суми платежу (часткове зведення) */
   missing: number;
@@ -29,7 +32,7 @@ type StatementRow = {
 };
 
 /** Документ Креско на рахунку без банківського платежу */
-type UnlinkedDocument = {
+export type UnlinkedDocument = {
   id: string;
   time: string;
   kyivDay: string;
@@ -38,7 +41,7 @@ type UnlinkedDocument = {
   comment: string;
 };
 
-const DOCUMENT_KIND_LABEL: Record<LinkedDocument["kind"], string> = {
+export const DOCUMENT_KIND_LABEL: Record<LinkedDocument["kind"], string> = {
   kresco: "Документ Креско",
   altegio: "Операція Altegio",
   fee: "Документ комісії",
@@ -54,7 +57,26 @@ function money(n: number): string {
   });
 }
 
-function kyivDayOf(iso: string): string {
+/**
+ * Переміщення — лише «з якого рахунку → на який», без слова «Переміщення», напр. «ФОП Петруш → Каса».
+ * Без даних документа: вихідне — з рахунку рядка, вхідне — на рахунок рядка.
+ */
+export function transferTitle(
+  title: string,
+  transfer: { transferFrom?: string | null; transferTo?: string | null },
+  incoming: boolean,
+  ownAccount: string,
+): string | null {
+  if (!/переміщ/i.test(title)) return null;
+  const from = transfer.transferFrom?.trim() || (incoming ? "" : ownAccount);
+  const to = transfer.transferTo?.trim() || (incoming ? ownAccount : "");
+  if (from && to) return `${from} → ${to}`;
+  if (to) return `→ ${to}`;
+  // Старі переміщення лише з Altegio: рахунку призначення в даних немає
+  return from ? `${from} →` : null;
+}
+
+export function kyivDayOf(iso: string): string {
   return new Intl.DateTimeFormat("en-CA", {
     timeZone: "Europe/Kyiv",
     year: "numeric",
@@ -166,10 +188,10 @@ export function BankAccountPanel({
                 <colgroup>
                   <col style={{ width: "4%" }} />
                   <col style={{ width: "5%" }} />
+                  <col style={{ width: "4%" }} />
                   <col style={{ width: "27%" }} />
                   <col style={{ width: "38%" }} />
                   <col style={{ width: "8%" }} />
-                  <col style={{ width: "4%" }} />
                   <col style={{ width: "14%" }} />
                 </colgroup>
                 <thead>
@@ -198,10 +220,10 @@ export function BankAccountPanel({
                   <tr className="bg-gray-50 text-[9px] uppercase text-gray-500">
                     <th className="px-2 py-1 font-medium">№</th>
                     <th className="px-1 py-1 text-center font-medium" title="Зведено з документами">Зв.</th>
+                    <th className="px-2 py-1 font-medium">Тип</th>
                     <th className="px-2 py-1 font-medium">Контрагент</th>
                     <th className="px-2 py-1 font-medium">Призначення</th>
                     <th className="px-2 py-1 font-medium">Час</th>
-                    <th className="px-2 py-1 font-medium">Тип</th>
                     <th className="px-2 py-1 text-right font-medium">Сума</th>
                   </tr>
                 </thead>
@@ -224,6 +246,9 @@ export function BankAccountPanel({
                               onClick={canExpand ? () => toggle(row.id) : undefined}
                             />
                           </td>
+                          <td className={`px-2 py-1 font-semibold ${incoming ? "text-green-700" : "text-red-600"}`}>
+                            {incoming ? "↓" : "↑"}
+                          </td>
                           <td className="truncate px-2 py-1 text-gray-800" title={row.counterName || undefined}>
                             {row.counterName || "—"}
                           </td>
@@ -235,12 +260,9 @@ export function BankAccountPanel({
                                 : row.title || undefined
                             }
                           >
-                            {row.title || "—"}
+                            {transferTitle(row.title, row, incoming, accountTitle) ?? (row.title || "—")}
                           </td>
                           <td className="whitespace-nowrap px-2 py-1 tabular-nums text-gray-600">{timeLabel(row.time)}</td>
-                          <td className={`px-2 py-1 font-semibold ${incoming ? "text-green-700" : "text-red-600"}`}>
-                            {incoming ? "↓" : "↑"}
-                          </td>
                           <td
                             className={`whitespace-nowrap px-2 py-1 text-right font-semibold tabular-nums ${
                               incoming ? "text-gray-900" : "text-red-600"
@@ -255,6 +277,7 @@ export function BankAccountPanel({
                               <tr key={doc.id} className="bg-slate-50/70 text-gray-600">
                                 <td />
                                 <td className="px-1 py-0.5 text-center text-gray-400">↳</td>
+                                <td />
                                 <td className="truncate px-2 py-0.5 italic" title={DOCUMENT_KIND_LABEL[doc.kind]}>
                                   {DOCUMENT_KIND_LABEL[doc.kind]}
                                 </td>
@@ -262,7 +285,6 @@ export function BankAccountPanel({
                                   {doc.title}
                                 </td>
                                 <td className="whitespace-nowrap px-2 py-0.5 tabular-nums">{dayLabel(doc.kyivDay).slice(0, 5)}</td>
-                                <td />
                                 <td className="whitespace-nowrap px-2 py-0.5 text-right tabular-nums">{money(doc.amount)} грн</td>
                               </tr>
                             ))}
@@ -302,12 +324,12 @@ export function BankAccountPanel({
                           title="Документ без банківського платежу"
                         />
                       </td>
+                      <td />
                       <td className="truncate px-2 py-1 italic">Документ Креско</td>
                       <td className="truncate px-2 py-1" title={doc.comment ? `${doc.title}\n${doc.comment}` : doc.title}>
                         {doc.title} · <span className="italic">без платежу</span>
                       </td>
                       <td className="whitespace-nowrap px-2 py-1 tabular-nums">{timeLabel(doc.time)}</td>
-                      <td />
                       <td className="whitespace-nowrap px-2 py-1 text-right italic tabular-nums">{money(doc.amount)} грн</td>
                     </tr>
                   ))}

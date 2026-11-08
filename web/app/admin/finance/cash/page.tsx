@@ -327,15 +327,16 @@ export default function CashBalancesPage() {
           <span className="text-sm font-semibold text-gray-800">+ Рахунок</span>
         </button>
       </div>
-      {/* Готівка показується, якщо не обрано лише ФОП-и; кожен обраний ФОП — своєю таблицею нижче */}
+      {/* Каса разом із ФОП — одна таблиця по днях з однією сумою дня; лише ФОП-и — кожен своєю таблицею */}
       {selectedBankTiles.length === 0 || selectedCashTitles.length > 0 ? (
         <CashLedgerPanel
           reloadToken={ledgerReload}
           onCountsChanged={() => void load()}
           accountTitles={selectedCashTitles}
+          bankAccounts={selectedBankTiles.map((tile) => ({ id: tile.id, title: tile.title }))}
         />
       ) : null}
-      {selectedBankTiles.map((tile) => (
+      {selectedCashTitles.length === 0 && selectedBankTiles.map((tile) => (
         <BankAccountPanel
           key={tile.id}
           accountId={tile.id}

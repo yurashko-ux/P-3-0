@@ -79,7 +79,17 @@ export async function GET(req: NextRequest) {
             status: true,
             altegioFinanceTransactionId: true,
             financeDocumentId: true,
-            financeDocument: { select: { id: true, purposeTitle: true, amountUah: true, kyivDay: true } },
+            financeDocument: {
+              select: {
+                id: true,
+                purposeTitle: true,
+                amountUah: true,
+                kyivDay: true,
+                type: true,
+                accountTitle: true,
+                counterAccountTitle: true,
+              },
+            },
             altegioFinanceTransaction: {
               select: {
                 altegioId: true,
@@ -105,12 +115,19 @@ export async function GET(req: NextRequest) {
       const bankAmount = kopToUah(item.amount);
       const documents: LinkedDocument[] = [];
       let article: string | null = null;
+      /** Переміщення: з якого рахунку на який (з документа Креско) */
+      let transferFrom: string | null = null;
+      let transferTo: string | null = null;
       let reconciledInBank = false;
 
       const match = item.altegioPaymentMatch;
       if (isReconciledBankPaymentMatch(match)) {
         reconciledInBank = true;
         article = resolveBankPaymentExpenseArticle(match);
+        if (match?.financeDocument?.type === "transfer") {
+          transferFrom = match.financeDocument.accountTitle?.trim() || null;
+          transferTo = match.financeDocument.counterAccountTitle?.trim() || null;
+        }
         if (match?.financeDocument) {
           documents.push({
             id: match.financeDocument.id,
@@ -178,6 +195,8 @@ export async function GET(req: NextRequest) {
         // Стаття з розділу Банк; якщо її немає — опис із банку
         title: article || bankTitle,
         bankTitle,
+        transferFrom,
+        transferTo,
         status,
         missing: status === "partial" ? missing : 0,
         documents,
@@ -257,17 +276,24 @@ export async function GET(req: NextRequest) {
         const missing = Math.round((bankSum + feeSum - visitsSum) * 100) / 100;
         const status: "full" | "partial" | "none" =
           visits.length === 0 ? "none" : Math.abs(missing) < FULL_TOLERANCE_UAH ? "full" : "partial";
-        // Оплати показуємо під першим зарахуванням дня, інші рядки посилаються на нього
+        // Оплати показуємо під першим зарахуванням дня, інші рядки посилаються на нього точно:
+        // назва + дата й час банку (еквайринг часто зараховано наступного дня)
+        const rowRef = (row: (typeof groupRows)[number]) => {
+          const at = new Date(row.time);
+          const date = at.toLocaleDateString("uk-UA", { timeZone: "Europe/Kyiv", day: "2-digit", month: "2-digit" });
+          const time = at.toLocaleTimeString("uk-UA", { timeZone: "Europe/Kyiv", hour: "2-digit", minute: "2-digit" });
+          return `«${row.title || "зарахування"}» ${date} о ${time}`;
+        };
         groupRows.forEach((row, index) => {
           row.status = status;
           if (index === 0) {
             row.documents = [...visits, ...row.documents];
             row.missing = status === "partial" ? missing : 0;
             if (groupRows.length > 1) {
-              row.groupNote = `Зведено разом з ${groupRows.length - 1} ${groupRows.length - 1 === 1 ? "зарахуванням" : "зарахуваннями"} за ${day.slice(8, 10)}.${day.slice(5, 7)}`;
+              row.groupNote = `Оплати ${day.slice(8, 10)}.${day.slice(5, 7)} зведено разом з ${groupRows.slice(1).map(rowRef).join(", ")}`;
             }
           } else {
-            row.groupNote = `Оплати ${day.slice(8, 10)}.${day.slice(5, 7)} — під першим зарахуванням цього дня`;
+            row.groupNote = `Зведено разом з ${rowRef(groupRows[0])} — документи оплат ${day.slice(8, 10)}.${day.slice(5, 7)} там`;
           }
         });
       }
