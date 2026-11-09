@@ -13,11 +13,12 @@ import {
   type LastAttendedVisitClient,
 } from '@/lib/inactive-base/days-since-last-visit';
 import { hasPaidServiceVisitForInactiveBase } from '@/lib/inactive-base/is-inactive-client';
+import { resolveInactiveLifecycleStatus } from '@/lib/inactive-base/lifecycle';
 
 /** Порожні лічильники, коли skipPanelCounts=1 — панель оновить окремий запит filterCountsOnly. */
 export function emptyGlobalColumnFilterAggregates(): GlobalColumnFilterAggregates {
   return {
-    daysCounts: { activeBase: 0, inactiveBase: 0, consultation: 0, none: 0, growing: 0, grown: 0, overgrown: 0 },
+    daysCounts: { activeBase: 0, inactiveBase: 0, consultation: 0, none: 0, growing: 0, grown: 0, overgrown: 0, restored: 0 },
     stateCounts: {},
     instCounts: {},
     instInstagramCounts: { hasClient: 0, missingClient: 0, hasLead: 0 },
@@ -62,6 +63,7 @@ export type GlobalColumnFilterAggregates = {
     growing: number;
     grown: number;
     overgrown: number;
+    restored: number;
   };
   stateCounts: Record<string, number>;
   instCounts: Record<string, number>;
@@ -117,7 +119,7 @@ export function computeGlobalColumnFilterAggregatesFromClients(
   const getConsultCreatedAt = (c: DirectClient): string | null | undefined =>
     (c as { consultationRecordCreatedAt?: string | null }).consultationRecordCreatedAt ?? undefined;
 
-  const daysCounts = { activeBase: 0, inactiveBase: 0, consultation: 0, none: 0, growing: 0, grown: 0, overgrown: 0 };
+  const daysCounts = { activeBase: 0, inactiveBase: 0, consultation: 0, none: 0, growing: 0, grown: 0, overgrown: 0, restored: 0 };
   const stateCounts: Record<string, number> = {};
   const instCounts: Record<string, number> = {};
   let instInstagramHasClient = 0;
@@ -159,6 +161,8 @@ export function computeGlobalColumnFilterAggregatesFromClients(
     );
     if (!hasPaidServiceVisit && hasConsultationRecord) daysCounts.consultation++;
     const client = c as LastAttendedVisitClient;
+    // Повернуті — як бейдж ✓ у колонці «Днів»
+    if (resolveInactiveLifecycleStatus(client, todayKyivDay) === 'restored') daysCounts.restored++;
     const d = computePaidDaysSinceLastVisitOnKyivDay(client, todayKyivDay);
     if (d === undefined) {
       daysCounts.none++;

@@ -425,7 +425,7 @@ export type DirectFilters = {
   hasAppointment: string;
   clientType: string[];
   act: { mode: 'current_month' | 'year_month' | null; year?: string; month?: string };
-  days: 'activeBase' | 'inactiveBase' | 'consultation' | 'none' | 'growing' | 'grown' | 'overgrown' | null;
+  days: 'activeBase' | 'inactiveBase' | 'consultation' | 'none' | 'growing' | 'grown' | 'overgrown' | 'restored' | null;
   /** Перемикач «Є запис» у фільтрі Днів: приховати клієнтів із майбутнім платним записом (разом із days). */
   daysExcludeFutureRecord?: boolean;
   inst: string[];
@@ -483,6 +483,7 @@ type DirectClientTableProps = {
     growing: number;
     grown: number;
     overgrown: number;
+    restored: number;
   };
   /** Кількість по станах (Букінгдата в минулому, Продано, тощо) з усієї бази */
   stateCounts?: Record<string, number>;

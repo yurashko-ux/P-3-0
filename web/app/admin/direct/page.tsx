@@ -419,6 +419,7 @@ function DirectPageContent() {
       growing: number;
       grown: number;
       overgrown: number;
+      restored: number;
     } | undefined
   >(undefined);
   const [stateCounts, setStateCounts] = useState<Record<string, number> | undefined>(undefined);
@@ -1100,6 +1101,7 @@ function DirectPageContent() {
               growing?: number;
               grown?: number;
               overgrown?: number;
+              restored?: number;
             };
           };
           if (daysData.ok && daysData.daysCounts != null && typeof daysData.daysCounts === 'object') {
@@ -1111,6 +1113,7 @@ function DirectPageContent() {
               growing: Number(daysData.daysCounts.growing ?? 0),
               grown: Number(daysData.daysCounts.grown ?? 0),
               overgrown: Number(daysData.daysCounts.overgrown ?? 0),
+              restored: Number(daysData.daysCounts.restored ?? 0),
             });
           }
         } else {
@@ -1150,6 +1153,7 @@ function DirectPageContent() {
           growing?: number;
           grown?: number;
           overgrown?: number;
+          restored?: number;
         };
         stateCounts?: Record<string, number>;
         instCounts?: Record<string, number>;
@@ -1172,6 +1176,7 @@ function DirectPageContent() {
           growing: Number(data.daysCounts.growing ?? 0),
           grown: Number(data.daysCounts.grown ?? 0),
           overgrown: Number(data.daysCounts.overgrown ?? 0),
+          restored: Number(data.daysCounts.restored ?? 0),
         });
       }
       if (data.stateCounts != null && typeof data.stateCounts === 'object') setStateCounts(data.stateCounts);

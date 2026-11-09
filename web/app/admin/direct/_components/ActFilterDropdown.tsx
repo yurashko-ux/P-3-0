@@ -23,6 +23,14 @@ function currentKyivYearMonth(): string {
   return kyivDayFromISO(new Date().toISOString()).slice(0, 7);
 }
 
+/** Попередній місяць (Europe/Kyiv): рік двома цифрами і місяць без нуля — як у селектах «Рік + Місяць». */
+function previousKyivMonth(): { ym: string; year: string; month: string } {
+  const [y, m] = currentKyivYearMonth().split("-").map(Number);
+  const py = m === 1 ? y - 1 : y;
+  const pm = m === 1 ? 12 : m - 1;
+  return { ym: `${py}-${String(pm).padStart(2, "0")}`, year: String(py).slice(-2), month: String(pm) };
+}
+
 const YEARS = ["26", "27", "28"] as const;
 const MONTHS = [
   { v: "1", l: "Січень" },
@@ -60,6 +68,8 @@ export function ActFilterDropdown({
   const panelRef = useRef<HTMLDivElement>(null);
   const cur = currentKyivYearMonth();
   const currentMonthCount = clients.filter((c) => toKyivYearMonth(c.updatedAt) === cur || toKyivYearMonth((c as any).statusSetAt) === cur).length;
+  const prev = previousKyivMonth();
+  const previousMonthCount = clients.filter((c) => toKyivYearMonth(c.updatedAt) === prev.ym || toKyivYearMonth((c as any).statusSetAt) === prev.ym).length;
 
   const [mode, setMode] = useState<"current_month" | "year_month" | null>(filters.act.mode);
   const [year, setYear] = useState(filters.act.year || "");
@@ -143,6 +153,33 @@ export function ActFilterDropdown({
                 <span>Поточний місяць</span>
                 <span className="text-gray-500 font-medium">({currentMonthCount})</span>
               </button>
+              {(() => {
+                // «Минулий місяць» — той самий фільтр «Рік + Місяць», підставлений на попередній місяць
+                const isPrev = mode === "year_month" && year === prev.year && month === prev.month;
+                return (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      if (isPrev) {
+                        setMode(null);
+                        setYear("");
+                        setMonth("");
+                      } else {
+                        setMode("year_month");
+                        setYear(prev.year);
+                        setMonth(prev.month);
+                      }
+                    }}
+                    className={`w-full text-left px-2 py-1.5 rounded text-xs flex items-center justify-between hover:bg-base-200 transition-colors ${
+                      isPrev ? "bg-blue-50 text-blue-700" : "text-gray-700"
+                    }`}
+                    title="Дата останньої активності в минулому місяці"
+                  >
+                    <span>Минулий місяць</span>
+                    <span className="text-gray-500 font-medium">({previousMonthCount})</span>
+                  </button>
+                );
+              })()}
               <div className="px-2 py-1 text-xs text-gray-500">Рік + Місяць</div>
               <div className="flex gap-1 px-2">
                 <select

@@ -74,6 +74,7 @@ import {
   type LastAttendedVisitClient,
 } from '@/lib/inactive-base/days-since-last-visit';
 import { hasPaidServiceVisitForInactiveBase } from '@/lib/inactive-base/is-inactive-client';
+import { resolveInactiveLifecycleStatus } from '@/lib/inactive-base/lifecycle';
 import { computeInstInstagramCountsFromDb } from '@/lib/direct-instagram-filter-counts';
 import { normalizeInstInstagramCountsFromApi } from '@/lib/direct-instagram-presence-filter';
 import { directRecordSlotDate, todayKyivDay as recordSlotTodayKyivDay } from '@/lib/direct-record-slot';
@@ -520,6 +521,8 @@ export async function GET(req: NextRequest) {
             paidRecordsInHistoryCount: true,
             spent: true,
             lastVisitAt: true,
+            signedUpForPaidService: true,
+            paidServiceRecordCreatedAt: true,
           },
         });
         const daysCounts = computeGlobalDaysCountsFromClients(rows as unknown as ReadonlyArray<Record<string, unknown>>, {
@@ -530,7 +533,7 @@ export async function GET(req: NextRequest) {
         console.warn('[direct/clients] fast daysCountsOnly failed:', err);
         return NextResponse.json({
           ok: true,
-          daysCounts: { activeBase: 0, inactiveBase: 0, consultation: 0, none: 0, growing: 0, grown: 0, overgrown: 0 },
+          daysCounts: { activeBase: 0, inactiveBase: 0, consultation: 0, none: 0, growing: 0, grown: 0, overgrown: 0, restored: 0 },
           totalCount: 0,
         });
       }
@@ -952,7 +955,7 @@ export async function GET(req: NextRequest) {
           console.warn('[direct/clients] daysCountsOnly failed:', err);
           return NextResponse.json({
             ok: true,
-            daysCounts: { activeBase: 0, inactiveBase: 0, consultation: 0, none: 0, growing: 0, grown: 0, overgrown: 0 },
+            daysCounts: { activeBase: 0, inactiveBase: 0, consultation: 0, none: 0, growing: 0, grown: 0, overgrown: 0, restored: 0 },
             totalCount: 0,
           });
         }
@@ -1030,7 +1033,7 @@ export async function GET(req: NextRequest) {
           return NextResponse.json({
             ok: true,
             statusCounts: {},
-            daysCounts: { activeBase: 0, inactiveBase: 0, consultation: 0, none: 0, growing: 0, grown: 0, overgrown: 0 },
+            daysCounts: { activeBase: 0, inactiveBase: 0, consultation: 0, none: 0, growing: 0, grown: 0, overgrown: 0, restored: 0 },
             stateCounts: {},
             instCounts: {},
             instInstagramCounts: { hasClient: 0, missingClient: 0, hasLead: 0 },
@@ -1392,6 +1395,9 @@ export async function GET(req: NextRequest) {
         const d = (c as any).daysSinceLastVisit;
         return typeof d === 'number' && Number.isFinite(d) && d >= 60 && d < 90;
       });
+    } else if (daysFilter === 'restored') {
+      // Повернуті в активну базу майбутнім платним записом (бейдж ✓ у колонці «Днів»)
+      filtered = filtered.filter((c) => resolveInactiveLifecycleStatus(c as LastAttendedVisitClient, todayKyiv) === 'restored');
     } else if (daysFilter === 'overgrown') {
       filtered = filtered.filter((c) => {
         const d = (c as any).daysSinceLastVisit;

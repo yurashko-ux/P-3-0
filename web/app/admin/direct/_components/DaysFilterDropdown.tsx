@@ -6,10 +6,11 @@ import type { DirectClient } from "@/lib/direct-types";
 import { kyivDayFromISO } from "@/lib/altegio/records-grouping";
 import { isActiveBaseOnKyivDay, type LastAttendedVisitClient } from "@/lib/inactive-base/days-since-last-visit";
 import { hasPaidServiceVisitForInactiveBase } from "@/lib/inactive-base/is-inactive-client";
+import { resolveInactiveLifecycleStatus } from "@/lib/inactive-base/lifecycle";
 import type { DirectFilters } from "./DirectClientTable";
 import { FilterIconButton } from "./FilterIconButton";
 
-type DaysOption = "activeBase" | "inactiveBase" | "consultation" | "none" | "growing" | "grown" | "overgrown";
+type DaysOption = "activeBase" | "inactiveBase" | "consultation" | "none" | "growing" | "grown" | "overgrown" | "restored";
 
 const OPTIONS: { id: DaysOption; label: string; tooltip: string }[] = [
   {
@@ -27,6 +28,7 @@ const OPTIONS: { id: DaysOption; label: string; tooltip: string }[] = [
   { id: "growing", label: "Відростає (0–60)", tooltip: "0–60 днів з останнього платного візиту" },
   { id: "grown", label: "Відросло (60–90)", tooltip: "60–90 днів з останнього платного візиту" },
   { id: "overgrown", label: "Переросло (90+)", tooltip: "90+ днів з останнього платного візиту" },
+  { id: "restored", label: "Повернуті клієнти", tooltip: "Повернулись з неактивної бази майбутнім платним записом (бейдж ✓)" },
 ];
 
 function hasPaidServiceVisit(c: DirectClient): boolean {
@@ -60,6 +62,7 @@ function matchesOption(c: DirectClient, option: DaysOption): boolean {
   if (option === "growing") return hasDays && d >= 0 && d < 60;
   if (option === "grown") return hasDays && d >= 60 && d < 90;
   if (option === "overgrown") return hasDays && d >= 90;
+  if (option === "restored") return resolveInactiveLifecycleStatus(c as LastAttendedVisitClient, todayKyiv) === "restored";
   return false;
 }
 
@@ -106,6 +109,7 @@ export function DaysFilterDropdown({
       growing: 0,
       grown: 0,
       overgrown: 0,
+      restored: 0,
     };
     for (const c of clients) {
       for (const opt of OPTIONS) {

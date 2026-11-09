@@ -6,6 +6,7 @@ import {
   type LastAttendedVisitClient,
 } from '@/lib/inactive-base/days-since-last-visit';
 import { hasPaidServiceVisitForInactiveBase } from '@/lib/inactive-base/is-inactive-client';
+import { resolveInactiveLifecycleStatus } from '@/lib/inactive-base/lifecycle';
 
 /** Клієнт має майбутній платний запис (строго після сьогодні, Europe/Kyiv). Як фільтр «Запис → Майбутні». */
 export function hasFuturePaidServiceRecord(
@@ -23,6 +24,7 @@ export type GlobalDaysCounts = {
   growing: number;
   grown: number;
   overgrown: number;
+  restored: number;
 };
 
 /**
@@ -41,6 +43,7 @@ export function computeGlobalDaysCountsFromClients(
     growing: 0,
     grown: 0,
     overgrown: 0,
+    restored: 0,
   };
   const todayKyivDay = kyivDayFromISO(new Date().toISOString());
   const hasPaidServiceVisit = (c: Record<string, unknown>): boolean =>
@@ -60,6 +63,8 @@ export function computeGlobalDaysCountsFromClients(
     }
     const client = c as LastAttendedVisitClient;
     const hasPaid = hasPaidServiceVisit(c);
+    // Повернуті — як бейдж ✓ у колонці «Днів»
+    if (resolveInactiveLifecycleStatus(client, todayKyivDay) === 'restored') daysCounts.restored++;
     if (!hasPaid && hasConsultationRecord(c)) {
       daysCounts.consultation++;
     }
