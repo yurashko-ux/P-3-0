@@ -193,6 +193,8 @@ function dayFlows(items: DayItem[]): Array<{ currency: string; incoming: number;
   const byCurrency = new Map<string, { incoming: number; outgoing: number }>();
   for (const item of items) {
     if (item.kind === "unlinked") continue;
+    // Переміщення між рахунками — не дохід і не розхід
+    if (transferLeg(item) || item.row.transferFrom || item.row.transferTo) continue;
     const currency = item.kind === "cash" ? item.row.currency : "UAH";
     const signed =
       item.kind === "cash" ? (item.row.direction === "out" ? -item.row.amount : item.row.amount) : item.row.amount;
