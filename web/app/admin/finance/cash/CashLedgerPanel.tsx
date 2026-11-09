@@ -185,17 +185,23 @@ function dayLabel(kyivDay: string): string {
   return `${day}.${month}.${year}`;
 }
 
-/** Сума дня: одна на валюту — готівка й ФОП разом; документи без платежу не гроші, не входять */
-function dayNetLabel(items: DayItem[]): string {
-  const byCurrency = new Map<string, number>();
+/**
+ * Рух дня по валютах: вхідні, вихідні і баланс (вхідні мінус вихідні) — готівка й ФОП разом.
+ * Документи без платежу — не гроші, не входять.
+ */
+function dayFlows(items: DayItem[]): Array<{ currency: string; incoming: number; outgoing: number }> {
+  const byCurrency = new Map<string, { incoming: number; outgoing: number }>();
   for (const item of items) {
     if (item.kind === "unlinked") continue;
     const currency = item.kind === "cash" ? item.row.currency : "UAH";
     const signed =
       item.kind === "cash" ? (item.row.direction === "out" ? -item.row.amount : item.row.amount) : item.row.amount;
-    byCurrency.set(currency, (byCurrency.get(currency) || 0) + signed);
+    const flow = byCurrency.get(currency) ?? { incoming: 0, outgoing: 0 };
+    if (signed >= 0) flow.incoming += signed;
+    else flow.outgoing += signed;
+    byCurrency.set(currency, flow);
   }
-  return [...byCurrency.entries()].map(([currency, sum]) => `${money(sum)} ${unitOf(currency)}`).join(" · ");
+  return [...byCurrency.entries()].map(([currency, flow]) => ({ currency, ...flow }));
 }
 
 function timeLabel(iso: string): string {
@@ -400,24 +406,25 @@ export function CashLedgerPanel({
     return [...allDays]
       .sort((a, b) => b.localeCompare(a))
       .map((kyivDay) => {
-        // Залишок на кінець дня = старт + рухи від дня старту, як на плитках; з ФОП — плюс залишок банку
+        // Залишок усіх рахунків на кінець дня: каса — від старту (вперед або назад), ФОП — баланс банку на цей день
         const bankBalance = bankStatements.length > 0 ? bankBalanceAt(kyivDay) : null;
         const balances: string[] = [];
-        if (kyivDay >= CASH_RECONCILE_FROM_KYIV_DAY) {
-          const shown = bankBalance != null && !currencies.includes("UAH") ? ["UAH" as const, ...currencies] : currencies;
-          for (const currency of shown) {
-            const net = visibleRows
-              .filter(
-                (row) =>
-                  row.currency === currency &&
-                  row.kyivDay >= CASH_RECONCILE_FROM_KYIV_DAY &&
-                  row.kyivDay <= kyivDay,
-              )
-              .reduce((sum, row) => sum + (row.direction === "out" ? -row.amount : row.amount), 0);
-            const cash = currencies.includes(currency) ? openingOf(currency) + net : 0;
-            const total = currency === "UAH" && bankBalance != null ? cash + bankBalance : cash;
-            balances.push(`${money(total)} ${unitOf(currency)}`);
+        const shown = bankBalance != null && !currencies.includes("UAH") ? ["UAH" as const, ...currencies] : currencies;
+        for (const currency of shown) {
+          let cash = 0;
+          if (currencies.includes(currency)) {
+            const rowsOfCurrency = visibleRows.filter((row) => row.currency === currency);
+            const signedSum = (from: string, to: string) =>
+              rowsOfCurrency
+                .filter((row) => row.kyivDay > from && row.kyivDay <= to)
+                .reduce((sum, row) => sum + (row.direction === "out" ? -row.amount : row.amount), 0);
+            cash =
+              kyivDay >= CASH_OPENING_KYIV_DAY
+                ? openingOf(currency) + signedSum(CASH_OPENING_KYIV_DAY, kyivDay)
+                : openingOf(currency) - signedSum(kyivDay, CASH_OPENING_KYIV_DAY);
           }
+          const total = currency === "UAH" && bankBalance != null ? cash + bankBalance : cash;
+          balances.push(`${moneyInt(total)} ${unitOf(currency)}`);
         }
         const items: DayItem[] = [
           ...(cashByDay.get(kyivDay) || []).map(
@@ -530,11 +537,6 @@ export function CashLedgerPanel({
                 <tr className="bg-slate-300 text-[10px] text-gray-900">
                   <th colSpan={6} className="px-2 py-1 text-left font-bold uppercase tracking-wide">
                     {dayLabel(day.kyivDay)}
-                    {day.balances.length > 0 ? (
-                      <span className="ml-3 font-medium normal-case tracking-normal tabular-nums">
-                        залишок: {day.balances.join(" · ")}
-                      </span>
-                    ) : null}
                     {day.unlinkedCount > 0 ? (
                       <span className="ml-3 font-medium normal-case tracking-normal text-amber-800">
                         ⚠ {day.unlinkedCount} {day.unlinkedCount === 1 ? "документ" : "документи"} без платежу ·{" "}
@@ -542,12 +544,32 @@ export function CashLedgerPanel({
                       </span>
                     ) : null}
                   </th>
-                  {/* Сума дня займає вільні колонки праворуч і не переноситься */}
+                  {/* Рух дня над колонками Призначення…Сума: вхідні, вихідні, баланс */}
                   <th
-                    colSpan={4}
-                    className="whitespace-nowrap px-2 py-1 text-right font-bold normal-case tracking-normal tabular-nums"
+                    colSpan={3}
+                    className="whitespace-nowrap px-2 py-1 text-right font-medium normal-case tracking-normal tabular-nums"
                   >
-                    {dayNetLabel(day.items)}
+                    {dayFlows(day.items).map((flow) => (
+                      <div key={flow.currency}>
+                        <span className="text-green-800">Вхідні {moneyInt(flow.incoming)}</span>
+                        <span className="mx-1.5 text-gray-500">·</span>
+                        <span className="text-red-700">Вихідні {moneyInt(flow.outgoing)}</span>
+                        <span className="mx-1.5 text-gray-500">·</span>
+                        <span className="font-bold">
+                          Баланс {moneyInt(flow.incoming + flow.outgoing)} {unitOf(flow.currency)}
+                        </span>
+                      </div>
+                    ))}
+                  </th>
+                  {/* Над колонкою «Залишок» — залишок усіх показаних рахунків на кінець дня */}
+                  <th
+                    className="whitespace-nowrap px-2 py-1 text-right font-bold normal-case tracking-normal tabular-nums"
+                    title="Залишок усіх показаних рахунків на кінець дня"
+                  >
+                    <div>{day.balances[0] ?? ""}</div>
+                    {day.balances.length > 1 ? (
+                      <div className="text-[9px] font-medium text-gray-600">{day.balances.slice(1).join(" · ")}</div>
+                    ) : null}
                   </th>
                 </tr>
                 <tr className="bg-gray-50 text-[9px] uppercase text-gray-500">
