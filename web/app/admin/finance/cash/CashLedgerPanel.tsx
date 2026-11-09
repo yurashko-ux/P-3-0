@@ -52,10 +52,77 @@ type BankAccountRef = { id: number; title: string };
 type BankStatement = { accountId: number; title: string; rows: StatementRow[]; unlinked: UnlinkedDocument[] };
 
 /** Рядок дня: готівка, банківський платіж ФОП або документ ФОП без платежу */
-type DayItem =
+type DayItem = (
   | { kind: "cash"; key: string; at: string; row: LedgerRow }
   | { kind: "bank"; key: string; at: string; row: StatementRow; accountTitle: string }
-  | { kind: "unlinked"; key: string; at: string; doc: UnlinkedDocument; accountTitle: string };
+  | { kind: "unlinked"; key: string; at: string; doc: UnlinkedDocument; accountTitle: string }
+) & {
+  /** Дві ноги одного переміщення: start — рахунок, з якого пішли гроші; end — куди прийшли (рядок одразу під ним) */
+  transferLink?: "start" | "end";
+  /** Залишок на рахунку рядка після цього платежу (валюта рахунку); null — невідомо */
+  balanceAfter?: number | null;
+};
+
+/** Нога переміщення: напрямок, сума і рахунки — щоб знайти пару в межах дня */
+function transferLeg(item: DayItem): { incoming: boolean; amount: number; from: string; to: string } | null {
+  if (item.kind === "unlinked") return null;
+  const row = item.row;
+  if (!/переміщ/i.test(row.title)) return null;
+  const incoming = item.kind === "cash" ? item.row.direction === "in" : item.row.amount >= 0;
+  const amount = Math.abs(row.amount);
+  return { incoming, amount, from: row.transferFrom?.trim() || "", to: row.transferTo?.trim() || "" };
+}
+
+/**
+ * Пари переміщень дня (вихідна нога + вхідна з тією ж сумою і тими ж рахунками):
+ * вхідну ставимо одразу під вихідну, щоб стрілка вела з рахунку-джерела на рахунок призначення.
+ */
+function linkTransferPairs(items: DayItem[]): DayItem[] {
+  const result = [...items];
+  const used = new Set<string>();
+  for (let i = 0; i < result.length; i += 1) {
+    const out = transferLeg(result[i]);
+    if (!out || out.incoming || used.has(result[i].key)) continue;
+    const j = result.findIndex((candidate, index) => {
+      if (index === i || used.has(candidate.key)) return false;
+      const leg = transferLeg(candidate);
+      if (!leg || !leg.incoming || Math.abs(leg.amount - out.amount) >= 0.01) return false;
+      return (!leg.from || !out.from || leg.from === out.from) && (!leg.to || !out.to || leg.to === out.to);
+    });
+    if (j < 0) continue;
+    const outKey = result[i].key;
+    const [incomingItem] = result.splice(j, 1);
+    const outIndex = result.findIndex((item) => item.key === outKey);
+    result[outIndex] = { ...result[outIndex], transferLink: "start" };
+    result.splice(outIndex + 1, 0, { ...incomingItem, transferLink: "end" });
+    used.add(outKey);
+    used.add(incomingItem.key);
+  }
+  return result;
+}
+
+/** Стрілка між ногами переміщення: від середини рядка-джерела вниз до середини рядка призначення */
+function TransferLinkMark({ link }: { link?: "start" | "end" }) {
+  if (link === "start") {
+    return (
+      <span
+        aria-hidden
+        className="pointer-events-none absolute left-1 top-1/2 h-full w-2 rounded-l-sm border-y border-l border-slate-500"
+      />
+    );
+  }
+  if (link === "end") {
+    return (
+      <span
+        aria-hidden
+        className="pointer-events-none absolute left-[9px] top-1/2 -translate-y-1/2 text-[8px] leading-none text-slate-500"
+      >
+        ▶
+      </span>
+    );
+  }
+  return null;
+}
 
 const CASH_CURRENCIES: CashCountCurrency[] = ["UAH", "USD", "EUR"];
 
@@ -67,6 +134,11 @@ function openingOf(currency: CashCountCurrency): number {
 
 function unitOf(currency: string): string {
   return cashCountUnit(currency === "USD" || currency === "EUR" ? currency : "UAH");
+}
+
+/** Колонка «Залишок»: залишок рахунку після платежу або тире */
+function balanceLabel(balance: number | null | undefined, unit: string): string {
+  return balance == null ? "—" : `${money(balance)} ${unit}`;
 }
 
 function money(n: number): string {
@@ -262,6 +334,38 @@ export function CashLedgerPanel({
     const itemDay = (item: DayItem) =>
       item.kind === "cash" ? item.row.kyivDay : item.kind === "bank" ? kyivDayOf(item.row.time) : item.doc.kyivDay;
     const allDays = new Set([...visibleRows.map((row) => row.kyivDay), ...bankItems.map(itemDay)]);
+    const cashByDay = new Map<string, LedgerRow[]>();
+    for (const day of allDays) {
+      cashByDay.set(day, aggregateCashLedgerDayRows(visibleRows.filter((row) => row.kyivDay === day)));
+    }
+    // Залишок каси після кожного платежу: старт — кінець дня CASH_OPENING_KYIV_DAY;
+    // пізніші платежі рахуємо вперед від старту, ранніші — назад (старт мінус рухи після платежу)
+    const cashBalanceAfter = new Map<string, number>();
+    const byAccount = new Map<string, LedgerRow[]>();
+    for (const day of [...allDays].sort()) {
+      // У дні рядки новіші зверху — для хронології розвертаємо
+      for (const row of [...(cashByDay.get(day) || [])].reverse()) {
+        const key = `${row.accountTitle}\0${row.currency}`;
+        byAccount.set(key, [...(byAccount.get(key) || []), row]);
+      }
+    }
+    const signedOf = (row: LedgerRow) => (row.direction === "out" ? -row.amount : row.amount);
+    const round = (n: number) => Math.round(n * 100) / 100;
+    for (const list of byAccount.values()) {
+      const opening = openingOf(list[0].currency);
+      let forward = opening;
+      for (const row of list) {
+        if (row.kyivDay <= CASH_OPENING_KYIV_DAY) continue;
+        forward += signedOf(row);
+        cashBalanceAfter.set(row.id, round(forward));
+      }
+      let backward = opening;
+      for (const row of [...list].reverse()) {
+        if (row.kyivDay > CASH_OPENING_KYIV_DAY) continue;
+        cashBalanceAfter.set(row.id, round(backward));
+        backward -= signedOf(row);
+      }
+    }
     return [...allDays]
       .sort((a, b) => b.localeCompare(a))
       .map((kyivDay) => {
@@ -285,17 +389,26 @@ export function CashLedgerPanel({
           }
         }
         const items: DayItem[] = [
-          ...aggregateCashLedgerDayRows(visibleRows.filter((row) => row.kyivDay === kyivDay)).map(
+          ...(cashByDay.get(kyivDay) || []).map(
             // Кілька платежів клієнта з різним часом — без часу; для порядку беремо полудень дня
-            (row): DayItem => ({ kind: "cash", key: `cash:${row.id}`, at: row.occurredAt || `${row.kyivDay}T10:00:00.000Z`, row }),
+            (row): DayItem => ({
+              kind: "cash",
+              key: `cash:${row.id}`,
+              at: row.occurredAt || `${row.kyivDay}T10:00:00.000Z`,
+              row,
+              balanceAfter: cashBalanceAfter.get(row.id) ?? null,
+            }),
           ),
-          ...bankItems.filter((item) => itemDay(item) === kyivDay),
+          ...bankItems
+            .filter((item) => itemDay(item) === kyivDay)
+            .map((item) => (item.kind === "bank" ? { ...item, balanceAfter: item.row.balance } : item)),
         ].sort((a, b) => new Date(b.at).getTime() - new Date(a.at).getTime());
+        const linked = linkTransferPairs(items);
         const unlinked = items.filter((item) => item.kind === "unlinked");
         return {
           kyivDay,
           balances,
-          items,
+          items: linked,
           unlinkedCount: unlinked.length,
           unlinkedSum: unlinked.reduce((sum, item) => sum + (item.kind === "unlinked" ? item.doc.amount : 0), 0),
         };
@@ -371,15 +484,16 @@ export function CashLedgerPanel({
             {/* table-fixed + однакові ширини: колонки всіх днів стоять одна під одною */}
             <table className="w-full table-fixed text-left text-[10px]">
               <colgroup>
-                <col style={{ width: "5%" }} />
-                <col style={{ width: "5%" }} />
-                <col style={{ width: "8%" }} />
-                <col style={{ width: "5%" }} />
+                <col style={{ width: "4%" }} />
+                <col style={{ width: "4%" }} />
+                <col style={{ width: "7%" }} />
+                <col style={{ width: "4%" }} />
+                <col style={{ width: "14%" }} />
+                <col style={{ width: "11%" }} />
                 <col style={{ width: "16%" }} />
-                <col style={{ width: "18%" }} />
-                <col style={{ width: "13%" }} />
-                <col style={{ width: "13%" }} />
-                <col style={{ width: "17%" }} />
+                <col style={{ width: "11%" }} />
+                <col style={{ width: "14%" }} />
+                <col style={{ width: "15%" }} />
               </colgroup>
               <thead>
                 <tr className="bg-slate-300 text-[10px] text-gray-900">
@@ -399,7 +513,7 @@ export function CashLedgerPanel({
                   </th>
                   {/* Сума дня займає вільні колонки праворуч і не переноситься */}
                   <th
-                    colSpan={3}
+                    colSpan={4}
                     className="whitespace-nowrap px-2 py-1 text-right font-bold normal-case tracking-normal tabular-nums"
                   >
                     {dayNetLabel(day.items)}
@@ -411,10 +525,11 @@ export function CashLedgerPanel({
                   <th className="px-2 py-1 font-medium">Час</th>
                   <th className="px-1 py-1 text-center font-medium" title="Чи була касовка після платежу">Зв.</th>
                   <th className="px-2 py-1 font-medium">Клієнт</th>
-                  <th className="px-2 py-1 font-medium">Призначення</th>
                   <th className="px-2 py-1 font-medium">Запис</th>
+                  <th className="px-2 py-1 font-medium">Призначення</th>
                   <th className="px-2 py-1 font-medium">Рахунок</th>
                   <th className="px-2 py-1 text-right font-medium">Сума</th>
+                  <th className="px-2 py-1 text-right font-medium" title="Залишок на рахунку після платежу">Залишок</th>
                 </tr>
               </thead>
               <tbody>
@@ -434,12 +549,13 @@ export function CashLedgerPanel({
                           />
                         </td>
                         <td className="truncate px-2 py-1 italic">Документ Креско</td>
+                        <td className="px-2 py-1">—</td>
                         <td className="truncate px-2 py-1" title={doc.comment ? `${doc.title}\n${doc.comment}` : doc.title}>
                           {doc.title} · <span className="italic">без платежу</span>
                         </td>
-                        <td className="px-2 py-1">—</td>
                         <td className="truncate px-2 py-1" title={item.accountTitle}>{item.accountTitle}</td>
                         <td className="whitespace-nowrap px-2 py-1 text-right italic tabular-nums">{money(doc.amount)} грн</td>
+                        <td />
                       </tr>
                     );
                   }
@@ -470,14 +586,19 @@ export function CashLedgerPanel({
                           <td className="truncate px-2 py-1 text-gray-800" title={incoming ? row.counterName || undefined : undefined}>
                             {(incoming && row.counterName) || "—"}
                           </td>
+                          <td className="whitespace-nowrap px-2 py-1 tabular-nums text-gray-600">—</td>
                           <td
-                            className="truncate px-2 py-1 text-left text-gray-700"
+                            className="relative px-2 py-1 text-left text-gray-700"
                             title={row.bankTitle && row.bankTitle !== row.title ? `${row.title}\nБанк: ${row.bankTitle}` : row.title || undefined}
                           >
-                            {transferTitle(row.title, row, incoming, item.accountTitle) ?? (row.title || "—")}
+                            <span className="block truncate">
+                              {transferTitle(row.title, row, incoming, item.accountTitle) ?? (row.title || "—")}
+                            </span>
                           </td>
-                          <td className="whitespace-nowrap px-2 py-1 tabular-nums text-gray-600">—</td>
-                          <td className="truncate px-2 py-1 text-gray-700" title={item.accountTitle}>{item.accountTitle}</td>
+                          <td className="relative px-2 py-1 text-gray-700" title={item.accountTitle}>
+                            <TransferLinkMark link={item.transferLink} />
+                            <span className={`block truncate ${item.transferLink ? "pl-3" : ""}`}>{item.accountTitle}</span>
+                          </td>
                           <td
                             className={`whitespace-nowrap px-2 py-1 text-right font-semibold tabular-nums ${
                               incoming ? "text-gray-900" : "text-red-600"
@@ -485,6 +606,7 @@ export function CashLedgerPanel({
                           >
                             {money(row.amount)} грн
                           </td>
+                          <td className="whitespace-nowrap px-2 py-1 text-right tabular-nums text-gray-500">{balanceLabel(item.balanceAfter, "грн")}</td>
                         </tr>
                         {open ? (
                           <>
@@ -497,11 +619,13 @@ export function CashLedgerPanel({
                                 <td className="truncate px-2 py-0.5 italic" title={DOCUMENT_KIND_LABEL[doc.kind]}>
                                   {DOCUMENT_KIND_LABEL[doc.kind]}
                                 </td>
+                                <td />
                                 <td className="truncate px-2 py-0.5" title={doc.title}>
                                   {doc.title}
                                 </td>
-                                <td colSpan={2} />
+                                <td />
                                 <td className="whitespace-nowrap px-2 py-0.5 text-right tabular-nums">{money(doc.amount)} грн</td>
+                                <td />
                               </tr>
                             ))}
                             {row.groupNote || row.documents.length === 0 ? (
@@ -510,7 +634,7 @@ export function CashLedgerPanel({
                                 <td />
                                 <td />
                                 <td className="px-1 py-0.5 text-center text-gray-400">↳</td>
-                                <td colSpan={5} className="px-2 py-0.5 italic">
+                                <td colSpan={6} className="px-2 py-0.5 italic">
                                   {row.groupNote || "Документів немає"}
                                 </td>
                               </tr>
@@ -525,6 +649,7 @@ export function CashLedgerPanel({
                                 <td className="whitespace-nowrap px-2 py-0.5 text-right font-semibold tabular-nums">
                                   {money(row.missing)} грн
                                 </td>
+                                <td />
                               </tr>
                             ) : null}
                           </>
@@ -547,16 +672,15 @@ export function CashLedgerPanel({
                       </td>
                       <td className="px-1 py-1 text-center">
                         <ReconciledDot
-                          done={new Date(row.occurredAt).getTime() <= (lastCountAt.get(row.accountTitle) ?? 0)}
+                          status={
+                            new Date(row.occurredAt).getTime() <= (lastCountAt.get(row.accountTitle) ?? 0) ? "full" : "partial"
+                          }
                           doneTitle="Після платежу була касовка"
+                          partialTitle="Після платежу касовки ще не було"
                           openTitle="Після платежу касовки ще не було"
                         />
                       </td>
                       <td className="break-words px-2 py-1 text-gray-800">{row.clientName || "—"}</td>
-                      {/* Довгий опис не роздуває рядок: один рядок, повний текст — при наведенні */}
-                      <td className="truncate px-2 py-1 text-left text-gray-700" title={row.title || undefined}>
-                        {transferTitle(row.title, row, incoming, row.accountTitle) ?? row.title}
-                      </td>
                       <td className="whitespace-nowrap px-2 py-1 tabular-nums text-gray-600">
                         {row.recordId && row.appointmentId ? (
                           <a
@@ -574,7 +698,16 @@ export function CashLedgerPanel({
                           "—"
                         )}
                       </td>
-                      <td className="truncate px-2 py-1 text-gray-700" title={row.accountTitle}>{row.accountTitle}</td>
+                      {/* Довгий опис не роздуває рядок: один рядок, повний текст — при наведенні */}
+                      <td className="relative px-2 py-1 text-left text-gray-700" title={row.title || undefined}>
+                        <span className="block truncate">
+                          {transferTitle(row.title, row, incoming, row.accountTitle) ?? row.title}
+                        </span>
+                      </td>
+                      <td className="relative px-2 py-1 text-gray-700" title={row.accountTitle}>
+                        <TransferLinkMark link={item.transferLink} />
+                        <span className={`block truncate ${item.transferLink ? "pl-3" : ""}`}>{row.accountTitle}</span>
+                      </td>
                       <td
                         className={`whitespace-nowrap px-2 py-1 text-right font-semibold tabular-nums ${
                           incoming ? "text-gray-900" : "text-red-600"
@@ -591,6 +724,7 @@ export function CashLedgerPanel({
                           </div>
                         ) : null}
                       </td>
+                      <td className="whitespace-nowrap px-2 py-1 text-right tabular-nums text-gray-500">{balanceLabel(item.balanceAfter, unit)}</td>
                     </tr>
                   );
                 })}

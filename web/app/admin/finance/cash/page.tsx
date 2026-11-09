@@ -57,13 +57,6 @@ function tileTint(tile: CashTile, index: number): string {
   return bank[index % bank.length];
 }
 
-/** Той самий колір, темніший: рамка обраної плитки. */
-function deeperTint(hex: string): string {
-  const value = hex.replace("#", "");
-  const channel = (index: number) => Math.round(parseInt(value.slice(index, index + 2), 16) * 0.8);
-  return `rgb(${channel(0)}, ${channel(2)}, ${channel(4)})`;
-}
-
 /** Квадрат касовки: той самий відтінок, що плитка, трохи насиченіший. */
 function countButtonTint(tile: CashTile): string {
   if (tile.currency === "USD") return "#cfe6d7";
@@ -148,14 +141,13 @@ export default function CashBalancesPage() {
   const tilesRef = useRef<HTMLDivElement>(null);
   /** Місце в панелі Фінансів після «Звіт» */
   const [headerSlot, setHeaderSlot] = useState<HTMLElement | null>(null);
-  /** Безготівковий рахунок, рухи якого показуємо замість готівки */
-  /** Обрані плитки: натискання додає або знімає плитку, кілька можна обрати разом */
-  const [selectedIds, setSelectedIds] = useState<number[]>([]);
+  /** За замовчуванням показуємо всі рахунки; натискання на плитку виключає її рахунок (повторне — повертає) */
+  const [excludedIds, setExcludedIds] = useState<number[]>([]);
   const toggleTile = (id: number) =>
-    setSelectedIds((prev) => (prev.includes(id) ? prev.filter((value) => value !== id) : [...prev, id]));
-  const selectedBankTiles = tiles.filter((tile) => !tile.cash && tile.hasBank && selectedIds.includes(tile.id));
+    setExcludedIds((prev) => (prev.includes(id) ? prev.filter((value) => value !== id) : [...prev, id]));
+  const selectedBankTiles = tiles.filter((tile) => !tile.cash && tile.hasBank && !excludedIds.includes(tile.id));
   const selectedCashTitles = tiles
-    .filter((tile) => isCashTill(tile) && selectedIds.includes(tile.id))
+    .filter((tile) => isCashTill(tile) && !excludedIds.includes(tile.id))
     .map((tile) => tile.title);
   const [documentType, setDocumentType] = useState<CashDocumentType | null>(null);
   const [accountsOpen, setAccountsOpen] = useState(false);
@@ -266,16 +258,16 @@ export default function CashBalancesPage() {
           const face = <TileFace tile={tile} />;
           const tint = tileTint(tile, index);
           if (!tile.cash && tile.hasBank) {
-            const selected = selectedIds.includes(tile.id);
+            const excluded = excludedIds.includes(tile.id);
             return (
               <button
                 key={tile.id}
                 type="button"
-                className={tileButtonClass}
-                style={{ background: tint, boxShadow: selected ? `0 0 0 2px ${deeperTint(tint)}` : undefined }}
+                className={`${tileButtonClass} ${excluded ? "opacity-40 grayscale" : ""}`}
+                style={{ background: tint }}
                 aria-label={`Рухи рахунку ${tile.title}`}
-                aria-pressed={selected}
-                title="Показати рухи рахунку"
+                aria-pressed={!excluded}
+                title={excluded ? "Показати рухи рахунку" : "Сховати рухи рахунку"}
                 onClick={() => toggleTile(tile.id)}
               >
                 {face}
@@ -290,16 +282,16 @@ export default function CashBalancesPage() {
             );
           }
           // Плитка каси: натискання показує її рухи, маленький квадрат у куті — касовка
-          const selected = selectedIds.includes(tile.id);
+          const excluded = excludedIds.includes(tile.id);
           return (
-            <div key={tile.id} className="relative">
+            <div key={tile.id} className={`relative ${excluded ? "opacity-40 grayscale" : ""}`}>
               <button
                 type="button"
                 className={tileButtonClass}
-                style={{ background: tint, boxShadow: selected ? `0 0 0 2px ${deeperTint(countButtonTint(tile))}` : undefined }}
+                style={{ background: tint }}
                 aria-label={`Рухи каси ${tile.title}`}
-                aria-pressed={selected}
-                title="Показати рухи каси"
+                aria-pressed={!excluded}
+                title={excluded ? "Показати рухи каси" : "Сховати рухи каси"}
                 onClick={() => toggleTile(tile.id)}
               >
                 {face}
@@ -328,7 +320,10 @@ export default function CashBalancesPage() {
         </button>
       </div>
       {/* Каса разом із ФОП — одна таблиця по днях з однією сумою дня; лише ФОП-и — кожен своєю таблицею */}
-      {selectedBankTiles.length === 0 || selectedCashTitles.length > 0 ? (
+      {selectedCashTitles.length === 0 && selectedBankTiles.length === 0 ? (
+        <p className="px-3 py-6 text-center text-sm text-gray-500">Усі рахунки вимкнено — натисніть плитку, щоб показати її рухи.</p>
+      ) : null}
+      {selectedCashTitles.length > 0 ? (
         <CashLedgerPanel
           reloadToken={ledgerReload}
           onCountsChanged={() => void load()}
