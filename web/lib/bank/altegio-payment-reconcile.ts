@@ -480,7 +480,8 @@ export async function reconcileSingleOutgoingBankPayment(
       direction: isTransferPending ? { in: ["out", "transfer"] } : "out",
       deletedInAltegio: false,
       operationDate: { gte: dateFrom, lte: dateTo },
-      OR: [{ amountKopiykas: amount }, { amountKopiykas: -amount }],
+      // Лише від'ємні суми: «out» з додатною сумою в Altegio — це надходження (оплата послуг, продаж товарів)
+      amountKopiykas: -amount,
       bankPaymentMatch: null,
     },
     orderBy: { operationDate: "desc" },
@@ -690,6 +691,13 @@ export async function manualMatchBankAltegioPayment(params: {
   }
   if (String(statement.account.altegioAccountId || "") !== String(altegioTransaction.accountId || "")) {
     throw new Error("Рахунок Altegio у банківській операції і платежі не збігається");
+  }
+  if (BigInt(altegioTransaction.amountKopiykas) >= 0n) {
+    console.warn("[bank/altegio-payment-reconcile] Відхилено ручне зведення з надходженням Altegio", {
+      bankStatementItemId: params.bankStatementItemId,
+      altegioId: altegioTransaction.altegioId,
+    });
+    throw new Error("Платіж Altegio є надходженням — його не можна звести з вихідним банківським платежем");
   }
   if (absBigint(BigInt(statement.amount)) !== absBigint(BigInt(altegioTransaction.amountKopiykas))) {
     throw new Error("Сума банківського переказу і платежу Altegio не збігається");

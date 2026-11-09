@@ -143,7 +143,8 @@ export async function GET(req: NextRequest) {
             direction: isTransferPending ? { in: ["out", "transfer"] } : "out",
             deletedInAltegio: false,
             operationDate: { gte: addDays(statement.time, -2), lte: addDays(statement.time, 2) },
-            OR: [{ amountKopiykas: amount }, { amountKopiykas: -amount }],
+            // Лише від'ємні суми: «out» з додатною сумою в Altegio — це надходження клієнта
+            amountKopiykas: -amount,
             bankPaymentMatch: null,
           },
           orderBy: { operationDate: "desc" },
