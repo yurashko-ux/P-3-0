@@ -3,6 +3,7 @@ import { prisma } from "@/lib/prisma";
 import { requireFinanceDocsSection } from "@/lib/finance/require-finance-docs-auth";
 import { isReconciledBankPaymentMatch, resolveBankPaymentExpenseArticle } from "@/lib/bank/altegio-payment-reconcile";
 import { isDepositTopUpPaymentPurpose } from "@/lib/altegio/payment-purpose-labels";
+import { getPayerNameFromRaw, NO_PAYER_LABEL } from "@/lib/bank/incoming-altegio-aggregate";
 import {
   isIncomingReconcileMarkByBankTime,
   isLinkedIncomingMatchStatus,
@@ -38,12 +39,15 @@ type LinkedDocument = {
   title: string;
   amount: number;
   kyivDay: string;
+  /** Оплата клієнта: ім'я і запис — щоб підставити їх у банківський рядок з тією самою сумою */
+  clientName?: string | null;
+  recordId?: number | null;
 };
 
 /**
  * Рухи безготівкового рахунку для розділу Каса: операції банку, прив'язані до них документи,
  * стан зведення (повністю / частково / ні) і документи на цьому рахунку без банківського платежу.
- * Запити: 2 до банку + 1 до документів Креско.
+ * Запити: 2 до банку + 1 до документів Креско (+2 на оплати дня для вхідних, +1 на записи журналу).
  */
 export async function GET(req: NextRequest) {
   const auth = await requireFinanceDocsSection(req, "view");
@@ -197,6 +201,10 @@ export async function GET(req: NextRequest) {
         bankTitle,
         transferFrom,
         transferTo,
+        /** Клієнт і запис оплати, з якою збігся іменований платіж (заповнюється нижче для вхідних) */
+        clientName: null as string | null,
+        recordId: null as number | null,
+        appointmentId: null as string | null,
         status,
         missing: status === "partial" ? missing : 0,
         documents,
@@ -224,7 +232,9 @@ export async function GET(req: NextRequest) {
           select: {
             id: true,
             amount: true,
-            checkout: { select: { kyivDay: true, appointment: { select: { clientName: true } } } },
+            checkout: {
+              select: { kyivDay: true, appointment: { select: { clientName: true, altegioRecordId: true } } },
+            },
           },
         }),
         prisma.altegioFinanceTransaction.findMany({
@@ -235,7 +245,14 @@ export async function GET(req: NextRequest) {
             amountKopiykas: { gt: BigInt(0) },
             direction: { not: "transfer" },
           },
-          select: { altegioId: true, amountKopiykas: true, kyivDay: true, counterpartyName: true, paymentPurpose: true },
+          select: {
+            altegioId: true,
+            amountKopiykas: true,
+            kyivDay: true,
+            counterpartyName: true,
+            paymentPurpose: true,
+            rawData: true,
+          },
         }),
       ]);
       const paymentsByDay = (day: string): LinkedDocument[] => {
@@ -247,6 +264,8 @@ export async function GET(req: NextRequest) {
             title: payment.checkout.appointment?.clientName?.trim() || "Оплата візиту",
             amount: payment.amount,
             kyivDay: day,
+            clientName: payment.checkout.appointment?.clientName?.trim() || null,
+            recordId: payment.checkout.appointment?.altegioRecordId ?? null,
           }));
         }
         return altegioPayments
@@ -256,13 +275,25 @@ export async function GET(req: NextRequest) {
               !isDepositTopUpPaymentPurpose(payment.paymentPurpose || "") &&
               !/переміщ/i.test(payment.paymentPurpose || ""),
           )
-          .map((payment) => ({
-            id: `payment-${payment.altegioId}`,
-            kind: "payment" as const,
-            title: payment.counterpartyName?.trim() || payment.paymentPurpose?.trim() || "Оплата",
-            amount: kopToUah(payment.amountKopiykas),
-            kyivDay: day,
-          }));
+          .map((payment) => {
+            // Платник — так само, як у розділі Платежі (ім'я з різних полів операції Altegio)
+            const payer = getPayerNameFromRaw(payment.rawData, payment.counterpartyName?.trim() || null);
+            const clientName = payer && payer !== NO_PAYER_LABEL ? payer : null;
+            // Запис — з тих самих полів, що в розділі Платежі
+            const raw = (payment.rawData ?? {}) as Record<string, unknown>;
+            const nested = (key: string) => (raw[key] && typeof raw[key] === "object" ? (raw[key] as { id?: unknown }).id : null);
+            const recordId =
+              Number(raw.record_id ?? raw.recordId ?? nested("record") ?? raw.appointment_id ?? nested("appointment")) || null;
+            return {
+              id: `payment-${payment.altegioId}`,
+              kind: "payment" as const,
+              title: clientName || payment.counterpartyName?.trim() || payment.paymentPurpose?.trim() || "Оплата",
+              amount: kopToUah(payment.amountKopiykas),
+              kyivDay: day,
+              clientName,
+              recordId: recordId && recordId > 0 ? recordId : null,
+            };
+          });
       };
       for (const day of incomingDays) {
         const groupRows = rows.filter((row) => row.incomingDay === day);
@@ -284,6 +315,27 @@ export async function GET(req: NextRequest) {
           const time = at.toLocaleTimeString("uk-UA", { timeZone: "Europe/Kyiv", hour: "2-digit", minute: "2-digit" });
           return `«${row.title || "зарахування"}» ${date} о ${time}`;
         };
+        // Платіж, що точно дорівнює оплатам одного клієнта за день (іменований переказ) — клієнт і запис цих оплат.
+        // Оплату клієнта в Altegio часто розбито на кілька операцій, тож порівнюємо із сумою по клієнту, як у розділі Платежі.
+        const byClient = new Map<string, { clientName: string; recordIds: Set<number>; amount: number }>();
+        for (const doc of visits) {
+          if (!doc.clientName) continue;
+          const group = byClient.get(doc.clientName) ?? { clientName: doc.clientName, recordIds: new Set<number>(), amount: 0 };
+          group.amount += doc.amount;
+          if (doc.recordId) group.recordIds.add(doc.recordId);
+          byClient.set(doc.clientName, group);
+        }
+        const usedClients = new Set<string>();
+        for (const row of groupRows) {
+          const client = [...byClient.values()].find(
+            (group) => !usedClients.has(group.clientName) && Math.abs(group.amount - row.amount) < 0.01,
+          );
+          if (!client) continue;
+          usedClients.add(client.clientName);
+          row.clientName = client.clientName;
+          // Як у розділі Платежі: перший запис серед оплат клієнта
+          row.recordId = [...client.recordIds][0] ?? null;
+        }
         groupRows.forEach((row, index) => {
           row.status = status;
           if (index === 0) {
@@ -335,6 +387,18 @@ export async function GET(req: NextRequest) {
       };
     });
 
+    // Запис клієнта в журналі Креско — для посилання з колонки «Запис» (один запит)
+    const recordIds = [...new Set(rows.map((row) => row.recordId).filter((id): id is number => Boolean(id)))];
+    if (recordIds.length > 0) {
+      const appointments = await prisma.salonAppointment.findMany({
+        where: { altegioRecordId: { in: recordIds } },
+        select: { id: true, altegioRecordId: true },
+      });
+      const byRecord = new Map(appointments.map((a) => [a.altegioRecordId, a.id]));
+      for (const row of rows) {
+        if (row.recordId) row.appointmentId = byRecord.get(row.recordId) ?? null;
+      }
+    }
     return NextResponse.json({ ok: true, rows, unlinkedDocuments });
   } catch (error) {
     console.error("[api/admin/finance/cash/account-statement] GET error:", error);

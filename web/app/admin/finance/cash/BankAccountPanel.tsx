@@ -23,6 +23,10 @@ export type StatementRow = {
   /** Переміщення: з якого рахунку на який */
   transferFrom?: string | null;
   transferTo?: string | null;
+  /** Іменований платіж, що збігся з оплатою клієнта: клієнт, запис Altegio і запис у журналі Креско */
+  clientName?: string | null;
+  recordId?: number | null;
+  appointmentId?: string | null;
   status: ReconcileStatus;
   /** Скільки не вистачає документів до суми платежу (часткове зведення) */
   missing: number;
@@ -250,8 +254,8 @@ export function BankAccountPanel({
                               onClick={canExpand ? () => toggle(row.id) : undefined}
                             />
                           </td>
-                          <td className="truncate px-2 py-1 text-gray-800" title={row.counterName || undefined}>
-                            {row.counterName || "—"}
+                          <td className="truncate px-2 py-1 text-gray-800" title={row.counterName || row.clientName || undefined}>
+                            {row.counterName || row.clientName || "—"}
                           </td>
                           <td
                             className="truncate px-2 py-1 text-gray-700"

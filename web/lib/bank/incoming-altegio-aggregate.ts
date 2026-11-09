@@ -98,7 +98,7 @@ export type IncomingReconciliationPreview = {
 
 type RawRecord = Record<string, unknown>;
 
-const NO_PAYER_LABEL = "— без платника —";
+export const NO_PAYER_LABEL = "— без платника —";
 const UNRESOLVED_ACCOUNT_LABEL = "— рахунок невизначено —";
 const NO_ACCOUNT_LABEL = "— без рахунку —";
 const PLACEHOLDER_ACCOUNT_TITLES = new Set([UNRESOLVED_ACCOUNT_LABEL, NO_ACCOUNT_LABEL]);
@@ -565,7 +565,7 @@ export function parseBankCommission(text: string): { kopiykas: bigint | null; ra
   return { kopiykas: BigInt(Math.round(amount * 100)), raw: match[0] };
 }
 
-function getPayerNameFromRaw(raw: unknown, counterpartyName: string | null): string {
+export function getPayerNameFromRaw(raw: unknown, counterpartyName: string | null): string {
   if (counterpartyName) return counterpartyName;
   const record = asRecord(raw);
   if (!record) return NO_PAYER_LABEL;

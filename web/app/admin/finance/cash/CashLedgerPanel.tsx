@@ -136,6 +136,31 @@ function unitOf(currency: string): string {
   return cashCountUnit(currency === "USD" || currency === "EUR" ? currency : "UAH");
 }
 
+/** Колонка «Запис»: номер запису — посилання на запис у журналі Креско (якщо він там є) */
+function RecordLink({
+  recordId,
+  appointmentId,
+  kyivDay,
+}: {
+  recordId?: number | null;
+  appointmentId?: string | null;
+  kyivDay: string;
+}) {
+  if (!recordId) return <>—</>;
+  if (!appointmentId) return <>{recordId}</>;
+  return (
+    <a
+      href={`/admin/journal?day=${kyivDay}&appointment=${appointmentId}`}
+      target="_blank"
+      rel="noopener noreferrer"
+      className="text-blue-600 hover:underline"
+      title="Відкрити запис у журналі"
+    >
+      {recordId}
+    </a>
+  );
+}
+
 /** Колонка «Залишок»: залишок рахунку після платежу або тире */
 function balanceLabel(balance: number | null | undefined, unit: string): string {
   return balance == null ? "—" : `${money(balance)} ${unit}`;
@@ -583,10 +608,15 @@ export function CashLedgerPanel({
                             />
                           </td>
                           {/* Колонка «Клієнт»: контрагент вихідного платежу (власниця ФОП, постачальник) — не клієнт */}
-                          <td className="truncate px-2 py-1 text-gray-800" title={incoming ? row.counterName || undefined : undefined}>
-                            {(incoming && row.counterName) || "—"}
+                          <td
+                            className="truncate px-2 py-1 text-gray-800"
+                            title={row.clientName || (incoming ? row.counterName || undefined : undefined)}
+                          >
+                            {row.clientName || (incoming && row.counterName) || "—"}
                           </td>
-                          <td className="whitespace-nowrap px-2 py-1 tabular-nums text-gray-600">—</td>
+                          <td className="whitespace-nowrap px-2 py-1 tabular-nums text-gray-600">
+                            <RecordLink recordId={row.recordId} appointmentId={row.appointmentId} kyivDay={kyivDayOf(row.time)} />
+                          </td>
                           <td
                             className="relative px-2 py-1 text-left text-gray-700"
                             title={row.bankTitle && row.bankTitle !== row.title ? `${row.title}\nБанк: ${row.bankTitle}` : row.title || undefined}
@@ -682,21 +712,7 @@ export function CashLedgerPanel({
                       </td>
                       <td className="break-words px-2 py-1 text-gray-800">{row.clientName || "—"}</td>
                       <td className="whitespace-nowrap px-2 py-1 tabular-nums text-gray-600">
-                        {row.recordId && row.appointmentId ? (
-                          <a
-                            href={`/admin/journal?day=${row.kyivDay}&appointment=${row.appointmentId}`}
-                            target="_blank"
-                            rel="noopener noreferrer"
-                            className="text-blue-600 hover:underline"
-                            title="Відкрити запис у журналі"
-                          >
-                            {row.recordId}
-                          </a>
-                        ) : row.recordId ? (
-                          row.recordId
-                        ) : (
-                          "—"
-                        )}
+                        <RecordLink recordId={row.recordId} appointmentId={row.appointmentId} kyivDay={row.kyivDay} />
                       </td>
                       {/* Довгий опис не роздуває рядок: один рядок, повний текст — при наведенні */}
                       <td className="relative px-2 py-1 text-left text-gray-700" title={row.title || undefined}>
