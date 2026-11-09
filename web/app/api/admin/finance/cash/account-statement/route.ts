@@ -299,7 +299,22 @@ export async function GET(req: NextRequest) {
       };
       for (const day of incomingDays) {
         const groupRows = rows.filter((row) => row.incomingDay === day);
-        const visits = paymentsByDay(day).sort((a, b) => b.amount - a.amount);
+        // Оплати одного клієнта за день — один документ (у Altegio оплату часто розбито на кілька операцій)
+        const merged = new Map<string, LinkedDocument>();
+        const unnamed: LinkedDocument[] = [];
+        for (const doc of paymentsByDay(day)) {
+          if (!doc.clientName) {
+            unnamed.push(doc);
+            continue;
+          }
+          const current = merged.get(doc.clientName);
+          if (!current) merged.set(doc.clientName, { ...doc });
+          else {
+            current.amount = Math.round((current.amount + doc.amount) * 100) / 100;
+            current.recordId = current.recordId ?? doc.recordId ?? null;
+          }
+        }
+        const visits = [...merged.values(), ...unnamed].sort((a, b) => b.amount - a.amount);
         const bankSum = groupRows.reduce((sum, row) => sum + row.amount, 0);
         const feeSum = groupRows.reduce(
           (sum, row) => sum + row.documents.filter((doc) => doc.kind === "fee").reduce((acc, doc) => acc + Math.abs(doc.amount), 0),

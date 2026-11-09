@@ -163,7 +163,13 @@ function RecordLink({
 
 /** Колонка «Залишок»: залишок рахунку після платежу або тире */
 function balanceLabel(balance: number | null | undefined, unit: string): string {
-  return balance == null ? "—" : `${money(balance)} ${unit}`;
+  return balance == null ? "—" : `${moneyInt(balance)} ${unit}`;
+}
+
+/** Колонки «Сума» і «Залишок»: цілі гривні (копійки округлюємо) */
+function moneyInt(n: number): string {
+  const rounded = Math.round(n);
+  return (rounded === 0 ? 0 : rounded).toLocaleString("uk-UA");
 }
 
 function money(n: number): string {
@@ -579,7 +585,7 @@ export function CashLedgerPanel({
                           {doc.title} · <span className="italic">без платежу</span>
                         </td>
                         <td className="truncate px-2 py-1" title={item.accountTitle}>{item.accountTitle}</td>
-                        <td className="whitespace-nowrap px-2 py-1 text-right italic tabular-nums">{money(doc.amount)} грн</td>
+                        <td className="whitespace-nowrap px-2 py-1 text-right italic tabular-nums">{moneyInt(doc.amount)} грн</td>
                         <td />
                       </tr>
                     );
@@ -634,7 +640,7 @@ export function CashLedgerPanel({
                               incoming ? "text-gray-900" : "text-red-600"
                             }`}
                           >
-                            {money(row.amount)} грн
+                            {moneyInt(row.amount)} грн
                           </td>
                           <td className="whitespace-nowrap px-2 py-1 text-right tabular-nums text-gray-500">{balanceLabel(item.balanceAfter, "грн")}</td>
                         </tr>
@@ -654,7 +660,7 @@ export function CashLedgerPanel({
                                   {doc.title}
                                 </td>
                                 <td />
-                                <td className="whitespace-nowrap px-2 py-0.5 text-right tabular-nums">{money(doc.amount)} грн</td>
+                                <td className="whitespace-nowrap px-2 py-0.5 text-right tabular-nums">{moneyInt(doc.amount)} грн</td>
                                 <td />
                               </tr>
                             ))}
@@ -671,7 +677,7 @@ export function CashLedgerPanel({
                                   className="whitespace-nowrap px-2 py-0.5 text-right font-semibold tabular-nums text-violet-600"
                                   title="Оплати клієнта, з якими збігся платіж; у суму дня не входять"
                                 >
-                                  {row.groupNoteAmount != null ? `${money(row.groupNoteAmount)} грн` : ""}
+                                  {row.groupNoteAmount != null ? `${moneyInt(row.groupNoteAmount)} грн` : ""}
                                 </td>
                                 <td />
                               </tr>
@@ -684,7 +690,7 @@ export function CashLedgerPanel({
                                   Не вистачає документів
                                 </td>
                                 <td className="whitespace-nowrap px-2 py-0.5 text-right font-semibold tabular-nums">
-                                  {money(row.missing)} грн
+                                  {moneyInt(row.missing)} грн
                                 </td>
                                 <td />
                               </tr>
@@ -737,7 +743,7 @@ export function CashLedgerPanel({
                         }`}
                       >
                         {row.fxRate ? "≈ " : ""}
-                        {money(signed)} {unit}
+                        {moneyInt(signed)} {unit}
                         {row.fxRate ? (
                           <div
                             className="text-[9px] font-normal text-amber-700"

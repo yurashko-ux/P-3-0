@@ -320,7 +320,7 @@ export default function CashBalancesPage() {
         </button>
       </div>
       {/* Каса разом із ФОП — одна таблиця по днях з однією сумою дня; лише ФОП-и — кожен своєю таблицею */}
-      {selectedCashTitles.length === 0 && selectedBankTiles.length === 0 ? (
+      {tiles.length > 0 && selectedCashTitles.length === 0 && selectedBankTiles.length === 0 ? (
         <p className="px-3 py-6 text-center text-sm text-gray-500">Усі рахунки вимкнено — натисніть плитку, щоб показати її рухи.</p>
       ) : null}
       {selectedCashTitles.length > 0 ? (

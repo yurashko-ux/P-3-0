@@ -56,6 +56,12 @@ export const DOCUMENT_KIND_LABEL: Record<LinkedDocument["kind"], string> = {
   deposit: "Завдаток",
 };
 
+/** Колонки «Сума» і «Залишок»: цілі гривні (копійки округлюємо) */
+function moneyInt(n: number): string {
+  const rounded = Math.round(n);
+  return (rounded === 0 ? 0 : rounded).toLocaleString("uk-UA");
+}
+
 function money(n: number): string {
   return n.toLocaleString("uk-UA", {
     minimumFractionDigits: Number.isInteger(n) ? 0 : 2,
@@ -274,7 +280,7 @@ export function BankAccountPanel({
                               incoming ? "text-gray-900" : "text-red-600"
                             }`}
                           >
-                            {money(row.amount)} грн
+                            {moneyInt(row.amount)} грн
                           </td>
                         </tr>
                         {open ? (
@@ -291,7 +297,7 @@ export function BankAccountPanel({
                                 <td className="truncate px-2 py-0.5" title={doc.title}>
                                   {doc.title}
                                 </td>
-                                <td className="whitespace-nowrap px-2 py-0.5 text-right tabular-nums">{money(doc.amount)} грн</td>
+                                <td className="whitespace-nowrap px-2 py-0.5 text-right tabular-nums">{moneyInt(doc.amount)} грн</td>
                               </tr>
                             ))}
                             {row.groupNote || row.documents.length === 0 ? (
@@ -307,7 +313,7 @@ export function BankAccountPanel({
                                   className="whitespace-nowrap px-2 py-0.5 text-right font-semibold tabular-nums text-violet-600"
                                   title="Оплати клієнта, з якими збігся платіж; у суму дня не входять"
                                 >
-                                  {row.groupNoteAmount != null ? `${money(row.groupNoteAmount)} грн` : ""}
+                                  {row.groupNoteAmount != null ? `${moneyInt(row.groupNoteAmount)} грн` : ""}
                                 </td>
                               </tr>
                             ) : null}
@@ -319,7 +325,7 @@ export function BankAccountPanel({
                                   Не вистачає документів
                                 </td>
                                 <td className="whitespace-nowrap px-2 py-0.5 text-right font-semibold tabular-nums">
-                                  {money(row.missing)} грн
+                                  {moneyInt(row.missing)} грн
                                 </td>
                               </tr>
                             ) : null}
@@ -344,7 +350,7 @@ export function BankAccountPanel({
                       <td className="truncate px-2 py-1" title={doc.comment ? `${doc.title}\n${doc.comment}` : doc.title}>
                         {doc.title} · <span className="italic">без платежу</span>
                       </td>
-                      <td className="whitespace-nowrap px-2 py-1 text-right italic tabular-nums">{money(doc.amount)} грн</td>
+                      <td className="whitespace-nowrap px-2 py-1 text-right italic tabular-nums">{moneyInt(doc.amount)} грн</td>
                     </tr>
                   ))}
                 </tbody>
