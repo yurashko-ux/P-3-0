@@ -560,6 +560,45 @@ async function appointmentLinesAreConsultation(
   return servicesIncludeConsultation(services);
 }
 
+/** Запис має вміститись у зміну працівника (графік Kresco). Немає рядка графіка на день — не блокуємо. */
+async function assertWithinWorkShift(
+  altegioStaffId: number,
+  staffName: string,
+  datetime: Date,
+  seanceLengthSec: number,
+) {
+  const startText = formatKyivDateTime(datetime);
+  const kyivDay = startText.slice(0, 10);
+  const workDay = await prisma.teamWorkDay.findUnique({
+    where: { altegioStaffId_kyivDay: { altegioStaffId, kyivDay } },
+  });
+  if (!workDay) return;
+  const slots = (Array.isArray(workDay.slots) ? workDay.slots : []) as Array<{ from?: string; to?: string }>;
+  const start = startText.slice(11, 16);
+  const endText = formatKyivDateTime(new Date(datetime.getTime() + seanceLengthSec * 1000));
+  const end = endText.slice(0, 10) === kyivDay ? endText.slice(11, 16) : "24:00";
+  const [y, mo, d] = kyivDay.split("-");
+  if (slots.length === 0) {
+    console.warn(`[journal] Відхилено запис: ${staffName} не працює ${kyivDay}`);
+    throw new Error(`Цей час недоступний: ${staffName} не працює ${d}.${mo}.${y}. Оберіть інший день.`);
+  }
+  const fits = slots.some((s) => s.from && s.to && start >= s.from && end <= s.to);
+  if (fits) return;
+  const shifts = slots.map((s) => `${s.from}–${s.to}`).join(", ");
+  console.warn(`[journal] Відхилено запис поза зміною: ${staffName} ${kyivDay} ${start}–${end}, зміна ${shifts}`);
+  throw new Error(
+    `Цей час недоступний: ${staffName} ${d}.${mo}.${y} працює ${shifts}, а запис ${start}–${end}. Оберіть час у межах зміни.`,
+  );
+}
+
+/** Altegio 409 «The selected time is not available» → зрозуміле повідомлення. */
+function readableAltegioWriteError(message: string): string {
+  if (/HTTP 409/.test(message) && /time is not available/i.test(message)) {
+    return "Цей час недоступний в Altegio: працівник не працює в цей час або час зайнятий. Оберіть інший час.";
+  }
+  return message;
+}
+
 async function loadWriteContext(input: KrescoAppointmentInput, opts?: { isCreate?: boolean }) {
   let client = await prisma.directClient.findUnique({ where: { id: input.directClientId } });
   if (!client) throw new Error("Клієнта Direct не знайдено");
@@ -605,7 +644,8 @@ async function loadWriteContext(input: KrescoAppointmentInput, opts?: { isCreate
   const seanceLength =
     Number(input.seanceLength) > 0
       ? Number(input.seanceLength)
-      : Math.max(...orderedServices.map((s) => s.durationSec || 3600), 3600);
+      : // Тривалість з довідника послуг, але не менше 30 хв; послуга без тривалості — година
+        Math.max(...orderedServices.map((s) => s.durationSec || 3600), 1800);
 
   const isConsultation = servicesIncludeConsultation(orderedServices);
   // Нова консультація в минулому: Altegio відповідає 409 «time is not available».
@@ -621,6 +661,11 @@ async function loadWriteContext(input: KrescoAppointmentInput, opts?: { isCreate
     );
   }
   const writeAltegio = shouldWriteJournalAppointmentToAltegio({ isConsultation });
+  // Час поза зміною працівника: Altegio відповідає 409 «time is not available».
+  // Перевіряємо за графіком Kresco до створення запису, щоб дати зрозуміле повідомлення.
+  if (opts?.isCreate && writeAltegio) {
+    await assertWithinWorkShift(altegioStaffId, staffName, datetime, seanceLength);
+  }
   if (writeAltegio) {
     client = await ensureDirectClientLinkedToAltegio(client);
   }
@@ -859,6 +904,13 @@ export async function createAppointmentFromKresco(input: KrescoAppointmentInput)
     });
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);
+    const readable = readableAltegioWriteError(message);
+    if (readable !== message) {
+      // Altegio відмовив за часом — запису немає ніде, тож не лишаємо sync_error у журналі
+      await prisma.salonAppointment.delete({ where: { id: pending.id } }).catch(() => undefined);
+      console.warn(`[journal] Altegio відхилив час запису ${pending.id}, чернетку видалено:`, message);
+      throw new Error(readable);
+    }
     await prisma.salonAppointment.update({
       where: { id: pending.id },
       data: { status: "sync_error", syncError: message },
@@ -1041,7 +1093,7 @@ export async function updateAppointmentFromKresco(input: KrescoAppointmentInput)
       where: { id: existing.id },
       data: { status: "sync_error", syncError: message },
     });
-    throw new Error(message);
+    throw new Error(readableAltegioWriteError(message));
   }
 }
 
