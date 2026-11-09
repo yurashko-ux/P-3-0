@@ -57,6 +57,8 @@ type ConsultationClient = {
   rowColorKey: ConsultationRowColorKey;
   outcome: ConsultationOutcome;
   isLeadOnly: boolean;
+  /** Новий лід місяця (рахується в «Лід»); без нього — лише консультація в місяці. */
+  isNewLead?: boolean;
   /** Унікальний ключ рядка (лід і копія консультації одного клієнта). */
   rowKey: string;
   /** Майбутня копія поза вікном місяця — не в summary/легенді консультацій. */
@@ -74,9 +76,10 @@ type ConsultationClient = {
 };
 
 const COLOR_LEGEND: Array<{ key: ConsultationRowColorKey; label: string; className: string }> = [
-  { key: "lead", label: "Лід (без запису)", className: "bg-slate-200" },
+  { key: "lead", label: "Лід", className: "bg-slate-200" },
   { key: "planned", label: "Очікуємо", className: "bg-yellow-200" },
-  { key: "positive", label: "Відбулась (+)", className: "bg-green-200" },
+  // Консультація відбулась позитивно = є запис на платну послугу = новий клієнт.
+  { key: "positive", label: "Новий клієнт", className: "bg-green-200" },
   { key: "negative", label: "Відбулась (−)", className: "bg-red-200" },
   { key: "thinking", label: "Думає", className: "bg-sky-200" },
   { key: "no_show", label: "Не з'явилась", className: "bg-purple-200" },
@@ -211,19 +214,26 @@ function ConsultationsPageContent() {
       no_show: 0,
     };
     for (const c of clients) {
-      // Майбутня копія (напр. 03.11 у жовтні) не в легенді консультацій цього місяця.
-      if (c.countsTowardConsultationSummary === false && !c.isLeadOnly) continue;
+      // Рядки лідів рахуємо окремо (newLeadsCount), щоб мітка на рядку ліда не дублювала консультацію.
+      if (c.isLeadOnly) continue;
+      // Консультація з іншого місяця (напр. 03.11 у жовтневому списку) не входить у легенду.
+      if (c.countsTowardConsultationSummary === false) continue;
       counts[c.rowColorKey] += 1;
     }
+    // Лід — усі нові ліди місяця (дата першого контакту, Europe/Kyiv), кожен клієнт один раз.
+    counts.lead =
+      newLeadsCount ?? new Set(clients.filter((c) => c.isLeadOnly).map((c) => c.id)).size;
     return counts;
-  }, [clients]);
+  }, [clients, newLeadsCount]);
 
   // Лічильник джерел лідів за обраний місяць: емодзі джерела + кількість (назва — у підказці).
   // Клієнт рахується один раз, навіть якщо в таблиці є і рядок ліда, і копія консультації.
+  // Лише нові ліди місяця — сума джерел дорівнює лічильнику «Лід».
   const sourceCounts = useMemo(() => {
     const groups = new Map<string, { mark: string | null; name: string; count: number }>();
     const seen = new Set<string>();
     for (const c of clients) {
+      if (!(c.isNewLead ?? c.isLeadOnly)) continue;
       if (seen.has(c.id)) continue;
       seen.add(c.id);
       const meta = c.leadAgency ? leadSourcesMap[c.leadAgency] : undefined;
@@ -438,15 +448,6 @@ function ConsultationsPageContent() {
         >
           Оновити
         </button>
-        {newLeadsCount != null && (
-          <span
-            className="inline-flex items-center gap-1 whitespace-nowrap text-[11px] px-1 cursor-default"
-            title="Нові ліди за обраний місяць (дата першого контакту, Europe/Kyiv)"
-          >
-            Лідів за місяць
-            <span className="tabular-nums font-semibold text-sm leading-none">{newLeadsCount}</span>
-          </span>
-        )}
         <div className="flex flex-wrap items-center gap-1 text-[11px]">
           {COLOR_LEGEND.map((item) => (
             <span key={item.key} className="inline-flex items-center gap-1 whitespace-nowrap">

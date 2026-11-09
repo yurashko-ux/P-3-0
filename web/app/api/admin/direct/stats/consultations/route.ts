@@ -213,7 +213,7 @@ export async function GET(req: NextRequest) {
         WHERE "consultationDeletedInAltegio" = false
           AND "consultationBookingDate" IS NOT NULL
           AND "consultationBookingDate" >= ${monthStartUtc}
-          AND "consultationBookingDate" < ${anchorEndUtc}
+          AND "consultationBookingDate" < ${monthEndUtc}
       `,
       prisma.$queryRaw<Array<{ id: string }>>`
         SELECT id
@@ -360,9 +360,8 @@ export async function GET(req: NextRequest) {
       c.consultationMasterId = appt.masterId || null;
       krescoOverrideIds.add(c.id);
     }
-    // Консультації Kresco показуємо на весь місяць, включно з майбутніми днями.
-    const consultationWindowEnd = (clientId: string) =>
-      krescoOverrideIds.has(clientId) ? monthEndUtc : anchorEndUtc;
+    // Консультації показуємо на весь місяць, включно з майбутніми днями (рахуються в «Очікуємо»).
+    const consultationWindowEnd = (_clientId: string) => monthEndUtc;
 
     const filtered = clients.filter(
       (c) =>
@@ -394,6 +393,8 @@ export async function GET(req: NextRequest) {
       rowColorKey: ReturnType<typeof getConsultationRowColorKey>;
       outcome: ConsultationOutcome;
       isLeadOnly: boolean;
+      /** Новий лід місяця (як newLeadsCount) — для лічильника джерел. */
+      isNewLead: boolean;
       /** Чи входить у summary консультацій місяця (майбутня копія поза вікном — ні). */
       countsTowardConsultationSummary: boolean;
       chatStatusId: string | null;
@@ -456,6 +457,7 @@ export async function GET(req: NextRequest) {
         leadAdId: c.leadAdId,
         sourceMark: c.leadAgency ? sourceMarkByCode.get(c.leadAgency) || null : null,
         sourceName: c.leadAgency ? sourceNameByCode.get(c.leadAgency) || null : null,
+        isNewLead: asLead,
       };
 
       const pushRow = (opts: {
