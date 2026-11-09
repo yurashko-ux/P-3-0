@@ -74,7 +74,7 @@ import {
   type LastAttendedVisitClient,
 } from '@/lib/inactive-base/days-since-last-visit';
 import { hasPaidServiceVisitForInactiveBase } from '@/lib/inactive-base/is-inactive-client';
-import { resolveInactiveLifecycleStatus } from '@/lib/inactive-base/lifecycle';
+import { listEverReturnedClientIds } from '@/lib/inactive-base/lifecycle-events';
 import { computeInstInstagramCountsFromDb } from '@/lib/direct-instagram-filter-counts';
 import { normalizeInstInstagramCountsFromApi } from '@/lib/direct-instagram-presence-filter';
 import { directRecordSlotDate, todayKyivDay as recordSlotTodayKyivDay } from '@/lib/direct-record-slot';
@@ -509,6 +509,7 @@ export async function GET(req: NextRequest) {
       try {
         const rows = await prisma.directClient.findMany({
           select: {
+            id: true,
             consultationAttended: true,
             consultationAttendanceValue: true,
             consultationDate: true,
@@ -527,6 +528,7 @@ export async function GET(req: NextRequest) {
         });
         const daysCounts = computeGlobalDaysCountsFromClients(rows as unknown as ReadonlyArray<Record<string, unknown>>, {
           excludeFuturePaidRecord: daysExcludeFutureRecord,
+          returnedClientIds: await listEverReturnedClientIds(),
         });
         return NextResponse.json({ ok: true, daysCounts, totalCount: rows.length });
       } catch (err) {
@@ -717,7 +719,7 @@ export async function GET(req: NextRequest) {
           try {
             const allRows = await prisma.directClient.findMany();
             const allClients = allRows.map((row) => toSerializableDirectClient(row as Record<string, any>));
-            globalFilterAgg = computeGlobalColumnFilterAggregatesFromClients(allClients);
+            globalFilterAgg = computeGlobalColumnFilterAggregatesFromClients(allClients, await listEverReturnedClientIds());
             let mastersList: { id: string; name: string }[] = [];
             try {
               const { getAllDirectMasters } = await import('@/lib/direct-masters/store');
@@ -948,6 +950,7 @@ export async function GET(req: NextRequest) {
         try {
           const daysCounts = computeGlobalDaysCountsFromClients(clientsFullForGlobalCounts, {
             excludeFuturePaidRecord: daysExcludeFutureRecord,
+            returnedClientIds: await listEverReturnedClientIds(),
           });
           const total = clientsFullForGlobalCounts.length;
           return NextResponse.json({ ok: true, daysCounts, totalCount: total });
@@ -975,7 +978,7 @@ export async function GET(req: NextRequest) {
             if (sid) statusCounts[sid] = Number(r._count.id || 0);
           }
 
-          const agg = computeGlobalColumnFilterAggregatesFromClients(clientsFullForGlobalCounts);
+          const agg = computeGlobalColumnFilterAggregatesFromClients(clientsFullForGlobalCounts, await listEverReturnedClientIds());
           let instInstagramCountsFc = agg.instInstagramCounts;
           try {
             instInstagramCountsFc = await computeInstInstagramCountsFromDb();
@@ -1396,8 +1399,9 @@ export async function GET(req: NextRequest) {
         return typeof d === 'number' && Number.isFinite(d) && d >= 60 && d < 90;
       });
     } else if (daysFilter === 'restored') {
-      // Повернуті в активну базу майбутнім платним записом (бейдж ✓ у колонці «Днів»)
-      filtered = filtered.filter((c) => resolveInactiveLifecycleStatus(c as LastAttendedVisitClient, todayKyiv) === 'restored');
+      // Повернуті: колись записані з неактивної бази (подія restored у журналі; місяць — фільтром іншої колонки)
+      const returnedIds = await listEverReturnedClientIds();
+      filtered = filtered.filter((c) => returnedIds.has(c.id));
     } else if (daysFilter === 'overgrown') {
       filtered = filtered.filter((c) => {
         const d = (c as any).daysSinceLastVisit;
@@ -2205,7 +2209,7 @@ export async function GET(req: NextRequest) {
       onlyNew: 0,
     };
     if (!skipPanelCounts) {
-      globalColumnFilterAgg = computeGlobalColumnFilterAggregatesFromClients(clientsFullForGlobalCounts);
+      globalColumnFilterAgg = computeGlobalColumnFilterAggregatesFromClients(clientsFullForGlobalCounts, await listEverReturnedClientIds());
       masterFilterPanelCountsHeavy = buildGlobalMasterFilterPanelCounts(
         clientsFullForGlobalCounts,
         mastersForGlobalFilterPanel

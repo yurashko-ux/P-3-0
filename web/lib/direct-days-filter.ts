@@ -33,7 +33,7 @@ export type GlobalDaysCounts = {
  */
 export function computeGlobalDaysCountsFromClients(
   clientsForDays: ReadonlyArray<Record<string, unknown>>,
-  options?: { excludeFuturePaidRecord?: boolean }
+  options?: { excludeFuturePaidRecord?: boolean; returnedClientIds?: ReadonlySet<string> }
 ): GlobalDaysCounts {
   const daysCounts: GlobalDaysCounts = {
     activeBase: 0,
@@ -64,7 +64,13 @@ export function computeGlobalDaysCountsFromClients(
     const client = c as LastAttendedVisitClient;
     const hasPaid = hasPaidServiceVisit(c);
     // Повернуті — як бейдж ✓ у колонці «Днів»
-    if (resolveInactiveLifecycleStatus(client, todayKyivDay) === 'restored') daysCounts.restored++;
+    if (
+      options?.returnedClientIds
+        ? options.returnedClientIds.has(String((c as { id?: unknown }).id ?? ''))
+        : resolveInactiveLifecycleStatus(client, todayKyivDay) === 'restored'
+    ) {
+      daysCounts.restored++;
+    }
     if (!hasPaid && hasConsultationRecord(c)) {
       daysCounts.consultation++;
     }

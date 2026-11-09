@@ -186,6 +186,22 @@ export async function listInactiveLifecycleEventsForClient(
   }
 }
 
+/** Усі клієнти, яких колись повертали з неактивної бази (є подія restored) — для фільтра «Повернуті клієнти». */
+export async function listEverReturnedClientIds(): Promise<Set<string>> {
+  try {
+    await ensureTable();
+    const rows = await prisma.directInactiveLifecycleEvent.findMany({
+      where: { type: 'restored' },
+      select: { clientId: true },
+      distinct: ['clientId'],
+    });
+    return new Set(rows.map((r) => r.clientId));
+  } catch (err) {
+    console.warn('[inactive-lifecycle] listEverReturnedClientIds failed:', err instanceof Error ? err.message : err);
+    return new Set();
+  }
+}
+
 /** Повернуті за період [fromDay, toDay] включно (події restored). */
 export async function listReturnedClientIdsInRange(
   fromDay: string,

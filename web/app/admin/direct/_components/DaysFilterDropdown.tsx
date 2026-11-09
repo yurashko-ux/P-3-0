@@ -28,7 +28,7 @@ const OPTIONS: { id: DaysOption; label: string; tooltip: string }[] = [
   { id: "growing", label: "Відростає (0–60)", tooltip: "0–60 днів з останнього платного візиту" },
   { id: "grown", label: "Відросло (60–90)", tooltip: "60–90 днів з останнього платного візиту" },
   { id: "overgrown", label: "Переросло (90+)", tooltip: "90+ днів з останнього платного візиту" },
-  { id: "restored", label: "Повернуті клієнти", tooltip: "Повернулись з неактивної бази майбутнім платним записом (бейдж ✓)" },
+  { id: "restored", label: "Повернуті клієнти", tooltip: "Колись записані з неактивної бази (101+ днів без платного візиту) — журнал повернень" },
 ];
 
 function hasPaidServiceVisit(c: DirectClient): boolean {

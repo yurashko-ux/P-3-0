@@ -109,7 +109,8 @@ export type GlobalColumnFilterAggregates = {
  * Лічильники колонкових фільтрів по повній вибірці клієнтів (як у filterCountsOnly=1).
  */
 export function computeGlobalColumnFilterAggregatesFromClients(
-  clientsFull: DirectClient[]
+  clientsFull: DirectClient[],
+  returnedClientIds?: ReadonlySet<string>
 ): GlobalColumnFilterAggregates {
   const todayKyivDay = kyivDayFromISO(new Date().toISOString());
   const yesterdayKyivDay = getPreviousKyivDay(todayKyivDay);
@@ -162,7 +163,9 @@ export function computeGlobalColumnFilterAggregatesFromClients(
     if (!hasPaidServiceVisit && hasConsultationRecord) daysCounts.consultation++;
     const client = c as LastAttendedVisitClient;
     // Повернуті — як бейдж ✓ у колонці «Днів»
-    if (resolveInactiveLifecycleStatus(client, todayKyivDay) === 'restored') daysCounts.restored++;
+    if (returnedClientIds ? returnedClientIds.has(c.id) : resolveInactiveLifecycleStatus(client, todayKyivDay) === 'restored') {
+      daysCounts.restored++;
+    }
     const d = computePaidDaysSinceLastVisitOnKyivDay(client, todayKyivDay);
     if (d === undefined) {
       daysCounts.none++;
