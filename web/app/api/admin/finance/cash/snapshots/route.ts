@@ -3,6 +3,9 @@ import { listCashDaySnapshots } from "@/lib/finance/cash-count";
 import { requireFinanceDocsSection } from "@/lib/finance/require-finance-docs-auth";
 
 export const dynamic = "force-dynamic";
+// Без кешу fetch: запити Prisma (Accelerate, HTTP) з тими самими параметрами інакше віддавали застарілі дані
+export const revalidate = 0;
+export const fetchCache = "force-no-store";
 
 export async function GET(req: NextRequest) {
   const auth = await requireFinanceDocsSection(req, "view");

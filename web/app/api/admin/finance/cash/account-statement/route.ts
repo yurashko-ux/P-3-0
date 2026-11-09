@@ -11,6 +11,9 @@ import {
 } from "@/lib/bank/reconciliation-number";
 
 export const dynamic = "force-dynamic";
+// Без кешу fetch: запити Prisma (Accelerate, HTTP) з тими самими параметрами інакше віддавали застарілі дані
+export const revalidate = 0;
+export const fetchCache = "force-no-store";
 
 const STATEMENT_LIMIT = 300;
 const DAY_MS = 24 * 60 * 60 * 1000;

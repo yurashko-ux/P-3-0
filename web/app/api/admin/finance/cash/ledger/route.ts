@@ -4,6 +4,9 @@ import { listCashLedger } from "@/lib/finance/cash-posting";
 import { prisma } from "@/lib/prisma";
 
 export const dynamic = "force-dynamic";
+// Без кешу fetch: запити Prisma (Accelerate, HTTP) з тими самими параметрами інакше віддавали застарілі дані
+export const revalidate = 0;
+export const fetchCache = "force-no-store";
 export const maxDuration = 60;
 
 /** Готівкові платежі і касовка, якою їх проведено. */
