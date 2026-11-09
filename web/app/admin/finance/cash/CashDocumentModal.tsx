@@ -405,10 +405,10 @@ export function CashDocumentModal({
                 + Стаття
               </button>
             ) : null}
-            {/* Закрити — як у Windows: темно-рожевий квадрат з білим хрестиком */}
+            {/* Закрити — як у Windows: рожевий квадрат з білим хрестиком */}
             <button
               type="button"
-              className="ml-1 flex h-7 w-8 items-center justify-center rounded-md bg-[#c2185b] text-white shadow-[0_1px_2px_rgba(15,23,42,0.15)] transition hover:bg-[#a3134c] active:scale-95"
+              className="ml-1 flex h-7 w-8 items-center justify-center rounded-md bg-[#f06ba6] text-white shadow-[0_1px_2px_rgba(15,23,42,0.15)] transition hover:bg-[#e2548f] active:scale-95"
               aria-label="Закрити"
               title="Закрити"
               onClick={onClose}
@@ -584,14 +584,6 @@ export function CashDocumentModal({
           </div>
           <p className="text-[10px] text-gray-500">Документ запишеться лише в Креско. В Альтеджіо він не потрапить.</p>
           <div className="flex justify-end gap-2 pt-1">
-            <button
-              type="button"
-              className="h-8 rounded-lg px-3 text-xs text-gray-600 hover:bg-slate-100 disabled:opacity-60"
-              onClick={onClose}
-              disabled={busy}
-            >
-              Скасувати
-            </button>
             <button
               type="button"
               className="h-8 rounded-lg border border-slate-200/80 px-4 text-xs font-medium text-gray-900 shadow-[0_1px_2px_rgba(15,23,42,0.05),0_4px_10px_-6px_rgba(15,23,42,0.28)] transition-[filter] hover:brightness-[0.96] disabled:opacity-60"
