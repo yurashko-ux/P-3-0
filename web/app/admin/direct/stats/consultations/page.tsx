@@ -178,6 +178,8 @@ function ConsultationsPageContent() {
   const [error, setError] = useState<string | null>(null);
   const [clients, setClients] = useState<ConsultationClient[]>([]);
   const [masters, setMasters] = useState<MasterOption[]>([]);
+  // Нові ліди за місяць (firstContactDate у місяці, Europe/Kyiv) — summary.newLeadsCount з API.
+  const [newLeadsCount, setNewLeadsCount] = useState<number | null>(null);
   const [todayKyiv, setTodayKyiv] = useState(() => kyivDayFromISO(new Date().toISOString()));
   const [messagesClient, setMessagesClient] = useState<ConsultationClient | null>(null);
   const [savingIds, setSavingIds] = useState<Set<string>>(new Set());
@@ -263,6 +265,7 @@ function ConsultationsPageContent() {
       if (!res.ok || !data?.ok) {
         setClients([]);
         setMasters([]);
+        setNewLeadsCount(null);
         setError(typeof data?.error === "string" ? data.error : `HTTP ${res.status}`);
         return;
       }
@@ -274,10 +277,14 @@ function ConsultationsPageContent() {
         }))
       );
       setMasters(Array.isArray(data.masters) ? data.masters : []);
+      setNewLeadsCount(
+        typeof data.summary?.newLeadsCount === "number" ? data.summary.newLeadsCount : null
+      );
       if (typeof data.todayKyiv === "string") setTodayKyiv(data.todayKyiv);
     } catch (e) {
       setClients([]);
       setMasters([]);
+      setNewLeadsCount(null);
       setError(e instanceof Error ? e.message : String(e));
     } finally {
       if (!opts?.silent) setLoading(false);
@@ -431,6 +438,15 @@ function ConsultationsPageContent() {
         >
           Оновити
         </button>
+        {newLeadsCount != null && (
+          <span
+            className="inline-flex items-center gap-1 whitespace-nowrap text-[11px] px-1 cursor-default"
+            title="Нові ліди за обраний місяць (дата першого контакту, Europe/Kyiv)"
+          >
+            Лідів за місяць
+            <span className="tabular-nums font-semibold text-sm leading-none">{newLeadsCount}</span>
+          </span>
+        )}
         <div className="flex flex-wrap items-center gap-1 text-[11px]">
           {COLOR_LEGEND.map((item) => (
             <span key={item.key} className="inline-flex items-center gap-1 whitespace-nowrap">
