@@ -664,9 +664,16 @@ export function CashLedgerPanel({
                                 <td />
                                 <td />
                                 <td className="px-1 py-0.5 text-center text-gray-400">↳</td>
-                                <td colSpan={6} className="px-2 py-0.5 italic">
+                                <td colSpan={4} className="px-2 py-0.5 italic">
                                   {row.groupNote || "Документів немає"}
                                 </td>
+                                <td
+                                  className="whitespace-nowrap px-2 py-0.5 text-right font-semibold tabular-nums text-violet-600"
+                                  title="Оплати клієнта, з якими збігся платіж; у суму дня не входять"
+                                >
+                                  {row.groupNoteAmount != null ? `${money(row.groupNoteAmount)} грн` : ""}
+                                </td>
+                                <td />
                               </tr>
                             ) : null}
                             {row.status === "partial" ? (

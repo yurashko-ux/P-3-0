@@ -214,6 +214,8 @@ export async function GET(req: NextRequest) {
             ? item.altegioIncomingMatch.kyivDay
             : null,
         groupNote: "",
+        /** Сума оплат клієнта, з якими збігся цей платіж, — лише довідково під приміткою (у суму дня не входить) */
+        groupNoteAmount: null as number | null,
       };
     });
 
@@ -326,12 +328,14 @@ export async function GET(req: NextRequest) {
           byClient.set(doc.clientName, group);
         }
         const usedClients = new Set<string>();
+        const matchedAmount = new Map<string, number>();
         for (const row of groupRows) {
           const client = [...byClient.values()].find(
             (group) => !usedClients.has(group.clientName) && Math.abs(group.amount - row.amount) < 0.01,
           );
           if (!client) continue;
           usedClients.add(client.clientName);
+          matchedAmount.set(row.id, Math.round(client.amount * 100) / 100);
           row.clientName = client.clientName;
           // Як у розділі Платежі: перший запис серед оплат клієнта
           row.recordId = [...client.recordIds][0] ?? null;
@@ -346,6 +350,7 @@ export async function GET(req: NextRequest) {
             }
           } else {
             row.groupNote = `Зведено разом з ${rowRef(groupRows[0])} — документи оплат ${day.slice(8, 10)}.${day.slice(5, 7)} там`;
+            row.groupNoteAmount = matchedAmount.get(row.id) ?? null;
           }
         });
       }

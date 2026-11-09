@@ -33,6 +33,8 @@ export type StatementRow = {
   documents: LinkedDocument[];
   /** Вхідні одного дня зведені разом — пояснення під рядком */
   groupNote?: string;
+  /** Сума оплат клієнта під приміткою — фіолетовим, у суму дня не входить */
+  groupNoteAmount?: number | null;
 };
 
 /** Документ Креско на рахунку без банківського платежу */
@@ -298,8 +300,14 @@ export function BankAccountPanel({
                                 <td />
                                 <td />
                                 <td className="px-1 py-0.5 text-center text-gray-400">↳</td>
-                                <td colSpan={3} className="px-2 py-0.5 italic">
+                                <td colSpan={2} className="px-2 py-0.5 italic">
                                   {row.groupNote || "Документів немає"}
+                                </td>
+                                <td
+                                  className="whitespace-nowrap px-2 py-0.5 text-right font-semibold tabular-nums text-violet-600"
+                                  title="Оплати клієнта, з якими збігся платіж; у суму дня не входять"
+                                >
+                                  {row.groupNoteAmount != null ? `${money(row.groupNoteAmount)} грн` : ""}
                                 </td>
                               </tr>
                             ) : null}
