@@ -185,7 +185,23 @@ async function countWaitingByAudience(audience: "clients" | "leads"): Promise<nu
         WHERE m."clientId" = c.id
           AND (
             m.source IN ('instagram_graph', 'manual')
-            OR (m.source = 'instagram_reaction' AND LOWER(m.direction) = 'outgoing')
+            OR (
+              m.source = 'instagram_reaction' AND LOWER(m.direction) = 'outgoing'
+              -- Реакція на повідомлення, старше за останнє вхідне, не відповідає на нове питання.
+              AND NOT EXISTS (
+                SELECT 1
+                FROM "direct_messages" t
+                WHERE t."clientId" = c.id
+                  AND m."messageId" = 'reaction:react:' || t."messageId" || ':salon'
+                  AND t."receivedAt" < (
+                    SELECT MAX(i."receivedAt")
+                    FROM "direct_messages" i
+                    WHERE i."clientId" = c.id
+                      AND LOWER(i.direction) = 'incoming'
+                      AND i.source IN ('instagram_graph', 'manual')
+                  )
+              )
+            )
           )
         ORDER BY m."receivedAt" DESC, m.id DESC
         LIMIT 1
@@ -204,16 +220,17 @@ async function loadReplyTimes(ids: string[]): Promise<Map<string, ThreadReplyTim
       clientId: { in: ids },
       NOT: { source: { in: ["telegram", "telegram_campaign"] } },
     },
-    select: { clientId: true, direction: true, receivedAt: true, source: true },
+    select: { clientId: true, direction: true, receivedAt: true, source: true, messageId: true },
     orderBy: [{ receivedAt: "asc" }, { id: "asc" }],
   });
-  const grouped = new Map<string, Array<{ direction: string; receivedAt: Date; source: string | null }>>();
+  const grouped = new Map<string, Array<{ direction: string; receivedAt: Date; source: string | null; messageId: string | null }>>();
   for (const message of messages) {
     const list = grouped.get(message.clientId) ?? [];
     list.push({
       direction: message.direction,
       receivedAt: message.receivedAt,
       source: message.source,
+      messageId: message.messageId,
     });
     grouped.set(message.clientId, list);
   }

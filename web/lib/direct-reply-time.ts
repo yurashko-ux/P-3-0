@@ -11,7 +11,15 @@ export type ReplyMessage = {
   receivedAt: Date | string;
   /** manychat | instagram_graph | instagram_reaction | manual — для фільтра «надійних» вхідних. */
   source?: string | null;
+  /** Для реакції: «reaction:react:<id повідомлення>:salon» — на яке повідомлення поставили. */
+  messageId?: string | null;
 };
+
+/** Id повідомлення, на яке салон поставив реакцію (з messageId реакції). */
+function reactedMessageId(messageId: string | null | undefined): string | null {
+  const match = /^reaction:react:(.+):salon$/.exec(String(messageId || ""));
+  return match ? match[1] : null;
+}
 
 /** Вхідні реакції (лайки) не стартують очікування; вихідні знімають його як будь-яка відповідь салону. */
 const RELIABLE_REPLY_SOURCES = new Set(["instagram_graph", "manual"]);
@@ -141,9 +149,20 @@ export function computeThreadReplyTime(messages: ReplyMessage[]): ThreadReplyTim
       direction: String(message.direction || "").trim().toLowerCase(),
       source: String(message.source || "manychat").trim().toLowerCase(),
       at: message.receivedAt instanceof Date ? message.receivedAt.getTime() : new Date(message.receivedAt).getTime(),
+      messageId: message.messageId ?? null,
     }))
     .filter((message) => Number.isFinite(message.at))
     .sort((a, b) => a.at - b.at);
+
+  const atByMessageId = new Map(
+    sorted.filter((message) => message.messageId).map((message) => [message.messageId as string, message.at]),
+  );
+  // Реакція на старе повідомлення (до початку очікування) — не відповідь на нове питання клієнта.
+  const isStaleReaction = (message: (typeof sorted)[number], since: number | null) => {
+    if (message.source !== "instagram_reaction" || since == null) return false;
+    const targetAt = atByMessageId.get(reactedMessageId(message.messageId) || "");
+    return targetAt != null && targetAt < since;
+  };
 
   const samples: number[] = [];
   let waitStart: number | null = null;
@@ -157,6 +176,7 @@ export function computeThreadReplyTime(messages: ReplyMessage[]): ThreadReplyTim
       continue;
     }
     if (message.direction === "outgoing") {
+      if (isStaleReaction(message, waitStart)) continue;
       // Вихідна відповідь або реакція салону знімає очікування (закриває розмову).
       if (waitStart != null) {
         if (RELIABLE_REPLY_SOURCES.has(message.source)) {
@@ -173,7 +193,7 @@ export function computeThreadReplyTime(messages: ReplyMessage[]): ThreadReplyTim
     const message = sorted[i];
     const closesWait =
       RELIABLE_REPLY_SOURCES.has(message.source) || message.source === "instagram_reaction";
-    if (!closesWait) continue;
+    if (!closesWait || isStaleReaction(message, waitStart)) continue;
     if (message.direction === "outgoing") waitStart = null;
     break;
   }
