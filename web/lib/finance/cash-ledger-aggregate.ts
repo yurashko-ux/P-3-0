@@ -11,7 +11,11 @@ export type CashLedgerAggregateSource = {
   occurredAt: string;
   recordId: number | null;
   posted: boolean;
+  appointmentId?: string | null;
 };
+
+/** Номер запису Altegio і запис журналу Креско, якщо він там є. */
+export type CashLedgerRecordLink = { recordId: number; appointmentId: string | null };
 
 function timeLabelKyiv(iso: string): string {
   const date = new Date(iso);
@@ -30,10 +34,10 @@ function timeLabelKyiv(iso: string): string {
  */
 export function aggregateCashLedgerDayRows<T extends CashLedgerAggregateSource>(
   dayRows: T[],
-): T[] {
+): Array<T & { recordLinks: CashLedgerRecordLink[] }> {
   const groups = new Map<
     string,
-    T & { signed: number; times: Set<string>; records: Set<number>; titles: Set<string> }
+    T & { signed: number; times: Set<string>; records: Map<number, string | null>; titles: Set<string> }
   >();
   for (const row of dayRows) {
     const client = row.clientName.trim();
@@ -47,7 +51,7 @@ export function aggregateCashLedgerDayRows<T extends CashLedgerAggregateSource>(
         clientName: client,
         signed,
         times: new Set([timeLabelKyiv(row.occurredAt)]),
-        records: new Set(row.recordId ? [row.recordId] : []),
+        records: new Map(row.recordId ? [[row.recordId, row.appointmentId ?? null]] : []),
         titles: new Set(row.title ? [row.title] : []),
       });
       continue;
@@ -60,7 +64,9 @@ export function aggregateCashLedgerDayRows<T extends CashLedgerAggregateSource>(
       (current as { fxRate?: number | null }).fxRate = rowFx;
     }
     current.times.add(timeLabelKyiv(row.occurredAt));
-    if (row.recordId) current.records.add(row.recordId);
+    if (row.recordId && !current.records.get(row.recordId)) {
+      current.records.set(row.recordId, row.appointmentId ?? null);
+    }
     if (row.title) current.titles.add(row.title);
     if (row.occurredAt > current.occurredAt) current.occurredAt = row.occurredAt;
   }
@@ -75,7 +81,9 @@ export function aggregateCashLedgerDayRows<T extends CashLedgerAggregateSource>(
         direction: (incoming ? "in" : "out") as "in" | "out",
         amount: Math.abs(signed),
         title: [...group.titles].join(", ") || "—",
-        recordId: group.records.size === 1 ? [...group.records][0] : null,
+        recordId: group.records.size === 1 ? [...group.records.keys()][0] : null,
+        // Рядок із кількох записів показує всі номери, а не тире.
+        recordLinks: [...group.records].map(([recordId, appointmentId]) => ({ recordId, appointmentId })),
         occurredAt: times.length === 1 ? group.occurredAt : "",
       };
     });
