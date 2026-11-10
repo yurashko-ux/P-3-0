@@ -9,7 +9,7 @@ import {
   CASH_OPENING_USD,
   CASH_RECONCILE_FROM_KYIV_DAY,
 } from "@/lib/finance/cash-openings";
-import { aggregateCashLedgerDayRows, type CashLedgerRecordLink } from "@/lib/finance/cash-ledger-aggregate";
+import { aggregateCashLedgerDayRows } from "@/lib/finance/cash-ledger-aggregate";
 import { ReconciledDot } from "./ReconciledDot";
 import { DOCUMENT_KIND_LABEL, kyivDayOf, transferTitle, type StatementRow, type UnlinkedDocument } from "./BankAccountPanel";
 
@@ -44,8 +44,6 @@ type LedgerRow = {
   /** Переміщення: з якого рахунку на який */
   transferFrom?: string | null;
   transferTo?: string | null;
-  /** Усі записи зведеного рядка (клієнт за день може мати кілька записів) */
-  recordLinks?: CashLedgerRecordLink[];
 };
 
 /** Безготівковий рахунок (ФОП), обраний разом із касою: його рухи в тій самій таблиці по днях */
@@ -751,15 +749,7 @@ export function CashLedgerPanel({
                       </td>
                       <td className="break-words px-2 py-1 text-gray-800">{row.clientName || "—"}</td>
                       <td className="whitespace-nowrap px-2 py-1 tabular-nums text-gray-600">
-                        {row.recordLinks && row.recordLinks.length > 1 ? (
-                          row.recordLinks.map((link) => (
-                            <div key={link.recordId}>
-                              <RecordLink recordId={link.recordId} appointmentId={link.appointmentId} kyivDay={row.kyivDay} />
-                            </div>
-                          ))
-                        ) : (
-                          <RecordLink recordId={row.recordId} appointmentId={row.appointmentId} kyivDay={row.kyivDay} />
-                        )}
+                        <RecordLink recordId={row.recordId} appointmentId={row.appointmentId} kyivDay={row.kyivDay} />
                       </td>
                       {/* Довгий опис не роздуває рядок: один рядок, повний текст — при наведенні */}
                       <td className="relative px-2 py-1 text-left text-gray-700" title={row.title || undefined}>
