@@ -158,10 +158,11 @@ export function computeThreadReplyTime(messages: ReplyMessage[]): ThreadReplyTim
     sorted.filter((message) => message.messageId).map((message) => [message.messageId as string, message.at]),
   );
   // Реакція на старе повідомлення (до початку очікування) — не відповідь на нове питання клієнта.
+  // Давній лайк, знайдений при відкритті історії, має час самого повідомлення — теж не відповідь.
   const isStaleReaction = (message: (typeof sorted)[number], since: number | null) => {
     if (message.source !== "instagram_reaction" || since == null) return false;
     const targetAt = atByMessageId.get(reactedMessageId(message.messageId) || "");
-    return targetAt != null && targetAt < since;
+    return targetAt != null && (targetAt < since || message.at <= targetAt);
   };
 
   const samples: number[] = [];

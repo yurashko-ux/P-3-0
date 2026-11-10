@@ -193,12 +193,16 @@ async function countWaitingByAudience(audience: "clients" | "leads"): Promise<nu
                 FROM "direct_messages" t
                 WHERE t."clientId" = c.id
                   AND m."messageId" = 'reaction:react:' || t."messageId" || ':salon'
-                  AND t."receivedAt" < (
+                  AND (
+                    -- давній лайк, знайдений при відкритті історії, записаний часом самого повідомлення
+                    m."receivedAt" <= t."receivedAt"
+                    OR t."receivedAt" < (
                     SELECT MAX(i."receivedAt")
                     FROM "direct_messages" i
                     WHERE i."clientId" = c.id
                       AND LOWER(i.direction) = 'incoming'
                       AND i.source IN ('instagram_graph', 'manual')
+                    )
                   )
               )
             )

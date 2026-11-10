@@ -334,7 +334,8 @@ function useConversationList(audience: Audience) {
         const idx = prev.findIndex((row) => row.id === info.clientId);
         if (idx < 0) return prev;
         const prevAt = prev[idx].lastMessageAt ? new Date(prev[idx].lastMessageAt!).getTime() : 0;
-        if (Number.isFinite(prevAt) && prevAt >= atMs && idx === 0) return prev;
+        // Нічого новішого за рядок списку — не чіпаємо ні колір, ні місце (відкриття історії ≠ нове повідомлення).
+        if (Number.isFinite(prevAt) && prevAt >= atMs) return prev;
         const direction = String(info.newestDirection || "").toLowerCase();
         const updated: MessageRow = {
           ...prev[idx],

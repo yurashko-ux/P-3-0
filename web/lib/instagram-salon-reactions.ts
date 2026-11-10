@@ -11,6 +11,16 @@ import {
 } from "@/lib/instagram-webhook";
 
 const RECENT_MESSAGES = 20;
+/**
+ * Graph не каже, коли поставили лайк, — лише що він є. Лайк на свіже повідомлення (до доби)
+ * вважаємо відповіддю «зараз»: картка вгору. На старіше — це давній лайк, знайдений при відкритті
+ * історії: пишемо його часом самого повідомлення, нічого не піднімаємо й не знімаємо «очікує».
+ */
+const FRESH_REACTION_MS = 24 * 60 * 60 * 1000;
+
+function isFreshTarget(receivedAt: Date): boolean {
+  return Date.now() - receivedAt.getTime() <= FRESH_REACTION_MS;
+}
 
 function asRecord(value: unknown): Record<string, unknown> | null {
   if (!value || typeof value !== "object" || Array.isArray(value)) return null;
@@ -130,6 +140,7 @@ export async function ensureSalonReactionLiftsCard(clientId: string): Promise<bo
   });
   // Уже підняті вище за текст повідомлення — не смикаємо lastMessageAt на кожне відкриття історії.
   // Піднімаємо лише якщо картка «застрягла» на часі самого вхідного (лайк не оновив порядок).
+  if (!isFreshTarget(latestIn!.receivedAt)) return false;
   const stuck =
     !client?.lastMessageAt ||
     client.lastMessageAt.getTime() <= latestIn!.receivedAt.getTime() + 5000;
@@ -285,6 +296,7 @@ export async function syncInstagramSalonReactions(clientId: string): Promise<num
       });
       // Реакція на найсвіжіше вхідне = відповідь салону → час «зараз», картка завжди вгору.
       const isLatestIncoming = mid === recentIncoming[0]?.messageId;
+      const fresh = isFreshTarget(row.receivedAt);
       const liftAt = new Date();
       if (existing) {
         const data: { text?: string; rawData?: string; receivedAt?: Date } = {};
@@ -292,27 +304,15 @@ export async function syncInstagramSalonReactions(clientId: string): Promise<num
           data.text = text;
           data.rawData = rawData;
         }
-        if (isLatestIncoming) {
-          data.receivedAt = liftAt;
-        }
+        // Уже збережений лайк повторно не піднімаємо: інакше кожне відкриття історії смикає картку.
         if (Object.keys(data).length > 0) {
           await prisma.directMessage.update({ where: { id: existing.id }, data });
           saved += 1;
         }
-        await bumpClientLastMessage(
-          clientId,
-          isLatestIncoming ? liftAt : existing.receivedAt,
-        );
-        if (isLatestIncoming) {
-          console.log("[instagram/reactions] Картку піднято за лайком на останнє вхідне", {
-            clientId,
-            emoji,
-            mid: mid.slice(0, 24),
-          });
-        }
         return;
       }
-      const receivedAt = liftAt;
+      // Давній лайк — часом повідомлення: тоді він не відповідь на нове питання (див. direct-reply-time).
+      const receivedAt = fresh ? liftAt : row.receivedAt;
       await prisma.directMessage.create({
         data: {
           clientId,
@@ -324,13 +324,13 @@ export async function syncInstagramSalonReactions(clientId: string): Promise<num
           rawData,
         },
       });
-      await bumpClientLastMessage(clientId, receivedAt);
+      if (fresh) await bumpClientLastMessage(clientId, receivedAt);
       saved += 1;
       console.log("[instagram/reactions] Лайк салону збережено", {
         clientId,
         emoji,
         mid: mid.slice(0, 24),
-        lifted: true,
+        lifted: fresh,
         latestIncoming: isLatestIncoming,
       });
     }),
