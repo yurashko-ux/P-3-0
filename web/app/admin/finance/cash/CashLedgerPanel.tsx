@@ -11,7 +11,7 @@ import {
 } from "@/lib/finance/cash-openings";
 import { aggregateCashLedgerDayRows } from "@/lib/finance/cash-ledger-aggregate";
 import { ReconciledDot } from "./ReconciledDot";
-import { DOCUMENT_KIND_LABEL, kyivDayOf, transferTitle, type StatementRow, type UnlinkedDocument } from "./BankAccountPanel";
+import { DOCUMENT_KIND_LABEL, PurposeLabel, kyivDayOf, transferTitle, type StatementRow, type UnlinkedDocument } from "./BankAccountPanel";
 
 type SavedCount = {
   id: string;
@@ -652,7 +652,7 @@ export function CashLedgerPanel({
                             title={row.bankTitle && row.bankTitle !== row.title ? `${row.title}\nБанк: ${row.bankTitle}` : row.title || undefined}
                           >
                             <span className="block truncate">
-                              {transferTitle(row.title, row, incoming, item.accountTitle) ?? (row.title || "—")}
+                              {transferTitle(row.title, row, incoming, item.accountTitle) ?? <PurposeLabel text={row.title || "—"} />}
                             </span>
                           </td>
                           <td className="relative px-2 py-1 text-gray-700" title={item.accountTitle}>
@@ -754,7 +754,7 @@ export function CashLedgerPanel({
                       {/* Довгий опис не роздуває рядок: один рядок, повний текст — при наведенні */}
                       <td className="relative px-2 py-1 text-left text-gray-700" title={row.title || undefined}>
                         <span className="block truncate">
-                          {transferTitle(row.title, row, incoming, row.accountTitle) ?? row.title}
+                          {transferTitle(row.title, row, incoming, row.accountTitle) ?? <PurposeLabel text={row.title} />}
                         </span>
                       </td>
                       <td className="relative px-2 py-1 text-gray-700" title={row.accountTitle}>

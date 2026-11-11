@@ -3,6 +3,14 @@
 import { Fragment, useEffect, useMemo, useState } from "react";
 import { ReconciledDot, type ReconcileStatus } from "./ReconciledDot";
 
+/** Призначення рядка; завдаток — жовта плашка, як у розділі Платежі. */
+export function PurposeLabel({ text }: { text: string }) {
+  if (/^завдаток/i.test(text)) {
+    return <span className="inline-flex max-w-full truncate rounded bg-amber-200 px-1 py-0.5 text-[10px] font-medium text-amber-950">{text}</span>;
+  }
+  return <>{text}</>;
+}
+
 export type LinkedDocument = {
   id: string;
   kind: "kresco" | "altegio" | "fee" | "visit" | "payment" | "deposit";
@@ -273,7 +281,7 @@ export function BankAccountPanel({
                                 : row.title || undefined
                             }
                           >
-                            {transferTitle(row.title, row, incoming, accountTitle) ?? (row.title || "—")}
+                            {transferTitle(row.title, row, incoming, accountTitle) ?? <PurposeLabel text={row.title || "—"} />}
                           </td>
                           <td
                             className={`whitespace-nowrap px-2 py-1 text-right font-semibold tabular-nums ${
