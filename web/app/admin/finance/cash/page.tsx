@@ -129,6 +129,15 @@ function TileFace({ tile }: { tile: CashTile }) {
 
 export default function CashBalancesPage() {
   const [tiles, setTiles] = useState<CashTile[]>([]);
+  const [deposits, setDeposits] = useState<{ total: number; clients: number; snapshotAt: string | null } | null>(null);
+  useEffect(() => {
+    fetch("/api/admin/finance/cash/deposits-total", { cache: "no-store" })
+      .then((res) => res.json())
+      .then((data) => {
+        if (data?.ok) setDeposits({ total: data.total, clients: data.clients, snapshotAt: data.snapshotAt });
+      })
+      .catch((err) => console.error("[cash] Завдатки не завантажено:", err));
+  }, []);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [countTile, setCountTile] = useState<CashTile | null>(null);
@@ -309,6 +318,17 @@ export default function CashBalancesPage() {
             </div>
           );
         })}
+        {/* Плитка «Завдатки»: залишки клієнтів на «Рахунки клієнта» (знімок Altegio) */}
+        <div className={tileFaceClass} style={{ background: "#fde68a" }} title={deposits ? `Клієнтів із залишком: ${deposits.clients}` : undefined}>
+          <span className="text-[10px] font-medium text-amber-950 leading-tight">Завдатки</span>
+          <span className="mt-0.5 text-sm font-semibold tabular-nums text-gray-900">{deposits ? `${money(deposits.total)} грн` : "…"}</span>
+          {deposits?.snapshotAt ? (
+            <span className="text-[10px] text-gray-600">
+              знімок{" "}
+              {new Date(deposits.snapshotAt).toLocaleString("uk-UA", { timeZone: "Europe/Kyiv", day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" })}
+            </span>
+          ) : null}
+        </div>
         {/* Плитка «+ Рахунок»: картка доходу, розходу чи переміщення */}
         <button
           type="button"
