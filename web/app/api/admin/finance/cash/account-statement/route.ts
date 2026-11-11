@@ -260,7 +260,39 @@ export async function GET(req: NextRequest) {
           },
         }),
       ]);
-      const paymentsByDay = (day: string): LinkedDocument[] => {
+      // Завдатки (поповнення рахунку клієнта) — теж гроші на цьому рахунку: розділ Платежі зводить їх з банком
+      // Завдаток, уже зведений окремою парою (завдаток ↔ банк), сюди не додаємо — інакше рахувався б двічі
+      const pairedDepositIds = new Set(
+        (
+          await prisma.bankAltegioDepositMatch.findMany({
+            where: { altegioTransactionId: { in: altegioPayments.map((payment) => payment.altegioId) }, bankStatementItemId: { not: null } },
+            select: { altegioTransactionId: true },
+          })
+        ).map((row) => row.altegioTransactionId),
+      );
+      const depositsByDay = (day: string): LinkedDocument[] =>
+        altegioPayments
+          .filter(
+            (payment) =>
+              payment.kyivDay === day &&
+              isDepositTopUpPaymentPurpose(payment.paymentPurpose || "") &&
+              !pairedDepositIds.has(payment.altegioId),
+          )
+          .map((payment) => {
+            const payer = getPayerNameFromRaw(payment.rawData, payment.counterpartyName?.trim() || null);
+            const clientName = payer && payer !== NO_PAYER_LABEL ? payer : null;
+            return {
+              id: `deposit-${payment.altegioId}`,
+              kind: "deposit" as const,
+              title: `Завдаток: ${clientName || "без платника"}`,
+              amount: kopToUah(payment.amountKopiykas),
+              kyivDay: day,
+              clientName,
+              recordId: null,
+            };
+          });
+      const paymentsByDay = (day: string): LinkedDocument[] => [...visitPaymentsByDay(day), ...depositsByDay(day)];
+      const visitPaymentsByDay = (day: string): LinkedDocument[] => {
         const journal = journalPayments.filter((payment) => payment.checkout.kyivDay === day);
         if (journal.length > 0) {
           return journal.map((payment) => ({
@@ -337,11 +369,12 @@ export async function GET(req: NextRequest) {
         };
         // Платіж, що точно дорівнює оплатам одного клієнта за день (іменований переказ) — клієнт і запис цих оплат.
         // Оплату клієнта в Altegio часто розбито на кілька операцій, тож порівнюємо із сумою по клієнту, як у розділі Платежі.
-        const byClient = new Map<string, { clientName: string; recordIds: Set<number>; amount: number }>();
+        const byClient = new Map<string, { clientName: string; recordIds: Set<number>; amount: number; onlyDeposits: boolean }>();
         for (const doc of visits) {
           if (!doc.clientName) continue;
-          const group = byClient.get(doc.clientName) ?? { clientName: doc.clientName, recordIds: new Set<number>(), amount: 0 };
+          const group = byClient.get(doc.clientName) ?? { clientName: doc.clientName, recordIds: new Set<number>(), amount: 0, onlyDeposits: true };
           group.amount += doc.amount;
+          if (doc.kind !== "deposit") group.onlyDeposits = false;
           if (doc.recordId) group.recordIds.add(doc.recordId);
           byClient.set(doc.clientName, group);
         }
@@ -357,6 +390,8 @@ export async function GET(req: NextRequest) {
           row.clientName = client.clientName;
           // Як у розділі Платежі: перший запис серед оплат клієнта
           row.recordId = [...client.recordIds][0] ?? null;
+          // Платіж збігся із завдатком клієнта — у касі це завдаток, а не оплата візиту
+          if (client.onlyDeposits) row.title = "Завдаток";
         }
         groupRows.forEach((row, index) => {
           row.status = status;

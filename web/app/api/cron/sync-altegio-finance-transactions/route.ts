@@ -12,6 +12,8 @@ import {
   ensureKrescoDocumentsForReconciledPayments,
 } from "@/lib/bank/kresco-payment-document";
 import { syncCheckoutPaymentsFromFinance } from "@/lib/journal/checkout-payments-from-finance";
+import { persistMissingIncomingMatchesForBankItems } from "@/lib/bank/incoming-payment-reconcile";
+import { prisma } from "@/lib/prisma";
 import { processPendingIncomingAcquiringCommissions, processPendingOutgoingTerminalRkoFees } from "@/lib/bank/automatic-altegio-payments";
 
 export const dynamic = "force-dynamic";
@@ -42,6 +44,36 @@ function resolveDefaultDateFrom(now: Date = new Date()): string {
     .toISOString()
     .slice(0, 10);
   return recent > ALTEGIO_FINANCE_SYNC_START_DATE ? recent : ALTEGIO_FINANCE_SYNC_START_DATE;
+}
+
+/**
+ * Зведення вхідних, які розділ Платежі показує як «Зведені» лише live-оцінкою, записуємо в БД —
+ * інакше Каса бачить їх незведеними, доки хтось не відкриє Банк або не натисне «Звести».
+ * Раз на годину (перший запуск години) і лише за останні 3 дні, щоб не будувати preview кожні 30 хв.
+ */
+async function persistRecentIncomingMatches(now: Date = new Date()) {
+  if (now.getUTCMinutes() >= 30) return { skipped: true };
+  try {
+    const items = await prisma.bankStatementItem.findMany({
+      where: {
+        amount: { gt: 0 },
+        time: { gte: new Date(now.getTime() - 3 * 24 * 60 * 60 * 1000) },
+        paymentsHiddenAt: null,
+        altegioIncomingMatch: null,
+        altegioDepositMatch: null,
+      },
+      select: { id: true, time: true, amount: true, description: true, comment: true, counterName: true },
+      take: 100,
+    });
+    const result = await persistMissingIncomingMatchesForBankItems(
+      items.map((item) => ({ ...item, amount: BigInt(item.amount), description: item.description ?? "" })),
+    );
+    console.log("[cron/sync-altegio-finance-transactions] Зведення вхідних записано", { candidates: items.length, ...result });
+    return result;
+  } catch (error) {
+    console.error("[cron/sync-altegio-finance-transactions] Не вдалося записати зведення вхідних:", error);
+    return { error: error instanceof Error ? error.message : String(error) };
+  }
 }
 
 export async function GET(req: NextRequest) {
@@ -80,6 +112,7 @@ export async function POST(req: NextRequest) {
     });
     // Документи Креско для комісій еквайрингу (після того, як автоматика їх створила)
     const krescoFeeDocuments = await ensureKrescoDocumentsForAutomaticExpenses(100);
+    const incomingPersist = await persistRecentIncomingMatches();
 
     return NextResponse.json({
       ok: true,
@@ -94,6 +127,7 @@ export async function POST(req: NextRequest) {
       krescoFeeDocuments,
       automaticAcquiring,
       automaticTerminal,
+      incomingPersist,
     });
   } catch (error) {
     console.error("[cron/sync-altegio-finance-transactions] Помилка:", error);
