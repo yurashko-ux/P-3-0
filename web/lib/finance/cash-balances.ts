@@ -14,7 +14,7 @@ import {
   CASH_OPENING_USD,
 } from "@/lib/finance/cash-openings";
 import { hiddenFinanceAccountIds, pausedBankAltegioAccountIds } from "@/lib/finance/account-archive";
-import { listCashLedger, type CashAccountRef } from "@/lib/finance/cash-posting";
+import { listCashLedger } from "@/lib/finance/cash-posting";
 import { balanceWithoutExcluded, excludedAmountKopByAccount } from "@/lib/bank/excluded-payments";
 
 export type CashCurrency = "UAH" | "USD" | "EUR";
@@ -81,13 +81,9 @@ function kopToUah(kop: bigint): number {
   return money(Number(kop) / 100);
 }
 
-/**
- * knownAccounts — готовий список рахунків (наприклад, із довідника Kresco). Тоді API Altegio не викликаємо.
- * Без параметра — як і раніше, список рахунків з Altegio.
- */
-export async function listCashBalances(knownAccounts?: CashAccountRef[]): Promise<CashBalanceTile[]> {
+export async function listCashBalances(): Promise<CashBalanceTile[]> {
   const [accounts, archivedIds, pausedIds] = await Promise.all([
-    knownAccounts ?? fetchAltegioAccounts(),
+    fetchAltegioAccounts(),
     hiddenFinanceAccountIds(),
     pausedBankAltegioAccountIds(),
   ]);
@@ -201,7 +197,7 @@ export async function listCashBalances(knownAccounts?: CashAccountRef[]): Promis
         distinct: ["accountId"],
         select: { accountId: true, kyivDay: true, createdAt: true },
       }),
-      listCashLedger(knownAccounts),
+      listCashLedger(),
     ]);
     const lastCountDay = new Map(lastCounts.map((row) => [row.accountId, row.kyivDay]));
     const lastCountAt = new Map(lastCounts.map((row) => [row.accountId, row.createdAt.toISOString()]));
