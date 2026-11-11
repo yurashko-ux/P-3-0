@@ -30,6 +30,8 @@ export type CashBookMovement = {
   occurredAt: Date;
   title: string;
   recordId: number | null;
+  /** Візит Altegio: кілька записів (майстрів) одного візиту — один рядок у касі */
+  visitId: number | null;
   altegioTransactionId: number | null;
   /** Переміщення: з якого рахунку на який */
   transferFrom?: string | null;
@@ -59,6 +61,7 @@ export type CashLedgerRow = {
   title: string;
   clientName: string;
   recordId: number | null;
+  visitId: number | null;
   posted: boolean;
   /** Переміщення: з якого рахунку на який */
   transferFrom?: string | null;
@@ -168,7 +171,8 @@ export async function loadCashBookMovements(
             kyivDay: true,
             createdAt: true,
             altegioRecordId: true,
-            appointment: { select: { clientName: true, altegioRecordId: true } },
+            altegioVisitId: true,
+            appointment: { select: { clientName: true, altegioRecordId: true, altegioVisitId: true } },
           },
         },
       },
@@ -225,6 +229,7 @@ export async function loadCashBookMovements(
       occurredAt: payment.checkout.createdAt,
       title: payment.checkout.appointment?.clientName?.trim() || "Оплата запису",
       recordId: payment.checkout.appointment?.altegioRecordId ?? payment.checkout.altegioRecordId ?? null,
+      visitId: payment.checkout.appointment?.altegioVisitId ?? payment.checkout.altegioVisitId ?? null,
       altegioTransactionId: payment.altegioTransactionId ?? null,
     });
   }
@@ -257,6 +262,7 @@ export async function loadCashBookMovements(
         occurredAt: doc.occurredAt,
         title: label,
         recordId: null,
+        visitId: null,
         // Та сама операція Altegio не рахується вдруге (переміщення: друга нога має свій номер)
         altegioTransactionId,
         transferFrom: doc.type === "transfer" ? doc.accountTitle?.trim() || null : null,
@@ -473,6 +479,7 @@ type AltegioCashLedgerSource = {
   comment: string | null;
   clientName: string | null;
   recordIdText: string | null;
+  visitIdText: string | null;
 };
 
 export async function listCashLedger(): Promise<CashLedgerRow[]> {
@@ -524,7 +531,8 @@ export async function listCashLedger(): Promise<CashLedgerRow[]> {
             "paymentPurpose",
             "comment",
             NULLIF(BTRIM("rawData"->'client'->>'name'), '') AS "clientName",
-            NULLIF("rawData"->>'record_id', '') AS "recordIdText"
+            NULLIF("rawData"->>'record_id', '') AS "recordIdText",
+            NULLIF("rawData"->>'visit_id', '') AS "visitIdText"
           FROM "altegio_finance_transactions"
           WHERE "deletedInAltegio" = false
             AND "kyivDay" >= ${CASH_LEDGER_HISTORY_FROM_KYIV_DAY}
@@ -560,6 +568,7 @@ export async function listCashLedger(): Promise<CashLedgerRow[]> {
       title: movement.sourceType === "checkout_payment" ? "Оплата запису" : movement.title,
       clientName: movement.sourceType === "checkout_payment" ? movement.title : "",
       recordId: movement.recordId,
+      visitId: movement.visitId,
       transferFrom: movement.transferFrom ?? null,
       transferTo: movement.transferTo ?? null,
       posted: Boolean(posting) || movement.kyivDay < CASH_RECONCILE_FROM_KYIV_DAY,
@@ -601,6 +610,7 @@ export async function listCashLedger(): Promise<CashLedgerRow[]> {
     const direction = signedAmount < 0 ? "out" : "in";
     const clientName = tx.clientName?.trim() || "";
     const recordId = Number(tx.recordIdText);
+    const visitId = Number(tx.visitIdText);
     const posting = postingByKey.get(postingKey("altegio", String(tx.altegioId), accountId));
     const count = posting?.count;
     const author = count?.createdBy ? names.get(count.createdBy) || count.createdBy : "";
@@ -618,6 +628,7 @@ export async function listCashLedger(): Promise<CashLedgerRow[]> {
       title: tx.paymentPurpose?.trim() || tx.comment?.trim() || "Платіж Altegio",
       clientName,
       recordId: Number.isFinite(recordId) && recordId > 0 ? recordId : null,
+      visitId: Number.isFinite(visitId) && visitId > 0 ? visitId : null,
       posted: Boolean(posting),
       fxRate: converted.fxRate,
       count: count

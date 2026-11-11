@@ -10,6 +10,7 @@ export type CashLedgerAggregateSource = {
   kyivDay: string;
   occurredAt: string;
   recordId: number | null;
+  visitId?: number | null;
   posted: boolean;
 };
 
@@ -25,7 +26,7 @@ function timeLabelKyiv(iso: string): string {
 
 /**
  * Один клієнт, один запис, один рахунок і один напрямок за день — один рядок (призначення через кому:
- * «Продаж товарів, Надання послуг»). Два записи клієнта за день — два рядки, кожен зі своїм номером. Рядки без клієнта (переміщення, витрати) — окремо за призначенням.
+ * «Продаж товарів, Надання послуг»). Записи одного візиту (кілька майстрів — Altegio ділить оплати між ними) — один рядок; два окремі візити — два рядки. Рядки без клієнта (переміщення, витрати) — окремо за призначенням.
  * Викликати вже в межах одного kyivDay (як у вкладці «Готівка»).
  */
 export function aggregateCashLedgerDayRows<T extends CashLedgerAggregateSource>(
@@ -38,7 +39,7 @@ export function aggregateCashLedgerDayRows<T extends CashLedgerAggregateSource>(
   for (const row of dayRows) {
     const client = row.clientName.trim();
     const purpose = row.title.trim();
-    const key = `${client}\0${client ? row.recordId ?? "" : ""}\0${row.accountTitle}\0${row.currency}\0${row.direction}\0${client ? "" : purpose}`;
+    const key = `${client}\0${client ? (row.visitId ? `v${row.visitId}` : row.recordId ?? "") : ""}\0${row.accountTitle}\0${row.currency}\0${row.direction}\0${client ? "" : purpose}`;
     const signed = row.direction === "out" ? -row.amount : row.amount;
     const current = groups.get(key);
     if (!current) {
@@ -75,7 +76,8 @@ export function aggregateCashLedgerDayRows<T extends CashLedgerAggregateSource>(
         direction: (incoming ? "in" : "out") as "in" | "out",
         amount: Math.abs(signed),
         title: [...group.titles].join(", ") || "—",
-        recordId: group.records.size === 1 ? [...group.records][0] : null,
+        // Візит із кількох записів — показуємо перший запис візиту
+        recordId: group.records.size > 0 && (group.records.size === 1 || group.visitId) ? Math.min(...group.records) : null,
         occurredAt: times.length === 1 ? group.occurredAt : "",
       };
     });
