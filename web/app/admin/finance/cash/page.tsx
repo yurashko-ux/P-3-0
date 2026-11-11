@@ -21,6 +21,7 @@ type CashTile = {
   hasBank: boolean;
   countedUah: number | null;
   lastCountKyivDay: string | null;
+  lastCountAt?: string | null;
   lastBundledAmount: number | null;
   variance: number | null;
 };
@@ -92,7 +93,10 @@ function VarianceLine({ tile }: { tile: CashTile }) {
 function LastCountLine({ tile }: { tile: CashTile }) {
   const day = formatKyivDayShort(tile.lastCountKyivDay);
   if (!tile.cash || !day) return null;
-  return <span className="mt-0.5 text-[10px] leading-tight tabular-nums text-gray-500">касовка {day}</span>;
+  const time = tile.lastCountAt
+    ? new Date(tile.lastCountAt).toLocaleTimeString("uk-UA", { timeZone: "Europe/Kyiv", hour: "2-digit", minute: "2-digit" })
+    : "";
+  return <span className="mt-0.5 text-[10px] leading-tight tabular-nums text-gray-500">касовка {day}{time ? ` ${time}` : ""}</span>;
 }
 
 function TileFace({ tile }: { tile: CashTile }) {
@@ -319,16 +323,22 @@ export default function CashBalancesPage() {
           );
         })}
         {/* Плитка «Завдатки»: залишки клієнтів на «Рахунки клієнта» (знімок Altegio) */}
-        <div className={tileFaceClass} style={{ background: "#fde68a" }} title={deposits ? `Клієнтів із залишком: ${deposits.clients}` : undefined}>
+        <a
+          href="/admin/direct/payment-reconciliation?tab=deposits"
+          className={tileButtonClass}
+          style={{ background: "#fde68a" }}
+          title={deposits ? `Клієнтів із залишком: ${deposits.clients} — відкрити список у Платежах` : "Відкрити список завдатків у Платежах"}
+        >
           <span className="text-[10px] font-medium text-amber-950 leading-tight">Завдатки</span>
           <span className="mt-0.5 text-sm font-semibold tabular-nums text-gray-900">{deposits ? `${money(deposits.total)} грн` : "…"}</span>
+          {deposits ? <span className="text-[10px] text-gray-700">клієнтів: {deposits.clients}</span> : null}
           {deposits?.snapshotAt ? (
             <span className="text-[10px] text-gray-600">
               знімок{" "}
               {new Date(deposits.snapshotAt).toLocaleString("uk-UA", { timeZone: "Europe/Kyiv", day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" })}
             </span>
           ) : null}
-        </div>
+        </a>
         {/* Плитка «+ Рахунок»: картка доходу, розходу чи переміщення */}
         <button
           type="button"

@@ -269,6 +269,10 @@ function StatusButtonGroup({
 export default function PaymentReconciliationPage() {
   const [direction, setDirection] = useState<PaymentDirection>("in");
   const [status, setStatus] = useState<PaymentStatus>("open");
+  // Посилання з плитки «Завдатки» в Касі: ?tab=deposits відкриває вкладку ЗАВДАТКИ
+  useEffect(() => {
+    if (new URLSearchParams(window.location.search).get("tab") === "deposits") setStatus("deposits");
+  }, []);
   const [data, setData] = useState<ApiState>({ rows: [], summary: {} });
   const [linkedHistoryDays, setLinkedHistoryDays] = useState(LINKED_HISTORY_PAGE_DAYS);
   const [loading, setLoading] = useState(false);

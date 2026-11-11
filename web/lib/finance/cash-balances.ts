@@ -14,7 +14,7 @@ import {
   CASH_OPENING_USD,
 } from "@/lib/finance/cash-openings";
 import { hiddenFinanceAccountIds, pausedBankAltegioAccountIds } from "@/lib/finance/account-archive";
-import { listCashLedger } from "@/lib/finance/cash-posting";
+import { listCashLedger, type CashAccountRef } from "@/lib/finance/cash-posting";
 import { balanceWithoutExcluded, excludedAmountKopByAccount } from "@/lib/bank/excluded-payments";
 
 export type CashCurrency = "UAH" | "USD" | "EUR";
@@ -36,6 +36,8 @@ export type CashBalanceTile = {
   countedUah: number | null;
   /** День останньої касовки цієї каси (Europe/Kyiv), зокрема до дня старту. null — касовок не було. */
   lastCountKyivDay: string | null;
+  /** Час останньої касовки (ISO) — плитка показує дату й час */
+  lastCountAt?: string | null;
   /** Останнє значення «Пораховані» з касовки цієї каси. */
   lastBundledAmount: number | null;
   /** Факт мінус очікувана за останньою касовкою. >0 надлишок, <0 недостача, null — розбіжності немає. */
@@ -79,9 +81,13 @@ function kopToUah(kop: bigint): number {
   return money(Number(kop) / 100);
 }
 
-export async function listCashBalances(): Promise<CashBalanceTile[]> {
+/**
+ * knownAccounts — готовий список рахунків (наприклад, із довідника Kresco). Тоді API Altegio не викликаємо.
+ * Без параметра — як і раніше, список рахунків з Altegio.
+ */
+export async function listCashBalances(knownAccounts?: CashAccountRef[]): Promise<CashBalanceTile[]> {
   const [accounts, archivedIds, pausedIds] = await Promise.all([
-    fetchAltegioAccounts(),
+    knownAccounts ?? fetchAltegioAccounts(),
     hiddenFinanceAccountIds(),
     pausedBankAltegioAccountIds(),
   ]);
@@ -120,6 +126,7 @@ export async function listCashBalances(): Promise<CashBalanceTile[]> {
           hasBank: bank != null,
           countedUah: null,
           lastCountKyivDay: null,
+          lastCountAt: null as string | null,
           lastBundledAmount: null,
           variance: null,
         };
@@ -137,6 +144,7 @@ export async function listCashBalances(): Promise<CashBalanceTile[]> {
           hasBank: false,
           countedUah: null,
           lastCountKyivDay: null,
+          lastCountAt: null as string | null,
           lastBundledAmount: null,
           variance: null,
         };
@@ -153,6 +161,7 @@ export async function listCashBalances(): Promise<CashBalanceTile[]> {
           hasBank: false,
           countedUah: null,
           lastCountKyivDay: null,
+          lastCountAt: null as string | null,
           lastBundledAmount: null,
           variance: null,
         };
@@ -168,6 +177,7 @@ export async function listCashBalances(): Promise<CashBalanceTile[]> {
         hasBank: false,
         countedUah: null,
         lastCountKyivDay: null,
+        lastCountAt: null as string | null,
         lastBundledAmount: null,
         variance: null,
       };
@@ -189,11 +199,12 @@ export async function listCashBalances(): Promise<CashBalanceTile[]> {
         where: { accountId: { in: countableIds } },
         orderBy: { createdAt: "desc" },
         distinct: ["accountId"],
-        select: { accountId: true, kyivDay: true },
+        select: { accountId: true, kyivDay: true, createdAt: true },
       }),
-      listCashLedger(),
+      listCashLedger(knownAccounts),
     ]);
     const lastCountDay = new Map(lastCounts.map((row) => [row.accountId, row.kyivDay]));
+    const lastCountAt = new Map(lastCounts.map((row) => [row.accountId, row.createdAt.toISOString()]));
     const latest = new Map<number, (typeof counts)[number]>();
     for (const row of counts) if (!latest.has(row.accountId)) latest.set(row.accountId, row);
     for (const tile of cashTiles) {
@@ -208,6 +219,7 @@ export async function listCashBalances(): Promise<CashBalanceTile[]> {
       if (tile.currency === "UAH") tile.balanceUah = balance;
       else tile.balanceFx = balance;
       tile.lastCountKyivDay = lastCountDay.get(tile.id) ?? null;
+      tile.lastCountAt = lastCountAt.get(tile.id) ?? null;
       const count = latest.get(tile.id);
       if (count) {
         tile.countedUah = money(count.countedUah);
