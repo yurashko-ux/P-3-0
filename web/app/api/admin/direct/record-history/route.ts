@@ -92,7 +92,7 @@ export async function GET(req: NextRequest) {
       }
     }
 
-    const { allGroups, dataSource, recordsLogCount, webhookLogCount, normalizedCount } =
+    const { allGroups, dataSource, apiConfirmed, recordsLogCount, webhookLogCount, normalizedCount } =
       await loadAltegioRecordGroupsForClient(altegioClientId, {
         strategy: 'kv-first',
         apiTimeoutMs: 15000,
@@ -102,7 +102,9 @@ export async function GET(req: NextRequest) {
 
     const rows = allGroups.filter((g) => g.groupType === type).map(mapGroupToRow);
 
-    const heal = await prismaSelfHealDirectClientFromRecordGroups(altegioClientId, allGroups);
+    const heal = await prismaSelfHealDirectClientFromRecordGroups(altegioClientId, allGroups, {
+      allowClear: apiConfirmed,
+    });
 
     return NextResponse.json({
       ok: true,

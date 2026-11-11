@@ -354,7 +354,24 @@ export async function getClientRecordsRaw(
     timeoutMs?: number;
   }
 ): Promise<any[]> {
+  return (await getClientRecordsRawWithStatus(locationId, clientId, options)).records;
+}
+
+/**
+ * Те саме, що getClientRecordsRaw, але каже, чи Altegio справді відповів.
+ * answered=false — основний запит впав (немає токена, таймаут, 5xx): порожній список тоді не означає «записів немає».
+ */
+export async function getClientRecordsRawWithStatus(
+  locationId: number,
+  clientId: number,
+  options?: {
+    retries?: number;
+    delay?: number;
+    timeoutMs?: number;
+  }
+): Promise<{ records: any[]; answered: boolean }> {
   const clientIdStr = String(clientId);
+  let answered = false;
   const attempts: { path: string; params?: Record<string, string> }[] = [
     { path: `records/${locationId}`, params: { client_id: clientIdStr } },
     { path: `company/${locationId}/records`, params: { client_id: clientIdStr } },
@@ -377,14 +394,16 @@ export async function getClientRecordsRaw(
         if (attempt.path !== `records/${locationId}`) {
           console.log(`[altegio/records] getClientRecordsRaw: fallback ${attempt.path} повернув ${list.length} записів для clientId=${clientId}`);
         }
-        return list.map((r) => ({ ...r, client_id: clientId }));
+        return { records: list.map((r) => ({ ...r, client_id: clientId })), answered: true };
       }
+      // Порожня відповідь основного endpoint'а — це відповідь Altegio; fallback-шляхи такою гарантією не є.
+      if (attempt === attempts[0]) answered = true;
     } catch (err) {
       console.warn(`[altegio/records] getClientRecordsRaw attempt ${attempt.path} failed:`, err instanceof Error ? err.message : String(err));
     }
   }
 
-  return [];
+  return { records: [], answered };
 }
 
 /**

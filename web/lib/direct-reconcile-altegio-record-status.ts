@@ -4,7 +4,7 @@
  */
 
 import { kvRead } from '@/lib/kv';
-import { getClientRecordsRaw, rawRecordToRecordEvent } from '@/lib/altegio/records';
+import { getClientRecordsRawWithStatus, rawRecordToRecordEvent } from '@/lib/altegio/records';
 import {
   computeServicesTotalCostUAH,
   filterRealPaidRecordGroups,
@@ -150,18 +150,21 @@ async function loadKvRecordGroupsForClient(altegioClientId: number): Promise<{
 async function loadApiRecordGroupsForClient(
   altegioClientId: number,
   apiTimeoutMs = 30000
-): Promise<{ allGroups: any[]; normalizedCount: number }> {
+): Promise<{ allGroups: any[]; normalizedCount: number; answered: boolean }> {
   const companyIdStr = getEnvValue('ALTEGIO_COMPANY_ID');
   const companyId = companyIdStr ? parseInt(companyIdStr, 10) : NaN;
   if (!Number.isFinite(companyId) || companyId <= 0) {
-    return { allGroups: [], normalizedCount: 0 };
+    return { allGroups: [], normalizedCount: 0, answered: false };
   }
   try {
-    const rawRecords = await getClientRecordsRaw(companyId, altegioClientId, {
+    const { records: rawRecords, answered } = await getClientRecordsRawWithStatus(companyId, altegioClientId, {
       timeoutMs: apiTimeoutMs,
     });
     if (rawRecords.length === 0) {
-      return { allGroups: [], normalizedCount: 0 };
+      if (!answered) {
+        console.warn('[direct-reconcile] ⚠️ Altegio не відповів — записи в картці не очищаємо', { altegioClientId });
+      }
+      return { allGroups: [], normalizedCount: 0, answered };
     }
     const eventsFromApi = rawRecords
       .filter((r: any) => !r?.deleted)
@@ -169,13 +172,13 @@ async function loadApiRecordGroupsForClient(
     const normalizedEvents = normalizeRecordsLogItems(eventsFromApi);
     const groupsByClient = groupRecordsByClientDay(normalizedEvents);
     const allGroups = groupsByClient.get(altegioClientId) || [];
-    return { allGroups, normalizedCount: normalizedEvents.length };
+    return { allGroups, normalizedCount: normalizedEvents.length, answered: true };
   } catch (err) {
     console.warn(
       '[direct-reconcile] ⚠️ API failed:',
       err instanceof Error ? err.message : String(err)
     );
-    return { allGroups: [], normalizedCount: 0 };
+    return { allGroups: [], normalizedCount: 0, answered: false };
   }
 }
 
@@ -186,6 +189,8 @@ export async function loadAltegioRecordGroupsForClient(
 ): Promise<{
   allGroups: any[];
   dataSource: 'api' | 'kv';
+  /** Altegio відповів на запит записів клієнта. Лише тоді відсутність запису можна вважати видаленням. */
+  apiConfirmed: boolean;
   recordsLogCount: number;
   webhookLogCount: number;
   normalizedCount: number;
@@ -200,13 +205,14 @@ export async function loadAltegioRecordGroupsForClient(
         altegioClientId,
         groups: kv.allGroups.length,
       });
-      return { ...kv, dataSource: 'kv' };
+      return { ...kv, dataSource: 'kv', apiConfirmed: false };
     }
     console.log('[direct-reconcile] kv-first: KV порожній, fallback API', { altegioClientId });
     const api = await loadApiRecordGroupsForClient(altegioClientId, apiTimeoutMs);
     return {
       allGroups: api.allGroups,
       dataSource: api.allGroups.length > 0 ? 'api' : 'kv',
+      apiConfirmed: api.answered,
       recordsLogCount: kv.recordsLogCount,
       webhookLogCount: kv.webhookLogCount,
       normalizedCount: api.normalizedCount || kv.normalizedCount,
@@ -219,6 +225,7 @@ export async function loadAltegioRecordGroupsForClient(
     return {
       allGroups: api.allGroups,
       dataSource: 'api',
+      apiConfirmed: true,
       recordsLogCount: kv.recordsLogCount,
       webhookLogCount: kv.webhookLogCount,
       normalizedCount: api.normalizedCount,
@@ -226,7 +233,7 @@ export async function loadAltegioRecordGroupsForClient(
   }
 
   const kv = await loadKvRecordGroupsForClient(altegioClientId);
-  return { ...kv, dataSource: 'kv' };
+  return { ...kv, dataSource: 'kv', apiConfirmed: api.answered };
 }
 
 export type SelfHealFromGroupsResult = {
@@ -266,8 +273,13 @@ function pickCanonicalPaidGroup(
  */
 export async function prismaSelfHealDirectClientFromRecordGroups(
   altegioClientId: number,
-  allGroups: any[]
+  allGroups: any[],
+  options?: {
+    /** Чи можна очищати запис, якого немає в групах. Дозволено лише коли Altegio відповів: логи KV неповні. */
+    allowClear?: boolean;
+  }
 ): Promise<SelfHealFromGroupsResult> {
+  const allowClear = options?.allowClear === true;
   const mapGroupToRow = (g: (typeof allGroups)[number]) => mapAltegioGroupToApiRow(g);
   const consultationRows = filterRealConsultationRecordGroups(allGroups).map(mapGroupToRow);
 
@@ -430,7 +442,7 @@ export async function prismaSelfHealDirectClientFromRecordGroups(
     } catch (err) {
       console.warn('[direct-reconcile] ⚠️ paid self-heal:', err);
     }
-  } else {
+  } else if (allowClear) {
     try {
       const dc = await prisma.directClient.findFirst({
         where: { altegioClientId },
@@ -542,7 +554,7 @@ export async function prismaSelfHealDirectClientFromRecordGroups(
     } catch (err) {
       console.warn('[direct-reconcile] ⚠️ consultation attendance self-heal:', err);
     }
-  } else {
+  } else if (allowClear) {
     try {
       const dc = await prisma.directClient.findFirst({
         where: { altegioClientId },
@@ -645,6 +657,6 @@ export async function prismaSelfHealDirectClientFromRecordGroups(
 export async function reconcileDirectClientRecordsFromAltegio(
   altegioClientId: number
 ): Promise<SelfHealFromGroupsResult> {
-  const { allGroups } = await loadAltegioRecordGroupsForClient(altegioClientId);
-  return prismaSelfHealDirectClientFromRecordGroups(altegioClientId, allGroups);
+  const { allGroups, apiConfirmed } = await loadAltegioRecordGroupsForClient(altegioClientId);
+  return prismaSelfHealDirectClientFromRecordGroups(altegioClientId, allGroups, { allowClear: apiConfirmed });
 }
