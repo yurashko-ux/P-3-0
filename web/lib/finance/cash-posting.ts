@@ -482,10 +482,17 @@ type AltegioCashLedgerSource = {
   visitIdText: string | null;
 };
 
-export async function listCashLedger(): Promise<CashLedgerRow[]> {
+/** Рахунок для розрахунку каси: id — номер рахунку Altegio (він же accountId в оплатах і документах). */
+export type CashAccountRef = { id: string | number; title: string };
+
+/** knownAccounts — готовий список рахунків (довідник Kresco); без нього список беремо з Altegio. */
+export async function listCashLedger(knownAccounts?: CashAccountRef[]): Promise<CashLedgerRow[]> {
   const { fetchAltegioAccounts } = await import("@/lib/altegio/accounts");
   const { hiddenFinanceAccountIds } = await import("@/lib/finance/account-archive");
-  const [accounts, hiddenIds] = await Promise.all([fetchAltegioAccounts(), hiddenFinanceAccountIds()]);
+  const [accounts, hiddenIds] = await Promise.all([
+    knownAccounts ?? fetchAltegioAccounts(),
+    hiddenFinanceAccountIds(),
+  ]);
   const cashAccounts = accounts
     .map((account) => ({
       id: Number(account.id) || 0,

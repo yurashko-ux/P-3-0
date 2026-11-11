@@ -28,6 +28,9 @@ export function getAdminNavItems(permissions: Permissions | null): AdminNavItem[
   const allowed = (key: keyof Permissions) => p == null || p[key] !== "none";
   const items: AdminNavItem[] = [];
 
+  if (allowed("dashboardSection")) {
+    items.push({ key: "dashboard", href: "/admin/dashboard", label: "📊 Дашборд", activePrefixes: ["/admin/dashboard"] });
+  }
   if (allowed("bankSection")) {
     items.push({ key: "bank", href: "/admin/bank", label: "🏦 Банк", activePrefixes: ["/admin/bank"] });
   }

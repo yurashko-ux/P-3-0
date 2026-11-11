@@ -34,6 +34,7 @@ export const PERMISSION_CATEGORIES: { key: PermissionKey; label: string }[] = [
   { key: "altegioSection", label: "Розділ Альтеджіо" },
   { key: "debugSection", label: "Розділ Тести" },
   { key: "accessSection", label: "Розділ Доступи" },
+  { key: "dashboardSection", label: "Розділ Дашборд" },
   { key: "telegramDailyReport", label: "Отримувати основний звіт в Telegram" },
 ];
 
@@ -68,6 +69,7 @@ export const DEFAULT_PERMISSIONS: Permissions = {
   altegioSection: "edit",
   debugSection: "edit",
   accessSection: "edit",
+  dashboardSection: "edit",
   telegramDailyReport: "none",
 };
 
@@ -87,6 +89,9 @@ export function mergeFunctionPermissions(stored: unknown): Permissions {
     }
     if (!("messagesSection" in raw)) {
       permissions.messagesSection = "none";
+    }
+    if (!("dashboardSection" in raw)) {
+      permissions.dashboardSection = "none";
     }
   }
   return permissions;

@@ -41,6 +41,7 @@ export type PermissionKey =
   | "altegioSection"
   | "debugSection"
   | "accessSection"
+  | "dashboardSection"
   | "telegramDailyReport";
 
 export type PermissionValue = "view" | "edit" | "none";
@@ -78,6 +79,7 @@ const DEFAULT_PERMISSIONS: Permissions = {
   altegioSection: "edit",
   debugSection: "edit",
   accessSection: "edit",
+  dashboardSection: "edit",
   telegramDailyReport: "none",
 };
 
@@ -178,6 +180,10 @@ export async function getAuthContext(req: Request): Promise<AuthContext | null> 
     // Посади, збережені до появи «Переписки», не отримують розділ, доки галочку не поставлять.
     if (!("messagesSection" in p)) {
       permissions.messagesSection = "none";
+    }
+    // Дашборд власника — гроші салону: посада бачить його лише після явної галочки.
+    if (!("dashboardSection" in p)) {
+      permissions.dashboardSection = "none";
     }
   }
 
