@@ -20,6 +20,7 @@ import { appendDepositSpend } from "@/lib/deposits/store";
 import { searchWarehouseProducts } from "@/lib/warehouse/catalog";
 import { createWriteOff } from "@/lib/warehouse/documents-kresco";
 import { getUsdUahRate } from "@/lib/warehouse/fx";
+import { getOrFixDailyFxRates } from "@/lib/fx/daily-rates";
 import { resolveJournalCompanyId } from "./company-id";
 import { isJournalAltegioImportEnabled, isJournalAltegioWriteSkipped } from "./altegio-write-gate";
 import { hiddenFinanceAccountIds } from "@/lib/finance/account-archive";
@@ -330,7 +331,7 @@ export async function upsertCheckoutFromAltegioPayments(params: {
       });
 
   // Чек Kresco сюди не доходить: рядки товарів лише для імпортованих оплат.
-  await replaceImportedGoodLines(checkout.id, earlierInVisit ? [] : state.goods);
+  await replaceImportedGoodLines(checkout.id, earlierInVisit ? [] : state.goods, params.kyivDay);
 
   // Технічна оплата «Altegio» лише поки немає оплат по рахунках: з 08.11.2026 їх пише
   // syncCheckoutPaymentsFromFinance із фінансових операцій Altegio — їх не затираємо.
@@ -366,16 +367,21 @@ export async function upsertCheckoutFromAltegioPayments(params: {
 }
 
 /** Товари візиту з картки Altegio → рядки чека з собівартістю із картки товару. */
-async function replaceImportedGoodLines(checkoutId: string, goods: RecordPaymentState["goods"]) {
+async function replaceImportedGoodLines(
+  checkoutId: string,
+  goods: RecordPaymentState["goods"],
+  kyivDay: string,
+) {
   await prisma.salonCheckoutGoodLine.deleteMany({ where: { checkoutId } });
   if (goods.length === 0) return;
   const [products, storages] = await Promise.all([
     prisma.warehouseProduct.findMany({
       where: { altegioGoodId: { in: goods.map((g) => g.goodId) } },
-      select: { id: true, altegioGoodId: true, title: true, costPerUnit: true },
+      select: { id: true, altegioGoodId: true, title: true, costPerUnit: true, isHair: true, costUsd: true },
     }),
     prisma.warehouseStorage.findMany({ where: { isActive: true } }),
   ]);
+  const usdRate = await hairUsdRateForDay(kyivDay, products);
   const rows = [];
   for (const good of goods) {
     const product = products.find((p) => p.altegioGoodId === good.goodId);
@@ -393,11 +399,51 @@ async function replaceImportedGoodLines(checkoutId: string, goods: RecordPayment
       title: good.title || product.title,
       quantity: good.quantity,
       salePrice: toMoney(good.total / good.quantity),
-      costPerUnit: product.costPerUnit > 0 ? product.costPerUnit : null,
+      ...lineCostAtSale(product, usdRate),
       altegioGoodId: good.goodId,
     });
   }
   if (rows.length > 0) await prisma.salonCheckoutGoodLine.createMany({ data: rows });
+}
+
+type ProductCost = { title: string; costPerUnit: number; isHair: boolean; costUsd: number };
+
+/**
+ * Робочий курс USD дня продажу — лише коли серед товарів є волосся з ціною в $ (інакше без запиту до БД).
+ * Якщо на цей день курс не зафіксовано — найближчий раніший.
+ */
+async function hairUsdRateForDay(kyivDay: string, products: ProductCost[]): Promise<number | null> {
+  if (!products.some((p) => p.isHair && p.costUsd > 0)) return null;
+  const daily = await getOrFixDailyFxRates(kyivDay).catch(() => null);
+  if (daily && daily.usdWorking > 0) return daily.usdWorking;
+  const earlier = await prisma.dailyFxRate.findFirst({
+    where: { kyivDay: { lte: kyivDay } },
+    orderBy: { kyivDay: "desc" },
+    select: { kyivDay: true, usdWorking: true },
+  });
+  if (earlier && earlier.usdWorking > 0) {
+    console.log(`[journal/checkout] Курс USD на ${kyivDay} не зафіксовано — беремо ${earlier.kyivDay}: ${earlier.usdWorking}`);
+    return earlier.usdWorking;
+  }
+  console.warn(`[journal/checkout] Немає робочого курсу USD на ${kyivDay} — собівартість волосся лишається гривневою з картки`);
+  return null;
+}
+
+/**
+ * Собівартість рядка на момент продажу. Волосся з ціною в $: $ × робочий курс дня продажу,
+ * і $ з курсом зберігаємо в рядку — щоб собівартість не змінювалась заднім числом.
+ */
+function lineCostAtSale(
+  product: ProductCost,
+  usdRate: number | null,
+): { costPerUnit: number | null; costUsd: number | null; fxRateUsdUah: number | null } {
+  if (product.isHair && product.costUsd > 0 && usdRate) {
+    return { costPerUnit: toMoney(product.costUsd * usdRate), costUsd: product.costUsd, fxRateUsdUah: usdRate };
+  }
+  if (!(product.costPerUnit > 0)) {
+    console.warn(`[journal/checkout] «${product.title}» продано без собівартості в картці`);
+  }
+  return { costPerUnit: product.costPerUnit > 0 ? product.costPerUnit : null, costUsd: null, fxRateUsdUah: null };
 }
 
 type NormalizedGood = {
@@ -409,6 +455,8 @@ type NormalizedGood = {
   altegioGoodId: number;
   altegioStorageId: number;
   costPerUnit: number | null;
+  /** Картка товару на момент продажу — для фіксації ціни в $ і курсу дня. */
+  product: ProductCost;
   lineTotal: number;
 };
 
@@ -458,15 +506,17 @@ async function normalizeGoods(raw: CheckoutGoodLineInput[] | undefined): Promise
       altegioGoodId: product.altegioGoodId,
       altegioStorageId,
       costPerUnit: product.costPerUnit > 0 ? product.costPerUnit : null,
+      product,
       lineTotal: toMoney(row.salePrice * row.quantity),
     });
   }
   return out;
 }
 
-async function replaceCheckoutGoodLines(checkoutId: string, goods: NormalizedGood[]) {
+async function replaceCheckoutGoodLines(checkoutId: string, goods: NormalizedGood[], kyivDay: string) {
   await prisma.salonCheckoutGoodLine.deleteMany({ where: { checkoutId } });
   if (goods.length === 0) return;
+  const usdRate = await hairUsdRateForDay(kyivDay, goods.map((g) => g.product));
   await prisma.salonCheckoutGoodLine.createMany({
     data: goods.map((g) => ({
       checkoutId,
@@ -475,7 +525,7 @@ async function replaceCheckoutGoodLines(checkoutId: string, goods: NormalizedGoo
       title: g.title,
       quantity: g.quantity,
       salePrice: g.salePrice,
-      costPerUnit: g.costPerUnit,
+      ...lineCostAtSale(g.product, usdRate),
       altegioGoodId: g.altegioGoodId,
     })),
   });
@@ -893,7 +943,7 @@ export async function closeVisitFromKresco(input: CloseVisitInput) {
     });
   }
 
-  await replaceCheckoutGoodLines(pendingId, goods);
+  await replaceCheckoutGoodLines(pendingId, goods, appointment.kyivDay);
 
   const hasDeposit = depositParts.length === 1;
   const depositAmount = hasDeposit ? depositParts[0].amount : 0;

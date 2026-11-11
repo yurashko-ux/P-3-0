@@ -73,6 +73,8 @@ const appointmentSelect = {
           quantity: true,
           salePrice: true,
           costPerUnit: true,
+          costUsd: true,
+          fxRateUsdUah: true,
           product: { select: { isHair: true, costUsd: true } },
         },
       },
@@ -421,8 +423,10 @@ export async function loadDashboard(from: string, to: string): Promise<Dashboard
       for (const g of checkout.goodLines) {
         const quantity = Number(g.quantity) || 0;
         addTitle(goodsMap, g.title, quantity, quantity * (Number(g.salePrice) || 0));
-        const usd = g.product?.isHair ? Number(g.product.costUsd) || 0 : 0;
-        const rate = usd > 0 ? usdRateFor(row.kyivDay, fxRates) : null;
+        // Зафіксовані при продажі $ і курс мають перевагу; для старих рядків — ціна з картки за курсом дня продажу.
+        const fixedUsd = Number(g.costUsd) || 0;
+        const usd = fixedUsd > 0 ? fixedUsd : g.product?.isHair ? Number(g.product.costUsd) || 0 : 0;
+        const rate = usd > 0 ? (fixedUsd > 0 && Number(g.fxRateUsdUah)) || usdRateFor(row.kyivDay, fxRates) : null;
         if (usd > 0 && rate) hairCost += quantity * usd * rate;
         else if (g.costPerUnit != null && g.costPerUnit > 0) {
           if (g.product?.isHair) hairCost += quantity * g.costPerUnit;
