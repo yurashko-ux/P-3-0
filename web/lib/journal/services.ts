@@ -2,7 +2,8 @@
 
 import { prisma } from "@/lib/prisma";
 import { altegioFetch } from "@/lib/altegio/client";
-import type { SalonServiceKind } from "./kind";
+import { randomUUID } from "crypto";
+import { classifyServiceKind, type SalonServiceKind } from "./kind";
 import { resolveJournalCompanyId } from "./company-id";
 
 export type SalonServiceSource = "mapped" | "kresco";
@@ -115,14 +116,59 @@ function unwrapList(raw: unknown): any[] {
   return [];
 }
 
-export async function listAltegioServices(): Promise<Array<{ id: number; title: string; durationSec: number }>> {
+export type AltegioServiceRow = {
+  id: number;
+  title: string;
+  durationSec: number;
+  /** Ціна «від» у каталозі Altegio (0 — не вказана). */
+  priceMin: number;
+  /** Ціна «до»; якщо більша за priceMin — в Altegio діапазон цін. */
+  priceMax: number;
+  /** false — послугу в Altegio вимкнено або видалено. */
+  active: boolean;
+};
+
+/** Число з поля Altegio: приймає число або рядок («1 500», «1500.00»). */
+function altegioNumber(value: unknown): number {
+  if (typeof value === "number") return Number.isFinite(value) ? value : 0;
+  const n = Number(String(value ?? "").replace(/\s/g, "").replace(",", "."));
+  return Number.isFinite(n) ? n : 0;
+}
+
+/** Ціни послуги: поля каталогу, а якщо їх немає — мінімум і максимум із цін майстрів. */
+function altegioServicePrices(item: any): { priceMin: number; priceMax: number } {
+  let priceMin = Math.max(0, altegioNumber(item?.price_min ?? item?.priceMin ?? item?.cost ?? item?.price));
+  let priceMax = Math.max(0, altegioNumber(item?.price_max ?? item?.priceMax ?? item?.cost ?? item?.price));
+  if (priceMin === 0 && priceMax === 0 && Array.isArray(item?.staff)) {
+    const staffPrices = (item.staff as any[])
+      .flatMap((s) => [altegioNumber(s?.price_min ?? s?.price), altegioNumber(s?.price_max ?? s?.price)])
+      .filter((p) => p > 0);
+    if (staffPrices.length > 0) {
+      priceMin = Math.min(...staffPrices);
+      priceMax = Math.max(...staffPrices);
+    }
+  }
+  if (priceMax < priceMin) priceMax = priceMin;
+  return { priceMin, priceMax };
+}
+
+/** Чи послуга жива в Altegio: active / is_active = 0 або deleted = 1 означає вимкнену. */
+function altegioServiceActive(item: any): boolean {
+  const off = (v: unknown) => v === 0 || v === false || v === "0";
+  const on = (v: unknown) => v === 1 || v === true || v === "1";
+  if (off(item?.active) || off(item?.is_active)) return false;
+  if (on(item?.deleted) || on(item?.is_deleted)) return false;
+  return true;
+}
+
+export async function listAltegioServices(): Promise<AltegioServiceRow[]> {
   const companyId = resolveJournalCompanyId();
   const paths = [`/company/${companyId}/services`, `/services/${companyId}`];
   for (const path of paths) {
     try {
       const raw = await altegioFetch<unknown>(path);
       const list = unwrapList(raw);
-      const rows: Array<{ id: number; title: string; durationSec: number }> = [];
+      const rows: AltegioServiceRow[] = [];
       for (const item of list) {
         const id = Number(item?.id ?? item?.service_id ?? 0);
         const title = String(item?.title ?? item?.name ?? "").trim();
@@ -132,6 +178,8 @@ export async function listAltegioServices(): Promise<Array<{ id: number; title: 
             id,
             title,
             durationSec: duration > 0 ? Math.round(duration) : 3600,
+            ...altegioServicePrices(item),
+            active: altegioServiceActive(item),
           });
         }
       }
@@ -186,7 +234,7 @@ export async function findSalonServiceByAltegioId(altegioServiceId: number) {
  */
 export async function importSalonServicesFromAltegio(): Promise<{
   linksUpdated: number;
-  unmapped: Array<{ id: number; title: string; durationSec: number }>;
+  unmapped: AltegioServiceRow[];
 }> {
   await ensureCanonicalServicesSeeded();
   const remote = await listAltegioServices();
@@ -197,7 +245,7 @@ export async function importSalonServicesFromAltegio(): Promise<{
   const existingLinks = await prisma.salonServiceAltegioLink.findMany();
   const byAltegio = new Map(existingLinks.map((l) => [l.altegioServiceId, l]));
   let linksUpdated = 0;
-  const unmapped: Array<{ id: number; title: string; durationSec: number }> = [];
+  const unmapped: AltegioServiceRow[] = [];
 
   for (const row of remote) {
     const link = byAltegio.get(row.id);
@@ -218,6 +266,191 @@ export async function importSalonServicesFromAltegio(): Promise<{
     `[journal/services] Імпорт мапінгу: оновлено назв=${linksUpdated}, незмаплено=${unmapped.length}`,
   );
   return { linksUpdated, unmapped };
+}
+
+export type CatalogImportItem = {
+  altegioServiceId: number;
+  altegioTitle: string;
+  /** create — нова послуга; update — наявна послуга Kresco з тією ж назвою; activate — уже зв'язана, але вимкнена. */
+  action: "create" | "update" | "activate";
+  serviceId: string;
+  title: string;
+  kind: SalonServiceKind;
+  durationSec: number;
+  /** Ціна, яка стане в Kresco. */
+  price: number;
+  /** Діапазон цін Altegio «від–до», якщо він є (у Kresco беремо нижню). */
+  priceRange: { min: number; max: number } | null;
+  /** Ціну в Kresco вже задано вручну — лишаємо її, а не беремо з Altegio. */
+  keepsKrescoPrice: boolean;
+};
+
+export type CatalogImportResult = {
+  dryRun: boolean;
+  altegioTotal: number;
+  /** Уже зв'язані й активні — не чіпаємо (серед них варіанти нарощування). */
+  alreadyLinked: number;
+  items: CatalogImportItem[];
+  /** Вимкнені або видалені в Altegio — не імпортуємо. */
+  skippedInactive: Array<{ id: number; title: string }>;
+  /** Активні послуги Kresco, що після імпорту лишаються без пари в Altegio. */
+  krescoWithoutAltegio: Array<{ id: string; title: string; kind: string; salePrice: number }>;
+};
+
+function normalizeServiceTitle(title: string): string {
+  return String(title || "").toLowerCase().replace(/\s+/g, " ").trim();
+}
+
+/**
+ * Повний імпорт каталогу Altegio: кожна послуга без мапінгу стає послугою Kresco (назва, ціна, тривалість, зв'язок).
+ * Уже зв'язані послуги (канонічне нарощування, консультації) не змінюємо — лише вмикаємо вимкнені.
+ * Наявну послугу Kresco з тією ж назвою і без зв'язку оновлюємо, а не дублюємо.
+ * dryRun = true — лише перелік змін, без запису в базу.
+ */
+export async function importFullCatalogFromAltegio(dryRun: boolean): Promise<CatalogImportResult> {
+  await ensureCanonicalServicesSeeded();
+  const remote = await listAltegioServices();
+  if (remote.length === 0) {
+    throw new Error("Altegio не повернув послуг. Перевірте ALTEGIO_COMPANY_ID і права журналу.");
+  }
+
+  const services = await prisma.salonService.findMany({ include: { altegioLinks: true } });
+  const serviceByAltegioId = new Map<number, (typeof services)[number]>();
+  for (const service of services) {
+    for (const link of service.altegioLinks) serviceByAltegioId.set(link.altegioServiceId, service);
+  }
+  // Кандидати на збіг за назвою: послуги без жодного зв'язку (старі імпорти спершу, створені в Kresco — потім).
+  const freeByTitle = new Map<string, Array<(typeof services)[number]>>();
+  for (const service of services) {
+    if (service.altegioLinks.length > 0) continue;
+    const key = normalizeServiceTitle(service.title);
+    const list = freeByTitle.get(key) || [];
+    list.push(service);
+    freeByTitle.set(key, list);
+  }
+  for (const list of freeByTitle.values()) {
+    list.sort((a, b) => Number(a.source === "kresco") - Number(b.source === "kresco"));
+  }
+
+  const items: CatalogImportItem[] = [];
+  const skippedInactive: Array<{ id: number; title: string }> = [];
+  const writes: any[] = [];
+  const pairedServiceIds = new Set<string>();
+  const activatedIds = new Set<string>();
+  let alreadyLinked = 0;
+
+  for (const row of remote) {
+    const priceRange = row.priceMax > row.priceMin && row.priceMin > 0 ? { min: row.priceMin, max: row.priceMax } : null;
+    const altegioPrice = row.priceMin > 0 ? row.priceMin : row.priceMax;
+
+    const linked = serviceByAltegioId.get(row.id);
+    if (linked) {
+      pairedServiceIds.add(linked.id);
+      if (linked.isActive || !row.active || activatedIds.has(linked.id)) {
+        alreadyLinked += 1;
+        continue;
+      }
+      activatedIds.add(linked.id);
+      items.push({
+        altegioServiceId: row.id,
+        altegioTitle: row.title,
+        action: "activate",
+        serviceId: linked.id,
+        title: linked.title,
+        kind: linked.kind as SalonServiceKind,
+        durationSec: linked.durationSec,
+        price: linked.salePrice,
+        priceRange,
+        keepsKrescoPrice: true,
+      });
+      writes.push(prisma.salonService.update({ where: { id: linked.id }, data: { isActive: true } }));
+      continue;
+    }
+
+    if (!row.active) {
+      skippedInactive.push({ id: row.id, title: row.title });
+      continue;
+    }
+
+    const existing = freeByTitle.get(normalizeServiceTitle(row.title))?.shift();
+    if (existing) {
+      pairedServiceIds.add(existing.id);
+      const keepsKrescoPrice = existing.salePrice > 0;
+      const price = keepsKrescoPrice ? existing.salePrice : altegioPrice;
+      items.push({
+        altegioServiceId: row.id,
+        altegioTitle: row.title,
+        action: "update",
+        serviceId: existing.id,
+        title: existing.title,
+        kind: existing.kind as SalonServiceKind,
+        durationSec: row.durationSec,
+        price,
+        priceRange,
+        keepsKrescoPrice,
+      });
+      writes.push(
+        prisma.salonService.update({
+          where: { id: existing.id },
+          data: { salePrice: price, durationSec: row.durationSec, isActive: true, source: "mapped" },
+        }),
+        prisma.salonServiceAltegioLink.create({
+          data: { serviceId: existing.id, altegioServiceId: row.id, altegioTitle: row.title, isDefault: true },
+        }),
+      );
+      continue;
+    }
+
+    const id = randomUUID();
+    const kind = classifyServiceKind(row.title);
+    items.push({
+      altegioServiceId: row.id,
+      altegioTitle: row.title,
+      action: "create",
+      serviceId: id,
+      title: row.title,
+      kind,
+      durationSec: row.durationSec,
+      price: altegioPrice,
+      priceRange,
+      keepsKrescoPrice: false,
+    });
+    writes.push(
+      prisma.salonService.create({
+        data: {
+          id,
+          title: row.title,
+          kind,
+          durationSec: row.durationSec,
+          salePrice: altegioPrice,
+          isActive: true,
+          source: "mapped",
+        },
+      }),
+      prisma.salonServiceAltegioLink.create({
+        data: { serviceId: id, altegioServiceId: row.id, altegioTitle: row.title, isDefault: true },
+      }),
+    );
+  }
+
+  const krescoWithoutAltegio = services
+    .filter((s) => s.isActive && !pairedServiceIds.has(s.id))
+    .map((s) => ({ id: s.id, title: s.title, kind: s.kind, salePrice: s.salePrice }));
+
+  if (!dryRun && writes.length > 0) {
+    // Одна транзакція: або весь каталог, або нічого.
+    await prisma.$transaction(writes);
+  }
+
+  const count = (action: CatalogImportItem["action"]) => items.filter((i) => i.action === action).length;
+  console.log(
+    `[journal/services] Повний імпорт каталогу (${dryRun ? "перегляд" : "запис"}): Altegio=${remote.length}, ` +
+      `нових=${count("create")}, оновлено=${count("update")}, увімкнено=${count("activate")}, ` +
+      `уже зв'язано=${alreadyLinked}, вимкнених в Altegio=${skippedInactive.length}, ` +
+      `Kresco без пари=${krescoWithoutAltegio.length}`,
+  );
+
+  return { dryRun, altegioTotal: remote.length, alreadyLinked, items, skippedInactive, krescoWithoutAltegio };
 }
 
 /** Ідемпотентний seed канонічних послуг (якщо міграція ще не встигла / порожня БД). */

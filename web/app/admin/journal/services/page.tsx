@@ -22,6 +22,33 @@ type ServiceRow = {
 
 type UnmappedRow = { id: number; title: string; durationSec: number };
 
+type CatalogItem = {
+  altegioServiceId: number;
+  altegioTitle: string;
+  action: "create" | "update" | "activate";
+  title: string;
+  kind: string;
+  durationSec: number;
+  price: number;
+  priceRange: { min: number; max: number } | null;
+  keepsKrescoPrice: boolean;
+};
+
+type CatalogResult = {
+  dryRun: boolean;
+  altegioTotal: number;
+  alreadyLinked: number;
+  items: CatalogItem[];
+  skippedInactive: Array<{ id: number; title: string }>;
+  krescoWithoutAltegio: Array<{ id: string; title: string; kind: string; salePrice: number }>;
+};
+
+const CATALOG_ACTION_LABEL: Record<CatalogItem["action"], string> = {
+  create: "Нова",
+  update: "Оновити й увімкнути",
+  activate: "Увімкнути",
+};
+
 const KIND_LABEL: Record<string, string> = {
   consultation: "Консультація",
   hair: "Нарощування",
@@ -40,6 +67,9 @@ export default function JournalServicesPage() {
   const [notice, setNotice] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [importing, setImporting] = useState(false);
+  /** Повний імпорт каталогу Altegio: перегляд змін перед записом */
+  const [catalog, setCatalog] = useState<CatalogResult | null>(null);
+  const [catalogBusy, setCatalogBusy] = useState(false);
   const [creating, setCreating] = useState(false);
   const [showCreate, setShowCreate] = useState(false);
   const [newTitle, setNewTitle] = useState("");
@@ -95,6 +125,35 @@ export default function JournalServicesPage() {
       setError(err instanceof Error ? err.message : "Помилка");
     } finally {
       setImporting(false);
+    }
+  };
+
+  // Повний імпорт каталогу: write=false — лише перегляд, write=true — запис у базу.
+  const runCatalogImport = async (write: boolean) => {
+    setCatalogBusy(true);
+    setError(null);
+    setNotice(null);
+    try {
+      const res = await fetch("/api/admin/journal/services", {
+        method: "POST",
+        credentials: "include",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action: write ? "catalogImport" : "catalogPreview" }),
+      });
+      const json = await res.json();
+      if (!res.ok || !json.ok) throw new Error(json.error || "Помилка імпорту каталогу");
+      setServices(json.services || []);
+      const result = json.result as CatalogResult;
+      if (write) {
+        setCatalog(null);
+        setNotice(`Каталог імпортовано: змінено послуг ${result.items.length}.`);
+      } else {
+        setCatalog(result);
+      }
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Помилка");
+    } finally {
+      setCatalogBusy(false);
     }
   };
 
@@ -271,10 +330,113 @@ export default function JournalServicesPage() {
         <button className="btn btn-sm btn-primary" disabled={importing} onClick={() => void importFromAltegio()}>
           {importing ? "Імпорт…" : "Оновити мапінг з Altegio"}
         </button>
+        <button
+          className="btn btn-sm btn-outline"
+          type="button"
+          disabled={catalogBusy}
+          onClick={() => void runCatalogImport(false)}
+        >
+          {catalogBusy && !catalog ? "Читаю Altegio…" : "Імпортувати весь каталог Altegio"}
+        </button>
         <button className="btn btn-sm btn-outline" type="button" onClick={() => setShowCreate((v) => !v)}>
           {showCreate ? "Скасувати" : "Створити послугу"}
         </button>
       </div>
+
+      {catalog && (
+        <div className="bg-white border border-blue-200 rounded-xl p-3 space-y-2">
+          <p className="text-sm font-medium">Перегляд імпорту каталогу — у базу ще нічого не записано</p>
+          <p className="text-xs text-gray-600">
+            В Altegio послуг: {catalog.altegioTotal}. Уже зв’язані й активні (не чіпаємо): {catalog.alreadyLinked}. Буде
+            змінено: {catalog.items.length}. Вимкнені в Altegio (пропускаємо): {catalog.skippedInactive.length}.
+          </p>
+          {catalog.items.length > 0 ? (
+            <div className="max-h-96 overflow-auto border rounded-lg">
+              <table className="table table-xs">
+                <thead>
+                  <tr>
+                    <th>Дія</th>
+                    <th>Послуга</th>
+                    <th>Тип</th>
+                    <th className="text-right">Хв</th>
+                    <th className="text-right">Ціна, ₴</th>
+                    <th>Примітка</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {catalog.items.map((item) => (
+                    <tr key={item.altegioServiceId}>
+                      <td className="whitespace-nowrap">{CATALOG_ACTION_LABEL[item.action]}</td>
+                      <td>
+                        {item.title}
+                        {item.title !== item.altegioTitle && (
+                          <span className="block text-gray-400">Altegio: {item.altegioTitle}</span>
+                        )}
+                      </td>
+                      <td className="whitespace-nowrap">{KIND_LABEL[item.kind] || item.kind}</td>
+                      <td className="text-right tabular-nums">{Math.round(item.durationSec / 60)}</td>
+                      <td className={`text-right tabular-nums ${item.price > 0 ? "" : "text-red-600 font-medium"}`}>
+                        {formatPrice(item.price)}
+                      </td>
+                      <td className="text-gray-500">
+                        {[
+                          item.priceRange
+                            ? `в Altegio ${formatPrice(item.priceRange.min)}–${formatPrice(item.priceRange.max)}, беремо нижню`
+                            : "",
+                          item.keepsKrescoPrice ? "ціна Kresco лишається" : "",
+                          item.price > 0 ? "" : "без ціни — задати вручну",
+                        ]
+                          .filter(Boolean)
+                          .join("; ")}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          ) : (
+            <p className="text-sm text-gray-500">Змін немає — весь каталог Altegio вже в Kresco.</p>
+          )}
+          {catalog.krescoWithoutAltegio.length > 0 && (
+            <div className="text-xs text-amber-900 bg-amber-50 border border-amber-200 rounded-lg p-2">
+              <p className="font-medium">Послуги Kresco без пари в Altegio ({catalog.krescoWithoutAltegio.length})</p>
+              <p className="mb-1">Записи з ними в Altegio не дублюються. Імпорт їх не змінює.</p>
+              <ul className="space-y-0.5">
+                {catalog.krescoWithoutAltegio.map((s) => (
+                  <li key={s.id}>
+                    {s.title} · {KIND_LABEL[s.kind] || s.kind} · {formatPrice(s.salePrice)} ₴
+                  </li>
+                ))}
+              </ul>
+            </div>
+          )}
+          {catalog.skippedInactive.length > 0 && (
+            <details className="text-xs text-gray-500">
+              <summary>Вимкнені в Altegio — не імпортуємо ({catalog.skippedInactive.length})</summary>
+              <ul className="mt-1 pl-3 space-y-0.5">
+                {catalog.skippedInactive.map((s) => (
+                  <li key={s.id} className="tabular-nums">
+                    {s.id} — {s.title}
+                  </li>
+                ))}
+              </ul>
+            </details>
+          )}
+          <div className="flex flex-wrap gap-2">
+            <button
+              className="btn btn-sm btn-primary"
+              type="button"
+              disabled={catalogBusy || catalog.items.length === 0}
+              onClick={() => void runCatalogImport(true)}
+            >
+              {catalogBusy ? "Записую…" : `Записати в Kresco (${catalog.items.length})`}
+            </button>
+            <button className="btn btn-sm btn-ghost" type="button" disabled={catalogBusy} onClick={() => setCatalog(null)}>
+              Закрити без запису
+            </button>
+          </div>
+        </div>
+      )}
 
       {showCreate && (
         <div className="bg-white border rounded-xl p-3 space-y-2 max-w-lg">

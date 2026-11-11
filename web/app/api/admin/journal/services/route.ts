@@ -3,6 +3,7 @@ import { requireJournalSection } from "@/lib/journal/require-journal-auth";
 import {
   createKrescoOnlyService,
   ensureCanonicalServicesSeeded,
+  importFullCatalogFromAltegio,
   importSalonServicesFromAltegio,
   listSalonServices,
   updateSalonService,
@@ -71,6 +72,13 @@ export async function POST(req: NextRequest) {
         salePrice: Number(body.salePrice) || 0,
       });
       return NextResponse.json({ ok: true, service });
+    }
+
+    // Повний імпорт каталогу Altegio: спершу перегляд (без запису), потім запис
+    if (body.action === "catalogPreview" || body.action === "catalogImport") {
+      const result = await importFullCatalogFromAltegio(body.action === "catalogPreview");
+      const services = await listSalonServices(true);
+      return NextResponse.json({ ok: true, result, services });
     }
 
     // Імпорт: оновлення мапінгу + список незмаплених (без 1:1 дублів у каталозі)
