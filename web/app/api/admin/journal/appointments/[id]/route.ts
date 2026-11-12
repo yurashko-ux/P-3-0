@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { refreshDirectCardAfterJournalChange } from "@/lib/direct-journal-state";
 import { requireJournalSection } from "@/lib/journal/require-journal-auth";
+import { altegioMirrorWarning } from "@/lib/journal/altegio-mirror";
 import {
   cancelAppointmentFromKresco,
   getSalonAppointment,
@@ -19,7 +20,7 @@ export async function GET(req: NextRequest, { params }: { params: { id: string }
     if (!appointment || appointment.status === "deleted") {
       return NextResponse.json({ ok: false, error: "Запис не знайдено" }, { status: 404 });
     }
-    return NextResponse.json({ ok: true, appointment });
+    return NextResponse.json({ ok: true, appointment, warning: altegioMirrorWarning(appointment) });
   } catch (err) {
     console.error("[api/admin/journal/appointments/:id] GET error:", err);
     return NextResponse.json(
@@ -44,7 +45,7 @@ export async function PATCH(req: NextRequest, { params }: { params: { id: string
       actor: auth.type === "user" ? auth.login : auth.type,
     });
     await refreshDirectCardAfterJournalChange(params.id);
-    return NextResponse.json({ ok: true, appointment });
+    return NextResponse.json({ ok: true, appointment, warning: altegioMirrorWarning(appointment) });
   } catch (err) {
     console.error("[api/admin/journal/appointments/:id] PATCH error:", err);
     const message = err instanceof Error ? err.message : "Помилка зміни статусу";
@@ -73,7 +74,7 @@ export async function PUT(req: NextRequest, { params }: { params: { id: string }
       actor: auth.type === "user" ? auth.login : auth.type,
     });
     await refreshDirectCardAfterJournalChange(params.id);
-    return NextResponse.json({ ok: true, appointment });
+    return NextResponse.json({ ok: true, appointment, warning: altegioMirrorWarning(appointment) });
   } catch (err) {
     console.error("[api/admin/journal/appointments/:id] PUT error:", err);
     const message = err instanceof Error ? err.message : "Помилка оновлення запису";
@@ -91,7 +92,7 @@ export async function DELETE(req: NextRequest, { params }: { params: { id: strin
       auth.type === "user" ? auth.login : auth.type,
     );
     await refreshDirectCardAfterJournalChange(params.id, { cancelled: true });
-    return NextResponse.json({ ok: true, appointment });
+    return NextResponse.json({ ok: true, appointment, warning: altegioMirrorWarning(appointment) });
   } catch (err) {
     console.error("[api/admin/journal/appointments/:id] DELETE error:", err);
     const message = err instanceof Error ? err.message : "Помилка скасування запису";

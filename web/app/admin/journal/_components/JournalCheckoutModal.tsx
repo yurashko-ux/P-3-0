@@ -122,6 +122,8 @@ export function JournalCheckoutModal({
   const [alreadyPaid, setAlreadyPaid] = useState(false);
   const [altegioPaid, setAltegioPaid] = useState(0);
   const [syncError, setSyncError] = useState<string | null>(null);
+  /** Чек оплачено в Kresco, але дубль в Altegio не пройшов. */
+  const [mirrorPending, setMirrorPending] = useState(false);
   /** Суми в грн (внесок у чек). */
   const [alloc, setAlloc] = useState<PayAlloc>({});
   /** Для USD/EUR-плиток: сума у валюті (паралельно з alloc у грн). */
@@ -197,13 +199,14 @@ export function JournalCheckoutModal({
         setAlreadyPaid(Boolean(json.alreadyPaid));
         setAltegioPaid(Number(json.altegioPaid) || 0);
         setSyncError(json.checkout?.syncError || null);
+        setMirrorPending(Boolean(json.mirrorPending));
         const rateUsd = Number(json.usdRate);
         setUsdRate(Number.isFinite(rateUsd) && rateUsd > 0 ? rateUsd : null);
         setUsdRateSource(typeof json.usdRateSource === "string" ? json.usdRateSource : null);
         const rateEur = Number(json.eurRate);
         setEurRate(Number.isFinite(rateEur) && rateEur > 0 ? rateEur : null);
         setEurRateSource(typeof json.eurRateSource === "string" ? json.eurRateSource : null);
-        if (json.alreadyPaid) {
+        if (json.alreadyPaid && !json.mirrorPending) {
           setNotice(
             `Візит уже оплачено${json.altegioPaid ? ` (Altegio ${Number(json.altegioPaid).toLocaleString("uk-UA")} грн)` : ""}.`,
           );
@@ -435,7 +438,9 @@ export function JournalCheckoutModal({
       if (!res.ok || !json.ok) throw new Error(json.error || "Помилка закриття візиту");
       const stockWarn = json.checkout?.syncError;
       const krescoOnly = /тест|Kresco|лише в Kresco/i.test(String(stockWarn || ""));
-      const okMsg = krescoOnly
+      const okMsg = json.warning
+        ? `Оплачено ${total.toLocaleString("uk-UA")} грн у Kresco. ${json.warning}`
+        : krescoOnly
         ? `Оплачено ${total.toLocaleString("uk-UA")} грн (лише в Kresco)`
         : stockWarn && !krescoOnly
           ? `Оплачено. Увага: ${stockWarn}`
@@ -443,7 +448,36 @@ export function JournalCheckoutModal({
             (goods.length > 0 ? ", товари списано зі складу" : "");
       setNotice(okMsg);
       setSyncError(json.checkout?.syncError || null);
+      setMirrorPending(Boolean(json.warning));
       setAlreadyPaid(true);
+      await new Promise((r) => setTimeout(r, 900));
+      onDone(okMsg);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Помилка");
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  /** Повтор дубля в Altegio для чека, який уже оплачено в Kresco. */
+  const retryMirror = async () => {
+    if (!appointmentId || saving) return;
+    setSaving(true);
+    setError(null);
+    setNotice(null);
+    try {
+      const res = await fetch(`/api/admin/journal/appointments/${appointmentId}/checkout`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ retryMirror: true }),
+      });
+      const json = await res.json();
+      if (!res.ok || !json.ok) throw new Error(json.error || "Дубль в Altegio не пройшов");
+      setSyncError(json.checkout?.syncError || null);
+      setMirrorPending(Boolean(json.warning));
+      if (json.warning) return;
+      const okMsg = "Чек продубльовано в Altegio";
+      setNotice(okMsg);
       await new Promise((r) => setTimeout(r, 900));
       onDone(okMsg);
     } catch (err) {
@@ -632,6 +666,11 @@ export function JournalCheckoutModal({
           >
             {saving ? "Проведення…" : alreadyPaid ? "Уже оплачено" : "Оплатити"}
           </button>
+          {mirrorPending && (
+            <button className="btn btn-sm btn-outline" disabled={saving || loading} onClick={() => void retryMirror()}>
+              Повторити дубль в Altegio
+            </button>
+          )}
           <button className="btn btn-sm btn-ghost" onClick={onClose}>
             Закрити
           </button>

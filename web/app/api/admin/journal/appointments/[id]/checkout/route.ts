@@ -1,7 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
 import { refreshDirectCardAfterJournalChange } from "@/lib/direct-journal-state";
 import { requireJournalSection } from "@/lib/journal/require-journal-auth";
-import { closeVisitFromKresco, getCheckoutContext } from "@/lib/journal/checkout";
+import { closeVisitFromKresco, getCheckoutContext, retryCheckoutAltegioMirror } from "@/lib/journal/checkout";
+import { altegioMirrorWarning } from "@/lib/journal/altegio-mirror";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 60;
@@ -22,6 +23,7 @@ export async function GET(req: NextRequest, { params }: { params: { id: string }
       altegioPaid: ctx.altegioPaid,
       altegioPayments: ctx.altegioPayments,
       alreadyPaid: ctx.alreadyPaid,
+      mirrorPending: ctx.mirrorPending,
       checkout: ctx.appointment.checkout,
       usdRate: ctx.usdRate,
       usdRateSource: ctx.usdRateSource,
@@ -41,6 +43,13 @@ export async function POST(req: NextRequest, { params }: { params: { id: string 
   if (auth instanceof NextResponse) return auth;
   try {
     const body = await req.json().catch(() => ({}));
+    // Повтор дубля в Altegio для чека, який уже оплачено в Kresco.
+    if (body.retryMirror === true) {
+      const retryBy = auth.type === "user" && auth.userId ? auth.userId : auth.type === "superadmin" ? "superadmin" : null;
+      const checkout = await retryCheckoutAltegioMirror(params.id, retryBy);
+      await refreshDirectCardAfterJournalChange(params.id);
+      return NextResponse.json({ ok: true, checkout, warning: altegioMirrorWarning(checkout) });
+    }
     const services = Array.isArray(body.services)
       ? body.services.map((s: any) => ({
           lineId: s.lineId ? String(s.lineId) : undefined,
@@ -97,7 +106,7 @@ export async function POST(req: NextRequest, { params }: { params: { id: string 
       createdBy,
     });
     await refreshDirectCardAfterJournalChange(params.id);
-    return NextResponse.json({ ok: true, checkout });
+    return NextResponse.json({ ok: true, checkout, warning: altegioMirrorWarning(checkout) });
   } catch (err) {
     console.error("[api/admin/journal/appointments/:id/checkout] POST error:", err);
     const message = err instanceof Error ? err.message : "Помилка закриття візиту";

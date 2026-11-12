@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { kyivCalendarTodayYmd } from "@/lib/direct-kyiv-today";
-import { syncJournalAppointmentsFromAltegio } from "@/lib/journal";
+import { retryPendingAltegioMirrors, syncJournalAppointmentsFromAltegio } from "@/lib/journal";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 300;
@@ -31,7 +31,12 @@ export async function POST(req: NextRequest) {
     console.log("[cron/sync-journal-records] Старт синку журналу з Altegio");
     const result = await syncJournalAppointmentsFromAltegio();
     console.log("[cron/sync-journal-records] Готово", result);
-    return NextResponse.json({ ok: true, result, today: kyivCalendarTodayYmd() });
+    // Записи, що лишились лише в Kresco через збій Altegio, дублюємо повтором (небагато за раз).
+    const mirrorRetry = await retryPendingAltegioMirrors().catch((err) => {
+      console.error("[cron/sync-journal-records] Повтор дубля в Altegio не вдався:", err);
+      return null;
+    });
+    return NextResponse.json({ ok: true, result, mirrorRetry, today: kyivCalendarTodayYmd() });
   } catch (err) {
     console.error("[cron/sync-journal-records] Помилка:", err);
     return NextResponse.json(

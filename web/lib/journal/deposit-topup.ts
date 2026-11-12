@@ -1,7 +1,7 @@
 // Поповнення завдатку з журналу. Поки журнал не пише в Altegio — лише локальний ledger.
 
 import { prisma } from "@/lib/prisma";
-import { fetchAltegioAccounts } from "@/lib/altegio/accounts";
+import { listPaymentAccounts } from "@/lib/finance/own-accounts";
 import { fetchDepositsForClientIds } from "@/lib/altegio/client-deposits";
 import { topUpClientDepositInAltegio } from "@/lib/altegio/deposit-topup-write";
 import { appendDepositTopUp } from "@/lib/deposits/store";
@@ -47,9 +47,9 @@ export async function topUpDepositFromAppointment(input: DepositTopUpFromAppoint
   if (!(amount > 0)) throw new Error("Сума поповнення має бути більше 0");
   if (!(accountId > 0)) throw new Error("Оберіть рахунок (Каса / ФОП), з якого поповнюєте");
 
-  const accounts = await fetchAltegioAccounts();
+  const accounts = await listPaymentAccounts();
   const account = accounts.find((a) => Number(a.id) === accountId);
-  if (!account) throw new Error("Рахунок Altegio не знайдено");
+  if (!account) throw new Error("Рахунок не знайдено");
   if (isDepositAccountTitle(account.title)) {
     throw new Error("Для поповнення оберіть касу/ФОП, а не особистий рахунок");
   }

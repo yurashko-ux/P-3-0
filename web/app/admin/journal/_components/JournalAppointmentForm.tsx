@@ -308,7 +308,7 @@ export function JournalAppointmentForm({
 }: {
   open: boolean;
   onClose: () => void;
-  onSaved: () => void;
+  onSaved: (warning?: string | null) => void;
   masters: JournalMaster[];
   services: JournalService[];
   draft: JournalAppointmentDraft | null;
@@ -413,9 +413,6 @@ export function JournalAppointmentForm({
     setDepositBalance(draft?.directClientId ? null : 0);
     setReplacingStaffId(null);
     setAddStaffOpen(false);
-    if (draft?.directClientId && !(draft.altegioClientId && draft.altegioClientId > 0)) {
-      setError("У клієнта немає id Altegio — запис у журнал неможливий");
-    }
   }, [open, draft]);
 
   useEffect(() => {
@@ -908,7 +905,7 @@ export function JournalAppointmentForm({
       const json = await res.json();
       if (!res.ok || !json.ok) throw new Error(json.error || "Помилка запису");
       const savedId = String(json.appointment?.id || draft?.id || "");
-      onSaved();
+      onSaved(json.warning || null);
       onClose();
       if (opts?.thenCheckout && onCheckout && savedId) {
         onCheckout(savedId);
@@ -932,7 +929,7 @@ export function JournalAppointmentForm({
       });
       const json = await res.json();
       if (!res.ok || !json.ok) throw new Error(json.error || "Помилка скасування");
-      onSaved();
+      onSaved(json.warning || null);
       onClose();
     } catch (err) {
       setError(err instanceof Error ? err.message : "Помилка");

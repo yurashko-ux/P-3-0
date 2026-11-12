@@ -597,8 +597,9 @@ export default function JournalDayPage() {
         <JournalAppointmentForm
           open={formOpen}
           onClose={() => setFormOpen(false)}
-          onSaved={() => {
+          onSaved={(warning) => {
             clearPendingClient();
+            if (warning) setNotice(`Збережено в Kresco. ${warning}`);
             void load(day);
           }}
           masters={staff}

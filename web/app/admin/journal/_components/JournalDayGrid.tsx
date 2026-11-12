@@ -4,6 +4,7 @@
 // Накладання як у Altegio — зсув + шар, без звуження колонки на N смуг.
 // Верхня смуга: hover (затримка) / long-press / клік → попап перегляду.
 
+import { isAltegioMirrorPending, isCheckoutPaidInKresco } from "@/lib/journal/altegio-mirror";
 import { useCallback, useEffect, useRef, useState, type TouchEvent } from "react";
 import type { JournalMaster } from "./JournalAppointmentForm";
 import { attendanceBlockStyle, normalizeAttendance } from "@/lib/journal/attendance";
@@ -75,6 +76,7 @@ export type JournalGridAppointment = {
   lines: Array<{ serviceId: string | null; title: string; cost?: number | null }>;
   checkout?: {
     status: string;
+    syncError?: string | null;
     paidAmount: number;
     totalServices?: number;
   } | null;
@@ -371,11 +373,13 @@ function StaffDayColumn({
         const topPx = Math.max(0, top);
         const columnPx = bodyHeight(hourPx, endHour);
         const bottomPx = Math.max(0, columnPx - topPx - height);
+        // Збережено в Kresco, але запис або чек ще не продубльовано в Altegio.
+        const mirrorPending = isAltegioMirrorPending(row) || isAltegioMirrorPending(row.checkout);
         return (
           <div
             key={row.id}
             className={`absolute overflow-hidden rounded-md border text-left shadow-sm flex flex-col ${
-              row.status === "sync_error" ? "ring-2 ring-red-500" : ""
+              mirrorPending ? "ring-2 ring-amber-500" : row.status === "sync_error" ? "ring-2 ring-red-500" : ""
             }`}
             style={{
               top: topPx,
@@ -387,7 +391,7 @@ function StaffDayColumn({
               borderColor: colors.border,
               color: colors.text,
             }}
-            title={row.syncError || undefined}
+            title={row.syncError || (mirrorPending ? row.checkout?.syncError : null) || undefined}
           >
             <div
               className="shrink-0 flex items-center justify-between gap-1 px-1.5 text-white cursor-default select-none"
@@ -449,13 +453,16 @@ function StaffDayColumn({
                 <div className="truncate text-[10px] font-medium leading-tight">{phone}</div>
               ) : null}
               {height >= 84 &&
-              row.checkout?.status === "synced" &&
+              row.checkout &&
+              isCheckoutPaidInKresco(row.checkout) &&
               Number(row.checkout.paidAmount) > 0 ? (
                 <div className="truncate text-[10px] font-medium leading-tight">
                   оплачено {Number(row.checkout.paidAmount).toLocaleString("uk-UA")} грн
                 </div>
               ) : null}
-              {row.status === "sync_error" ? (
+              {mirrorPending ? (
+                <div className="text-[10px] text-amber-800 font-semibold leading-tight">не продубльовано в Altegio</div>
+              ) : row.status === "sync_error" ? (
                 <div className="text-[10px] text-red-800 font-semibold leading-tight">помилка sync</div>
               ) : null}
             </button>

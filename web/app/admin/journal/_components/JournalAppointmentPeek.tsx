@@ -2,6 +2,7 @@
 
 // Швидкий перегляд запису при наведенні / long-press на верхню смугу.
 
+import { isAltegioMirrorPending, isCheckoutPaidInKresco } from "@/lib/journal/altegio-mirror";
 import { useEffect, useRef, useState } from "react";
 import {
   JOURNAL_ATTENDANCE_OPTIONS,
@@ -22,8 +23,11 @@ export type PeekAppointment = {
   clientName?: string | null;
   clientPhone?: string | null;
   lines: Array<{ serviceId: string | null; title: string; cost?: number | null }>;
+  status?: string | null;
+  syncError?: string | null;
   checkout?: {
     status: string;
+    syncError?: string | null;
     paidAmount: number;
     totalServices?: number;
   } | null;
@@ -402,11 +406,16 @@ export function JournalAppointmentPeek({
       <div className="px-3 py-2 border-t border-gray-100 bg-gray-50 rounded-b-xl space-y-1">
         <p className="text-[11px] text-gray-700">{range.label}</p>
         <p className="text-[11px] text-gray-500">Статус: {attendanceLabel(att)}</p>
-        {row.checkout?.status === "synced" && paid > 0 ? (
+        {isCheckoutPaidInKresco(row.checkout) && paid > 0 ? (
           <p className="text-[11px] text-emerald-700 font-medium">Візит оплачено · {money(paid)} ₴</p>
         ) : (
           <p className="text-[11px] text-amber-700">Оплата ще не проведена в касі</p>
         )}
+        {isAltegioMirrorPending(row) || isAltegioMirrorPending(row.checkout) ? (
+          <p className="text-[11px] text-amber-700">
+            {isAltegioMirrorPending(row) ? "Запис" : "Чек"} збережено в Kresco, в Altegio ще не продубльовано
+          </p>
+        ) : null}
         {pinned && (
           <p className="text-[10px] text-gray-400 pt-0.5">Закріплено · Esc або клік поза вікном — закрити</p>
         )}

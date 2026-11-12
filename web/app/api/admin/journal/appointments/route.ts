@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { refreshDirectCardAfterJournalChange } from "@/lib/direct-journal-state";
 import { requireJournalSection } from "@/lib/journal/require-journal-auth";
+import { altegioMirrorWarning } from "@/lib/journal/altegio-mirror";
 import { kyivCalendarTodayYmd } from "@/lib/direct-kyiv-today";
 import {
   createAppointmentFromKresco,
@@ -172,7 +173,7 @@ export async function POST(req: NextRequest) {
       actor: auth.type === "user" ? auth.login : auth.type,
     });
     await refreshDirectCardAfterJournalChange(appointment.id);
-    return NextResponse.json({ ok: true, appointment });
+    return NextResponse.json({ ok: true, appointment, warning: altegioMirrorWarning(appointment) });
   } catch (err) {
     console.error("[api/admin/journal/appointments] POST error:", err);
     const message = err instanceof Error ? err.message : "Помилка створення запису";

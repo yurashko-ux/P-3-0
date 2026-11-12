@@ -24,6 +24,11 @@ import {
 } from "./altegio-write-gate";
 import { isKrescoRecordNumberConflict, nextKrescoRecordNumber } from "./kresco-record-number";
 import { ensureAltegioClientId } from "@/lib/altegio/clients-write";
+import {
+  ALTEGIO_DELETE_PENDING,
+  ALTEGIO_MIRROR_PENDING,
+  isAltegioMirrorPending,
+} from "./altegio-mirror";
 
 function formatKyivDateTime(date: Date): string {
   const parts = new Intl.DateTimeFormat("sv-SE", {
@@ -240,6 +245,18 @@ export async function upsertSalonAppointmentFromAltegio(
     return existing;
   }
 
+  const existing =
+    recordId > 0
+      ? await prisma.salonAppointment.findUnique({ where: { altegioRecordId: recordId } })
+      : null;
+  // Kresco попереду: правку чи скасування ще не продубльовано — стан з Altegio її б відкотив.
+  if (existing?.source === "kresco" && isAltegioMirrorPending(existing)) {
+    console.log(
+      `[journal] Запис Altegio ${recordId}: у Kresco є непродубльовані зміни (${existing.syncError}) — імпорт пропущено`,
+    );
+    return existing;
+  }
+
   let altegioClientId = Number(input.altegioClientId) || 0;
   let directClientId: string | null = null;
   let clientName = String(input.clientName || "").trim() || null;
@@ -330,7 +347,6 @@ export async function upsertSalonAppointmentFromAltegio(
       ? input.attendance
       : null;
 
-  const existing = await prisma.salonAppointment.findUnique({ where: { altegioRecordId: recordId } });
   const data = {
     altegioRecordId: recordId,
     altegioVisitId: Number(input.altegioVisitId) || null,
@@ -666,11 +682,20 @@ async function loadWriteContext(input: KrescoAppointmentInput, opts?: { isCreate
   if (opts?.isCreate && writeAltegio) {
     await assertWithinWorkShift(altegioStaffId, staffName, datetime, seanceLength);
   }
+  let clientLinkError: string | null = null;
   if (writeAltegio) {
-    client = await ensureDirectClientLinkedToAltegio(client);
+    try {
+      client = await ensureDirectClientLinkedToAltegio(client);
+    } catch (err) {
+      // Немає телефону — це помилка вводу. Збій самого Altegio роботу в Kresco не блокує.
+      if (!String(client.phone || "").trim()) throw err;
+      clientLinkError = err instanceof Error ? err.message : String(err);
+      console.warn(`[journal] Клієнта ${client.id} не вдалося привʼязати до Altegio:`, clientLinkError);
+    }
   }
 
   return {
+    clientLinkError,
     client,
     directMasterId,
     altegioStaffId,
@@ -891,6 +916,21 @@ export async function createAppointmentFromKresco(input: KrescoAppointmentInput)
     });
   }
 
+  // Збій Altegio роботу не зупиняє: запис лишається в Kresco з позначкою, дубль допише повтор.
+  const pendingId = pending.id;
+  const keepInKrescoOnly = async (reason: string) => {
+    console.error(`[journal] Запис ${pendingId} збережено лише в Kresco, дубль в Altegio не пройшов:`, reason);
+    await applyCardExtras(pendingId, input, ctx, "create");
+    return prisma.salonAppointment.update({
+      where: { id: pendingId },
+      data: { status: "sync_error", syncError: `${ALTEGIO_MIRROR_PENDING}${reason}` },
+      include: appointmentWriteInclude,
+    });
+  };
+  if (!(Number(ctx.client.altegioClientId) > 0)) {
+    return keepInKrescoOnly(ctx.clientLinkError || "клієнта не привʼязано до Altegio");
+  }
+
   try {
     created = await createAltegioRecord({
       staffId: ctx.altegioStaffId,
@@ -910,12 +950,7 @@ export async function createAppointmentFromKresco(input: KrescoAppointmentInput)
       console.warn(`[journal] Altegio відхилив час запису ${pending.id}, чернетку видалено:`, message);
       throw new Error(readable);
     }
-    await prisma.salonAppointment.update({
-      where: { id: pending.id },
-      data: { status: "sync_error", syncError: message },
-    });
-    console.error(`[journal] Створення запису ${pending.id} не пройшло в Altegio:`, message);
-    throw new Error(message);
+    return keepInKrescoOnly(message);
   }
 
   // Direct-колонки оновлює існуючий вебхук record (regex не дублюємо).
@@ -1006,8 +1041,7 @@ export async function updateAppointmentFromKresco(input: KrescoAppointmentInput)
   });
   if (!existing) throw new Error("Запис не знайдено");
   const ctx = await loadWriteContext(input);
-  const hasAltegioRecord = Boolean(existing.altegioRecordId && existing.altegioRecordId > 0);
-  const skipAltegio = !ctx.writeAltegio || !hasAltegioRecord;
+  const skipAltegio = !ctx.writeAltegio;
   const kyivDay = kyivYmdFromDateTimeInput(ctx.datetime) || "";
   const snap = snapshotFromDirectClient(ctx.client);
 
@@ -1026,11 +1060,7 @@ export async function updateAppointmentFromKresco(input: KrescoAppointmentInput)
       attendance: input.attendance ?? existing.attendance,
       comment: input.comment ?? existing.comment,
       status: skipAltegio ? "synced" : "pending",
-      syncError: skipAltegio
-        ? hasAltegioRecord
-          ? "dual-write вимкнено для цього типу запису"
-          : "немає id запису Altegio"
-        : null,
+      syncError: skipAltegio ? "dual-write вимкнено для цього типу запису" : null,
       kyivDay,
       source: "kresco",
     },
@@ -1057,43 +1087,161 @@ export async function updateAppointmentFromKresco(input: KrescoAppointmentInput)
     });
   }
 
-  const altegioServices = altegioServicesPayload(lineRows);
-  if (altegioServices.length === 0) {
-    console.log(
-      `[journal] Оновлення ${existing.id}: лише Kresco-послуги — services у Altegio не оновлюємо`,
-    );
-    await applyCardExtras(existing.id, input, ctx, "update");
-    return prisma.salonAppointment.update({
-      where: { id: existing.id },
-      data: { status: "synced", syncError: "лише Kresco-послуги (без Altegio id)" },
-      include: appointmentWriteInclude,
-    });
-  }
+  // Kresco вже зберіг зміни. Дубль в Altegio: оновлюємо запис, а якщо його там ще немає — створюємо.
+  await applyCardExtras(existing.id, input, ctx, "update");
+  await pushAppointmentToAltegio(existing.id);
+  return prisma.salonAppointment.findUniqueOrThrow({
+    where: { id: existing.id },
+    include: appointmentWriteInclude,
+  });
+}
 
-  try {
-    await updateAltegioRecord(existing.altegioRecordId!, {
-      staffId: ctx.altegioStaffId,
-      clientId: ctx.client.altegioClientId as number,
-      datetime: formatKyivDateTime(ctx.datetime),
-      seanceLength: ctx.seanceLength,
-      comment: input.comment || "",
-      attendance: input.attendance ?? existing.attendance ?? 0,
-      services: altegioServices,
-    });
-    await applyCardExtras(existing.id, input, ctx, "update");
-    return prisma.salonAppointment.update({
-      where: { id: existing.id },
-      data: { status: "synced", syncError: null },
-      include: appointmentWriteInclude,
-    });
-  } catch (err) {
-    const message = err instanceof Error ? err.message : String(err);
-    await prisma.salonAppointment.update({
-      where: { id: existing.id },
-      data: { status: "sync_error", syncError: message },
-    });
-    throw new Error(readableAltegioWriteError(message));
+/** Привʼязуємо щойно створений запис Altegio. Рядок, який устиг створити вебхук, прибираємо — правда в Kresco. */
+async function linkCreatedAltegioRecord(appointmentId: string, created: { id: number; visitId: number | null }) {
+  for (let attempt = 0; attempt < 2; attempt += 1) {
+    try {
+      await prisma.$transaction([
+        prisma.salonAppointment.deleteMany({
+          where: { altegioRecordId: created.id, id: { not: appointmentId } },
+        }),
+        prisma.salonAppointment.update({
+          where: { id: appointmentId },
+          data: { altegioRecordId: created.id, altegioVisitId: created.visitId },
+        }),
+      ]);
+      return;
+    } catch (err) {
+      if (attempt === 1) throw err;
+    }
   }
+}
+
+/**
+ * Дубль поточного стану запису Kresco в Altegio: створити, оновити або видалити.
+ * Нічого не кидає: при збої запис лишається в Kresco з позначкою, повтор — ця ж функція.
+ */
+export async function pushAppointmentToAltegio(
+  appointmentId: string,
+): Promise<{ ok: boolean; error: string | null }> {
+  const appt = await prisma.salonAppointment.findUnique({
+    where: { id: appointmentId },
+    include: { lines: true },
+  });
+  if (!appt) return { ok: false, error: "Запис не знайдено" };
+  const recordId = Number(appt.altegioRecordId) || 0;
+  const cancelled = appt.status === "deleted";
+  try {
+    if (cancelled) {
+      if (recordId > 0) await deleteAltegioRecord(recordId);
+      await prisma.salonAppointment.update({ where: { id: appt.id }, data: { syncError: null } });
+      return { ok: true, error: null };
+    }
+
+    const services = altegioServicesPayload(appt.lines);
+    if (services.length === 0) {
+      console.log(`[journal] Запис ${appt.id}: лише Kresco-послуги — в Altegio не дублюємо`);
+      await prisma.salonAppointment.update({
+        where: { id: appt.id },
+        data: { status: "synced", syncError: "лише Kresco-послуги (без Altegio id)" },
+      });
+      return { ok: true, error: null };
+    }
+
+    const staffId = Number(appt.altegioStaffId) || 0;
+    if (!(staffId > 0)) throw new Error("у записі немає працівника з id Altegio");
+    let clientId = Number(appt.altegioClientId) || 0;
+    if (!(clientId > 0)) {
+      const client = appt.directClientId
+        ? await prisma.directClient.findUnique({ where: { id: appt.directClientId } })
+        : null;
+      if (!client) throw new Error("у записі немає клієнта Direct");
+      clientId = Number((await ensureDirectClientLinkedToAltegio(client)).altegioClientId) || 0;
+    }
+    const payload = {
+      staffId,
+      clientId,
+      datetime: formatKyivDateTime(appt.datetime),
+      seanceLength: appt.seanceLength,
+      comment: appt.comment || "",
+      attendance: appt.attendance ?? 0,
+      services,
+    };
+
+    if (recordId > 0) {
+      await updateAltegioRecord(recordId, payload);
+    } else {
+      // Попередня спроба могла створити запис в Altegio, а відповідь не дійшла: тоді імпорт уже приніс «двійника».
+      const twin = await prisma.salonAppointment.findFirst({
+        where: {
+          id: { not: appt.id },
+          altegioRecordId: { not: null },
+          status: { not: "deleted" },
+          altegioStaffId: staffId,
+          altegioClientId: clientId,
+          datetime: appt.datetime,
+        },
+        select: { id: true, altegioRecordId: true, altegioVisitId: true, checkout: { select: { id: true } } },
+      });
+      if (twin?.checkout) {
+        throw new Error("в Altegio вже є оплачений запис цього клієнта на цей час — перевірте вручну");
+      }
+      if (twin?.altegioRecordId) {
+        console.log(`[journal] Запис ${appt.id}: знайдено двійника з Altegio ${twin.altegioRecordId} — привʼязуємо`);
+        await linkCreatedAltegioRecord(appt.id, { id: twin.altegioRecordId, visitId: twin.altegioVisitId });
+        await updateAltegioRecord(twin.altegioRecordId, payload);
+      } else {
+        const created = await createAltegioRecord(payload);
+        await linkCreatedAltegioRecord(appt.id, created);
+        console.log(`[journal] Запис ${appt.id} продубльовано в Altegio ${created.id}`);
+      }
+    }
+    await prisma.salonAppointment.update({
+      where: { id: appt.id },
+      data: { status: "synced", syncError: null, altegioClientId: clientId },
+    });
+    return { ok: true, error: null };
+  } catch (err) {
+    const message = readableAltegioWriteError(err instanceof Error ? err.message : String(err));
+    console.error(`[journal] Дубль запису ${appt.id} в Altegio не пройшов:`, message);
+    await prisma.salonAppointment.update({
+      where: { id: appt.id },
+      data: cancelled
+        ? { syncError: `${ALTEGIO_DELETE_PENDING}${message}` }
+        : { status: "sync_error", syncError: `${ALTEGIO_MIRROR_PENDING}${message}` },
+    });
+    return { ok: false, error: message };
+  }
+}
+
+/**
+ * Крон: повтор дубля для записів, які лишились лише в Kresco. Найдавніші спроби — першими.
+ * Чеки тут не повторюємо: оплату в Altegio повторює лише людина з вікна каси.
+ */
+export async function retryPendingAltegioMirrors(limit = 5) {
+  const since = new Date(Date.now() - 3 * 24 * 60 * 60 * 1000);
+  const rows = await prisma.salonAppointment.findMany({
+    where: {
+      source: "kresco",
+      status: { in: ["sync_error", "deleted"] },
+      syncError: { startsWith: "Altegio: не " },
+      datetime: { gte: since },
+    },
+    orderBy: { updatedAt: "asc" },
+    take: limit,
+    select: { id: true, status: true, syncError: true, lines: { select: { serviceId: true, title: true } } },
+  });
+  let ok = 0;
+  let tried = 0;
+  for (const row of rows) {
+    if (!isAltegioMirrorPending(row)) continue;
+    const isConsultation = await appointmentLinesAreConsultation(row.lines);
+    if (!shouldWriteJournalAppointmentToAltegio({ isConsultation })) continue;
+    tried += 1;
+    const result = await pushAppointmentToAltegio(row.id);
+    if (result.ok) ok += 1;
+  }
+  if (rows.length > 0) console.log(`[journal] Повтор дубля в Altegio: спроб ${tried}, вдалих ${ok}`);
+  return { pending: rows.length, tried, ok };
 }
 
 /** Швидка зміна статусу візиту з попапу календаря (без перезапису послуг). */
@@ -1156,7 +1304,7 @@ export async function updateAppointmentAttendanceFromKresco(input: {
         console.warn("[journal] Не вдалось синхронізувати attendance в Altegio:", message);
         await prisma.salonAppointment.update({
           where: { id: existing.id },
-          data: { status: "sync_error", syncError: message },
+          data: { status: "sync_error", syncError: `${ALTEGIO_MIRROR_PENDING}${message}` },
         });
         // Локально статус уже змінено — не відкочуємо, щоб UI реагував одразу.
       }
@@ -1184,6 +1332,8 @@ export async function cancelAppointmentFromKresco(appointmentId: string, actor?:
   });
   if (!existing) throw new Error("Запис не знайдено");
   const isConsultation = await appointmentLinesAreConsultation(existing.lines || []);
+  // Збій Altegio скасування не блокує: у Kresco запис скасовано, в Altegio його прибере повтор.
+  let deleteError: string | null = null;
   if (
     shouldWriteJournalAppointmentToAltegio({ isConsultation }) &&
     existing.altegioRecordId &&
@@ -1192,17 +1342,17 @@ export async function cancelAppointmentFromKresco(appointmentId: string, actor?:
     try {
       await deleteAltegioRecord(existing.altegioRecordId);
     } catch (err) {
-      const message = err instanceof Error ? err.message : String(err);
-      await prisma.salonAppointment.update({
-        where: { id: existing.id },
-        data: { status: "sync_error", syncError: message },
-      });
-      throw new Error(message);
+      deleteError = err instanceof Error ? err.message : String(err);
+      console.error(`[journal] Запис ${existing.id} скасовано лише в Kresco, в Altegio не видалено:`, deleteError);
     }
   }
   const deleted = await prisma.salonAppointment.update({
     where: { id: existing.id },
-    data: { status: "deleted", syncError: null, source: "kresco" },
+    data: {
+      status: "deleted",
+      syncError: deleteError ? `${ALTEGIO_DELETE_PENDING}${deleteError}` : null,
+      source: "kresco",
+    },
   });
   await appendAppointmentChangeLog({
     appointmentId,
