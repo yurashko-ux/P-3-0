@@ -25,7 +25,7 @@ type UnmappedRow = { id: number; title: string; durationSec: number };
 type CatalogItem = {
   altegioServiceId: number;
   altegioTitle: string;
-  action: "create" | "update" | "activate";
+  action: "create" | "update" | "activate" | "relink";
   title: string;
   kind: string;
   durationSec: number;
@@ -40,6 +40,8 @@ type CatalogResult = {
   alreadyLinked: number;
   items: CatalogItem[];
   skippedInactive: Array<{ id: number; title: string }>;
+  skippedUnused: Array<{ id: number; title: string }>;
+  usedDays: number;
   krescoWithoutAltegio: Array<{ id: string; title: string; kind: string; salePrice: number }>;
 };
 
@@ -47,6 +49,7 @@ const CATALOG_ACTION_LABEL: Record<CatalogItem["action"], string> = {
   create: "Нова",
   update: "Оновити й увімкнути",
   activate: "Увімкнути",
+  relink: "Зв’язати з Altegio",
 };
 
 const KIND_LABEL: Record<string, string> = {
@@ -336,7 +339,7 @@ export default function JournalServicesPage() {
           disabled={catalogBusy}
           onClick={() => void runCatalogImport(false)}
         >
-          {catalogBusy && !catalog ? "Читаю Altegio…" : "Імпортувати весь каталог Altegio"}
+          {catalogBusy && !catalog ? "Читаю Altegio…" : "Імпортувати послуги з Altegio"}
         </button>
         <button className="btn btn-sm btn-outline" type="button" onClick={() => setShowCreate((v) => !v)}>
           {showCreate ? "Скасувати" : "Створити послугу"}
@@ -348,7 +351,8 @@ export default function JournalServicesPage() {
           <p className="text-sm font-medium">Перегляд імпорту каталогу — у базу ще нічого не записано</p>
           <p className="text-xs text-gray-600">
             В Altegio послуг: {catalog.altegioTotal}. Уже зв’язані й активні (не чіпаємо): {catalog.alreadyLinked}. Буде
-            змінено: {catalog.items.length}. Вимкнені в Altegio (пропускаємо): {catalog.skippedInactive.length}.
+            змінено: {catalog.items.length}. Не було в записах за {catalog.usedDays} днів (пропускаємо):{" "}
+            {catalog.skippedUnused.length}. Вимкнені в Altegio (пропускаємо): {catalog.skippedInactive.length}.
           </p>
           {catalog.items.length > 0 ? (
             <div className="max-h-96 overflow-auto border rounded-lg">
@@ -409,6 +413,20 @@ export default function JournalServicesPage() {
                 ))}
               </ul>
             </div>
+          )}
+          {catalog.skippedUnused.length > 0 && (
+            <details className="text-xs text-gray-500">
+              <summary>
+                Не було в записах за {catalog.usedDays} днів — не імпортуємо ({catalog.skippedUnused.length})
+              </summary>
+              <ul className="mt-1 pl-3 space-y-0.5">
+                {catalog.skippedUnused.map((s) => (
+                  <li key={s.id} className="tabular-nums">
+                    {s.id} — {s.title}
+                  </li>
+                ))}
+              </ul>
+            </details>
           )}
           {catalog.skippedInactive.length > 0 && (
             <details className="text-xs text-gray-500">

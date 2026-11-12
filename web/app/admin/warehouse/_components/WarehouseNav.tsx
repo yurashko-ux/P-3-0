@@ -5,7 +5,9 @@ import { usePathname } from "next/navigation";
 
 const LINKS = [
   { href: "/admin/warehouse", label: "Залишки", exact: true },
-  { href: "/admin/warehouse/catalog", label: "Каталог" },
+  { href: "/admin/warehouse/catalog", label: "Каталог товарів" },
+  // Довідник послуг живе в Журналі (доступ — за правами журналу).
+  { href: "/admin/journal/services", label: "Каталог послуг" },
   { href: "/admin/warehouse/documents", label: "Документи" },
   { href: "/admin/warehouse/currencies", label: "Валюти" },
 ];

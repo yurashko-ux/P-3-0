@@ -8,6 +8,28 @@ import { resolveJournalCompanyId } from "./company-id";
 
 export type SalonServiceSource = "mapped" | "kresco";
 
+/**
+ * Варіанти Altegio «2 майстри» належать окремим послугам Kresco (їх створили в довіднику з власною ціною),
+ * тому в seed нижче їх немає. Повний імпорт каталогу переносить зв'язок на ці послуги за назвою.
+ */
+export const TWO_MASTERS_RELINKS: Array<{ altegioServiceId: number; krescoTitle: string }> = [
+  { altegioServiceId: 11994206, krescoTitle: "Капсульне (до 130 г) 2 майстри" },
+  { altegioServiceId: 11973822, krescoTitle: "Капсульне (від 130 г) 2 майстри" },
+];
+
+/**
+ * Послуги Kresco без власного варіанта в Altegio: у запис Altegio йдуть під id іншої послуги.
+ * Ціна в Altegio — з рядка запису Kresco (firstCost/cost), тому суми в обох системах збігаються.
+ * Ключ — id послуги Kresco.
+ */
+export const ALTEGIO_WRITE_AS: Record<string, { altegioServiceId: number; note: string }> = {
+  // «Капсульне - загущення (від 50г) 1-н майстер» → Altegio «Капсульне нарощування волосся загущення»
+  "6d66ecd8-0b60-4f01-9094-1c3817bf4ec1": { altegioServiceId: 11940102, note: "Капсульне нарощування волосся загущення" },
+};
+
+/** Повний імпорт бере лише послуги Altegio, що були в записах за цей період. */
+export const CATALOG_IMPORT_USED_DAYS = 62;
+
 /** Узгоджені канонічні групи (seed також у міграції). */
 export const CANONICAL_SERVICE_SEED: Array<{
   id: string;
@@ -47,7 +69,6 @@ export const CANONICAL_SERVICE_SEED: Array<{
     durationSec: 18000,
     links: [
       { altegioServiceId: 11928107, altegioTitle: "Капсульне нарощування 1 майстер (до 130грам)", isDefault: true },
-      { altegioServiceId: 11994206, altegioTitle: "Нарощування волосся 2 майстри (до 130 грам)", isDefault: false },
     ],
   },
   {
@@ -57,7 +78,6 @@ export const CANONICAL_SERVICE_SEED: Array<{
     durationSec: 18000,
     links: [
       { altegioServiceId: 11940080, altegioTitle: "Капсульне нарощування 1 майстер (від 130)", isDefault: true },
-      { altegioServiceId: 11973822, altegioTitle: "Капсульне нарощування 2 майстри (від 130грам)", isDefault: false },
       { altegioServiceId: 11940097, altegioTitle: "Капсульне нарощування в 4 руки (Асистент)", isDefault: false },
     ],
   },
@@ -218,6 +238,17 @@ export async function resolveDefaultAltegioServiceId(serviceId: string): Promise
   return link?.altegioServiceId ?? null;
 }
 
+/** Id послуги Altegio для запису з Kresco: null — послуга живе лише в Kresco. */
+export async function resolveAltegioServiceIdForWrite(service: {
+  id: string;
+  source?: string | null;
+}): Promise<number | null> {
+  const writeAs = ALTEGIO_WRITE_AS[service.id];
+  if (writeAs) return writeAs.altegioServiceId;
+  if (service.source === "kresco") return null;
+  return resolveDefaultAltegioServiceId(service.id);
+}
+
 /** Знайти канонічну послугу за id Altegio. */
 export async function findSalonServiceByAltegioId(altegioServiceId: number) {
   if (!(altegioServiceId > 0)) return null;
@@ -271,8 +302,11 @@ export async function importSalonServicesFromAltegio(): Promise<{
 export type CatalogImportItem = {
   altegioServiceId: number;
   altegioTitle: string;
-  /** create — нова послуга; update — наявна послуга Kresco з тією ж назвою; activate — уже зв'язана, але вимкнена. */
-  action: "create" | "update" | "activate";
+  /**
+   * create — нова послуга; update — наявна послуга Kresco з тією ж назвою; activate — уже зв'язана, але вимкнена;
+   * relink — варіант «2 майстри» переходить до своєї послуги Kresco.
+   */
+  action: "create" | "update" | "activate" | "relink";
   serviceId: string;
   title: string;
   kind: SalonServiceKind;
@@ -293,6 +327,9 @@ export type CatalogImportResult = {
   items: CatalogImportItem[];
   /** Вимкнені або видалені в Altegio — не імпортуємо. */
   skippedInactive: Array<{ id: number; title: string }>;
+  /** Не було в записах за останні CATALOG_IMPORT_USED_DAYS днів — не імпортуємо. */
+  skippedUnused: Array<{ id: number; title: string }>;
+  usedDays: number;
   /** Активні послуги Kresco, що після імпорту лишаються без пари в Altegio. */
   krescoWithoutAltegio: Array<{ id: string; title: string; kind: string; salePrice: number }>;
 };
@@ -302,7 +339,8 @@ function normalizeServiceTitle(title: string): string {
 }
 
 /**
- * Повний імпорт каталогу Altegio: кожна послуга без мапінгу стає послугою Kresco (назва, ціна, тривалість, зв'язок).
+ * Імпорт каталогу Altegio: послуга без мапінгу, що була в записах за останні 2 місяці, стає послугою Kresco
+ * (назва, ціна, тривалість, зв'язок). Решту за потреби додають вручну.
  * Уже зв'язані послуги (канонічне нарощування, консультації) не змінюємо — лише вмикаємо вимкнені.
  * Наявну послугу Kresco з тією ж назвою і без зв'язку оновлюємо, а не дублюємо.
  * dryRun = true — лише перелік змін, без запису в базу.
@@ -315,6 +353,13 @@ export async function importFullCatalogFromAltegio(dryRun: boolean): Promise<Cat
   }
 
   const services = await prisma.salonService.findMany({ include: { altegioLinks: true } });
+  const usedSince = new Date(Date.now() - CATALOG_IMPORT_USED_DAYS * 24 * 60 * 60 * 1000);
+  const usedRows = await prisma.salonAppointmentLine.findMany({
+    where: { altegioServiceId: { not: null }, appointment: { datetime: { gte: usedSince } } },
+    select: { altegioServiceId: true },
+    distinct: ["altegioServiceId"],
+  });
+  const usedAltegioIds = new Set(usedRows.map((r) => r.altegioServiceId as number));
   const serviceByAltegioId = new Map<number, (typeof services)[number]>();
   for (const service of services) {
     for (const link of service.altegioLinks) serviceByAltegioId.set(link.altegioServiceId, service);
@@ -334,6 +379,7 @@ export async function importFullCatalogFromAltegio(dryRun: boolean): Promise<Cat
 
   const items: CatalogImportItem[] = [];
   const skippedInactive: Array<{ id: number; title: string }> = [];
+  const skippedUnused: Array<{ id: number; title: string }> = [];
   const writes: any[] = [];
   const pairedServiceIds = new Set<string>();
   const activatedIds = new Set<string>();
@@ -344,6 +390,42 @@ export async function importFullCatalogFromAltegio(dryRun: boolean): Promise<Cat
     const altegioPrice = row.priceMin > 0 ? row.priceMin : row.priceMax;
 
     const linked = serviceByAltegioId.get(row.id);
+
+    // Варіант «2 майстри»: зв'язок переходить від послуги «1-н майстер» до окремої послуги Kresco.
+    const relink = TWO_MASTERS_RELINKS.find((r) => r.altegioServiceId === row.id);
+    const relinkTarget = relink
+      ? services.find((s) => normalizeServiceTitle(s.title) === normalizeServiceTitle(relink.krescoTitle))
+      : undefined;
+    if (relinkTarget && linked?.id !== relinkTarget.id) {
+      pairedServiceIds.add(relinkTarget.id);
+      items.push({
+        altegioServiceId: row.id,
+        altegioTitle: row.title,
+        action: "relink",
+        serviceId: relinkTarget.id,
+        title: relinkTarget.title,
+        kind: relinkTarget.kind as SalonServiceKind,
+        durationSec: relinkTarget.durationSec,
+        price: relinkTarget.salePrice,
+        priceRange,
+        keepsKrescoPrice: true,
+      });
+      writes.push(
+        prisma.salonServiceAltegioLink.upsert({
+          where: { altegioServiceId: row.id },
+          create: { serviceId: relinkTarget.id, altegioServiceId: row.id, altegioTitle: row.title, isDefault: true },
+          update: { serviceId: relinkTarget.id, altegioTitle: row.title, isDefault: true },
+        }),
+        prisma.salonService.update({ where: { id: relinkTarget.id }, data: { source: "mapped", isActive: true } }),
+        // Рядки вже імпортованих записів цього варіанта — теж на послугу «2 майстри».
+        prisma.salonAppointmentLine.updateMany({
+          where: { altegioServiceId: row.id },
+          data: { serviceId: relinkTarget.id },
+        }),
+      );
+      continue;
+    }
+
     if (linked) {
       pairedServiceIds.add(linked.id);
       if (linked.isActive || !row.active || activatedIds.has(linked.id)) {
@@ -369,6 +451,10 @@ export async function importFullCatalogFromAltegio(dryRun: boolean): Promise<Cat
 
     if (!row.active) {
       skippedInactive.push({ id: row.id, title: row.title });
+      continue;
+    }
+    if (!usedAltegioIds.has(row.id)) {
+      skippedUnused.push({ id: row.id, title: row.title });
       continue;
     }
 
@@ -434,7 +520,7 @@ export async function importFullCatalogFromAltegio(dryRun: boolean): Promise<Cat
   }
 
   const krescoWithoutAltegio = services
-    .filter((s) => s.isActive && !pairedServiceIds.has(s.id))
+    .filter((s) => s.isActive && !pairedServiceIds.has(s.id) && !ALTEGIO_WRITE_AS[s.id])
     .map((s) => ({ id: s.id, title: s.title, kind: s.kind, salePrice: s.salePrice }));
 
   if (!dryRun && writes.length > 0) {
@@ -447,10 +533,20 @@ export async function importFullCatalogFromAltegio(dryRun: boolean): Promise<Cat
     `[journal/services] Повний імпорт каталогу (${dryRun ? "перегляд" : "запис"}): Altegio=${remote.length}, ` +
       `нових=${count("create")}, оновлено=${count("update")}, увімкнено=${count("activate")}, ` +
       `уже зв'язано=${alreadyLinked}, вимкнених в Altegio=${skippedInactive.length}, ` +
-      `Kresco без пари=${krescoWithoutAltegio.length}`,
+      `не було в записах за ${CATALOG_IMPORT_USED_DAYS} дн.=${skippedUnused.length}, ` +
+      `перев'язано=${count("relink")}, Kresco без пари=${krescoWithoutAltegio.length}`,
   );
 
-  return { dryRun, altegioTotal: remote.length, alreadyLinked, items, skippedInactive, krescoWithoutAltegio };
+  return {
+    dryRun,
+    altegioTotal: remote.length,
+    alreadyLinked,
+    items,
+    skippedInactive,
+    skippedUnused,
+    usedDays: CATALOG_IMPORT_USED_DAYS,
+    krescoWithoutAltegio,
+  };
 }
 
 /** Ідемпотентний seed канонічних послуг (якщо міграція ще не встигла / порожня БД). */

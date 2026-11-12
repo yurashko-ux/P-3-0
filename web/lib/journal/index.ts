@@ -11,7 +11,7 @@ import {
 } from "@/lib/altegio/records-write";
 import { altegioFetch } from "@/lib/altegio/client";
 import { pickAltegioClientSnapshot, pickAltegioRecordDateTime, pickAltegioSeanceLength } from "@/lib/altegio/records";
-import { ensureSalonServiceFromLine, resolveDefaultAltegioServiceId } from "./services";
+import { ensureSalonServiceFromLine, resolveAltegioServiceIdForWrite } from "./services";
 import { listJournalStaff, hasAssignedPosition } from "./staff";
 import { resolveJournalCompanyId } from "./company-id";
 import { appendAppointmentChangeLog } from "./change-log";
@@ -711,9 +711,8 @@ async function buildServiceLineRows(
     if (staffIds.length === 0) {
       throw new Error(`У послузі «${s.title}» має бути хоча б один виконавець`);
     }
-    // Kresco-only: без Altegio id. Mapped: default з таблиці мапінгу.
-    const altegioServiceId =
-      s.source === "kresco" ? null : await resolveDefaultAltegioServiceId(s.id);
+    // Kresco-only: без Altegio id. Mapped: default з таблиці мапінгу. Виняток — ALTEGIO_WRITE_AS.
+    const altegioServiceId = await resolveAltegioServiceIdForWrite(s);
     rows.push({
       appointmentId,
       serviceId: s.id,
