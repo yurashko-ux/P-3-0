@@ -14,8 +14,12 @@ import {
   payVisitSaleFromDeposit,
   resolveVisitSaleDocumentId,
 } from "@/lib/altegio/visit-deposit-pay";
-import { fetchDepositsForClientIds } from "@/lib/altegio/client-deposits";
-import { appendDepositSpend } from "@/lib/deposits/store";
+import {
+  appendDepositSpend,
+  getDepositAvailableForCheckout,
+  listClientDepositOptions,
+  type ClientDepositOption,
+} from "@/lib/deposits/store";
 import { searchWarehouseProducts } from "@/lib/warehouse/catalog";
 import { createWriteOff } from "@/lib/warehouse/documents-kresco";
 import { getUsdUahRate } from "@/lib/warehouse/fx";
@@ -155,32 +159,18 @@ export async function getCheckoutContext(appointmentId: string, catalogSearch?: 
     catalogProducts = await searchWarehouseProducts(q, 30);
   }
 
-  type DepositOpt = {
-    depositId: number;
-    balance: number;
-    title: string;
-    blocked: boolean;
-  };
-  let clientDeposits: DepositOpt[] = [];
-  const altegioClientId = Number(appointment.altegioClientId) || 0;
-  if (altegioClientId > 0) {
-    try {
-      const dep = await fetchDepositsForClientIds({ clientIds: [altegioClientId] });
-      clientDeposits = (dep.deposits || [])
-        .filter((d) => d.depositId > 0)
-        .map((d) => ({
-          depositId: d.depositId,
-          balance: toMoney(d.balance),
-          title: d.depositTypeTitle || "Особистий рахунок",
-          blocked: Boolean(d.blocked),
-        }))
-        .sort((a, b) => b.balance - a.balance);
-    } catch (err) {
-      console.warn(
-        `[journal/checkout] Не вдалося завантажити завдатки client=${altegioClientId}:`,
-        err instanceof Error ? err.message : err,
-      );
-    }
+  // Залишки завдатків — з реєстру Kresco.
+  let clientDeposits: ClientDepositOption[] = [];
+  try {
+    clientDeposits = await listClientDepositOptions({
+      directClientId: appointment.directClientId,
+      altegioClientId: appointment.altegioClientId,
+    });
+  } catch (err) {
+    console.warn(
+      `[journal/checkout] Не вдалося завантажити завдатки appointment=${appointment.id}:`,
+      err instanceof Error ? err.message : err,
+    );
   }
 
   let altegioPaid = 0;
@@ -733,42 +723,18 @@ export async function closeVisitFromKresco(input: CloseVisitInput) {
   let depositMeta: { depositId: number; title: string; balance: number } | null = null;
   if (depositParts.length > 0) {
     const depositId = depositParts[0].depositId!;
-    // Залишки завдатків поки веде Altegio: без дубля завдаток списався б лише в Kresco.
-    if (mirrorIssue) {
-      throw new Error(`Оплата завдатком можлива лише з дублем в Altegio, а він зараз неможливий: ${mirrorIssue}`);
+    // Залишок веде реєстр Kresco; Altegio отримує лише дубль списання.
+    const deposit = await getDepositAvailableForCheckout(depositId, appointment.checkout?.id);
+    if (!deposit) throw new Error("Завдаток клієнта не знайдено в Kresco");
+    if (deposit.blocked) throw new Error("Особистий рахунок клієнта заблоковано");
+    if (deposit.available + 0.009 < depositParts[0].amount) {
+      throw new Error(
+        `Недостатньо на завдаткові: ${deposit.available.toLocaleString("uk-UA")} грн, потрібно ${depositParts[0].amount.toLocaleString("uk-UA")} грн`,
+      );
     }
-    if (skipAltegioWrite) {
-      depositMeta = {
-        depositId,
-        title: depositParts[0].accountTitle.replace(/^Завдаток:\s*/i, "") || "особистий рахунок",
-        balance: depositParts[0].amount,
-      };
-      depositParts[0].accountTitle =
-        depositParts[0].accountTitle || `Завдаток: ${depositMeta.title}`;
-      depositParts[0].accountId = depositId;
-    } else {
-      if (!(altegioClientId > 0)) {
-        throw new Error("Немає id клієнта Altegio — неможливо списати завдаток");
-      }
-      const dep = await fetchDepositsForClientIds({ clientIds: [altegioClientId] });
-      const deposit = (dep.deposits || []).find((d) => d.depositId === depositId);
-      if (!deposit) throw new Error("Завдаток клієнта не знайдено в Altegio");
-      if (deposit.blocked) throw new Error("Особистий рахунок клієнта заблоковано");
-      const balance = toMoney(deposit.balance);
-      if (balance + 0.009 < depositParts[0].amount) {
-        throw new Error(
-          `Недостатньо на завдаткові: ${balance.toLocaleString("uk-UA")} грн, потрібно ${depositParts[0].amount.toLocaleString("uk-UA")} грн`,
-        );
-      }
-      depositMeta = {
-        depositId,
-        title: deposit.depositTypeTitle || "особистий рахунок",
-        balance,
-      };
-      depositParts[0].accountTitle =
-        depositParts[0].accountTitle || `Завдаток: ${depositMeta.title}`;
-      depositParts[0].accountId = depositId;
-    }
+    depositMeta = { depositId, title: deposit.title, balance: deposit.available };
+    depositParts[0].accountTitle = depositParts[0].accountTitle || `Завдаток: ${depositMeta.title}`;
+    depositParts[0].accountId = depositId;
   }
 
   const hiddenAccountIds = await hiddenFinanceAccountIds();
@@ -787,9 +753,12 @@ export async function closeVisitFromKresco(input: CloseVisitInput) {
   }
 
   const hasDepositPart = depositParts.length === 1;
-  /** Дубль не пройшов: чек із завдатком зупиняємо, решту зберігаємо в Kresco з позначкою. */
-  const mirrorFailed = (reason: string) => {
-    if (hasDepositPart) throw new Error(reason);
+  /**
+   * Дубль не пройшов: чек зберігаємо в Kresco з позначкою, дубль повторить касир або крон.
+   * Виняток — збій посеред запису в Altegio для чека з завдатком: частину могло вже провести, тож зупиняємо.
+   */
+  const mirrorFailed = (reason: string, opts: { altegioTouched?: boolean } = {}) => {
+    if (hasDepositPart && opts.altegioTouched) throw new Error(reason);
     mirrorIssue = reason;
     skipAltegioWrite = true;
   };
@@ -879,9 +848,11 @@ export async function closeVisitFromKresco(input: CloseVisitInput) {
 
   // Часткову оплату картка запису не показує (payment_status лишається 0), тому після збою
   // не відновлюємо автоматично: повтор міг би задвоїти касову частину.
+  // Позначка «не продубльовано» на чеку з завдатком означає, що в Altegio нічого не писали — повтор безпечний.
   if (
     !skipAltegioWrite &&
     appointment.checkout?.status === "sync_error" &&
+    !isAltegioMirrorPending(appointment.checkout) &&
     depositParts.length === 1 &&
     accountParts.length > 0
   ) {
@@ -1095,7 +1066,7 @@ export async function closeVisitFromKresco(input: CloseVisitInput) {
         const reason = altegioErr instanceof Error ? altegioErr.message : String(altegioErr);
         console.error(`[journal/checkout] Дубль оплати ${pendingId} в Altegio не пройшов:`, reason);
         // Без завдатку гроші вже в касі салону: чек лишається в Kresco, дубль повторить касир.
-        mirrorFailed(reason);
+        mirrorFailed(reason, { altegioTouched: true });
       }
     }
 

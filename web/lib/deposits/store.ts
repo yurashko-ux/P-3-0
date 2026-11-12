@@ -10,6 +10,93 @@ function toMoney(n: number): number {
 
 const DRIFT_EPS = 1; // грн
 
+/** Коментар стартового запису реєстру: залишок рахунку на момент знімка (createdAt = час знімка). */
+export const DEPOSIT_ANCHOR_COMMENT = "Старт реєстру: знімок Altegio";
+
+export type ClientDepositOption = {
+  depositId: number;
+  balance: number;
+  title: string;
+  blocked: boolean;
+};
+
+/**
+ * Завдатки клієнта для каси — з реєстру Kresco (він тепер джерело залишку).
+ * Рахунку ще немає в реєстрі, але є в Altegio — підтягуємо його зі стартом від залишку Altegio.
+ * Читання: 1 запит (+ імпорт, якщо рахунку немає).
+ */
+export async function listClientDepositOptions(params: {
+  directClientId?: string | null;
+  altegioClientId?: number | null;
+}): Promise<ClientDepositOption[]> {
+  const altegioClientId = Number(params.altegioClientId) || 0;
+  const or = [
+    ...(params.directClientId ? [{ directClientId: params.directClientId }] : []),
+    ...(altegioClientId > 0 ? [{ altegioClientId }] : []),
+  ];
+  if (or.length === 0) return [];
+  const load = () =>
+    prisma.clientDepositAccount.findMany({
+      where: { OR: or, isActive: true, altegioDepositId: { not: null } },
+      select: { altegioDepositId: true, balance: true, title: true, blocked: true },
+    });
+  let accounts = await load();
+  if (accounts.length === 0 && altegioClientId > 0) {
+    try {
+      const fetched = await fetchDepositsForClientIds({ clientIds: [altegioClientId] });
+      for (const d of fetched.deposits || []) {
+        if (!(d.depositId > 0)) continue;
+        await ensureDepositAccount({
+          altegioClientId,
+          altegioDepositId: d.depositId,
+          directClientId: params.directClientId,
+          title: d.depositTypeTitle,
+          balanceHint: d.balance,
+          blocked: d.blocked,
+        });
+      }
+      if ((fetched.deposits || []).length > 0) accounts = await load();
+    } catch (err) {
+      console.warn(
+        `[deposits] Не вдалося підтягнути завдатки Altegio client=${altegioClientId}:`,
+        err instanceof Error ? err.message : err,
+      );
+    }
+  }
+  return accounts
+    .map((a) => ({
+      depositId: Number(a.altegioDepositId),
+      balance: toMoney(a.balance),
+      title: a.title || "Особистий рахунок",
+      blocked: Boolean(a.blocked),
+    }))
+    .sort((a, b) => b.balance - a.balance);
+}
+
+/**
+ * Скільки можна списати з завдатку за реєстром Kresco.
+ * Повтор чека: його попереднє списання вже в реєстрі, тож повертаємо його до доступного залишку.
+ */
+export async function getDepositAvailableForCheckout(altegioDepositId: number, checkoutId?: string | null) {
+  const account = await prisma.clientDepositAccount.findUnique({
+    where: { altegioDepositId },
+    select: { id: true, balance: true, title: true, blocked: true, isActive: true },
+  });
+  if (!account || !account.isActive) return null;
+  const previous = checkoutId
+    ? await prisma.clientDepositLedgerEntry.findFirst({
+        where: { accountId: account.id, salonCheckoutId: checkoutId, kind: "spend" },
+        select: { amount: true },
+      })
+    : null;
+  return {
+    accountId: account.id,
+    title: account.title || "особистий рахунок",
+    blocked: account.blocked,
+    available: toMoney(account.balance + Math.abs(previous?.amount ?? 0)),
+  };
+}
+
 export type EnsureDepositAccountParams = {
   altegioClientId: number;
   altegioDepositId?: number | null;
@@ -79,13 +166,13 @@ export async function ensureDepositAccount(params: EnsureDepositAccountParams) {
   });
 
   if (existingByAltegio) {
+    // Залишок веде реєстр Kresco: з Altegio беремо лише назву й блокування.
     const updated = await prisma.clientDepositAccount.update({
       where: { id: existingByAltegio.id },
       data: {
         directClientId: existingByAltegio.directClientId || directClientId,
         altegioClientId,
         title,
-        balance,
         blocked: pick.blocked,
         isActive: true,
         syncStatus: "synced",
@@ -96,6 +183,8 @@ export async function ensureDepositAccount(params: EnsureDepositAccountParams) {
     return updated;
   }
 
+  // Залишок Altegio зараз — старт реєстру для цього рахунку; нічна звірка доганяє рухи лише після нього.
+  const now = new Date();
   const created = await prisma.clientDepositAccount.create({
     data: {
       directClientId,
@@ -103,6 +192,8 @@ export async function ensureDepositAccount(params: EnsureDepositAccountParams) {
       altegioDepositId: pick.depositId,
       title,
       balance,
+      altegioBalance: balance,
+      altegioBalanceAt: now,
       blocked: pick.blocked,
       isActive: true,
       source: "altegio_import",
@@ -117,9 +208,10 @@ export async function ensureDepositAccount(params: EnsureDepositAccountParams) {
       amount: balance,
       balanceAfter: balance,
       kyivDay: kyivCalendarTodayYmd(),
-      comment: "Імпорт балансу з Altegio",
+      comment: DEPOSIT_ANCHOR_COMMENT,
       source: "altegio",
       syncStatus: "synced",
+      createdAt: now,
     },
   });
 

@@ -1,10 +1,9 @@
-// Поповнення завдатку з журналу. Поки журнал не пише в Altegio — лише локальний ledger.
+// Поповнення завдатку з журналу: залишок веде реєстр Kresco, в Altegio — дубль, коли запис увімкнено.
 
 import { prisma } from "@/lib/prisma";
 import { listPaymentAccounts } from "@/lib/finance/own-accounts";
-import { fetchDepositsForClientIds } from "@/lib/altegio/client-deposits";
 import { topUpClientDepositInAltegio } from "@/lib/altegio/deposit-topup-write";
-import { appendDepositTopUp } from "@/lib/deposits/store";
+import { appendDepositTopUp, listClientDepositOptions } from "@/lib/deposits/store";
 import { isJournalAltegioWriteSkipped } from "@/lib/journal/altegio-write-gate";
 
 function toMoney(n: number): number {
@@ -54,9 +53,13 @@ export async function topUpDepositFromAppointment(input: DepositTopUpFromAppoint
     throw new Error("Для поповнення оберіть касу/ФОП, а не особистий рахунок");
   }
 
-  const dep = await fetchDepositsForClientIds({ clientIds: [clientId] });
-  const deposit = (dep.deposits || []).find((d) => d.depositId === depositId);
-  if (!deposit) throw new Error("Завдаток клієнта не знайдено в Altegio");
+  // Завдаток і його залишок — з реєстру Kresco.
+  const options = await listClientDepositOptions({
+    directClientId: appointment.directClientId,
+    altegioClientId: clientId,
+  });
+  const deposit = options.find((d) => d.depositId === depositId);
+  if (!deposit) throw new Error("Завдаток клієнта не знайдено в Kresco");
   if (deposit.blocked) throw new Error("Особистий рахунок заблоковано");
 
   const masterId =
@@ -85,11 +88,11 @@ export async function topUpDepositFromAppointment(input: DepositTopUpFromAppoint
       });
 
   try {
+    // Залишок після поповнення рахує реєстр Kresco, а не відповідь Altegio.
     const entry = await appendDepositTopUp({
       altegioClientId: clientId,
       altegioDepositId: depositId,
       amount,
-      balanceAfter: result.balanceAfter,
       appointmentId: appointment.id,
       directClientId: appointment.directClientId,
       altegioDocumentId: result.documentId,
@@ -97,9 +100,9 @@ export async function topUpDepositFromAppointment(input: DepositTopUpFromAppoint
       altegioPaymentTxId: result.paymentTransactionId,
       kyivDay: appointment.kyivDay,
       comment: input.comment || `Поповнення з каси`,
-      title: deposit.depositTypeTitle,
+      title: deposit.title,
     });
-    if (skipAltegio) result.balanceAfter = entry.balanceAfter;
+    result.balanceAfter = entry.balanceAfter;
   } catch (ledgerErr) {
     console.error(
       `[journal/deposit-topup] Ledger не записано${skipAltegio ? "" : " (Altegio уже поповнено)"}:`,
@@ -108,21 +111,11 @@ export async function topUpDepositFromAppointment(input: DepositTopUpFromAppoint
     if (skipAltegio) throw ledgerErr;
   }
 
-  // Оновлений список рахунків після поповнення
-  const refreshed = await fetchDepositsForClientIds({ clientIds: [clientId] });
-  const clientDeposits = (refreshed.deposits || [])
-    .filter((d) => d.depositId > 0)
-    .map((d) => ({
-      depositId: d.depositId,
-      balance: toMoney(d.balance),
-      title: d.depositTypeTitle || "Особистий рахунок",
-      blocked: Boolean(d.blocked),
-    }))
-    .sort((a, b) => b.balance - a.balance);
-  if (skipAltegio && result.balanceAfter != null) {
-    const row = clientDeposits.find((d) => d.depositId === depositId);
-    if (row) row.balance = toMoney(result.balanceAfter);
-  }
+  // Оновлений список рахунків після поповнення — з реєстру.
+  const clientDeposits = await listClientDepositOptions({
+    directClientId: appointment.directClientId,
+    altegioClientId: clientId,
+  });
 
   console.log(
     `[journal/deposit-topup] appointment=${appointment.id} deposit=${depositId} +${amount} → balanceAfter=${result.balanceAfter ?? "—"}${skipAltegio ? " (лише Kresco)" : ""}`,
@@ -133,7 +126,7 @@ export async function topUpDepositFromAppointment(input: DepositTopUpFromAppoint
     amount,
     accountId,
     accountTitle: input.accountTitle || account.title,
-    depositTitle: deposit.depositTypeTitle || "Особистий рахунок",
+    depositTitle: deposit.title,
     clientDeposits,
   };
 }
