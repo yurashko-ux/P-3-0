@@ -8,6 +8,20 @@ export type DepositBalanceAccount = {
   clientName: string | null;
   depositTypeTitle: string | null;
   balance: number;
+  /** Останнє поповнення рахунку клієнта (операція Altegio «Поповнення рахунку»). */
+  lastTopup?: {
+    kyivDay: string;
+    altegioTransactionId: number;
+    accountTitle: string | null;
+    /** Скільки поповнень у клієнта загалом (не видалених). */
+    count: number;
+  } | null;
+  /** Актуальний запис клієнта: найближчий майбутній, якщо його немає — останній минулий. */
+  currentRecord?: {
+    altegioRecordId: number;
+    kyivDay: string;
+    isFuture: boolean;
+  } | null;
 };
 
 export type DepositBalancesPayload = {

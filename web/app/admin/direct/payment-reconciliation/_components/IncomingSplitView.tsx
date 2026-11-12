@@ -3082,6 +3082,8 @@ function DepositsActiveBalancesScroll({
               <th className="w-8 px-2 py-1.5 text-right font-semibold">№</th>
               <th className="px-2 py-1.5 text-left font-semibold">Клієнт</th>
               <th className="px-2 py-1.5 text-left font-semibold">Тип рахунку</th>
+              <th className="px-2 py-1.5 text-left font-semibold">Дата платежу</th>
+              <th className="px-2 py-1.5 text-left font-semibold">Запис</th>
               <th className="px-2 py-1.5 text-right font-semibold">Баланс</th>
             </tr>
           </thead>
@@ -3096,6 +3098,41 @@ function DepositsActiveBalancesScroll({
                   {row.clientName?.trim() || (row.clientId != null ? `ID ${row.clientId}` : "—")}
                 </td>
                 <td className="px-2 py-1 text-gray-600">{row.depositTypeTitle?.trim() || "—"}</td>
+                <td className="px-2 py-1 tabular-nums text-gray-700">
+                  {row.lastTopup ? (
+                    <a
+                      href={buildAltegioTransactionEditUrl(row.lastTopup.altegioTransactionId)}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="link link-hover"
+                      title={[
+                        "Останнє поповнення рахунку",
+                        row.lastTopup.accountTitle ? `каса: ${row.lastTopup.accountTitle}` : null,
+                        row.lastTopup.count > 1 ? `усього поповнень: ${row.lastTopup.count}` : null,
+                      ].filter(Boolean).join(" · ")}
+                    >
+                      {formatKyivDayLabel(row.lastTopup.kyivDay)}
+                    </a>
+                  ) : (
+                    <span className="text-gray-400">—</span>
+                  )}
+                </td>
+                <td className="px-2 py-1 tabular-nums">
+                  {row.currentRecord ? (
+                    <a
+                      href={buildAltegioRecordTimetableUrl(row.currentRecord.altegioRecordId, row.currentRecord.kyivDay)}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className={`link link-hover ${row.currentRecord.isFuture ? "text-sky-800" : "text-gray-500"}`}
+                      title={row.currentRecord.isFuture ? "Найближчий майбутній запис" : "Майбутнього запису немає — останній минулий"}
+                    >
+                      {formatKyivDayLabel(row.currentRecord.kyivDay)}
+                      {row.currentRecord.isFuture ? "" : " (минулий)"}
+                    </a>
+                  ) : (
+                    <span className="text-gray-400">немає</span>
+                  )}
+                </td>
                 <td className="px-2 py-1 text-right font-semibold tabular-nums text-emerald-900">
                   {formatDepositBalanceUah(row.balance)}
                 </td>
@@ -3104,7 +3141,7 @@ function DepositsActiveBalancesScroll({
           </tbody>
           <tfoot>
             <tr className="border-t-2 border-amber-300 bg-amber-50/90">
-              <td colSpan={3} className="px-2 py-1.5 text-right text-[10px] font-semibold uppercase text-amber-950">
+              <td colSpan={5} className="px-2 py-1.5 text-right text-[10px] font-semibold uppercase text-amber-950">
                 Разом (= шапка)
               </td>
               <td className="px-2 py-1.5 text-right font-bold tabular-nums text-amber-950">
