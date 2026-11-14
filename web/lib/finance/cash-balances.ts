@@ -193,7 +193,7 @@ export async function listCashBalances(knownAccounts?: CashAccountRef[]): Promis
       prisma.cashTillCount.findMany({
         where: { accountId: { in: countableIds }, kyivDay: { gte: CASH_RECONCILE_FROM_KYIV_DAY } },
         orderBy: { createdAt: "desc" },
-        select: { accountId: true, countedUah: true, varianceUah: true, bundledAmount: true },
+        select: { accountId: true, countedUah: true, varianceUah: true, bundledAmount: true, createdAt: true },
       }),
       prisma.cashTillCount.findMany({
         where: { accountId: { in: countableIds } },
@@ -223,7 +223,20 @@ export async function listCashBalances(knownAccounts?: CashAccountRef[]): Promis
       const count = latest.get(tile.id);
       if (count) {
         tile.countedUah = money(count.countedUah);
-        const variance = count.varianceUah == null ? null : money(count.varianceUah);
+        // Розбіжність рахуємо наново за документами, що вже є, на час касовки:
+        // документ, внесений в Altegio до касовки, але синхронізований пізніше, не дає фальшивої недостачі
+        const countAt = count.createdAt.getTime();
+        const netAtCount = ledger
+          .filter(
+            (row) =>
+              row.accountId === tile.id &&
+              row.currency === tile.currency &&
+              row.kyivDay >= CASH_RECONCILE_FROM_KYIV_DAY &&
+              new Date(row.occurredAt).getTime() <= countAt,
+          )
+          .reduce((sum, row) => sum + (row.direction === "out" ? -row.amount : row.amount), 0);
+        const variance =
+          count.varianceUah == null ? null : money(count.countedUah - money(opening + netAtCount));
         tile.variance = variance != null && Math.abs(variance) >= 0.01 ? variance : null;
         tile.lastBundledAmount = money(count.bundledAmount || 0);
       }
