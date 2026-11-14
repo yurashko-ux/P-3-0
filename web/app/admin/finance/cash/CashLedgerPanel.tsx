@@ -592,14 +592,18 @@ export function CashLedgerPanel({
                   if (item.kind === "unlinked") {
                     // Документ ФОП без платежу: не гроші на рахунку — порожнє коло й сіра сума
                     const doc = item.doc;
+                    // З минулих днів платіж уже мав надійти — рожевий рядок і червоне коло
+                    const overdue = doc.kyivDay < kyivDayOf(new Date().toISOString());
                     return (
-                      <tr key={item.key} className="border-t border-dashed border-gray-200 text-gray-500">
+                      <tr
+                        key={item.key}
+                        className={`border-t border-dashed border-gray-200 text-gray-500 ${overdue ? "bg-pink-100" : ""}`}
+                      >
                         <td className="px-2 py-1 tabular-nums">{index + 1}</td>
                         <td />
                         <td className="whitespace-nowrap px-2 py-1 tabular-nums">{timeLabel(doc.time)}</td>
                         <td className="px-1 py-1 text-center">
-                          {/* З минулих днів платіж уже мав надійти — червоне коло */}
-                          {doc.kyivDay < kyivDayOf(new Date().toISOString()) ? (
+                          {overdue ? (
                             <span
                               className="inline-block h-2.5 w-2.5 rounded-full bg-red-500"
                               title="Платіж не надійшов"
