@@ -1,7 +1,7 @@
 // Налаштування бізнес-процесу: що, коли, кому і як звітувати.
 // Файл без серверних залежностей — ним користуються і сторінка конструктора, і API.
 
-import { TEAM_SALON_ROLES, type TeamSalonRole } from "@/lib/team/constants";
+import type { TeamSalonRole } from "@/lib/team/constants";
 
 export const PROCESS_KINDS = ["task_report", "client_message"] as const;
 export type ProcessKind = (typeof PROCESS_KINDS)[number];
@@ -11,12 +11,13 @@ export const PROCESS_KIND_LABELS: Record<ProcessKind, string> = {
   client_message: "Повідомлення клієнту",
 };
 
+/** Роль людини в Команді — підказка поруч з іменем у виборі виконавця. */
 export const TEAM_ROLE_LABELS: Record<TeamSalonRole, string> = {
-  master: "Майстри",
-  assistant: "Асистенти",
-  admin: "Адміністратори",
+  master: "майстер",
+  assistant: "асистент",
+  admin: "адміністратор",
   direct: "Direct",
-  other: "Інші",
+  other: "інше",
 };
 
 /** Події Kresco, від яких може стартувати процес. */
@@ -57,10 +58,8 @@ export const EVENTS_WITH_MASTER: ProcessEvent[] = [
 /** Події з клієнтом — для процесу «Повідомлення клієнту». */
 export const EVENTS_WITH_CLIENT: ProcessEvent[] = [...PROCESS_EVENTS];
 
-export type ProcessAssignee =
-  | { type: "member"; memberId: string }
-  | { type: "role"; role: TeamSalonRole }
-  | { type: "appointment_master" };
+/** Виконавець — конкретна людина з Команди або майстер запису, з якого стартував процес. */
+export type ProcessAssignee = { type: "member"; memberId: string } | { type: "appointment_master" };
 
 export type DurationUnit = "minutes" | "hours" | "days";
 
@@ -171,7 +170,7 @@ export function emptyField(type: FieldType = "choice"): ProcessField {
 
 export function defaultProcessConfig(kind: ProcessKind = "task_report"): BusinessProcessConfig {
   return {
-    assignee: { type: "role", role: "admin" },
+    assignee: { type: "member", memberId: "" },
     controllerIds: [],
     trigger:
       kind === "client_message"
@@ -222,9 +221,8 @@ function duration(raw: unknown, fallback: ProcessDuration): ProcessDuration {
 
 function normalizeAssignee(raw: unknown): ProcessAssignee {
   const r = (raw && typeof raw === "object" ? raw : {}) as Record<string, unknown>;
-  if (r.type === "member") return { type: "member", memberId: str(r.memberId, 100) };
   if (r.type === "appointment_master") return { type: "appointment_master" };
-  return { type: "role", role: oneOf(r.role, TEAM_SALON_ROLES, "admin") };
+  return { type: "member", memberId: str(r.memberId, 100) };
 }
 
 function normalizeTrigger(raw: unknown): ProcessTrigger {
@@ -362,9 +360,8 @@ export function describeAssignee(
   assignee: ProcessAssignee,
   memberName: (id: string) => string | undefined,
 ): string {
-  if (assignee.type === "member") return memberName(assignee.memberId) || "людина не знайдена";
   if (assignee.type === "appointment_master") return "Майстер запису";
-  return `${TEAM_ROLE_LABELS[assignee.role]} (закриває перший)`;
+  return memberName(assignee.memberId) || "не обрано";
 }
 
 export function describeDeadline(deadline: ProcessDeadline): string {

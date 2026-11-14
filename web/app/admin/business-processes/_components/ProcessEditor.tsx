@@ -32,7 +32,7 @@ import type {
   BusinessProcessRow,
   ProcessTeamMember,
 } from "@/lib/business-processes/store";
-import { TEAM_SALON_ROLES, type TeamSalonRole } from "@/lib/team/constants";
+import type { TeamSalonRole } from "@/lib/team/constants";
 import { Switch } from "./Switch";
 import { KIND_TINT, pill, segment, segmentWrap, UI } from "./ui";
 
@@ -126,16 +126,12 @@ function DurationInput({
 }
 
 function assigneeValue(a: ProcessAssignee): string {
-  if (a.type === "member") return `member:${a.memberId}`;
-  if (a.type === "appointment_master") return "appointment_master";
-  return `role:${a.role}`;
+  return a.type === "appointment_master" ? "appointment_master" : `member:${a.memberId}`;
 }
 
 function parseAssignee(value: string): ProcessAssignee {
   if (value === "appointment_master") return { type: "appointment_master" };
-  if (value.startsWith("member:"))
-    return { type: "member", memberId: value.slice(7) };
-  return { type: "role", role: value.slice(5) as TeamSalonRole };
+  return { type: "member", memberId: value.startsWith("member:") ? value.slice(7) : "" };
 }
 
 export function ProcessEditor({
@@ -181,7 +177,7 @@ export function ProcessEditor({
         next.type === "event" && EVENTS_WITH_MASTER.includes(next.event);
       const assignee: ProcessAssignee =
         c.assignee.type === "appointment_master" && !masterOk
-          ? { type: "role", role: "admin" }
+          ? { type: "member", memberId: "" }
           : c.assignee;
       return { ...c, trigger: next, assignee };
     });
@@ -205,15 +201,8 @@ export function ProcessEditor({
     trigger.type === "event" && EVENTS_WITH_MASTER.includes(trigger.event);
   const assigneeWithoutTelegram = useMemo(() => {
     const a = config.assignee;
-    if (a.type === "member")
-      return members.filter((m) => m.id === a.memberId && !m.hasTelegram);
-    if (a.type === "role")
-      return members.filter((m) => m.role === a.role && !m.hasTelegram);
-    return [];
+    return a.type === "member" ? members.filter((m) => m.id === a.memberId && !m.hasTelegram) : [];
   }, [config.assignee, members]);
-  const roleIsEmpty =
-    config.assignee.type === "role" &&
-    !members.some((m) => m.role === (config.assignee as { role: string }).role);
 
   const preview = useMemo(
     () =>
@@ -496,7 +485,7 @@ export function ProcessEditor({
 
         <Block
           title="Хто виконує і хто контролює"
-          hint="роль — завдання отримують усі з ролі, закриває перший; контролери отримують звіт і прострочене"
+          hint="контролери отримують звіт і прострочене"
         >
           <Row label="Виконавець">
             <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
@@ -507,10 +496,14 @@ export function ProcessEditor({
                   patch({ assignee: parseAssignee(e.target.value) })
                 }
               >
-                <optgroup label="Роль">
-                  {TEAM_SALON_ROLES.map((role) => (
-                    <option key={role} value={`role:${role}`}>
-                      {TEAM_ROLE_LABELS[role]}
+                <option value="member:" disabled>
+                  — оберіть людину —
+                </option>
+                <optgroup label="Команда">
+                  {members.map((m) => (
+                    <option key={m.id} value={`member:${m.id}`}>
+                      {m.name}
+                      {TEAM_ROLE_LABELS[m.role as TeamSalonRole] ? ` · ${TEAM_ROLE_LABELS[m.role as TeamSalonRole]}` : ""}
                     </option>
                   ))}
                 </optgroup>
@@ -519,19 +512,7 @@ export function ProcessEditor({
                     <option value="appointment_master">Майстер запису</option>
                   </optgroup>
                 )}
-                <optgroup label="Людина">
-                  {members.map((m) => (
-                    <option key={m.id} value={`member:${m.id}`}>
-                      {m.name}
-                    </option>
-                  ))}
-                </optgroup>
               </select>
-              {roleIsEmpty && (
-                <span className={UI.warn}>
-                  У Команді немає жодної людини з цією роллю.
-                </span>
-              )}
               {assigneeWithoutTelegram.length > 0 && (
                 <span className={UI.warn}>
                   Без Telegram:{" "}
