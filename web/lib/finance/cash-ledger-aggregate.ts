@@ -36,10 +36,11 @@ export function aggregateCashLedgerDayRows<T extends CashLedgerAggregateSource>(
     string,
     T & { signed: number; times: Set<string>; records: Set<number>; titles: Set<string> }
   >();
-  for (const row of dayRows) {
+  for (const [index, row] of dayRows.entries()) {
     const client = row.clientName.trim();
     const purpose = row.title.trim();
-    const key = `${client}\0${client ? (row.visitId ? `v${row.visitId}` : row.recordId ?? "") : ""}\0${row.accountTitle}\0${row.currency}\0${row.direction}\0${client ? "" : purpose}`;
+    const key = `${client}\0${client ? (row.visitId ? `v${row.visitId}` : row.recordId ?? "") : ""}\0${row.accountTitle}\0${row.currency}\0${row.direction}\0${client ? "" : purpose}\0${row.direction === "out" ? index : ""}`;
+    // Вихідні не зливаємо: кожен розхід — окремий рядок зі своїм часом і коментарем
     const signed = row.direction === "out" ? -row.amount : row.amount;
     const current = groups.get(key);
     if (!current) {

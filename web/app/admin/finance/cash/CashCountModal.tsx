@@ -149,7 +149,7 @@ export function CashCountModal({
         <div className="space-y-2 p-3">
           {expected != null ? (
             <div className="rounded-2xl border border-slate-200/80 bg-white px-3 py-2.5 text-center shadow-[0_1px_2px_rgba(15,23,42,0.05),0_8px_18px_-10px_rgba(15,23,42,0.25)]">
-              <div className="text-[11px] font-medium text-gray-500">Очікуємо в касі</div>
+              <div className="text-[11px] font-medium text-gray-500">Баланс за документами</div>
               <div className="text-xl font-semibold tabular-nums text-gray-900">
                 {money(expected)} {unit}
               </div>
@@ -166,6 +166,18 @@ export function CashCountModal({
             <div className="mt-0.5 text-[10px] text-gray-400">
               пораховані {money(bundledAmount)} + купюри {money(looseTotal)}
             </div>
+            {/* Орієнтир для адміна: касовка має зійтися з балансом за документами */}
+            {expected != null && total > 0 ? (
+              <div
+                className={`mt-1 text-xs font-semibold tabular-nums ${
+                  Math.abs(total - expected) < 0.01 ? "text-green-700" : "text-red-600"
+                }`}
+              >
+                {Math.abs(total - expected) < 0.01
+                  ? "зійшлося з документами"
+                  : `різниця ${total - expected > 0 ? "+" : "−"}${money(Math.abs(total - expected))} ${unit}`}
+              </div>
+            ) : null}
           </div>
 
           <div className="rounded-2xl border border-slate-200/80 bg-white p-2.5 shadow-[0_1px_2px_rgba(15,23,42,0.04),0_8px_18px_-12px_rgba(15,23,42,0.2)]">
