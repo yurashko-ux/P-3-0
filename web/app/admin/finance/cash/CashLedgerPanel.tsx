@@ -598,10 +598,18 @@ export function CashLedgerPanel({
                         <td />
                         <td className="whitespace-nowrap px-2 py-1 tabular-nums">{timeLabel(doc.time)}</td>
                         <td className="px-1 py-1 text-center">
-                          <span
-                            className="inline-block h-2.5 w-2.5 rounded-full border border-gray-400"
-                            title="Документ без банківського платежу"
-                          />
+                          {/* З минулих днів платіж уже мав надійти — червоне коло */}
+                          {doc.kyivDay < kyivDayOf(new Date().toISOString()) ? (
+                            <span
+                              className="inline-block h-2.5 w-2.5 rounded-full bg-red-500"
+                              title="Платіж не надійшов"
+                            />
+                          ) : (
+                            <span
+                              className="inline-block h-2.5 w-2.5 rounded-full border border-gray-400"
+                              title="Документ без банківського платежу"
+                            />
+                          )}
                         </td>
                         <td className="truncate px-2 py-1 italic">Документ Креско</td>
                         <td className="px-2 py-1">—</td>
