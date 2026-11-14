@@ -2200,3 +2200,42 @@ model NotionWebhookEvent {
   @@index([status, createdAt])
   @@map("notion_webhook_events")
 }
+
+/// ===== Бізнес-процеси: конструктор =====
+
+/// Процес — правило салону: коли запускати, кому дати завдання, що він має відповісти.
+/// Самі налаштування — у версіях: зміна форми створює нову версію, старі завдання лишаються на своїй.
+model BusinessProcess {
+  id             String   @id @default(uuid())
+  title          String
+  description    String?
+  /// task_report — завдання зі звітом | client_message — повідомлення клієнту
+  kind           String   @default("task_report")
+  isActive       Boolean  @default(false)
+  /// Номер версії, за якою створюються нові завдання.
+  currentVersion Int      @default(1)
+  createdBy      String?
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  versions BusinessProcessVersion[]
+
+  @@index([isActive])
+  @@map("business_processes")
+}
+
+/// Знімок налаштувань процесу: виконавець, контролери, запуск, форма звіту чи шаблон, строки й нагадування.
+model BusinessProcessVersion {
+  id        String   @id @default(uuid())
+  processId String
+  version   Int
+  /// Див. BusinessProcessConfig у lib/business-processes/config.ts
+  config    Json
+  createdBy String?
+  createdAt DateTime @default(now())
+
+  process BusinessProcess @relation(fields: [processId], references: [id], onDelete: Cascade)
+
+  @@unique([processId, version])
+  @@map("business_process_versions")
+}

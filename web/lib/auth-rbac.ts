@@ -42,6 +42,7 @@ export type PermissionKey =
   | "debugSection"
   | "accessSection"
   | "dashboardSection"
+  | "businessProcessesSection"
   | "telegramDailyReport";
 
 export type PermissionValue = "view" | "edit" | "none";
@@ -80,6 +81,7 @@ const DEFAULT_PERMISSIONS: Permissions = {
   debugSection: "edit",
   accessSection: "edit",
   dashboardSection: "edit",
+  businessProcessesSection: "edit",
   telegramDailyReport: "none",
 };
 
@@ -184,6 +186,10 @@ export async function getAuthContext(req: Request): Promise<AuthContext | null> 
     // Дашборд власника — гроші салону: посада бачить його лише після явної галочки.
     if (!("dashboardSection" in p)) {
       permissions.dashboardSection = "none";
+    }
+    // Бізнес-процеси створює власник: посада бачить розділ лише після явної галочки.
+    if (!("businessProcessesSection" in p)) {
+      permissions.businessProcessesSection = "none";
     }
   }
 

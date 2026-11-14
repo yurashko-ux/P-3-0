@@ -103,6 +103,14 @@ export function getAdminNavItems(permissions: Permissions | null): AdminNavItem[
   if (allowed("statsSection")) {
     items.push({ key: "stats", href: "/admin/direct/stats", label: "📈 Статистика", activePrefixes: ["/admin/direct/stats"] });
   }
+  if (allowed("businessProcessesSection")) {
+    items.push({
+      key: "processes",
+      href: "/admin/business-processes",
+      label: "🔁 Процеси",
+      activePrefixes: ["/admin/business-processes"],
+    });
+  }
   return items;
 }
 
