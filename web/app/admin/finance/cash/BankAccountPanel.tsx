@@ -53,6 +53,8 @@ export type UnlinkedDocument = {
   amount: number;
   title: string;
   comment: string;
+  /** Чек журналу без зведеного банківського платежу */
+  check?: boolean;
 };
 
 export const DOCUMENT_KIND_LABEL: Record<LinkedDocument["kind"], string> = {
@@ -349,12 +351,19 @@ export function BankAccountPanel({
                       <td />
                       <td className="whitespace-nowrap px-2 py-1 tabular-nums">{timeLabel(doc.time)}</td>
                       <td className="px-1 py-1 text-center">
-                        <span
-                          className="inline-block h-2.5 w-2.5 rounded-full border border-gray-400"
-                          title="Документ без банківського платежу"
-                        />
+                        {doc.check ? (
+                          <span
+                            className="inline-block h-2.5 w-2.5 rounded-full bg-red-500"
+                            title="Чек не зведено з банківським платежем"
+                          />
+                        ) : (
+                          <span
+                            className="inline-block h-2.5 w-2.5 rounded-full border border-gray-400"
+                            title="Документ без банківського платежу"
+                          />
+                        )}
                       </td>
-                      <td className="truncate px-2 py-1 italic">Документ Креско</td>
+                      <td className="truncate px-2 py-1 italic">{doc.check ? "Чек" : "Документ Креско"}</td>
                       <td className="truncate px-2 py-1" title={doc.comment ? `${doc.title}\n${doc.comment}` : doc.title}>
                         {doc.title} · <span className="italic">без платежу</span>
                       </td>

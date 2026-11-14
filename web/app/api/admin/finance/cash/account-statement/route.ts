@@ -445,6 +445,49 @@ export async function GET(req: NextRequest) {
       };
     });
 
+    // Чеки журналу на цьому рахунку, чий день оплат не зведено з жодним зарахуванням банку — червоне коло
+    const linkedDays = new Set(rows.map((row) => row.incomingDay).filter((day): day is string => Boolean(day)));
+    const oldestDay = new Intl.DateTimeFormat("en-CA", { timeZone: "Europe/Kyiv" }).format(oldest);
+    const checkPayments = await prisma.salonCheckoutPayment.findMany({
+      where: {
+        accountId: Number(altegioAccountId),
+        paymentKind: "account",
+        checkout: { kyivDay: { gte: oldestDay }, status: { not: "void" } },
+      },
+      select: {
+        amount: true,
+        checkout: {
+          select: { id: true, altegioVisitId: true, kyivDay: true, createdAt: true, appointment: { select: { clientName: true } } },
+        },
+      },
+      take: 500,
+    });
+    const checksById = new Map<string, (typeof unlinkedDocuments)[number] & { check: true }>();
+    for (const payment of checkPayments) {
+      const checkout = payment.checkout;
+      if (linkedDays.has(checkout.kyivDay)) continue;
+      // Візит з кількома майстрами — кілька чеків у Altegio, але один рядок
+      const key = checkout.altegioVisitId ? `v${checkout.altegioVisitId}` : checkout.id;
+      const current = checksById.get(key);
+      if (current) {
+        current.amount = Math.round((current.amount + payment.amount) * 100) / 100;
+        continue;
+      }
+      checksById.set(key, {
+        id: `check-${key}`,
+        time: checkout.createdAt.toISOString(),
+        kyivDay: checkout.kyivDay,
+        amount: payment.amount,
+        title: checkout.appointment?.clientName?.trim() || "Чек",
+        comment: "",
+        check: true,
+      });
+    }
+    const unmatchedChecks = [...checksById.values()];
+    if (unmatchedChecks.length > 0) {
+      console.log(`[api/admin/finance/cash/account-statement] Незведені чеки на рахунку ${altegioAccountId}: ${unmatchedChecks.length}`);
+    }
+
     // Запис клієнта в журналі Креско — для посилання з колонки «Запис» (один запит)
     const recordIds = [...new Set(rows.map((row) => row.recordId).filter((id): id is number => Boolean(id)))];
     if (recordIds.length > 0) {
@@ -457,7 +500,7 @@ export async function GET(req: NextRequest) {
         if (row.recordId) row.appointmentId = byRecord.get(row.recordId) ?? null;
       }
     }
-    return NextResponse.json({ ok: true, rows, unlinkedDocuments });
+    return NextResponse.json({ ok: true, rows, unlinkedDocuments: [...unlinkedDocuments, ...unmatchedChecks] });
   } catch (error) {
     console.error("[api/admin/finance/cash/account-statement] GET error:", error);
     return NextResponse.json(
