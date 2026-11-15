@@ -8,8 +8,8 @@ function FilterIconButton({ active, onClick, title }: { active: boolean; onClick
     <button
       type="button"
       onClick={onClick}
-      className={`inline-flex items-center justify-center w-6 h-6 rounded border-2 hover:bg-base-300 transition-colors ${
-        active ? "bg-blue-100 text-blue-600 border-blue-500" : "text-gray-500 border-gray-500"
+      className={`inline-flex items-center justify-center w-5 h-5 rounded-md border shadow-[0_1px_2px_rgba(15,23,42,0.05)] transition-colors ${
+        active ? "bg-[#dbe7f5] text-blue-700 border-blue-300" : "bg-white text-gray-500 border-slate-200 hover:bg-slate-50"
       }`}
       title={title}
     >
@@ -33,8 +33,8 @@ export function WarehouseFilterOption({
     <button
       type="button"
       onClick={onClick}
-      className={`w-full text-left px-2 py-1.5 rounded text-xs flex items-center gap-2 hover:bg-base-200 transition-colors ${
-        selected ? "bg-blue-50 text-blue-700" : "text-gray-700"
+      className={`w-full text-left px-2.5 py-1.5 rounded-md text-xs flex items-center gap-2 transition-colors ${
+        selected ? "bg-blue-50 font-medium text-blue-800" : "text-gray-800 hover:bg-slate-50"
       }`}
     >
       <span
@@ -111,11 +111,11 @@ export function WarehouseColumnFilter({
         ? createPortal(
             <div
               ref={panelRef}
-              className="fixed z-[70] w-[260px] bg-white border border-gray-200 rounded-lg shadow-lg"
+              className="fixed z-[70] w-[260px] rounded-xl border border-slate-200/80 bg-white normal-case shadow-[0_1px_2px_rgba(15,23,42,0.05),0_12px_28px_-10px_rgba(15,23,42,0.35)]"
               style={{ top: panelPosition.top, left: panelPosition.left }}
             >
-              <div className="p-2">
-                <div className="text-xs font-semibold text-gray-700 mb-2 px-2">Фільтри: {columnLabel}</div>
+              <div className="p-1.5">
+                <div className="mb-1 px-2.5 pt-1 text-[10px] font-semibold uppercase tracking-wide text-gray-500">{columnLabel}</div>
                 {children(() => setIsOpen(false))}
               </div>
             </div>,

@@ -3,6 +3,26 @@
 import { useCallback, useEffect, useState } from "react";
 import { createPortal } from "react-dom";
 import { WarehouseCreateButton } from "../_components/WarehouseCreateButton";
+import {
+  Banner,
+  PrettySelect,
+  WarehouseModal,
+  cardClass,
+  fieldBaseClass,
+  fieldClass,
+  formRowClass,
+  ghostButtonClass,
+  labelClass,
+  tableClass,
+  tdClass,
+  theadRowClass,
+  thClass,
+  tileButtonClass,
+  tileFaceClass,
+  tileGridClass,
+  tintButtonClass,
+  trClass,
+} from "../_components/warehouse-ui";
 
 type Group = { id: string; title: string; isHair: boolean };
 type Product = {
@@ -105,202 +125,202 @@ export default function WarehouseCatalogPage() {
     }
   };
 
+  const hairCount = products.filter((p) => p.isHair).length;
+  const selectedGroup = groups.find((g) => g.id === groupId);
+
   return (
-    <main className="h-[calc(100vh-3.25rem-var(--admin-nav-h,0px))] overflow-hidden flex flex-col">
-      <section className="flex-1 min-h-0 flex flex-col px-3 pb-3 pt-0 gap-2">
-        <div className="flex flex-wrap items-center gap-2 shrink-0 mt-2">
-          <p className="text-xs text-gray-600 bg-white border rounded-xl px-3 py-2 flex-1 min-w-[220px]">
-            № = id Altegio. Ціна продажу = поле <code>cost</code>, собівартість = <code>actual_cost</code>, вага ={" "}
-            <code>netto</code>. Після деплою натисніть «Оновити з Altegio» на вкладці Залишки.
-          </p>
-          <button
-            type="button"
-            className="btn btn-sm btn-primary min-h-0 h-8"
-            onClick={() => {
-              setNewGroupId(groupId || "");
-              setCreateOpen(true);
-            }}
-          >
-            + Нова картка
-          </button>
+    <main
+      className="flex flex-col overflow-hidden px-2 pb-2"
+      style={{ height: "calc(100vh - 3.25rem - var(--admin-nav-h, 0px))" }}
+    >
+      <div className={`${tileGridClass} shrink-0 py-2`}>
+        <div className={tileFaceClass} style={{ background: "#f3f5f8" }}>
+          <span className="text-[10px] font-medium leading-tight text-gray-700">
+            {selectedGroup ? selectedGroup.title : "Карток у каталозі"}
+          </span>
+          <span className="mt-0.5 text-sm font-semibold tabular-nums">{loading ? "…" : products.length}</span>
         </div>
+        <div className={tileFaceClass} style={{ background: "#f6efdf" }}>
+          <span className="text-[10px] font-medium leading-tight text-gray-700">З них волосся</span>
+          <span className="mt-0.5 text-sm font-semibold tabular-nums">{loading ? "…" : hairCount}</span>
+        </div>
+        <button
+          type="button"
+          className={tileButtonClass}
+          style={{ background: "#e3edf9" }}
+          onClick={() => {
+            setNewGroupId(groupId || "");
+            setCreateOpen(true);
+          }}
+        >
+          <span className="text-sm font-semibold text-gray-800">+ Нова картка</span>
+          <span className="text-[10px] text-gray-600">створиться в Altegio</span>
+        </button>
+      </div>
 
-        {notice && <div className="alert alert-success text-sm py-2 shrink-0">{notice}</div>}
-        {error && <div className="alert alert-error text-sm py-2 shrink-0">{error}</div>}
-
-        <div className="flex flex-wrap gap-2 items-center shrink-0">
-          <input
-            className="input input-bordered input-sm w-48 max-w-full"
-            placeholder="Пошук"
-            value={q}
-            onChange={(e) => setQ(e.target.value)}
-          />
-          <select
-            className="select select-bordered select-sm w-44 max-w-full"
+      <div className="flex shrink-0 flex-wrap items-center gap-2 pb-2">
+        <input className={`${fieldBaseClass} w-56 max-w-full`} placeholder="Пошук: код, назва…" value={q} onChange={(e) => setQ(e.target.value)} />
+        <div className="w-52 max-w-full">
+          <PrettySelect
             value={groupId}
-            onChange={(e) => setGroupId(e.target.value)}
-          >
-            <option value="">Усі групи</option>
-            {groups.map((g) => (
-              <option key={g.id} value={g.id}>
-                {g.title}
-              </option>
-            ))}
-          </select>
-          <WarehouseCreateButton
-            kind="group"
-            onCreated={(row) => {
-              setNotice(`Групу «${row.title}» створено лише в Kresco.`);
-              setGroupId(row.id);
-              void load();
-            }}
+            active={Boolean(groupId)}
+            options={[{ value: "", label: "Усі групи" }, ...groups.map((g) => ({ value: g.id, label: g.title }))]}
+            onChange={setGroupId}
           />
         </div>
+        <WarehouseCreateButton
+          kind="group"
+          onCreated={(row) => {
+            setNotice(`Групу «${row.title}» створено лише в Kresco.`);
+            setGroupId(row.id);
+            void load();
+          }}
+        />
+        <p className="min-w-[220px] flex-1 text-[10px] leading-snug text-gray-500">
+          № = id Altegio. Ціна продажу = поле <code>cost</code>, собівартість = <code>actual_cost</code>, вага = <code>netto</code>.
+          Після деплою натисніть «Оновити з Altegio» на вкладці Залишки.
+        </p>
+      </div>
 
-        {loading && <p className="text-sm text-gray-500 shrink-0">Завантаження…</p>}
+      <div className="shrink-0 space-y-2 empty:hidden">
+        {notice && <Banner tone="success">{notice}</Banner>}
+        {error && <Banner tone="error">{error}</Banner>}
+      </div>
 
-        <div className="flex-1 min-h-0 overflow-auto bg-white border rounded-xl">
-          <table className="table table-xs w-full">
-            <thead className="sticky top-0 z-10 bg-[#eef1f6] shadow-[0_1px_0_0_rgba(0,0,0,0.08)] [&_th]:bg-[#eef1f6]">
-              <tr>
-                <th>№</th>
-                <th>Назва</th>
-                <th>Група</th>
-                <th>Довжина</th>
-                <th>Вага</th>
-                <th className="text-right">Собівартість</th>
-                <th className="text-right">Ціна продажу</th>
-                <th className="text-right">Націнка</th>
-                <th className="text-right">USD</th>
-              </tr>
-            </thead>
-            <tbody>
-              {products.map((p) => {
-                const cost = Number(p.costPerUnit) || 0;
-                const sale = Number(p.salePrice) || 0;
-                const markup = markupOf(sale, cost);
-                return (
-                  <tr key={p.id}>
-                    <td className="tabular-nums">{p.sku ?? "—"}</td>
-                    <td>{p.title}</td>
-                    <td>{p.group?.title || "—"}</td>
-                    <td>{p.lengthCm ? `${p.lengthCm} см` : "—"}</td>
-                    <td>{formatWeight(p.weightGrams)}</td>
-                    <td className="text-right tabular-nums">{cost > 0 ? `${formatMoney(cost)} грн` : "—"}</td>
-                    <td className="text-right tabular-nums font-medium">
-                      {sale > 0 ? `${formatMoney(sale)} грн` : "—"}
-                    </td>
-                    <td className="text-right tabular-nums">
-                      {markup ? (
-                        <span>
-                          {formatMoney(markup.uah)} грн
-                          <span className="text-gray-500 text-[10px] ml-1">
-                            ({markup.pct.toLocaleString("uk-UA", { maximumFractionDigits: 1 })}%)
-                          </span>
+      <div className={`${cardClass} mt-0 min-h-0 flex-1 overflow-auto`}>
+        <table className={tableClass}>
+          <thead className="sticky top-0 z-10">
+            <tr className={theadRowClass}>
+              <th className={`${thClass} bg-gray-50`}>№</th>
+              <th className={`${thClass} bg-gray-50`}>Назва</th>
+              <th className={`${thClass} bg-gray-50`}>Група</th>
+              <th className={`${thClass} bg-gray-50`}>Довжина</th>
+              <th className={`${thClass} bg-gray-50`}>Вага</th>
+              <th className={`${thClass} bg-gray-50 text-right`}>Собівартість</th>
+              <th className={`${thClass} bg-gray-50 text-right`}>Ціна продажу</th>
+              <th className={`${thClass} bg-gray-50 text-right`}>Націнка</th>
+              <th className={`${thClass} bg-gray-50 text-right`}>USD</th>
+            </tr>
+          </thead>
+          <tbody>
+            {products.map((p) => {
+              const cost = Number(p.costPerUnit) || 0;
+              const sale = Number(p.salePrice) || 0;
+              const markup = markupOf(sale, cost);
+              return (
+                <tr key={p.id} className={`${trClass} hover:bg-slate-50`}>
+                  <td className={`${tdClass} tabular-nums text-gray-500`}>{p.sku ?? "—"}</td>
+                  <td className={`${tdClass} font-medium text-gray-900`}>
+                    {p.title}
+                    {p.isHair ? <span className="ml-1 font-normal text-amber-700">волосся</span> : null}
+                  </td>
+                  <td className={`${tdClass} text-gray-700`}>{p.group?.title || "—"}</td>
+                  <td className={`${tdClass} text-gray-700`}>{p.lengthCm ? `${p.lengthCm} см` : "—"}</td>
+                  <td className={`${tdClass} text-gray-700`}>{formatWeight(p.weightGrams)}</td>
+                  <td className={`${tdClass} whitespace-nowrap text-right tabular-nums text-gray-600`}>
+                    {cost > 0 ? `${formatMoney(cost)} грн` : "—"}
+                  </td>
+                  <td className={`${tdClass} whitespace-nowrap text-right font-semibold tabular-nums`}>
+                    {sale > 0 ? `${formatMoney(sale)} грн` : "—"}
+                  </td>
+                  <td className={`${tdClass} whitespace-nowrap text-right tabular-nums`}>
+                    {markup ? (
+                      <span className={markup.uah >= 0 ? "text-green-700" : "text-red-600"}>
+                        {formatMoney(markup.uah)} грн
+                        <span className="ml-1 text-[9px] text-gray-500">
+                          ({markup.pct.toLocaleString("uk-UA", { maximumFractionDigits: 1 })}%)
                         </span>
-                      ) : (
-                        "—"
-                      )}
-                    </td>
-                    <td className="text-right tabular-nums">{p.costUsd ? p.costUsd.toFixed(2) : "—"}</td>
-                  </tr>
-                );
-              })}
-            </tbody>
-          </table>
-          {!loading && products.length === 0 && (
-            <p className="p-4 text-sm text-gray-500">Немає карток за цим фільтром.</p>
-          )}
-        </div>
-      </section>
+                      </span>
+                    ) : (
+                      "—"
+                    )}
+                  </td>
+                  <td className={`${tdClass} text-right tabular-nums text-gray-600`}>{p.costUsd ? p.costUsd.toFixed(2) : "—"}</td>
+                </tr>
+              );
+            })}
+          </tbody>
+        </table>
+        {loading && <p className="px-3 py-6 text-center text-sm text-gray-500">Завантаження…</p>}
+        {!loading && products.length === 0 && (
+          <p className="px-3 py-6 text-center text-sm text-gray-500">Немає карток за цим фільтром.</p>
+        )}
+      </div>
 
       {createOpen &&
         typeof document !== "undefined" &&
         createPortal(
-          <div
-            className="fixed inset-0 z-[80] flex items-center justify-center p-4"
-            style={{ backgroundColor: "rgba(0,0,0,0.45)" }}
-            onClick={closeCreate}
-            role="presentation"
-          >
-            <div
-              className="bg-white rounded-xl shadow-xl border border-gray-200 w-full max-w-md p-4 space-y-3"
-              onClick={(e) => e.stopPropagation()}
-              role="dialog"
-              aria-labelledby="catalog-create-title"
-            >
-              <div className="flex items-center justify-between gap-2">
-                <h3 id="catalog-create-title" className="font-semibold text-sm">
-                  Нова картка
-                </h3>
-                <button
-                  type="button"
-                  className="btn btn-ghost btn-xs btn-circle"
-                  onClick={closeCreate}
-                  aria-label="Закрити"
-                >
-                  ✕
+          <WarehouseModal
+            tint="#e3edf9"
+            title="Нова картка"
+            onClose={closeCreate}
+            footer={
+              <>
+                <button type="button" className={ghostButtonClass} onClick={closeCreate}>
+                  Скасувати
                 </button>
-              </div>
-              <form
-                className="space-y-2"
-                onSubmit={(e) => {
-                  e.preventDefault();
-                  void post({
-                    title: newTitle,
-                    groupId: newGroupId,
-                    lengthCm: newLength ? Number(newLength) : null,
-                    weightGrams: newWeight ? Number(newWeight) : null,
-                    isHair: groups.find((g) => g.id === newGroupId)?.isHair || false,
-                  });
-                }}
-              >
-                <select
-                  className="select select-bordered select-sm w-full"
-                  value={newGroupId}
-                  onChange={(e) => setNewGroupId(e.target.value)}
-                  required
+                <button
+                  type="submit"
+                  form="catalog-create-form"
+                  className={tintButtonClass()}
+                  style={{ background: "#e3edf9" }}
+                  disabled={saving}
                 >
-                  <option value="">Група…</option>
-                  {groups.map((g) => (
-                    <option key={g.id} value={g.id}>
-                      {g.title}
-                    </option>
-                  ))}
-                </select>
+                  {saving ? "…" : "Створити в Altegio"}
+                </button>
+              </>
+            }
+          >
+            <form
+              id="catalog-create-form"
+              className="space-y-2 rounded-xl border border-slate-200/80 bg-slate-50 p-3"
+              onSubmit={(e) => {
+                e.preventDefault();
+                if (!newGroupId) {
+                  setError("Оберіть групу");
+                  return;
+                }
+                void post({
+                  title: newTitle,
+                  groupId: newGroupId,
+                  lengthCm: newLength ? Number(newLength) : null,
+                  weightGrams: newWeight ? Number(newWeight) : null,
+                  isHair: groups.find((g) => g.id === newGroupId)?.isHair || false,
+                });
+              }}
+            >
+              {error && <Banner tone="error">{error}</Banner>}
+              <div className={formRowClass}>
+                <span className={labelClass}>Група</span>
+                <div className="max-w-[260px]">
+                  <PrettySelect
+                    value={newGroupId}
+                    tint="#e3edf9"
+                    options={[{ value: "", label: "Група…" }, ...groups.map((g) => ({ value: g.id, label: g.title }))]}
+                    onChange={setNewGroupId}
+                  />
+                </div>
+              </div>
+              <div className={formRowClass}>
+                <span className={labelClass}>Назва</span>
                 <input
-                  className="input input-bordered input-sm w-full"
-                  placeholder="Назва"
+                  className={`${fieldClass} max-w-[260px]`}
                   value={newTitle}
                   onChange={(e) => setNewTitle(e.target.value)}
                   required
                   autoFocus
                 />
-                <div className="flex gap-2">
-                  <input
-                    className="input input-bordered input-sm w-full"
-                    placeholder="Довжина, см"
-                    value={newLength}
-                    onChange={(e) => setNewLength(e.target.value)}
-                  />
-                  <input
-                    className="input input-bordered input-sm w-full"
-                    placeholder="Вага, г"
-                    value={newWeight}
-                    onChange={(e) => setNewWeight(e.target.value)}
-                  />
-                </div>
-                <div className="flex justify-end gap-2 pt-1">
-                  <button type="button" className="btn btn-sm btn-ghost" onClick={closeCreate}>
-                    Скасувати
-                  </button>
-                  <button type="submit" className="btn btn-sm btn-primary" disabled={saving}>
-                    {saving ? "…" : "Створити в Altegio"}
-                  </button>
-                </div>
-              </form>
-            </div>
-          </div>,
+              </div>
+              <div className={formRowClass}>
+                <span className={labelClass}>Довжина, см</span>
+                <input className={`${fieldClass} max-w-[120px] tabular-nums`} value={newLength} onChange={(e) => setNewLength(e.target.value)} />
+              </div>
+              <div className={formRowClass}>
+                <span className={labelClass}>Вага, г</span>
+                <input className={`${fieldClass} max-w-[120px] tabular-nums`} value={newWeight} onChange={(e) => setNewWeight(e.target.value)} />
+              </div>
+            </form>
+          </WarehouseModal>,
           document.body,
         )}
     </main>

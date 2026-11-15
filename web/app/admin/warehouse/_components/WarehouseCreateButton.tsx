@@ -52,7 +52,7 @@ export function WarehouseCreateButton({
     return (
       <button
         type="button"
-        className="btn btn-sm btn-ghost min-h-0 h-8 px-2"
+        className="h-8 shrink-0 whitespace-nowrap rounded-lg border border-slate-200 bg-slate-50 px-2.5 text-xs text-gray-700 hover:bg-slate-100"
         title={`Створити: ${label}`}
         onClick={() => {
           setError(null);
@@ -68,7 +68,7 @@ export function WarehouseCreateButton({
     <div className="flex flex-col gap-1">
       <div className="flex flex-wrap items-center gap-1">
         <input
-          className="input input-bordered input-sm w-40"
+          className="h-8 w-40 rounded-lg border border-slate-200 bg-white px-2.5 text-xs focus:border-blue-300 focus:outline-none"
           autoFocus
           placeholder={placeholder}
           value={title}
@@ -87,10 +87,15 @@ export function WarehouseCreateButton({
             волосся
           </label>
         )}
-        <button type="button" className="btn btn-sm btn-primary min-h-0 h-8" disabled={saving || !title.trim()} onClick={() => void submit()}>
+        <button
+          type="button"
+          className="h-8 rounded-lg border border-slate-200 bg-[#e3edf9] px-2.5 text-xs font-medium text-gray-900 hover:brightness-[0.96] disabled:opacity-60"
+          disabled={saving || !title.trim()}
+          onClick={() => void submit()}
+        >
           {saving ? "…" : "OK"}
         </button>
-        <button type="button" className="btn btn-sm btn-ghost min-h-0 h-8" onClick={() => setOpen(false)}>
+        <button type="button" className="h-8 rounded-lg px-2 text-xs text-gray-500 hover:bg-slate-100" onClick={() => setOpen(false)}>
           ×
         </button>
       </div>

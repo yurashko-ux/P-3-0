@@ -74,14 +74,14 @@ export function WarehouseMovementLog({
   };
 
   return (
-    <div className="bg-white border rounded-xl p-2.5 space-y-1.5">
-      <div className="flex items-center justify-between gap-1">
-        <span className="text-[11px] font-semibold text-gray-700">Рух</span>
+    <div className="rounded-xl border border-gray-200 bg-white shadow-sm overflow-hidden">
+      <div className="flex items-center justify-between gap-1 bg-slate-300 px-2 py-1">
+        <span className="text-[10px] font-bold uppercase tracking-wide text-gray-900">Рух за місяць</span>
         <div className="flex items-center gap-0.5">
           <button
             type="button"
-            className={`px-1.5 h-6 rounded text-[10px] border ${
-              showAll ? "bg-blue-50 text-blue-700 border-blue-400" : "text-gray-500 border-gray-300"
+            className={`px-1.5 h-6 rounded-md text-[10px] font-medium border shadow-[0_1px_2px_rgba(15,23,42,0.05)] ${
+              showAll ? "bg-[#dbe7f5] text-blue-800 border-slate-200/80" : "bg-white/70 text-gray-600 border-slate-200/80"
             }`}
             onClick={() => onKindsChange([])}
             title="Усі джерела"
@@ -95,8 +95,8 @@ export function WarehouseMovementLog({
               <button
                 key={kind}
                 type="button"
-                className={`inline-flex items-center justify-center w-6 h-6 rounded border ${
-                  on ? `${meta.className} bg-gray-50 border-current` : "text-gray-400 border-gray-300"
+                className={`inline-flex items-center justify-center w-6 h-6 rounded-md border shadow-[0_1px_2px_rgba(15,23,42,0.05)] ${
+                  on ? `${meta.className} bg-white border-current` : "bg-white/70 text-gray-400 border-slate-200/80"
                 }`}
                 title={meta.label}
                 aria-pressed={on}
@@ -109,21 +109,21 @@ export function WarehouseMovementLog({
         </div>
       </div>
 
-      <div className="max-h-56 overflow-y-auto -mx-0.5">
+      <div className="px-2 py-1.5">
         {visible.length === 0 ? (
-          <p className="text-[11px] text-gray-500 py-2">Немає руху за цей місяць.</p>
+          <p className="text-[11px] text-gray-500 py-2 text-center">Немає руху за цей місяць.</p>
         ) : (
-          <ul className="space-y-0.5">
+          <ul className="divide-y divide-gray-100">
             {visible.map((row) => (
               <li
                 key={row.id}
-                className="grid grid-cols-[12px_34px_minmax(0,1fr)_auto] items-center gap-1 text-[11px] leading-tight"
+                className="grid grid-cols-[12px_34px_minmax(0,1fr)_auto] items-center gap-1 py-1 text-[10px] leading-tight"
                 title={`${KIND_META[row.kind].label} · ${row.code} · ${formatCost(row.costUah)} грн`}
               >
                 <MovementMark kind={row.kind} />
                 <span className="tabular-nums text-gray-500">{formatDay(row.kyivDay)}</span>
                 <span className="truncate font-medium">{row.code}</span>
-                <span className="tabular-nums text-gray-700 shrink-0">{formatCost(row.costUah)}</span>
+                <span className="tabular-nums font-semibold text-gray-700 shrink-0">{formatCost(row.costUah)} грн</span>
               </li>
             ))}
           </ul>

@@ -1,9 +1,26 @@
 "use client";
 
+import Link from "next/link";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { createPortal } from "react-dom";
+import { navTileClass } from "@/app/admin/_components/nav-tile";
 import { WarehouseCreateButton } from "./_components/WarehouseCreateButton";
 import { WarehouseColumnFilter, WarehouseFilterOption } from "./_components/WarehouseColumnFilter";
-import { useWarehouseSearch } from "./_components/WarehouseChrome";
+import { useWarehouseSearch, WAREHOUSE_HEADER_ACTIONS_ID } from "./_components/WarehouseChrome";
+import {
+  Banner,
+  cardClass,
+  fieldClass,
+  ghostButtonClass,
+  tableClass,
+  tdClass,
+  theadRowClass,
+  thClass,
+  tileButtonClass,
+  tileFaceClass,
+  tileGridClass,
+  trClass,
+} from "./_components/warehouse-ui";
 import { WarehouseMovementLog } from "./_components/WarehouseMovementLog";
 import type { WarehouseMovementKind, WarehouseMovementLogRow } from "@/lib/warehouse/movement-log-types";
 
@@ -119,6 +136,12 @@ export default function WarehousePage() {
   const [sort, setSort] = useState<SortKey>("title");
   const [order, setOrder] = useState<"asc" | "desc">("asc");
   const createdGroupsRef = useRef<Array<{ id: string; title: string }>>([]);
+  /** Місце в шапці Складу для «Оновити з Altegio» */
+  const [headerSlot, setHeaderSlot] = useState<HTMLElement | null>(null);
+
+  useEffect(() => {
+    setHeaderSlot(document.getElementById(WAREHOUSE_HEADER_ACTIONS_ID));
+  }, []);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -248,304 +271,294 @@ export default function WarehousePage() {
     setGroupIds((prev) => (prev.includes(row.id) ? prev : [...prev, row.id]));
   };
 
+  const tableHeight = "calc(100vh - 3.25rem - var(--admin-nav-h, 0px))";
+
   return (
-    <main className="h-[calc(100vh-3.25rem-var(--admin-nav-h,0px))] overflow-hidden flex flex-col">
-      <section className="flex-1 min-h-0 flex flex-col px-3 pb-3 pt-0">
-        {notice && (
-          <div
-            className={`alert text-sm py-2 mt-2 mb-2 shrink-0 ${
-              notice.startsWith("Злиття у") ? "alert-warning" : "alert-success"
-            }`}
-          >
-            {notice}
-          </div>
-        )}
-        {error && <div className="alert alert-error text-sm py-2 mt-2 mb-2 shrink-0">{error}</div>}
+    <main className="flex flex-col overflow-hidden px-2 pb-2" style={{ height: tableHeight }}>
+      {headerSlot
+        ? createPortal(
+            <button
+              type="button"
+              className={navTileClass(false)}
+              onClick={() => void handleSync()}
+              disabled={syncing}
+              title="Залишки — дзеркало Altegio. Прийомку, списання й інвентаризацію робіть у вкладці Документи — вони одразу йдуть у склад Altegio."
+            >
+              {syncing ? "Оновлення…" : "Оновити з Altegio"}
+            </button>,
+            headerSlot,
+          )
+        : null}
 
-        <div className="flex flex-col md:flex-row gap-3 items-stretch flex-1 min-h-0 pt-0">
-          <aside className="w-full md:w-[280px] shrink-0 md:overflow-y-auto space-y-2 pt-2">
-            <div className="bg-white border rounded-xl p-2.5 space-y-2">
-              <p className="text-[11px] leading-snug text-gray-600">
-                Залишки — дзеркало Altegio. <b>Прийомку, списання й інвентаризацію робіть у вкладці Документи</b> — вони
-                одразу йдуть у склад Altegio.
-              </p>
-              <button
-                type="button"
-                className="btn btn-sm btn-primary min-h-0 h-8 w-full"
-                onClick={() => void handleSync()}
-                disabled={syncing}
-              >
-                {syncing ? "Оновлення…" : "Оновити з Altegio"}
-              </button>
-              {data?.period.isLive && (
-                <p className="text-[11px] text-gray-500 leading-snug">
-                  Живі залишки на зараз ({monthLabel(year, month)}). Минулий місяць — зріз на момент останнього оновлення
-                  в тому місяці.
-                </p>
-              )}
-            </div>
-
-            <div className="bg-white border rounded-xl p-2.5 space-y-1">
-              <StatLine label="Сума залишків" value={`${formatMoney(data?.filteredTotals.valueUah || 0)} грн`} />
-              <StatLine label="Волосся" value={`${formatMoney(data?.filteredTotals.hairUah || 0)} грн`} />
-              <StatLine label="Рядків" value={String(data?.filteredTotals.rows || 0)} />
-              <StatLine label="Оновлено" value={formatDateTime(data?.period.lastSyncedAt || null)} />
-            </div>
-
-            <WarehouseMovementLog
-              rows={data?.movementLog || []}
-              kinds={movementKinds}
-              onKindsChange={setMovementKinds}
-            />
-          </aside>
-
-          <div className="flex-1 min-w-0 w-full min-h-0 flex flex-col">
-            {data?.period.snapshotMissing && (
-              <p className="text-sm text-amber-700 bg-amber-50 border border-amber-200 rounded-xl px-3 py-2 mb-2 shrink-0 mt-2">
-                Немає знімка за {monthLabel(year, month)}. Для минулих місяців знімок з’являється після синхронізації в
-                тому місяці. Оберіть поточний місяць або натисніть «Оновити з Altegio».
-              </p>
-            )}
-
-            {loading && <p className="text-sm text-gray-500 mt-2 shrink-0">Завантаження…</p>}
-
-            <div className="flex-1 min-h-0 overflow-auto bg-white border-x border-b md:border-t-0 border-t rounded-b-xl md:rounded-tr-xl">
-                <table className="table table-xs w-full">
-                  <thead className="sticky top-0 z-10 bg-[#eef1f6] shadow-[0_1px_0_0_rgba(0,0,0,0.08)] [&_th]:bg-[#eef1f6]">
-                    <tr>
-                      <th className="w-14">
-                        <div className="flex items-center gap-1">
-                          <span>№</span>
-                          <WarehouseColumnFilter columnLabel="Період" active={periodActive}>
-                            {(close) => (
-                              <div className="space-y-2">
-                                <p className="text-[11px] text-gray-500 px-2">Кінець місяця</p>
-                                <div className="flex gap-1 px-2">
-                                  <select
-                                    className="select select-bordered select-xs flex-1"
-                                    value={month}
-                                    onChange={(e) => setMonth(Number(e.target.value))}
-                                  >
-                                    {Array.from({ length: 12 }, (_, i) => i + 1).map((m) => (
-                                      <option key={m} value={m}>
-                                        {m.toString().padStart(2, "0")}
-                                      </option>
-                                    ))}
-                                  </select>
-                                  <select
-                                    className="select select-bordered select-xs flex-1"
-                                    value={year}
-                                    onChange={(e) => setYear(Number(e.target.value))}
-                                  >
-                                    {years.map((y) => (
-                                      <option key={y} value={y}>
-                                        {y}
-                                      </option>
-                                    ))}
-                                  </select>
-                                </div>
-                                <button
-                                  type="button"
-                                  className="btn btn-ghost btn-xs w-full"
-                                  onClick={() => {
-                                    setMonth(now.month);
-                                    setYear(now.year);
-                                    close();
-                                  }}
-                                >
-                                  Поточний місяць
-                                </button>
-                              </div>
-                            )}
-                          </WarehouseColumnFilter>
-                        </div>
-                      </th>
-                      <th>
-                        <button type="button" className="font-semibold" onClick={() => handleSort("title")}>
-                          Код Товару{sortMark("title")}
-                        </button>
-                      </th>
-                      <th>
-                        <div className="flex items-center gap-1">
-                          <span className="font-semibold">Назва Товару</span>
-                          <WarehouseColumnFilter columnLabel="Тип" active={hair !== "all"}>
-                            {(close) => (
-                              <div className="space-y-0.5">
-                                {(
-                                  [
-                                    ["all", "Усі товари"],
-                                    ["yes", "Волосся"],
-                                    ["no", "Інший товар"],
-                                  ] as const
-                                ).map(([id, label]) => (
-                                  <WarehouseFilterOption
-                                    key={id}
-                                    label={label}
-                                    selected={hair === id}
-                                    onClick={() => {
-                                      setHair(id);
-                                      close();
-                                    }}
-                                  />
-                                ))}
-                              </div>
-                            )}
-                          </WarehouseColumnFilter>
-                        </div>
-                      </th>
-                      <th>
-                        <div className="flex items-center gap-1">
-                          <button type="button" className="font-semibold" onClick={() => handleSort("category")}>
-                            Категорія{sortMark("category")}
-                          </button>
-                          <WarehouseColumnFilter columnLabel="Категорія" active={groupIds.length > 0}>
-                            {() => (
-                              <div className="space-y-1">
-                                <p className="text-[11px] text-gray-500 px-2">Можна обрати кілька</p>
-                                <div className="max-h-64 overflow-y-auto space-y-0.5">
-                                  <WarehouseFilterOption
-                                    label="Усі"
-                                    selected={groupIds.length === 0}
-                                    onClick={() => setGroupIds([])}
-                                  />
-                                  {(data?.groups || []).map((g) => {
-                                    const qty = Number(g.quantity) || 0;
-                                    const qtyLabel = Number.isInteger(qty)
-                                      ? String(qty)
-                                      : formatQty(qty);
-                                    return (
-                                      <WarehouseFilterOption
-                                        key={g.id}
-                                        label={`${g.title} (${qtyLabel})`}
-                                        selected={groupIds.includes(g.id)}
-                                        onClick={() => {
-                                          setGroupIds((prev) =>
-                                            prev.includes(g.id)
-                                              ? prev.filter((id) => id !== g.id)
-                                              : [...prev, g.id],
-                                          );
-                                        }}
-                                      />
-                                    );
-                                  })}
-                                </div>
-                                <div className="pt-1 border-t">
-                                  <WarehouseCreateButton kind="group" compact onCreated={onCreatedGroup} />
-                                </div>
-                              </div>
-                            )}
-                          </WarehouseColumnFilter>
-                        </div>
-                      </th>
-                      <th>
-                        <div className="flex items-center gap-1">
-                          <button type="button" className="font-semibold" onClick={() => handleSort("storage")}>
-                            Склад{sortMark("storage")}
-                          </button>
-                          <WarehouseColumnFilter columnLabel="Склад" active={Boolean(storageId)}>
-                            {(close) => (
-                              <div className="space-y-1">
-                                <div className="max-h-64 overflow-y-auto space-y-0.5">
-                                  <WarehouseFilterOption
-                                    label="Усі"
-                                    selected={!storageId}
-                                    onClick={() => {
-                                      setStorageId("");
-                                      close();
-                                    }}
-                                  />
-                                  {(data?.storages || []).map((s) => (
-                                    <WarehouseFilterOption
-                                      key={s.id}
-                                      label={s.title}
-                                      selected={storageId === s.id}
-                                      onClick={() => {
-                                        setStorageId(s.id);
-                                        close();
-                                      }}
-                                    />
-                                  ))}
-                                </div>
-                                <div className="pt-1 border-t">
-                                  <WarehouseCreateButton
-                                    kind="storage"
-                                    compact
-                                    onCreated={(row) => {
-                                      setNotice(`Склад «${row.title}» створено в Kresco і Altegio.`);
-                                      setStorageId(row.id);
-                                      void load();
-                                    }}
-                                  />
-                                </div>
-                              </div>
-                            )}
-                          </WarehouseColumnFilter>
-                        </div>
-                      </th>
-                      <th className="text-right">
-                        <button type="button" className="font-semibold" onClick={() => handleSort("qty")}>
-                          К-сть{sortMark("qty")}
-                        </button>
-                      </th>
-                      <th className="text-right">
-                        <span className="font-semibold">Собівартість</span>
-                        <div className="text-[11px] font-semibold text-gray-700 tabular-nums">
-                          {formatMoney(costTotal)} грн
-                        </div>
-                      </th>
-                      <th className="text-right">
-                        <button type="button" className="font-semibold" onClick={() => handleSort("value")}>
-                          Сума{sortMark("value")}
-                        </button>
-                        <div className="text-[11px] font-semibold text-gray-700 tabular-nums">
-                          {formatMoney(valueTotal)} грн
-                        </div>
-                      </th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {!loading &&
-                      stocks.map((row, index) => (
-                      <tr key={row.id}>
-                        <td className="tabular-nums text-gray-500">{index + 1}</td>
-                        <td className="tabular-nums font-medium">{row.product.title || "—"}</td>
-                        <td className="text-gray-700">
-                          {[
-                            row.product.lengthCm ? `${row.product.lengthCm} см` : "",
-                            row.product.weightGrams ? `${row.product.weightGrams} г` : "",
-                          ]
-                            .filter(Boolean)
-                            .join(" · ") || "—"}
-                        </td>
-                        <td>{row.product.groupTitle || row.product.category || "—"}</td>
-                        <td>{row.storage.title}</td>
-                        <td className="text-right tabular-nums">
-                          {formatQty(row.quantity)} {displayUnit(row.product.unit)}
-                        </td>
-                        <td className="text-right tabular-nums">{formatMoney(row.costPerUnit)} грн</td>
-                        <td className="text-right tabular-nums font-medium">{formatMoney(row.valueUah)} грн</td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-                {!loading && !stocks.length && !data?.period.snapshotMissing && (
-                  <p className="p-4 text-sm text-gray-500">
-                    Немає рядків. Натисніть «Оновити з Altegio», щоб залити каталог і залишки.
-                  </p>
-                )}
-              </div>
-          </div>
+      {/* Плитки підсумків — як плитки рахунків у Касі */}
+      <div className={`${tileGridClass} shrink-0 py-2`}>
+        <div className={tileFaceClass} style={{ background: "#f3f5f8" }}>
+          <span className="text-[10px] font-medium leading-tight text-gray-700">Сума залишків</span>
+          <span className="mt-0.5 text-sm font-semibold tabular-nums">{formatMoney(data?.filteredTotals.valueUah || 0)} грн</span>
+          {data?.period.isLive ? (
+            <span className="text-[10px] text-gray-500">живі · {monthLabel(year, month)}</span>
+          ) : data ? (
+            <span className="text-[10px] text-gray-500">зріз · {monthLabel(year, month)}</span>
+          ) : null}
         </div>
-      </section>
+        <button
+          type="button"
+          className={`${tileButtonClass} ${hair === "yes" ? "ring-2 ring-amber-300" : ""}`}
+          style={{ background: "#f6efdf" }}
+          aria-pressed={hair === "yes"}
+          title={hair === "yes" ? "Показати всі товари" : "Показати лише волосся"}
+          onClick={() => setHair((prev) => (prev === "yes" ? "all" : "yes"))}
+        >
+          <span className="text-[10px] font-medium leading-tight text-gray-700">Волосся</span>
+          <span className="mt-0.5 text-sm font-semibold tabular-nums">{formatMoney(data?.filteredTotals.hairUah || 0)} грн</span>
+        </button>
+        <div className={tileFaceClass} style={{ background: "#f2f6f3" }}>
+          <span className="text-[10px] font-medium leading-tight text-gray-700">Рядків</span>
+          <span className="mt-0.5 text-sm font-semibold tabular-nums">{data?.filteredTotals.rows || 0}</span>
+        </div>
+        <div className={tileFaceClass} style={{ background: "#f5f3f7" }}>
+          <span className="text-[10px] font-medium leading-tight text-gray-700">Оновлено з Altegio</span>
+          <span className="mt-0.5 text-xs font-semibold tabular-nums">{formatDateTime(data?.period.lastSyncedAt || null)}</span>
+        </div>
+        <Link href="/admin/warehouse/documents" className={tileButtonClass} style={{ background: "#e3edf9" }}>
+          <span className="text-sm font-semibold text-gray-800">+ Документ</span>
+          <span className="text-[10px] text-gray-600">прийомка · списання · інвентаризація</span>
+        </Link>
+      </div>
+
+      <div className="shrink-0 space-y-2 empty:hidden">
+        {notice && <Banner tone={notice.startsWith("Злиття у") ? "warning" : "success"}>{notice}</Banner>}
+        {error && <Banner tone="error">{error}</Banner>}
+        {data?.period.snapshotMissing && (
+          <Banner tone="warning">
+            Немає знімка за {monthLabel(year, month)}. Для минулих місяців знімок з’являється після синхронізації в тому
+            місяці. Оберіть поточний місяць або натисніть «Оновити з Altegio».
+          </Banner>
+        )}
+      </div>
+
+      <div className="mt-2 grid min-h-0 flex-1 grid-cols-1 gap-2 md:grid-cols-[260px_minmax(0,1fr)]">
+        {/* Рух за місяць — ліворуч від таблиці */}
+        <aside className="min-h-0 overflow-y-auto">
+          <WarehouseMovementLog rows={data?.movementLog || []} kinds={movementKinds} onKindsChange={setMovementKinds} />
+        </aside>
+        <div className={`${cardClass} min-h-0 overflow-auto`}>
+          <table className={tableClass}>
+            <thead className="sticky top-0 z-10">
+              <tr className={theadRowClass}>
+                <th className={`${thClass} w-14 bg-gray-50`}>
+                  <div className="flex items-center gap-1">
+                    <span>№</span>
+                    <WarehouseColumnFilter columnLabel="Період" active={periodActive}>
+                      {(close) => (
+                        <div className="space-y-2">
+                          <p className="text-[11px] text-gray-500 px-2 normal-case">Кінець місяця</p>
+                          <div className="flex gap-1 px-2">
+                            <select
+                              className={fieldClass}
+                              value={month}
+                              onChange={(e) => setMonth(Number(e.target.value))}
+                            >
+                              {Array.from({ length: 12 }, (_, i) => i + 1).map((m) => (
+                                <option key={m} value={m}>
+                                  {m.toString().padStart(2, "0")}
+                                </option>
+                              ))}
+                            </select>
+                            <select className={fieldClass} value={year} onChange={(e) => setYear(Number(e.target.value))}>
+                              {years.map((y) => (
+                                <option key={y} value={y}>
+                                  {y}
+                                </option>
+                              ))}
+                            </select>
+                          </div>
+                          <button
+                            type="button"
+                            className={`${ghostButtonClass} w-full normal-case`}
+                            onClick={() => {
+                              setMonth(now.month);
+                              setYear(now.year);
+                              close();
+                            }}
+                          >
+                            Поточний місяць
+                          </button>
+                        </div>
+                      )}
+                    </WarehouseColumnFilter>
+                  </div>
+                </th>
+                <th className={`${thClass} bg-gray-50`}>
+                  <button type="button" className="uppercase" onClick={() => handleSort("title")}>
+                    Код товару{sortMark("title")}
+                  </button>
+                </th>
+                <th className={`${thClass} bg-gray-50`}>
+                  <div className="flex items-center gap-1">
+                    <span>Назва товару</span>
+                    <WarehouseColumnFilter columnLabel="Тип" active={hair !== "all"}>
+                      {(close) => (
+                        <div className="space-y-0.5 normal-case">
+                          {(
+                            [
+                              ["all", "Усі товари"],
+                              ["yes", "Волосся"],
+                              ["no", "Інший товар"],
+                            ] as const
+                          ).map(([id, label]) => (
+                            <WarehouseFilterOption
+                              key={id}
+                              label={label}
+                              selected={hair === id}
+                              onClick={() => {
+                                setHair(id);
+                                close();
+                              }}
+                            />
+                          ))}
+                        </div>
+                      )}
+                    </WarehouseColumnFilter>
+                  </div>
+                </th>
+                <th className={`${thClass} bg-gray-50`}>
+                  <div className="flex items-center gap-1">
+                    <button type="button" className="uppercase" onClick={() => handleSort("category")}>
+                      Категорія{sortMark("category")}
+                    </button>
+                    <WarehouseColumnFilter columnLabel="Категорія" active={groupIds.length > 0}>
+                      {() => (
+                        <div className="space-y-1 normal-case">
+                          <p className="text-[11px] text-gray-500 px-2">Можна обрати кілька</p>
+                          <div className="max-h-64 overflow-y-auto space-y-0.5">
+                            <WarehouseFilterOption label="Усі" selected={groupIds.length === 0} onClick={() => setGroupIds([])} />
+                            {(data?.groups || []).map((g) => {
+                              const qty = Number(g.quantity) || 0;
+                              const qtyLabel = Number.isInteger(qty) ? String(qty) : formatQty(qty);
+                              return (
+                                <WarehouseFilterOption
+                                  key={g.id}
+                                  label={`${g.title} (${qtyLabel})`}
+                                  selected={groupIds.includes(g.id)}
+                                  onClick={() => {
+                                    setGroupIds((prev) =>
+                                      prev.includes(g.id) ? prev.filter((id) => id !== g.id) : [...prev, g.id],
+                                    );
+                                  }}
+                                />
+                              );
+                            })}
+                          </div>
+                          <div className="pt-1 border-t">
+                            <WarehouseCreateButton kind="group" compact onCreated={onCreatedGroup} />
+                          </div>
+                        </div>
+                      )}
+                    </WarehouseColumnFilter>
+                  </div>
+                </th>
+                <th className={`${thClass} bg-gray-50`}>
+                  <div className="flex items-center gap-1">
+                    <button type="button" className="uppercase" onClick={() => handleSort("storage")}>
+                      Склад{sortMark("storage")}
+                    </button>
+                    <WarehouseColumnFilter columnLabel="Склад" active={Boolean(storageId)}>
+                      {(close) => (
+                        <div className="space-y-1 normal-case">
+                          <div className="max-h-64 overflow-y-auto space-y-0.5">
+                            <WarehouseFilterOption
+                              label="Усі"
+                              selected={!storageId}
+                              onClick={() => {
+                                setStorageId("");
+                                close();
+                              }}
+                            />
+                            {(data?.storages || []).map((s) => (
+                              <WarehouseFilterOption
+                                key={s.id}
+                                label={s.title}
+                                selected={storageId === s.id}
+                                onClick={() => {
+                                  setStorageId(s.id);
+                                  close();
+                                }}
+                              />
+                            ))}
+                          </div>
+                          <div className="pt-1 border-t">
+                            <WarehouseCreateButton
+                              kind="storage"
+                              compact
+                              onCreated={(row) => {
+                                setNotice(`Склад «${row.title}» створено в Kresco і Altegio.`);
+                                setStorageId(row.id);
+                                void load();
+                              }}
+                            />
+                          </div>
+                        </div>
+                      )}
+                    </WarehouseColumnFilter>
+                  </div>
+                </th>
+                <th className={`${thClass} bg-gray-50 text-right`}>
+                  <button type="button" className="uppercase" onClick={() => handleSort("qty")}>
+                    К-сть{sortMark("qty")}
+                  </button>
+                </th>
+                <th className={`${thClass} bg-gray-50 text-right`}>
+                  <span>Собівартість</span>
+                  <div className="text-[10px] font-semibold normal-case text-gray-700 tabular-nums">{formatMoney(costTotal)} грн</div>
+                </th>
+                <th className={`${thClass} bg-gray-50 text-right`}>
+                  <button type="button" className="uppercase" onClick={() => handleSort("value")}>
+                    Сума{sortMark("value")}
+                  </button>
+                  <div className="text-[10px] font-semibold normal-case text-gray-700 tabular-nums">{formatMoney(valueTotal)} грн</div>
+                </th>
+              </tr>
+            </thead>
+            <tbody>
+              {!loading &&
+                stocks.map((row, index) => (
+                  <tr key={row.id} className={`${trClass} hover:bg-slate-50`}>
+                    <td className={`${tdClass} tabular-nums text-gray-500`}>{index + 1}</td>
+                    <td className={`${tdClass} tabular-nums font-medium text-gray-900`}>{row.product.title || "—"}</td>
+                    <td className={`${tdClass} text-gray-700`}>
+                      {[
+                        row.product.lengthCm ? `${row.product.lengthCm} см` : "",
+                        row.product.weightGrams ? `${row.product.weightGrams} г` : "",
+                      ]
+                        .filter(Boolean)
+                        .join(" · ") || "—"}
+                    </td>
+                    <td className={`${tdClass} text-gray-700`}>{row.product.groupTitle || row.product.category || "—"}</td>
+                    <td className={`${tdClass} text-gray-700`}>{row.storage.title}</td>
+                    <td className={`${tdClass} whitespace-nowrap text-right tabular-nums`}>
+                      {formatQty(row.quantity)} {displayUnit(row.product.unit)}
+                    </td>
+                    <td className={`${tdClass} whitespace-nowrap text-right tabular-nums text-gray-600`}>
+                      {formatMoney(row.costPerUnit)} грн
+                    </td>
+                    <td className={`${tdClass} whitespace-nowrap text-right font-semibold tabular-nums`}>
+                      {formatMoney(row.valueUah)} грн
+                    </td>
+                  </tr>
+                ))}
+            </tbody>
+          </table>
+          {loading && <p className="px-3 py-6 text-center text-sm text-gray-500">Завантаження…</p>}
+          {!loading && !stocks.length && !data?.period.snapshotMissing && (
+            <p className="px-3 py-6 text-center text-sm text-gray-500">
+              Немає рядків. Натисніть «Оновити з Altegio», щоб залити каталог і залишки.
+            </p>
+          )}
+        </div>
+
+      </div>
     </main>
   );
 }
 
-function StatLine({ label, value }: { label: string; value: string }) {
-  return (
-    <div className="flex items-baseline justify-between gap-2">
-      <span className="text-[11px] text-gray-500 shrink-0">{label}</span>
-      <span className="text-xs font-bold text-right break-words">{value}</span>
-    </div>
-  );
-}
