@@ -6,6 +6,7 @@ import type { ProcessKind } from "@/lib/business-processes/config";
 export const KIND_TINT: Record<ProcessKind, string> = {
   task_report: "#e3edf9",
   client_message: "#e5f2e9",
+  manual_metric: "#fbf0d4",
 };
 
 const SHADOW_SOFT = "shadow-[0_1px_2px_rgba(15,23,42,0.05),0_4px_10px_-6px_rgba(15,23,42,0.28)]";

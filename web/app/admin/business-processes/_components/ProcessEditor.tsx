@@ -14,11 +14,19 @@ import {
   normalizeProcessConfig,
   PROCESS_EVENT_LABELS,
   PROCESS_EVENTS,
+  DAILY_SEND_MODE_LABELS,
+  DAILY_SEND_MODES,
+  emptyMetric,
+  METRIC_INPUT_LABELS,
+  METRIC_INPUTS,
   PROCESS_KIND_LABELS,
-  PROCESS_KINDS,
   TEAM_ROLE_LABELS,
+  WORKDAY_SOURCE_LABELS,
+  WORKDAY_SOURCES,
   validateProcess,
   type BusinessProcessConfig,
+  type ManualMetric,
+  type ManualMetricSettings,
   type DurationUnit,
   type FieldType,
   type ProcessAssignee,
@@ -136,21 +144,24 @@ function parseAssignee(value: string): ProcessAssignee {
 
 export function ProcessEditor({
   initial,
+  kinds,
   members,
   onCancel,
   onSaved,
 }: {
   initial: BusinessProcessRow | null;
+  /** Типи, які можна обрати в цій вкладці. */
+  kinds: ProcessKind[];
   members: ProcessTeamMember[];
   onCancel: () => void;
   onSaved: (process: BusinessProcessRow) => void;
 }) {
-  const [kind, setKind] = useState<ProcessKind>(initial?.kind ?? "task_report");
+  const [kind, setKind] = useState<ProcessKind>(initial?.kind ?? kinds[0]);
   const [title, setTitle] = useState(initial?.title ?? "");
   const [description, setDescription] = useState(initial?.description ?? "");
   const [isActive, setIsActive] = useState(initial?.isActive ?? false);
   const [config, setConfig] = useState<BusinessProcessConfig>(
-    initial?.config ?? defaultProcessConfig("task_report"),
+    initial?.config ?? defaultProcessConfig(kinds[0]),
   );
   const [busy, setBusy] = useState(false);
   const [errors, setErrors] = useState<string[]>([]);
@@ -197,8 +208,14 @@ export function ProcessEditor({
     patch({ fields });
   }
 
+  const isManual = kind === "manual_metric";
+  const manual = config.manual;
+  const patchManual = (next: Partial<ManualMetricSettings>) =>
+    setConfig((c) => (c.manual ? { ...c, manual: { ...c.manual, ...next } } : c));
+  const updateMetric = (id: string, next: Partial<ManualMetric>) =>
+    patchManual({ metrics: (manual?.metrics ?? []).map((m) => (m.id === id ? { ...m, ...next } : m)) });
   const masterAllowed =
-    trigger.type === "event" && EVENTS_WITH_MASTER.includes(trigger.event);
+    !isManual && trigger.type === "event" && EVENTS_WITH_MASTER.includes(trigger.event);
   const assigneeWithoutTelegram = useMemo(() => {
     const a = config.assignee;
     return a.type === "member" ? members.filter((m) => m.id === a.memberId && !m.hasTelegram) : [];
@@ -254,7 +271,7 @@ export function ProcessEditor({
         style={{ background: tint }}
       >
         <div className="inline-flex gap-1 rounded-xl bg-white/50 p-0.5">
-          {PROCESS_KINDS.map((k) => (
+          {kinds.map((k) => (
             <button
               key={k}
               type="button"
@@ -287,7 +304,9 @@ export function ProcessEditor({
         <p className={UI.hint}>
           {kind === "task_report"
             ? "Бот проводить виконавця по питаннях звіту: кнопки, так/ні, число, текст, фото чи відео."
-            : "Бот надсилає адміністратору готовий текст для клієнта, посилання на його Instagram і картку в Kresco, кнопки «Надіслано» і «Не вдалося»."}
+            : kind === "manual_metric"
+              ? "Ручний показник — те, чого не взяти з системи: у робочий день бот питає виконавця одне чи кілька чисел, відповіді складаються по днях."
+              : "Бот надсилає адміністратору готовий текст для клієнта, посилання на його Instagram і картку в Kresco, кнопки «Надіслано» і «Не вдалося»."}
           {initial &&
             ` Тип після створення не змінюється. Зараз версія ${initial.version}; зміни налаштувань створять нову.`}
         </p>
@@ -296,7 +315,7 @@ export function ProcessEditor({
           <Row label="Назва">
             <input
               className={`${UI.inputAuto} w-full max-w-md`}
-              placeholder="Напр. Фото роботи після візиту"
+              placeholder={isManual ? "Напр. Роздані сертифікати" : "Напр. Фото роботи після візиту"}
               value={title}
               onChange={(e) => setTitle(e.target.value)}
             />
@@ -312,6 +331,70 @@ export function ProcessEditor({
           </Row>
         </Block>
 
+        {isManual && manual ? (
+          <Block title="Коли питати" hint="час — за Києвом">
+            <Row label="Робочий день">
+              <div className={segmentWrap}>
+                {WORKDAY_SOURCES.map((source) => (
+                  <button
+                    key={source}
+                    type="button"
+                    className={segment(manual.workday === source)}
+                    onClick={() =>
+                      patchManual({
+                        workday: source,
+                        // Кінець зміни відомий лише з графіка виконавця.
+                        sendMode: source === "executor_schedule" ? manual.sendMode : "fixed_time",
+                      })
+                    }
+                  >
+                    {WORKDAY_SOURCE_LABELS[source]}
+                  </button>
+                ))}
+              </div>
+            </Row>
+            <Row label="Коли надіслати">
+              <div className="flex flex-wrap items-center gap-1.5 text-xs text-gray-700">
+                <div className={segmentWrap}>
+                  {DAILY_SEND_MODES.map((mode) => (
+                    <button
+                      key={mode}
+                      type="button"
+                      disabled={mode === "before_shift_end" && manual.workday !== "executor_schedule"}
+                      className={segment(manual.sendMode === mode)}
+                      onClick={() => patchManual({ sendMode: mode })}
+                    >
+                      {DAILY_SEND_MODE_LABELS[mode]}
+                    </button>
+                  ))}
+                </div>
+                {manual.sendMode === "fixed_time" ? (
+                  <input
+                    type="time"
+                    className={UI.inputAuto}
+                    value={manual.time}
+                    onChange={(e) => patchManual({ time: e.target.value })}
+                  />
+                ) : (
+                  <>
+                    <span>за</span>
+                    <input
+                      type="number"
+                      min={0}
+                      max={600}
+                      className={`${UI.inputAuto} w-14 text-center tabular-nums`}
+                      value={manual.minutesBeforeEnd}
+                      onChange={(e) =>
+                        patchManual({ minutesBeforeEnd: Math.max(0, Math.min(600, Number(e.target.value) || 0)) })
+                      }
+                    />
+                    <span>хв до кінця зміни</span>
+                  </>
+                )}
+              </div>
+            </Row>
+          </Block>
+        ) : (
         <Block title="Коли запускати" hint="час — за Києвом">
           <div className="flex flex-wrap items-center gap-1.5 text-xs text-gray-700">
             <div className={segmentWrap}>
@@ -482,9 +565,10 @@ export function ProcessEditor({
             )}
           </div>
         </Block>
+        )}
 
         <Block
-          title="Хто виконує і хто контролює"
+          title={isManual ? "Хто відповідає і хто контролює" : "Хто виконує і хто контролює"}
           hint="контролери отримують звіт і прострочене"
         >
           <Row label="Виконавець">
@@ -550,7 +634,79 @@ export function ProcessEditor({
           </Row>
         </Block>
 
-        {kind === "task_report" ? (
+        {isManual && manual ? (
+          <Block title="Показники" hint="бот питає їх по черзі в одному повідомленні">
+            <div className="space-y-2">
+              {manual.metrics.map((metric, index) => (
+                <div
+                  key={metric.id}
+                  className="flex flex-wrap items-center gap-1.5 rounded-xl border border-slate-200 bg-white p-2.5 text-xs text-gray-700 shadow-[0_1px_2px_rgba(15,23,42,0.04)]"
+                >
+                  <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-md bg-[#ebedf2] text-[11px] font-semibold text-gray-600">
+                    {index + 1}
+                  </span>
+                  <input
+                    className={`${UI.inputAuto} min-w-[14rem] flex-1`}
+                    placeholder="Що рахуємо, напр. «Роздано сертифікатів»"
+                    value={metric.label}
+                    onChange={(e) => updateMetric(metric.id, { label: e.target.value })}
+                  />
+                  <input
+                    className={`${UI.inputAuto} w-14 text-center`}
+                    placeholder="од."
+                    title="Одиниця"
+                    value={metric.unit}
+                    onChange={(e) => updateMetric(metric.id, { unit: e.target.value })}
+                  />
+                  <div className={segmentWrap}>
+                    {METRIC_INPUTS.map((input) => (
+                      <button
+                        key={input}
+                        type="button"
+                        className={segment(metric.input === input)}
+                        onClick={() => updateMetric(metric.id, { input })}
+                      >
+                        {METRIC_INPUT_LABELS[input]}
+                      </button>
+                    ))}
+                  </div>
+                  {metric.input === "buttons" && (
+                    <span className="inline-flex items-center gap-1">
+                      <span>0–</span>
+                      <input
+                        type="number"
+                        min={1}
+                        max={20}
+                        className={`${UI.inputAuto} w-14 px-1 text-center tabular-nums`}
+                        title="Найбільша кнопка; більше — через «інше»"
+                        value={metric.buttonsMax}
+                        onChange={(e) =>
+                          updateMetric(metric.id, { buttonsMax: Math.max(1, Math.min(20, Number(e.target.value) || 1)) })
+                        }
+                      />
+                    </span>
+                  )}
+                  <button
+                    type="button"
+                    className={UI.iconDanger}
+                    title="Прибрати показник"
+                    onClick={() => patchManual({ metrics: manual.metrics.filter((m) => m.id !== metric.id) })}
+                  >
+                    ×
+                  </button>
+                </div>
+              ))}
+            </div>
+            <button
+              type="button"
+              className={UI.addButton}
+              disabled={manual.metrics.length >= 10}
+              onClick={() => patchManual({ metrics: [...manual.metrics, emptyMetric()] })}
+            >
+              + Показник
+            </button>
+          </Block>
+        ) : kind === "task_report" ? (
           <Block
             title="Звіт виконавця"
             hint="Бот питає по черзі. Фото й відео пересилаються контролеру, у Kresco зберігається лише посилання Telegram."
@@ -672,6 +828,13 @@ export function ProcessEditor({
               }
               label="прострочене → контролерам"
             />
+            {isManual && manual && (
+              <Switch
+                checked={manual.allowCorrection}
+                onChange={(allowCorrection) => patchManual({ allowCorrection })}
+                label="можна виправити до кінця дня"
+              />
+            )}
           </div>
         </Block>
 

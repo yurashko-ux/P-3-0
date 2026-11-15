@@ -3,13 +3,17 @@
 
 import type { TeamSalonRole } from "@/lib/team/constants";
 
-export const PROCESS_KINDS = ["task_report", "client_message"] as const;
+export const PROCESS_KINDS = ["task_report", "client_message", "manual_metric"] as const;
 export type ProcessKind = (typeof PROCESS_KINDS)[number];
 
 export const PROCESS_KIND_LABELS: Record<ProcessKind, string> = {
   task_report: "Завдання зі звітом",
   client_message: "Повідомлення клієнту",
+  manual_metric: "Ручний показник",
 };
+
+/** Типи вкладки «Процеси»; ручні показники мають власну вкладку. */
+export const EVENT_PROCESS_KINDS: ProcessKind[] = ["task_report", "client_message"];
 
 /** Роль людини в Команді — підказка поруч з іменем у виборі виконавця. */
 export const TEAM_ROLE_LABELS: Record<TeamSalonRole, string> = {
@@ -128,6 +132,59 @@ export type ProcessDeadline = {
   escalate: boolean;
 };
 
+// ---------- Ручний показник: у робочий день виконавець надсилає одне чи кілька чисел ----------
+
+/** Звідки знаємо, що день робочий. */
+export const WORKDAY_SOURCES = ["executor_schedule", "salon_appointments", "every_day"] as const;
+export type WorkdaySource = (typeof WORKDAY_SOURCES)[number];
+
+export const WORKDAY_SOURCE_LABELS: Record<WorkdaySource, string> = {
+  executor_schedule: "Графік виконавця в журналі",
+  salon_appointments: "Є записи в журналі",
+  every_day: "Щодня",
+};
+
+/** Коли питати: о фіксованій годині чи за N хвилин до кінця зміни з графіка. */
+export const DAILY_SEND_MODES = ["fixed_time", "before_shift_end"] as const;
+export type DailySendMode = (typeof DAILY_SEND_MODES)[number];
+
+export const DAILY_SEND_MODE_LABELS: Record<DailySendMode, string> = {
+  fixed_time: "О годині",
+  before_shift_end: "До кінця зміни",
+};
+
+/** Як вводити число в боті. */
+export const METRIC_INPUTS = ["buttons", "typed"] as const;
+export type MetricInput = (typeof METRIC_INPUTS)[number];
+
+export const METRIC_INPUT_LABELS: Record<MetricInput, string> = {
+  buttons: "Кнопки + «інше»",
+  typed: "Вписати число",
+};
+
+export type ManualMetric = {
+  id: string;
+  /** Що рахуємо, напр. «Роздано сертифікатів». */
+  label: string;
+  /** Одиниця, напр. «шт». */
+  unit: string;
+  input: MetricInput;
+  /** Для кнопок: кнопки від 0 до цього числа, більше — «інше». */
+  buttonsMax: number;
+};
+
+export type ManualMetricSettings = {
+  workday: WorkdaySource;
+  sendMode: DailySendMode;
+  /** Для fixed_time. */
+  time: string;
+  /** Для before_shift_end. */
+  minutesBeforeEnd: number;
+  metrics: ManualMetric[];
+  /** Виконавець може виправити число в боті до кінця дня. */
+  allowCorrection: boolean;
+};
+
 export type BusinessProcessConfig = {
   assignee: ProcessAssignee;
   /** Кому йдуть звіти й прострочення (id людей з Команди). */
@@ -137,6 +194,8 @@ export type BusinessProcessConfig = {
   fields: ProcessField[];
   /** Шаблон повідомлення — для client_message. */
   messageTemplate: string;
+  /** Налаштування ручного показника — для manual_metric. */
+  manual: ManualMetricSettings | null;
   deadline: ProcessDeadline;
 };
 
@@ -168,6 +227,21 @@ export function emptyField(type: FieldType = "choice"): ProcessField {
   };
 }
 
+export function emptyMetric(): ManualMetric {
+  return { id: newFieldId(), label: "", unit: "шт", input: "buttons", buttonsMax: 10 };
+}
+
+export function defaultManualSettings(): ManualMetricSettings {
+  return {
+    workday: "executor_schedule",
+    sendMode: "before_shift_end",
+    time: "19:30",
+    minutesBeforeEnd: 30,
+    metrics: [emptyMetric()],
+    allowCorrection: true,
+  };
+}
+
 export function defaultProcessConfig(kind: ProcessKind = "task_report"): BusinessProcessConfig {
   return {
     assignee: { type: "member", memberId: "" },
@@ -190,7 +264,11 @@ export function defaultProcessConfig(kind: ProcessKind = "task_report"): Busines
           },
     fields: kind === "task_report" ? [emptyField("yes_no")] : [],
     messageTemplate: "",
-    deadline: { due: { amount: 4, unit: "hours" }, remindEvery: { amount: 2, unit: "hours" }, escalate: true },
+    manual: kind === "manual_metric" ? defaultManualSettings() : null,
+    deadline:
+      kind === "manual_metric"
+        ? { due: { amount: 3, unit: "hours" }, remindEvery: { amount: 1, unit: "hours" }, escalate: true }
+        : { due: { amount: 4, unit: "hours" }, remindEvery: { amount: 2, unit: "hours" }, escalate: true },
   };
 }
 
@@ -274,6 +352,31 @@ function normalizeField(raw: unknown): ProcessField {
   };
 }
 
+function normalizeMetric(raw: unknown): ManualMetric {
+  const r = (raw && typeof raw === "object" ? raw : {}) as Record<string, unknown>;
+  return {
+    id: str(r.id, 40) || newFieldId(),
+    label: str(r.label, 120),
+    unit: str(r.unit, 12),
+    input: oneOf(r.input, METRIC_INPUTS, "buttons"),
+    buttonsMax: int(r.buttonsMax, 1, 20, 10),
+  };
+}
+
+function normalizeManual(raw: unknown): ManualMetricSettings {
+  const r = (raw && typeof raw === "object" ? raw : {}) as Record<string, unknown>;
+  const fallback = defaultManualSettings();
+  const time = str(r.time, 5);
+  return {
+    workday: oneOf(r.workday, WORKDAY_SOURCES, fallback.workday),
+    sendMode: oneOf(r.sendMode, DAILY_SEND_MODES, fallback.sendMode),
+    time: TIME_RE.test(time) ? time : fallback.time,
+    minutesBeforeEnd: int(r.minutesBeforeEnd, 0, 600, fallback.minutesBeforeEnd),
+    metrics: (Array.isArray(r.metrics) ? r.metrics : []).slice(0, 10).map(normalizeMetric),
+    allowCorrection: r.allowCorrection !== false,
+  };
+}
+
 export function normalizeProcessConfig(raw: unknown, kind: ProcessKind): BusinessProcessConfig {
   const r = (raw && typeof raw === "object" ? raw : {}) as Record<string, unknown>;
   const d = (r.deadline && typeof r.deadline === "object" ? r.deadline : {}) as Record<string, unknown>;
@@ -283,6 +386,7 @@ export function normalizeProcessConfig(raw: unknown, kind: ProcessKind): Busines
     trigger: normalizeTrigger(r.trigger),
     fields: kind === "task_report" ? (Array.isArray(r.fields) ? r.fields : []).slice(0, 20).map(normalizeField) : [],
     messageTemplate: kind === "client_message" ? str(r.messageTemplate, 2000) : "",
+    manual: kind === "manual_metric" ? normalizeManual(r.manual) : null,
     deadline: {
       due: duration(d.due, { amount: 4, unit: "hours" }),
       remindEvery: d.remindEvery ? duration(d.remindEvery, { amount: 2, unit: "hours" }) : null,
@@ -302,11 +406,23 @@ export function validateProcess(input: {
   if (!input.title.trim()) errors.push("Вкажіть назву процесу");
   if (config.assignee.type === "member" && !config.assignee.memberId) errors.push("Оберіть виконавця");
   if (config.assignee.type === "appointment_master") {
-    if (config.trigger.type !== "event" || !EVENTS_WITH_MASTER.includes(config.trigger.event)) {
+    if (input.kind === "manual_metric") {
+      errors.push("Для ручного показника оберіть конкретну людину");
+    } else if (config.trigger.type !== "event" || !EVENTS_WITH_MASTER.includes(config.trigger.event)) {
       errors.push("«Майстер запису» можна обрати лише для подій із записом");
     }
   }
-  if (config.trigger.type === "schedule") {
+  if (input.kind === "manual_metric") {
+    const manual = config.manual;
+    if (!manual || manual.metrics.length === 0) errors.push("Додайте хоча б один показник");
+    manual?.metrics.forEach((metric, index) => {
+      if (!metric.label) errors.push(`Показник ${index + 1}: вкажіть, що рахуємо`);
+    });
+    if (manual?.sendMode === "before_shift_end" && manual.workday !== "executor_schedule") {
+      errors.push("«До кінця зміни» працює лише з графіком виконавця — кінець зміни береться з нього");
+    }
+  }
+  if (input.kind !== "manual_metric" && config.trigger.type === "schedule") {
     if (config.trigger.frequency === "weekly" && config.trigger.weekdays.length === 0) {
       errors.push("Оберіть дні тижня для запуску");
     }
@@ -354,6 +470,23 @@ export function describeTrigger(trigger: ProcessTrigger): string {
   return `${trigger.direction === "before" ? "За" : "Через"} ${durationText(trigger.offset)}${at} ${
     trigger.direction === "before" ? "до" : "після"
   }: ${event}`;
+}
+
+/** Коли питає щоденний показник — для картки процесу. */
+export function describeManual(manual: ManualMetricSettings): string {
+  const days =
+    manual.workday === "executor_schedule"
+      ? "У робочі дні за графіком"
+      : manual.workday === "salon_appointments"
+        ? "У дні із записами"
+        : "Щодня";
+  const when =
+    manual.sendMode === "fixed_time" ? `о ${manual.time}` : `за ${manual.minutesBeforeEnd} хв до кінця зміни`;
+  return `${days}, ${when}`;
+}
+
+export function describeMetrics(manual: ManualMetricSettings): string {
+  return manual.metrics.map((m) => (m.unit ? `${m.label} (${m.unit})` : m.label)).join(", ") || "—";
 }
 
 export function describeAssignee(
