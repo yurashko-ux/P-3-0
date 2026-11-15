@@ -3,6 +3,7 @@
 
 import { ALTEGIO_ENV } from "./env";
 import { altegioFetch, AltegioHttpError } from "./client";
+import { prisma } from "@/lib/prisma";
 
 export const ALTEGIO_STORAGE_OP = {
   sale: 1,
@@ -33,6 +34,28 @@ function resolveCompanyId(): string {
     throw new Error("ALTEGIO_COMPANY_ID не задано — неможливо писати склад у Altegio");
   }
   return companyId;
+}
+
+/**
+ * Співробітник для складських операцій: Altegio відхиляє master_id=0 («Team member required»).
+ * ALTEGIO_WAREHOUSE_MASTER_ID перекриває; інакше — активний адміністратор із Команди.
+ */
+async function resolveWarehouseMasterId(): Promise<number> {
+  const fromEnv = Number(process.env.ALTEGIO_WAREHOUSE_MASTER_ID?.trim() || 0);
+  if (fromEnv > 0) return fromEnv;
+  const admin = await prisma.teamMember.findFirst({
+    where: { salonRole: "admin", isActive: true, hiddenAt: null, altegioStaffId: { not: null } },
+    orderBy: [{ order: "asc" }, { createdAt: "asc" }],
+    select: { altegioStaffId: true, name: true },
+  });
+  const id = Number(admin?.altegioStaffId) || 0;
+  if (!(id > 0)) {
+    throw new Error(
+      "Для складської операції Altegio потрібен співробітник: додайте адміністратора з id Altegio в Команді або задайте ALTEGIO_WAREHOUSE_MASTER_ID",
+    );
+  }
+  console.log(`[altegio/warehouse-write] Співробітник складської операції: ${admin?.name} (${id})`);
+  return id;
 }
 
 function unwrapData(raw: unknown): any {
@@ -85,6 +108,7 @@ function toTxLine(params: {
   costUah: number;
   storageId?: number;
   operationUnitType: number;
+  masterId: number;
   comment?: string;
 }) {
   const amount = params.amount;
@@ -100,14 +124,15 @@ function toTxLine(params: {
     operation_unit_type: params.operationUnitType,
     supplier_id: 0,
     client_id: 0,
-    master_id: 0,
+    master_id: params.masterId,
     comment: params.comment || "",
     ...(params.storageId && params.storageId > 0 ? { storage_id: params.storageId } : {}),
   };
 }
 
 async function postStorageOperationBodies(companyId: string, bodies: unknown[]): Promise<{ id: number }> {
-  let lastErr: unknown = null;
+  // Перша відповідь — на основний формат; запасні варіанти часто дають загальний 422 і ховають причину.
+  let firstErr: unknown = null;
   for (const body of bodies) {
     try {
       console.log(
@@ -126,14 +151,14 @@ async function postStorageOperationBodies(companyId: string, bodies: unknown[]):
       console.log(`[altegio/warehouse-write] Операція створена id=${id}`);
       return { id };
     } catch (err) {
-      lastErr = err;
+      if (!firstErr) firstErr = err;
       console.warn(
         `[altegio/warehouse-write] Спроба POST /storage_operations/operation не пройшла:`,
         err instanceof Error ? err.message : err,
       );
     }
   }
-  throw formatAltegioError(lastErr, "складська операція");
+  throw formatAltegioError(firstErr, "складська операція");
 }
 
 function formatAltegioError(err: unknown, action: string): Error {
@@ -330,6 +355,7 @@ export async function createAltegioStorageOperation(params: {
     throw new Error("У складі Kresco немає id складу Altegio — синхронізуйте дзеркало");
   }
   const operationUnitType = params.typeId === ALTEGIO_STORAGE_OP.writeOff ? 2 : 1;
+  const masterId = await resolveWarehouseMasterId();
   const tx = params.lines
     .filter((line) => line.goodId > 0 && line.amount !== 0)
     .map((line) =>
@@ -338,6 +364,7 @@ export async function createAltegioStorageOperation(params: {
         amount: Math.abs(line.amount),
         costUah: line.costUah,
         operationUnitType,
+        masterId,
         comment: params.comment,
       }),
     );
@@ -352,7 +379,7 @@ export async function createAltegioStorageOperation(params: {
     create_date: createDate,
     date: createDate,
     comment: params.comment,
-    master_id: 0,
+    master_id: masterId,
   };
   const legacyGoods = tx.map((line) => ({
     good_id: line.good_id,
@@ -384,6 +411,7 @@ export async function createAltegioStorageTransfer(params: {
     throw new Error("Для переміщення потрібні id складів Altegio на обох сторонах");
   }
   const createDate = formatKyivDateTime(params.date);
+  const masterId = await resolveWarehouseMasterId();
   const toLines = params.lines
     .filter((line) => line.goodId > 0 && line.amount !== 0)
     .map((line) =>
@@ -393,6 +421,7 @@ export async function createAltegioStorageTransfer(params: {
         costUah: line.costUah,
         storageId: params.toStorageId,
         operationUnitType: 2,
+        masterId,
         comment: params.comment,
       }),
     );
@@ -410,6 +439,7 @@ export async function createAltegioStorageTransfer(params: {
           costUah: line.costUah,
           storageId: params.fromStorageId,
           operationUnitType: 2,
+          masterId,
           comment: params.comment,
         }),
         toTxLine({
@@ -418,6 +448,7 @@ export async function createAltegioStorageTransfer(params: {
           costUah: line.costUah,
           storageId: params.toStorageId,
           operationUnitType: 2,
+          masterId,
           comment: params.comment,
         }),
       ];
@@ -429,7 +460,7 @@ export async function createAltegioStorageTransfer(params: {
     create_date: createDate,
     date: createDate,
     comment: params.comment,
-    master_id: 0,
+    master_id: masterId,
   };
 
   console.log(
