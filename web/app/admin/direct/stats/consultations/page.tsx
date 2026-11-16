@@ -593,6 +593,22 @@ function ConsultationsPageContent() {
             })}
           </div>
         )}
+        {/* Фільтр за днем тижня — порівняння кількості лідів по днях. */}
+        <select
+          className={`h-5 rounded-full border border-gray-300 px-1.5 text-[11px] font-normal leading-none outline-none focus:outline-none focus:ring-0 ${
+            weekdayFilter != null ? "bg-blue-100 text-blue-900" : "bg-white text-gray-700"
+          }`}
+          value={weekdayFilter ?? ""}
+          title="Показати лише один день тижня"
+          onChange={(e) => setWeekdayFilter(e.target.value === "" ? null : Number(e.target.value))}
+        >
+          <option value="">Усі дні</option>
+          {WEEKDAY_FILTER_ORDER.map((d) => (
+            <option key={d} value={d}>
+              {`${WEEKDAYS_UK[d][0].toUpperCase()}${WEEKDAYS_UK[d].slice(1)} (${weekdayCounts[d]})`}
+            </option>
+          ))}
+        </select>
         {headerFilter && (
           <button
             type="button"
@@ -639,7 +655,7 @@ function ConsultationsPageContent() {
                 <col className="w-[5.5rem]" />
                 <col className="w-[7rem]" />
                 <col className="w-[8rem]" />
-                <col className="w-[4rem]" />
+                <col className="w-[3.2rem]" />
                 <col className="w-[2.75rem]" />
                 <col className="w-6" />
                 <col className="w-[5.5rem]" />
@@ -660,26 +676,7 @@ function ConsultationsPageContent() {
                   <th className="text-center" title="Телефон">
                     Тел.
                   </th>
-                  <th>
-                    <div className="flex flex-col items-start gap-0.5 leading-tight">
-                      <span>Дата консультації</span>
-                      <select
-                        className={`h-5 rounded-full border border-gray-300 px-1 text-[10px] font-normal leading-none outline-none focus:outline-none focus:ring-0 ${
-                          weekdayFilter != null ? "bg-blue-100 text-blue-900" : "bg-white text-gray-700"
-                        }`}
-                        value={weekdayFilter ?? ""}
-                        title="Показати лише один день тижня"
-                        onChange={(e) => setWeekdayFilter(e.target.value === "" ? null : Number(e.target.value))}
-                      >
-                        <option value="">Усі дні</option>
-                        {WEEKDAY_FILTER_ORDER.map((d) => (
-                          <option key={d} value={d}>
-                            {`${WEEKDAYS_UK[d][0].toUpperCase()}${WEEKDAYS_UK[d].slice(1)} (${weekdayCounts[d]})`}
-                          </option>
-                        ))}
-                      </select>
-                    </div>
-                  </th>
+                  <th>Дата консультації</th>
                   <th>Статус ліда</th>
                   <th>Нагадати</th>
                   <th>Майстер</th>
@@ -783,34 +780,18 @@ function ConsultationsPageContent() {
                           const lastAt = formatDateDDMMYY(c.lastMessageAt);
                           const incoming = c.instagramIncomingCount ?? 0;
                           const outgoing = c.instagramOutgoingCount ?? 0;
-                          const pill = `inline-flex items-center justify-center rounded-full px-1.5 min-w-[1.25rem] h-4 text-[11px] tabular-nums leading-none ${countClass}`;
-                          // Як у Клієнтах: вхідні | вихідні (дата — у підказці, рядок фіксованої висоти); колір — блакитний Лідів.
+                          // Розмова не закрита (останнє — від клієнтки) — рожевий, як у Переписках.
+                          const pillColor = total > 0 && c.waitingForReply ? "bg-pink-500 text-white" : countClass;
                           return (
                             <button
                               type="button"
-                              className="inline-flex items-center leading-none"
-                              title={`Вхідні: ${incoming}, вихідні: ${outgoing}${
+                              className={`inline-flex items-center justify-center rounded-full px-1.5 min-w-[1.25rem] h-4 text-[11px] tabular-nums leading-none ${pillColor}`}
+                              title={`${c.waitingForReply ? "Клієнтка чекає відповіді. " : ""}Вхідні: ${incoming}, вихідні: ${outgoing}${
                                 lastAt !== "-" ? `. Останнє повідомлення: ${lastAt}` : ""
                               }. Відкрити переписку`}
                               onClick={() => setMessagesClient(c)}
                             >
-                              {total === 0 ? (
-                                <span className={pill}>0</span>
-                              ) : (
-                                <span className="inline-flex items-center gap-0.5">
-                                  <span className={pill}>{incoming}</span>
-                                  <span
-                                    className={
-                                      c.waitingForReply
-                                        ? pill.replace(countClass, "bg-pink-500 text-white")
-                                        : pill
-                                    }
-                                    title={c.waitingForReply ? "Клієнтка чекає відповіді" : undefined}
-                                  >
-                                    {outgoing}
-                                  </span>
-                                </span>
-                              )}
+                              {total}
                             </button>
                           );
                         })()}
