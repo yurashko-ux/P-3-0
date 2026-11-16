@@ -43,6 +43,8 @@ interface Message {
 }
 
 interface MessagesHistoryModalProps {
+  /** Без правої панелі «Статус переписки» — статус керується з колонки «Статус ліда». */
+  hideStatusPanel?: boolean;
   client: DirectClient | null;
   isOpen: boolean;
   onClose: () => void;
@@ -188,6 +190,7 @@ export function MessagesHistoryModal({
   contactKind: _contactKindProp,
   onHistoryLoaded,
   onChatStatusUpdated,
+  hideStatusPanel = false,
 }: MessagesHistoryModalProps) {
   // Наскрізно: лід → синя крапка + «Консультація»; клієнт → витрати + «Запис».
   const contactKind = resolveDirectContactKind(client);
@@ -1208,6 +1211,7 @@ export function MessagesHistoryModal({
             </div>
 
             {/* Права колонка: статуси переписки + історія */}
+            {hideStatusPanel ? null : (
             <div className="w-[320px] shrink-0 border-l pl-4 overflow-y-auto">
               <div className="mb-3">
                 <div className="text-sm font-semibold">Статус переписки</div>
@@ -1412,6 +1416,7 @@ export function MessagesHistoryModal({
                 )}
               </div>
             </div>
+            )}
           </div>
         </div>
         <div className="p-4 border-t flex justify-end gap-2">

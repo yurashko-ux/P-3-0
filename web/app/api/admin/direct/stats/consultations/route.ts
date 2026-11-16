@@ -596,7 +596,52 @@ export async function GET(req: NextRequest) {
       console.log("[stats/consultations] Знак хмарки з призначеного ad_id:", fromAds);
     }
 
-    const withChat = await enrichClientsWithChannelChatMeta(mapped, "instagram");
+    const pageIds = Array.from(new Set(mapped.map((c) => c.id)));
+    const [withChatBase, igDirectionRows, lastReliableRows] = await Promise.all([
+      enrichClientsWithChannelChatMeta(mapped, "instagram"),
+      // Вхідні / вихідні Instagram для колонки Inst (як у Клієнтах): один GROUP BY на всю сторінку.
+      prisma.directMessage.groupBy({
+        by: ["clientId", "direction"],
+        where: {
+          clientId: { in: pageIds },
+          source: { notIn: ["telegram", "telegram_campaign"] },
+        },
+        _count: { _all: true },
+      }),
+      // Чекає відповіді (як у Переписках): останнє надійне IG-повідомлення — вхідне.
+      // Наша реакція на повідомлення теж вважається відповіддю.
+      pageIds.length
+        ? prisma.$queryRaw<Array<{ clientId: string; direction: string }>>(Prisma.sql`
+            SELECT DISTINCT ON (m."clientId") m."clientId", m.direction
+            FROM "direct_messages" m
+            WHERE m."clientId" IN (${Prisma.join(pageIds)})
+              AND (
+                m.source IN ('instagram_graph', 'manual')
+                OR (m.source = 'instagram_reaction' AND LOWER(m.direction) = 'outgoing')
+              )
+            ORDER BY m."clientId", m."receivedAt" DESC, m.id DESC
+          `)
+        : Promise.resolve([] as Array<{ clientId: string; direction: string }>),
+    ]);
+    const waitingIds = new Set(
+      lastReliableRows
+        .filter((row) => String(row.direction || "").toLowerCase() === "incoming")
+        .map((row) => row.clientId)
+    );
+    const igCounts = new Map<string, { incoming: number; outgoing: number }>();
+    for (const row of igDirectionRows) {
+      const bucket = igCounts.get(row.clientId) ?? { incoming: 0, outgoing: 0 };
+      const dir = String(row.direction || "").toLowerCase();
+      if (dir === "incoming") bucket.incoming += row._count._all;
+      else if (dir === "outgoing") bucket.outgoing += row._count._all;
+      igCounts.set(row.clientId, bucket);
+    }
+    const withChat = withChatBase.map((c) => ({
+      ...c,
+      instagramIncomingCount: igCounts.get(c.id)?.incoming ?? 0,
+      instagramOutgoingCount: igCounts.get(c.id)?.outgoing ?? 0,
+      waitingForReply: waitingIds.has(c.id),
+    }));
 
     // Майбутня копія поза вікном місяця (напр. 03.11 у жовтневому списку) — лише показ, не в summary.
     const withConsultationInMonth = mapped.filter((c) => c.countsTowardConsultationSummary);

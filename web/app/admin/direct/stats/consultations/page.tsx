@@ -31,6 +31,8 @@ import { PhoneCopyButton } from "../../_components/PhoneCopyButton";
 import { MessagesHistoryModal } from "../../_components/MessagesHistoryModal";
 import { CallbackReminderCell } from "../../_components/CallbackReminderCell";
 import { CallbackReminderModal } from "../../_components/CallbackReminderModal";
+import { LeadChatStatusCell } from "../../_components/LeadChatStatusCell";
+import type { DirectChatStatus } from "@/lib/direct-types";
 import { useLeadSourcesMap } from "../../_components/useLeadSourcesMap";
 
 type MasterOption = { id: string; name: string };
@@ -69,6 +71,10 @@ type ConsultationClient = {
   /** Майбутня копія поза вікном місяця — не в summary/легенді консультацій. */
   countsTowardConsultationSummary?: boolean;
   messagesTotal?: number;
+  instagramIncomingCount?: number;
+  instagramOutgoingCount?: number;
+  /** Останнє повідомлення від клієнтки, ми ще не відповіли — вихідні рожеві, як у Переписках. */
+  waitingForReply?: boolean;
   chatNeedsAttention?: boolean;
   chatStatusId?: string | null;
   chatStatusName?: string | null;
@@ -90,7 +96,7 @@ const COLOR_LEGEND: Array<{ key: ConsultationRowColorKey; label: string; classNa
   { key: "no_show", label: "Не з'явилась", className: "bg-purple-200" },
 ];
 
-const COL_COUNT = 14;
+const COL_COUNT = 13;
 
 /** Ключ групи джерела ліда для лічильника і фільтра в шапці. */
 function sourceKeyOf(c: ConsultationClient): string {
@@ -123,11 +129,18 @@ function compactInputClass(colorKey: ConsultationRowColorKey): string {
 
 const WEEKDAYS_UK = ["нд", "пн", "вт", "ср", "чт", "пт", "сб"];
 
-/** День тижня для YYYY-MM-DD (календарний день, без зсуву часових поясів). */
-function weekdayShortUk(ymd: string): string {
+/** Індекс дня тижня (0 = нд) для YYYY-MM-DD (календарний день, без зсуву часових поясів). */
+function weekdayIndex(ymd: string): number {
   const [y, m, d] = ymd.split("-").map(Number);
-  return WEEKDAYS_UK[new Date(Date.UTC(y, m - 1, d)).getUTCDay()] ?? "";
+  return new Date(Date.UTC(y, m - 1, d)).getUTCDay();
 }
+
+function weekdayShortUk(ymd: string): string {
+  return WEEKDAYS_UK[weekdayIndex(ymd)] ?? "";
+}
+
+/** Порядок у фільтрі: Пн … Нд. */
+const WEEKDAY_FILTER_ORDER = [1, 2, 3, 4, 5, 6, 0];
 
 function formatKyivDate(iso: string | null | undefined): string {
   if (!iso) return "—";
@@ -214,11 +227,24 @@ function ConsultationsPageContent() {
   const [todayKyiv, setTodayKyiv] = useState(() => kyivDayFromISO(new Date().toISOString()));
   const [messagesClient, setMessagesClient] = useState<ConsultationClient | null>(null);
   const [reminderClient, setReminderClient] = useState<DirectClient | null>(null);
+  // Довідник статусів переписки для колонки «Статус ліда».
+  const [chatStatuses, setChatStatuses] = useState<DirectChatStatus[]>([]);
+  const loadChatStatuses = useCallback(async () => {
+    try {
+      const res = await fetch("/api/admin/direct/chat-statuses", { credentials: "include" });
+      const data = await res.json().catch(() => ({}));
+      if (data?.ok && Array.isArray(data.statuses)) setChatStatuses(data.statuses);
+    } catch (err) {
+      console.warn("[leads] Не вдалося завантажити статуси переписки", err);
+    }
+  }, []);
+  useEffect(() => {
+    void loadChatStatuses();
+  }, [loadChatStatuses]);
   const [savingIds, setSavingIds] = useState<Set<string>>(new Set());
   const [fullscreenAvatar, setFullscreenAvatar] = useState<{ src: string; username: string } | null>(
     null
   );
-  const commentTimers = useRef<Map<string, ReturnType<typeof setTimeout>>>(new Map());
   // Одна мапа на сторінку (як у Direct), без скидання кешу на кожен load.
   const leadSourcesMap = useLeadSourcesMap();
 
@@ -307,10 +333,28 @@ function ConsultationsPageContent() {
     );
   }, [clients, headerFilter]);
 
-  const tableRows = useMemo(
+  const allTableRows = useMemo(
     () => buildConsultationTableRows(filteredClients, todayKyiv),
     [filteredClients, todayKyiv]
   );
+
+  // Фільтр за днем тижня (дата групи рядка: контакт для ліда, консультація для копії) — порівняння по днях.
+  const [weekdayFilter, setWeekdayFilter] = useState<number | null>(null);
+  const weekdayCounts = useMemo(() => {
+    const counts = [0, 0, 0, 0, 0, 0, 0];
+    for (const row of allTableRows) {
+      if (row.type === "client") counts[weekdayIndex(row.kyivDay)] += 1;
+    }
+    return counts;
+  }, [allTableRows]);
+  const tableRows = useMemo(() => {
+    if (weekdayFilter == null) return allTableRows;
+    const kept = allTableRows.filter((row) => weekdayIndex(row.kyivDay) === weekdayFilter);
+    // Роздільник дня лишаємо лише якщо під ним є рядки.
+    return kept.filter(
+      (row, i) => row.type === "client" || (kept[i + 1] && kept[i + 1].type === "client")
+    );
+  }, [allTableRows, weekdayFilter]);
 
   useEffect(() => {
     if (/^\d{4}-\d{2}$/.test(monthFromUrl) && monthFromUrl !== selectedMonth) {
@@ -456,26 +500,6 @@ function ConsultationsPageContent() {
     [clients, markSaving, updateClientLocal]
   );
 
-  const scheduleCommentSave = useCallback(
-    (clientId: string, comment: string) => {
-      const existing = commentTimers.current.get(clientId);
-      if (existing) clearTimeout(existing);
-      commentTimers.current.set(
-        clientId,
-        setTimeout(async () => {
-          commentTimers.current.delete(clientId);
-          markSaving(clientId, true);
-          const res = await patchConsultationClient(clientId, { consultationListComment: comment });
-          markSaving(clientId, false);
-          if (!res.ok) {
-            setError(res.error || "Не вдалося зберегти коментар");
-          }
-        }, 600)
-      );
-    },
-    [markSaving]
-  );
-
   function handleMonthChange(next: string) {
     setSelectedMonth(next);
     const params = new URLSearchParams(searchParams?.toString() ?? "");
@@ -542,6 +566,7 @@ function ConsultationsPageContent() {
                 title={consultActive ? "Зняти фільтр" : "Показати всі консультації місяця"}
                 onClick={() => toggleHeaderFilter({ kind: "consultations", key: "all" })}
               >
+                <span className="w-2.5 h-2.5 rounded-sm bg-orange-200" />
                 Консультації
                 <span className="tabular-nums font-semibold">{consultTotal}</span>
               </button>,
@@ -614,12 +639,11 @@ function ConsultationsPageContent() {
                 <col className="w-[5.5rem]" />
                 <col className="w-[7rem]" />
                 <col className="w-[8rem]" />
-                <col className="w-[3.2rem]" />
+                <col className="w-[4rem]" />
                 <col className="w-[2.75rem]" />
                 <col className="w-6" />
                 <col className="w-[5.5rem]" />
                 <col className="w-[7.5rem]" />
-                <col className="w-[8rem]" />
                 <col className="w-[6rem]" />
                 <col className="w-[8rem]" />
                 <col className="w-[3rem]" />
@@ -636,9 +660,27 @@ function ConsultationsPageContent() {
                   <th className="text-center" title="Телефон">
                     Тел.
                   </th>
-                  <th>Дата консультації</th>
-                  <th>Результат</th>
-                  <th>Коментар</th>
+                  <th>
+                    <div className="flex flex-col items-start gap-0.5 leading-tight">
+                      <span>Дата консультації</span>
+                      <select
+                        className={`h-5 rounded-full border border-gray-300 px-1 text-[10px] font-normal leading-none outline-none focus:outline-none focus:ring-0 ${
+                          weekdayFilter != null ? "bg-blue-100 text-blue-900" : "bg-white text-gray-700"
+                        }`}
+                        value={weekdayFilter ?? ""}
+                        title="Показати лише один день тижня"
+                        onChange={(e) => setWeekdayFilter(e.target.value === "" ? null : Number(e.target.value))}
+                      >
+                        <option value="">Усі дні</option>
+                        {WEEKDAY_FILTER_ORDER.map((d) => (
+                          <option key={d} value={d}>
+                            {`${WEEKDAYS_UK[d][0].toUpperCase()}${WEEKDAYS_UK[d].slice(1)} (${weekdayCounts[d]})`}
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+                  </th>
+                  <th>Статус ліда</th>
                   <th>Нагадати</th>
                   <th>Майстер</th>
                   <th>Онлайн</th>
@@ -656,7 +698,12 @@ function ConsultationsPageContent() {
                         className={row.isToday ? "bg-base-300" : "bg-base-200"}
                       >
                         <td colSpan={COL_COUNT} className="py-0 text-center leading-none">
-                          <span className="font-bold text-[10px] leading-none">{row.label}</span>
+                          <span className="font-bold text-[10px] leading-none">
+                            {/* День тижня перед датою: «нд 15.11.26 …», «Сьогодні пн 16.11.26 …» */}
+                            {row.label.startsWith("Сьогодні ")
+                              ? `Сьогодні ${weekdayShortUk(row.kyivDay)} ${row.label.slice("Сьогодні ".length)}`
+                              : `${weekdayShortUk(row.kyivDay)} ${row.label}`}
+                          </span>
                         </td>
                       </tr>
                     );
@@ -734,18 +781,36 @@ function ConsultationsPageContent() {
                                 ? "bg-[#2AABEE] text-white"
                                 : "bg-gray-200 text-gray-900";
                           const lastAt = formatDateDDMMYY(c.lastMessageAt);
+                          const incoming = c.instagramIncomingCount ?? 0;
+                          const outgoing = c.instagramOutgoingCount ?? 0;
+                          const pill = `inline-flex items-center justify-center rounded-full px-1.5 min-w-[1.25rem] h-4 text-[11px] tabular-nums leading-none ${countClass}`;
+                          // Як у Клієнтах: вхідні | вихідні (дата — у підказці, рядок фіксованої висоти); колір — блакитний Лідів.
                           return (
                             <button
                               type="button"
-                              className={`inline-flex items-center justify-center rounded-full px-1.5 min-w-[1.25rem] h-4 text-[11px] tabular-nums leading-none ${countClass}`}
-                              title={
-                                lastAt !== "-"
-                                  ? `Останнє повідомлення: ${lastAt}. Відкрити переписку`
-                                  : "Відкрити переписку"
-                              }
+                              className="inline-flex items-center leading-none"
+                              title={`Вхідні: ${incoming}, вихідні: ${outgoing}${
+                                lastAt !== "-" ? `. Останнє повідомлення: ${lastAt}` : ""
+                              }. Відкрити переписку`}
                               onClick={() => setMessagesClient(c)}
                             >
-                              {total}
+                              {total === 0 ? (
+                                <span className={pill}>0</span>
+                              ) : (
+                                <span className="inline-flex items-center gap-0.5">
+                                  <span className={pill}>{incoming}</span>
+                                  <span
+                                    className={
+                                      c.waitingForReply
+                                        ? pill.replace(countClass, "bg-pink-500 text-white")
+                                        : pill
+                                    }
+                                    title={c.waitingForReply ? "Клієнтка чекає відповіді" : undefined}
+                                  >
+                                    {outgoing}
+                                  </span>
+                                </span>
+                              )}
                             </button>
                           );
                         })()}
@@ -786,7 +851,17 @@ function ConsultationsPageContent() {
                       </td>
                       <td className="p-0.5 align-middle">
                         {c.isLeadOnly ? (
-                          <span className="text-[11px] text-neutral-600 px-0.5">Лід</span>
+                          <LeadChatStatusCell
+                            clientId={c.id}
+                            statusId={c.chatStatusId}
+                            statuses={chatStatuses}
+                            onStatusesChanged={loadChatStatuses}
+                            onChanged={(id, statusId) =>
+                              setClients((prev) =>
+                                prev.map((row) => (row.id === id ? { ...row, chatStatusId: statusId } : row))
+                              )
+                            }
+                          />
                         ) : (
                           <select
                             className={compactSelectClass(c.rowColorKey)}
@@ -812,17 +887,6 @@ function ConsultationsPageContent() {
                             ))}
                           </select>
                         )}
-                      </td>
-                      <td className="p-0.5 align-middle">
-                        <input
-                          key={`${c.rowKey}-${c.consultationListComment ?? ""}`}
-                          type="text"
-                          className={compactInputClass(c.rowColorKey)}
-                          defaultValue={c.consultationListComment || ""}
-                          placeholder="Коментар…"
-                          disabled={isSaving}
-                          onChange={(e) => scheduleCommentSave(c.id, e.target.value)}
-                        />
                       </td>
                       <td className="p-0.5 align-middle">
                         <CallbackReminderCell
@@ -915,6 +979,7 @@ function ConsultationsPageContent() {
         channel="instagram"
         // Розділ Ліди: синя крапка + кнопка «Консультація», не клієнтський «Запис»
         contactKind="lead"
+        hideStatusPanel
         onClose={() => setMessagesClient(null)}
       />
     </div>

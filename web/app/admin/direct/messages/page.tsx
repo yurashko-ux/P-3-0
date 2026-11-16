@@ -706,6 +706,7 @@ export default function DirectMessagesPage() {
         </div>
       ) : null}
       <MessagesHistoryModal
+        hideStatusPanel
         client={messagesClient as unknown as DirectClient | null}
         isOpen={messagesClient != null}
         channel="instagram"
