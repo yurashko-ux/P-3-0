@@ -196,6 +196,9 @@ export async function GET(req: NextRequest) {
       signedUpForPaidServiceAfterConsultation: true,
       consultationListComment: true,
       consultationListOutcomeOverride: true,
+      callbackReminderKyivDay: true,
+      callbackReminderNote: true,
+      callbackReminderHistory: true,
       phone: true,
       chatStatusId: true,
       chatStatusSetAt: true,
@@ -377,6 +380,9 @@ export async function GET(req: NextRequest) {
       instagramUsername: string;
       source: string | null;
       firstContactDate: string;
+      callbackReminderKyivDay: string | null;
+      callbackReminderNote: string | null;
+      callbackReminderHistory: unknown;
       consultationBookingDate: string | null;
       consultationAttended: boolean | null;
       consultationCancelled: boolean;
@@ -436,6 +442,10 @@ export async function GET(req: NextRequest) {
         instagramUsername: c.instagramUsername,
         source: c.source,
         firstContactDate: firstContactIso,
+        // Нагадування «коли нагадати» — та сама пара полів, що й «Передзвонити» в Direct.
+        callbackReminderKyivDay: c.callbackReminderKyivDay ?? null,
+        callbackReminderNote: c.callbackReminderNote ?? null,
+        callbackReminderHistory: c.callbackReminderHistory ?? [],
         consultationAttended: c.consultationAttended,
         consultationCancelled: c.consultationCancelled,
         isOnlineConsultation: c.isOnlineConsultation,

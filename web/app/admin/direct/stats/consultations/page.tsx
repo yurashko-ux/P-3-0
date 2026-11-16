@@ -29,6 +29,8 @@ import { formatDateDDMMYY } from "../../_components/direct-client-table-formatte
 import { LeadStateIcon } from "../../_components/LeadStateIcon";
 import { PhoneCopyButton } from "../../_components/PhoneCopyButton";
 import { MessagesHistoryModal } from "../../_components/MessagesHistoryModal";
+import { CallbackReminderCell } from "../../_components/CallbackReminderCell";
+import { CallbackReminderModal } from "../../_components/CallbackReminderModal";
 import { useLeadSourcesMap } from "../../_components/useLeadSourcesMap";
 
 type MasterOption = { id: string; name: string };
@@ -40,6 +42,9 @@ type ConsultationClient = {
   instagramUsername: string;
   source: string;
   firstContactDate: string;
+  callbackReminderKyivDay?: string | null;
+  callbackReminderNote?: string | null;
+  callbackReminderHistory?: DirectClient["callbackReminderHistory"];
   consultationBookingDate: string | null;
   consultationAttended: boolean | null;
   consultationCancelled: boolean;
@@ -85,7 +90,7 @@ const COLOR_LEGEND: Array<{ key: ConsultationRowColorKey; label: string; classNa
   { key: "no_show", label: "Не з'явилась", className: "bg-purple-200" },
 ];
 
-const COL_COUNT = 13;
+const COL_COUNT = 14;
 
 /** Ключ групи джерела ліда для лічильника і фільтра в шапці. */
 function sourceKeyOf(c: ConsultationClient): string {
@@ -116,12 +121,20 @@ function compactInputClass(colorKey: ConsultationRowColorKey): string {
   return `${COMPACT_INPUT_BASE} ${CONSULTATION_CONTROL_BG[colorKey]}`;
 }
 
+const WEEKDAYS_UK = ["нд", "пн", "вт", "ср", "чт", "пт", "сб"];
+
+/** День тижня для YYYY-MM-DD (календарний день, без зсуву часових поясів). */
+function weekdayShortUk(ymd: string): string {
+  const [y, m, d] = ymd.split("-").map(Number);
+  return WEEKDAYS_UK[new Date(Date.UTC(y, m - 1, d)).getUTCDay()] ?? "";
+}
+
 function formatKyivDate(iso: string | null | undefined): string {
   if (!iso) return "—";
   const day = kyivDayFromISO(iso);
   if (!day) return "—";
   const [y, m, d] = day.split("-");
-  return `${d}.${m}.${y}`;
+  return `${weekdayShortUk(day)} ${d}.${m}.${y}`;
 }
 
 function getClientName(c: ConsultationClient): string {
@@ -200,6 +213,7 @@ function ConsultationsPageContent() {
   const [newLeadsCount, setNewLeadsCount] = useState<number | null>(null);
   const [todayKyiv, setTodayKyiv] = useState(() => kyivDayFromISO(new Date().toISOString()));
   const [messagesClient, setMessagesClient] = useState<ConsultationClient | null>(null);
+  const [reminderClient, setReminderClient] = useState<DirectClient | null>(null);
   const [savingIds, setSavingIds] = useState<Set<string>>(new Set());
   const [fullscreenAvatar, setFullscreenAvatar] = useState<{ src: string; username: string } | null>(
     null
@@ -265,7 +279,10 @@ function ConsultationsPageContent() {
 
   // Фільтр за лічильником у шапці: статус або джерело. Повторний клік знімає фільтр.
   const [headerFilter, setHeaderFilter] = useState<
-    { kind: "status"; key: ConsultationRowColorKey } | { kind: "source"; key: string } | null
+    | { kind: "status"; key: ConsultationRowColorKey }
+    | { kind: "consultations"; key: "all" }
+    | { kind: "source"; key: string }
+    | null
   >(null);
   const toggleHeaderFilter = (next: NonNullable<typeof headerFilter>) =>
     setHeaderFilter((cur) => (cur && cur.kind === next.kind && cur.key === next.key ? null : next));
@@ -273,6 +290,9 @@ function ConsultationsPageContent() {
   // Ті самі умови, що й у лічильниках, — щоб кількість рядків відповідала числу в шапці.
   const filteredClients = useMemo(() => {
     if (!headerFilter) return clients;
+    if (headerFilter.kind === "consultations") {
+      return clients.filter((c) => !c.isLeadOnly && c.countsTowardConsultationSummary !== false);
+    }
     if (headerFilter.kind === "status") {
       if (headerFilter.key === "lead") return clients.filter((c) => c.isLeadOnly);
       return clients.filter(
@@ -488,10 +508,10 @@ function ConsultationsPageContent() {
           Оновити
         </button>
         <div className="flex flex-wrap items-center gap-1 text-[11px]">
-          {COLOR_LEGEND.map((item) => {
+          {COLOR_LEGEND.flatMap((item) => {
             const count = colorCounts[item.key];
             const active = headerFilter?.kind === "status" && headerFilter.key === item.key;
-            return (
+            const pill = (
               <button
                 key={item.key}
                 type="button"
@@ -505,6 +525,27 @@ function ConsultationsPageContent() {
                 <span className="tabular-nums font-semibold">{count}</span>
               </button>
             );
+            if (item.key !== "lead") return [pill];
+            // Загальна кількість консультацій місяця = сума всіх статусів, крім «Лід».
+            const consultTotal = COLOR_LEGEND.reduce(
+              (sum, it) => (it.key === "lead" ? sum : sum + colorCounts[it.key]),
+              0
+            );
+            const consultActive = headerFilter?.kind === "consultations";
+            return [
+              pill,
+              <button
+                key="consultations"
+                type="button"
+                disabled={consultTotal === 0}
+                className={headerPillClass(consultActive, consultTotal)}
+                title={consultActive ? "Зняти фільтр" : "Показати всі консультації місяця"}
+                onClick={() => toggleHeaderFilter({ kind: "consultations", key: "all" })}
+              >
+                Консультації
+                <span className="tabular-nums font-semibold">{consultTotal}</span>
+              </button>,
+            ];
           })}
         </div>
         {sourceCounts.length > 0 && (
@@ -579,6 +620,7 @@ function ConsultationsPageContent() {
                 <col className="w-[5.5rem]" />
                 <col className="w-[7.5rem]" />
                 <col className="w-[8rem]" />
+                <col className="w-[6rem]" />
                 <col className="w-[8rem]" />
                 <col className="w-[3rem]" />
                 <col className="w-5" />
@@ -597,6 +639,7 @@ function ConsultationsPageContent() {
                   <th>Дата консультації</th>
                   <th>Результат</th>
                   <th>Коментар</th>
+                  <th>Нагадати</th>
                   <th>Майстер</th>
                   <th>Онлайн</th>
                   <th />
@@ -782,6 +825,13 @@ function ConsultationsPageContent() {
                         />
                       </td>
                       <td className="p-0.5 align-middle">
+                        <CallbackReminderCell
+                          client={c as unknown as DirectClient}
+                          leadsMode
+                          onOpen={(dc) => setReminderClient(dc)}
+                        />
+                      </td>
+                      <td className="p-0.5 align-middle">
                         <select
                           className={compactSelectClass(c.rowColorKey)}
                           value={c.masterId || ""}
@@ -839,6 +889,26 @@ function ConsultationsPageContent() {
           />
         </div>
       ) : null}
+      <CallbackReminderModal
+        client={reminderClient}
+        isOpen={reminderClient != null}
+        onClose={() => setReminderClient(null)}
+        onSaved={(fresh) => {
+          // Оновлюємо всі рядки клієнта (лід і копія консультації) без перезавантаження списку.
+          setClients((prev) =>
+            prev.map((row) =>
+              row.id === fresh.id
+                ? {
+                    ...row,
+                    callbackReminderKyivDay: fresh.callbackReminderKyivDay ?? null,
+                    callbackReminderNote: fresh.callbackReminderNote ?? null,
+                    callbackReminderHistory: fresh.callbackReminderHistory ?? [],
+                  }
+                : row
+            )
+          );
+        }}
+      />
       <MessagesHistoryModal
         client={(messagesClient as unknown as DirectClient | null)}
         isOpen={messagesClient != null}

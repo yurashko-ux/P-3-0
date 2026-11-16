@@ -89,7 +89,7 @@ async function findIdsByLastInstagramMessage(
   audience: "clients" | "leads",
   offset: number,
   limit: number
-): Promise<Array<{ id: string; sortAt: Date | null }>> {
+): Promise<Array<{ id: string; sortAt: Date | null; reminderPinned: boolean }>> {
   const audienceSql =
     audience === "clients"
       ? Prisma.sql`(
@@ -106,7 +106,9 @@ async function findIdsByLastInstagramMessage(
   // MATERIALIZED — спочатку MAX по всіх повідомленнях, і лише потім сторінка.
   const safeLimit = Math.max(1, Math.min(200, Math.floor(Number(limit)) || 1));
   const safeOffset = Math.max(0, Math.floor(Number(offset)) || 0);
-  const rows = await prisma.$queryRaw<Array<{ id: string; sortAt: Date | null }>>(Prisma.sql`
+  // Закріплення за нагадуванням: настав день callbackReminderKyivDay (Europe/Kyiv), а з початку
+  // цього дня ще не було нашого вихідного повідомлення. Щойно адміністратор пише — закріплення зникає саме.
+  const rows = await prisma.$queryRaw<Array<{ id: string; sortAt: Date | null; reminderPinned: boolean }>>(Prisma.sql`
     WITH ig_last AS MATERIALIZED (
       SELECT m."clientId", MAX(m."receivedAt") AS "maxAt"
       FROM "direct_messages" m
@@ -116,7 +118,21 @@ async function findIdsByLastInstagramMessage(
     )
     SELECT
       c.id,
-      GREATEST(c."lastMessageAt", ig."maxAt") AS "sortAt"
+      GREATEST(c."lastMessageAt", ig."maxAt") AS "sortAt",
+      CASE
+        WHEN c."callbackReminderKyivDay" ~ '^\d{4}-\d{2}-\d{2}$'
+          AND c."callbackReminderKyivDay" <= to_char(now() AT TIME ZONE 'Europe/Kyiv', 'YYYY-MM-DD')
+        THEN NOT EXISTS (
+          SELECT 1 FROM "direct_messages" o
+          WHERE o."clientId" = c.id
+            AND LOWER(o.direction) = 'outgoing'
+            AND o.source IS DISTINCT FROM 'telegram'
+            AND o.source IS DISTINCT FROM 'telegram_campaign'
+            AND o.source IS DISTINCT FROM 'instagram_reaction'
+            AND o."receivedAt" >= (c."callbackReminderKyivDay"::date::timestamp AT TIME ZONE 'Europe/Kyiv')
+        )
+        ELSE false
+      END AS "reminderPinned"
     FROM "direct_clients" c
     LEFT JOIN ig_last ig ON ig."clientId" = c.id
     WHERE c.state IS DISTINCT FROM 'binotel-lead'
@@ -126,13 +142,14 @@ async function findIdsByLastInstagramMessage(
       AND c."instagramUsername" NOT LIKE 'altegio_%'
       AND c."instagramUsername" NOT LIKE '\\_\\_no_ig\\_%'
       AND ${audienceSql}
-    ORDER BY "sortAt" DESC NULLS LAST, c.id ASC
+    ORDER BY "reminderPinned" DESC, "sortAt" DESC NULLS LAST, c.id ASC
     LIMIT ${Prisma.raw(String(safeLimit))}
     OFFSET ${Prisma.raw(String(safeOffset))}
   `);
   return rows.map((row) => ({
     id: row.id,
     sortAt: row.sortAt instanceof Date ? row.sortAt : row.sortAt ? new Date(row.sortAt) : null,
+    reminderPinned: row.reminderPinned === true,
   }));
 }
 
@@ -278,6 +295,7 @@ export async function GET(req: NextRequest) {
     ]);
     const orderedIds = ordered.map((row) => row.id);
     const sortAtById = new Map(ordered.map((row) => [row.id, row.sortAt]));
+    const pinnedIds = new Set(ordered.filter((row) => row.reminderPinned).map((row) => row.id));
     const unordered = orderedIds.length
       ? await prisma.directClient.findMany({
           where: { id: { in: orderedIds } },
@@ -298,6 +316,7 @@ export async function GET(req: NextRequest) {
             spent: true,
             visits: true,
             altegioClientId: true,
+            callbackReminderKyivDay: true,
           },
         })
       : [];
@@ -332,6 +351,8 @@ export async function GET(req: NextRequest) {
         spent: row.spent,
         visits: row.visits,
         altegioClientId: row.altegioClientId,
+        callbackReminderKyivDay: row.callbackReminderKyivDay,
+        reminderPinned: pinnedIds.has(row.id),
         sourceName: row.leadAgency
           ? sourceNameByCode.get(row.leadAgency) || SOURCE_NAME_FALLBACK[row.leadAgency] || row.leadAgency
           : null,
@@ -400,7 +421,9 @@ export async function GET(req: NextRequest) {
     }
 
     // Порядок на сторінці — за фактичною активністю, не за відсталим полем клієнта.
+    // Закріплені нагадуванням — вгорі, далі звичайний порядок.
     withReply.sort((a, b) => {
+      if (a.reminderPinned !== b.reminderPinned) return a.reminderPinned ? -1 : 1;
       const ta = a.lastMessageAt ? new Date(a.lastMessageAt).getTime() : 0;
       const tb = b.lastMessageAt ? new Date(b.lastMessageAt).getTime() : 0;
       const na = Number.isFinite(ta) ? ta : 0;

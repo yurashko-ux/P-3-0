@@ -49,6 +49,8 @@ type Props = {
   /** Якщо передано — не беремо дії з контексту таблиці Direct (неактивна база). */
   onOpen?: (client: DirectClient) => void;
   onSendPhone?: (client: DirectClient) => void | Promise<void>;
+  /** Без кнопки 📞 і показувати й для IG-лідів (сторінка «Ліди»). */
+  leadsMode?: boolean;
 };
 
 /** У колонці нічого не показуємо для IG-лідів (стан message); Binotel — показуємо як завжди */
@@ -91,12 +93,13 @@ export function CallbackReminderCell({
   showActivityDot = false,
   onOpen,
   onSendPhone,
+  leadsMode = false,
 }: Props) {
   const rowCtx = useDirectClientTableRowContextOptional();
   const onOpenCallbackReminder = onOpen ?? rowCtx?.onOpenCallbackReminder;
   const onSendClientPhoneToAdminTelegram = onSendPhone ?? rowCtx?.onSendClientPhoneToAdminTelegram;
 
-  if (isIgLeadHideCallbackColumn(client)) {
+  if (!leadsMode && isIgLeadHideCallbackColumn(client)) {
     return <div className="min-h-[1.25rem]" aria-hidden onClick={(e) => e.stopPropagation()} />;
   }
 
@@ -187,7 +190,7 @@ export function CallbackReminderCell({
   );
 
   /** Мінімальні відступи зліва — 📞 максимально біля лівого краю комірки */
-  const sendPhoneButton = (
+  const sendPhoneButton = leadsMode ? null : (
     <button
       type="button"
       className="inline-flex h-6 min-w-[1.25rem] shrink-0 items-center justify-center rounded-md p-0 pl-0 pr-0.5 text-base leading-none hover:bg-black/5"

@@ -42,6 +42,10 @@ type MessageRow = {
   altegioClientId?: number | null;
   replyAvgMinutes?: number | null;
   waitingSince?: string | null;
+  /** День нагадування (YYYY-MM-DD, Київ) з картки. */
+  callbackReminderKyivDay?: string | null;
+  /** Настав день нагадування, а ми ще не написали — тримаємо вгорі. */
+  reminderPinned?: boolean;
 };
 
 type Audience = "clients" | "leads";
@@ -199,8 +203,14 @@ function ReplyTimeCell({ row, now }: { row: MessageRow; now: number }) {
   return null;
 }
 
+function formatReminderDay(ymd: string | null | undefined): string {
+  const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(ymd || "");
+  return m ? `${m[3]}.${m[2]}.${m[1].slice(2)}` : "—";
+}
+
 function sortRowsByLastMessage(rows: MessageRow[]): MessageRow[] {
   return [...rows].sort((a, b) => {
+    if (Boolean(a.reminderPinned) !== Boolean(b.reminderPinned)) return a.reminderPinned ? -1 : 1;
     const ta = a.lastMessageAt ? new Date(a.lastMessageAt).getTime() : 0;
     const tb = b.lastMessageAt ? new Date(b.lastMessageAt).getTime() : 0;
     const na = Number.isFinite(ta) ? ta : 0;
@@ -340,6 +350,8 @@ function useConversationList(audience: Audience) {
         const updated: MessageRow = {
           ...prev[idx],
           lastMessageAt: at,
+          // Адміністратор написав — закріплення за нагадуванням знімаємо.
+          reminderPinned: direction === "outgoing" ? false : prev[idx].reminderPinned,
           waitingSince:
             direction === "outgoing"
               ? null
@@ -426,6 +438,11 @@ function ConversationTable({
   }, []);
   let todayBorderIndex = -1;
   for (let i = 0; i < rows.length; i += 1) {
+    // Закріплені нагадуванням стоять вгорі поза хронологією — межу «сьогодні» рахуємо після них.
+    if (rows[i].reminderPinned) {
+      todayBorderIndex = i;
+      continue;
+    }
     if (!isMessageToday(rows[i].lastMessageAt, todayKyiv)) break;
     todayBorderIndex = i;
   }
@@ -524,6 +541,14 @@ function ConversationTable({
                       </td>
                       <td style={cellStyle}>
                         <span className="inline-flex items-center gap-1">
+                          {c.reminderPinned ? (
+                            <span
+                              className="shrink-0 rounded bg-red-600 px-1 text-[10px] font-semibold leading-4 text-white"
+                              title={`Нагадування на ${formatReminderDay(c.callbackReminderKyivDay)} — закріплено, доки адміністратор не напише`}
+                            >
+                              🔔
+                            </span>
+                          ) : null}
                           {badge ? (
                             <InstagramBadgeLink username={c.instagramUsername}>{badge}</InstagramBadgeLink>
                           ) : null}
