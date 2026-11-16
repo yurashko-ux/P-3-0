@@ -37,3 +37,14 @@ export async function requireWarehouseSection(
     );
   }
 }
+
+/** Списання зі складу — окреме право «Склад: проводити списання» (плюс редагування Складу). */
+export async function requireWarehouseWriteOff(req: Request): Promise<AuthContext | NextResponse> {
+  const auth = await requireWarehouseSection(req, "edit");
+  if (auth instanceof NextResponse) return auth;
+  if (auth.type !== "superadmin" && !canEdit(auth.permissions, "warehouseWriteOff")) {
+    console.warn(`[requireWarehouseWriteOff] Відмовлено у списанні: ${auth.type === "user" ? auth.login : "?"}`);
+    return NextResponse.json({ ok: false, error: "Немає права проводити списання" }, { status: 403 });
+  }
+  return auth;
+}

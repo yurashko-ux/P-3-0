@@ -486,3 +486,22 @@ export async function createAltegioStorageTransfer(params: {
     );
   }
 }
+
+/**
+ * Видалення складського документа Altegio (DELETE /storage_operations/documents/{company}/{id}).
+ * 404 — документа вже немає, вважаємо видаленим. Інша помилка — кидаємо, щоб Kresco не видаляв свій.
+ */
+export async function deleteAltegioStorageDocument(documentId: number): Promise<{ alreadyGone: boolean }> {
+  const companyId = resolveCompanyId();
+  try {
+    const raw = await altegioFetch<unknown>(`/storage_operations/documents/${companyId}/${documentId}`, { method: "DELETE" }, 0);
+    console.log(`[altegio/warehouse-write] Документ ${documentId} видалено в Altegio:`, JSON.stringify(raw).slice(0, 300));
+    return { alreadyGone: false };
+  } catch (err) {
+    if (err instanceof AltegioHttpError && err.status === 404) {
+      console.warn(`[altegio/warehouse-write] Документа ${documentId} в Altegio вже немає (404)`);
+      return { alreadyGone: true };
+    }
+    throw formatAltegioError(err, "видалення документа");
+  }
+}

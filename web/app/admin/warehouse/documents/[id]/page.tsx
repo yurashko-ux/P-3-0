@@ -114,7 +114,8 @@ export default function WarehouseDocumentDetailPage({ params }: { params: { id: 
         <div className="flex flex-wrap items-center justify-between gap-2 px-4 py-2.5" style={{ background: tint }}>
           <div className="min-w-0">
             <div className="text-[10px] font-semibold uppercase tracking-wide text-gray-600">
-              {TYPE_LABEL[data.type] || data.type}
+              {data.number ? `№ ${data.number} · ` : ""}
+              {data.salonCheckout ? "Продаж" : TYPE_LABEL[data.type] || data.type}
               {data.kind === "hair" ? " · волосся" : ""}
             </div>
             <h2 className="truncate text-sm font-bold text-gray-900">{data.title || data.comment || data.type}</h2>

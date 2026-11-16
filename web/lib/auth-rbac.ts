@@ -27,6 +27,8 @@ export type PermissionKey =
   | "mastersStatsSection"
   | "financeReportSection"
   | "warehouseSection"
+  | "warehouseWriteOff"
+  | "warehouseDeleteDocs"
   | "journalSection"
   | "teamSection"
   | "financeDocsSection"
@@ -66,6 +68,10 @@ const DEFAULT_PERMISSIONS: Permissions = {
   mastersStatsSection: "edit",
   financeReportSection: "edit",
   warehouseSection: "edit",
+  // Проводити списання — лише посадам, яким явно дали право
+  warehouseWriteOff: "none",
+  // Видаляти документи складу — лише посадам, яким явно дали право
+  warehouseDeleteDocs: "none",
   journalSection: "edit",
   teamSection: "edit",
   financeDocsSection: "edit",
@@ -155,7 +161,7 @@ export async function getAuthContext(req: Request): Promise<AuthContext | null> 
 
   const normalizedAdminPass = ADMIN_PASS.trim();
   if (normalizedAdminPass && adminToken === normalizedAdminPass) {
-    return { type: "superadmin", userId: null, permissions: { ...DEFAULT_PERMISSIONS } };
+    return { type: "superadmin", userId: null, permissions: { ...DEFAULT_PERMISSIONS, warehouseWriteOff: "edit", warehouseDeleteDocs: "edit" } };
   }
 
   const userId = verifyUserToken(adminToken);

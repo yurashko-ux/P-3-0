@@ -7,6 +7,7 @@ import {
   createAltegioGood,
   createAltegioStorageOperation,
   createAltegioStorageTransfer,
+  deleteAltegioStorageDocument,
 } from "@/lib/altegio/warehouse-write";
 import { applyPostedWarehouseDocument } from "./stock";
 import { requireUsdUahRate } from "./fx";
@@ -883,10 +884,28 @@ export async function listWarehouseDocuments(params: { q?: string; type?: string
       fromStorage: true,
       lines: { include: { product: true } },
       children: { select: { id: true, type: true, title: true } },
+      salonCheckout: { select: { id: true } },
     },
     orderBy: { occurredAt: "desc" },
     take: 300,
   });
+}
+
+/**
+ * Наскрізні номери документів Kresco за порядком створення: 1, 2, 3…
+ * Продажі (списання з оплати запису) нумеруються окремо від прийомок, списань і переміщень.
+ */
+export async function warehouseDocumentNumbers(): Promise<Map<string, number>> {
+  const rows = await prisma.warehouseDocument.findMany({
+    where: { source: "kresco" },
+    select: { id: true, salonCheckout: { select: { id: true } } },
+    orderBy: [{ createdAt: "asc" }, { id: "asc" }],
+  });
+  const numbers = new Map<string, number>();
+  let docNo = 0;
+  let saleNo = 0;
+  for (const row of rows) numbers.set(row.id, row.salonCheckout ? ++saleNo : ++docNo);
+  return numbers;
 }
 
 export async function getWarehouseDocument(id: string) {
@@ -898,6 +917,33 @@ export async function getWarehouseDocument(id: string) {
       lines: { include: { product: { include: { group: true } } } },
       children: { include: { lines: { include: { product: true } } } },
       parent: { select: { id: true, type: true, title: true } },
+      salonCheckout: { select: { id: true } },
     },
   });
+}
+
+/**
+ * Видалення документа: спершу в Altegio (якщо він туди записаний), потім у Kresco.
+ * Altegio відмовив — нічого не видаляємо. Залишки Kresco підтягнуться з Altegio при синхронізації дзеркала.
+ * Рядки видаляються каскадом, дочірні документи й чек журналу лише втрачають посилання.
+ */
+export async function deleteWarehouseDocument(id: string, deletedBy: string) {
+  const doc = await prisma.warehouseDocument.findUnique({
+    where: { id },
+    select: { id: true, source: true, type: true, title: true, kyivDay: true, altegioTxId: true },
+  });
+  if (!doc) throw new Error("Документ не знайдено");
+  if (doc.source !== "kresco") throw new Error("Видаляти можна лише документи Kresco");
+
+  let altegio: "deleted" | "already_gone" | "none" = "none";
+  if (doc.altegioTxId) {
+    const result = await deleteAltegioStorageDocument(doc.altegioTxId);
+    altegio = result.alreadyGone ? "already_gone" : "deleted";
+  }
+
+  await prisma.warehouseDocument.delete({ where: { id } });
+  console.log(
+    `[warehouse/documents] Видалено документ ${doc.type} «${doc.title || ""}» ${doc.kyivDay} id=${id} altegioTxId=${doc.altegioTxId ?? "—"} altegio=${altegio} (видалив ${deletedBy})`,
+  );
+  return { ...doc, altegio };
 }

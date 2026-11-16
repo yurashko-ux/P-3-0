@@ -82,6 +82,7 @@ export function WarehouseModal({
   children,
   footer,
   wide,
+  fixedHeight,
 }: {
   tint: string;
   title?: string;
@@ -92,6 +93,8 @@ export function WarehouseModal({
   children: ReactNode;
   footer?: ReactNode;
   wide?: boolean;
+  /** Стала висота — вікно не стрибає при перемиканні вкладок (як вікно документа в Касі). */
+  fixedHeight?: boolean;
 }) {
   useEffect(() => {
     const onKey = (event: KeyboardEvent) => {
@@ -104,7 +107,7 @@ export function WarehouseModal({
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-3" onClick={onClose}>
       <div
-        className={`flex max-h-[92vh] w-full ${wide ? "max-w-3xl" : "max-w-lg"} flex-col overflow-hidden rounded-2xl border border-slate-200/80 bg-white shadow-[0_1px_2px_rgba(15,23,42,0.05),0_18px_40px_-12px_rgba(15,23,42,0.45)]`}
+        className={`flex ${fixedHeight ? "h-[min(720px,92vh)]" : "max-h-[92vh]"} w-full ${wide ? "max-w-3xl" : "max-w-lg"} flex-col overflow-hidden rounded-2xl border border-slate-200/80 bg-white shadow-[0_1px_2px_rgba(15,23,42,0.05),0_18px_40px_-12px_rgba(15,23,42,0.45)]`}
         onClick={(event) => event.stopPropagation()}
         role="dialog"
       >

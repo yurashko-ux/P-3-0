@@ -7,14 +7,12 @@ import {
   Banner,
   DOC_TINT,
   PrettySelect,
-  StatusPill,
   WarehouseModal,
   cardClass,
   fieldBaseClass,
   fieldClass,
   formRowClass,
   ghostButtonClass,
-  groupRowClass,
   inlineAddClass,
   labelClass,
   tableClass,
@@ -33,6 +31,8 @@ type Storage = { id: string; title: string };
 type Group = { id: string; title: string; isHair: boolean };
 type DocRow = {
   id: string;
+  number: number | null;
+  isSale: boolean;
   type: string;
   kind: string | null;
   status: string;
@@ -62,6 +62,7 @@ const TYPE_LABEL: Record<string, string> = {
 };
 
 const TYPE_COLOR: Record<string, string> = {
+  sale: "text-pink-700",
   intake: "text-green-700",
   write_off: "text-red-600",
   inventory_count: "text-blue-700",
@@ -75,6 +76,16 @@ const DOC_TABS: Array<{ id: WarehouseDocKind; label: string; hint: string; submi
   { id: "inventory", label: "Інвентаризація", hint: "надлишок і недостача", submit: "Зберегти інвентаризацію" },
   { id: "write_off", label: "Списання", hint: "зі складу", submit: "Списати" },
   { id: "transfer", label: "Переміщення", hint: "між складами", submit: "Перемістити" },
+];
+
+/** Плитки над списком: одна «Прийомка» (товар або волосся — перемикач у вікні) і фільтр «Продано». */
+type TileId = "intake" | "inventory" | "write_off" | "transfer" | "sold";
+const TILES: Array<{ id: TileId; label: string; hint: string; tint: string }> = [
+  { id: "intake", label: "+ Прийомка", hint: "товар або волосся", tint: DOC_TINT.goods },
+  { id: "inventory", label: "+ Інвентаризація", hint: "надлишок і недостача", tint: DOC_TINT.inventory },
+  { id: "write_off", label: "+ Списання", hint: "зі складу", tint: DOC_TINT.write_off },
+  { id: "transfer", label: "+ Переміщення", hint: "між складами", tint: DOC_TINT.transfer },
+  { id: "sold", label: "Продано", hint: "продажі в записах журналу", tint: "#fbe7f0" },
 ];
 
 const DOC_ENDPOINT: Record<WarehouseDocKind, { url: string; notice: string }> = {
@@ -94,21 +105,19 @@ function formatAmount(value: number): string {
   return new Intl.NumberFormat("uk-UA", { maximumFractionDigits: 2 }).format(value);
 }
 
-function dayLabel(ymd: string): string {
-  const m = /^(\d{4})-(\d{2})-(\d{2})/.exec(ymd);
-  if (!m) return ymd;
-  const date = new Date(Date.UTC(Number(m[1]), Number(m[2]) - 1, Number(m[3]), 12));
-  const weekday = date.toLocaleDateString("uk-UA", { weekday: "long", timeZone: "UTC" });
-  return `${m[3]}.${m[2]}.${m[1]} · ${weekday}`;
+/** Статус документа — кольорова крапка біля типу, назва в підказці при наведенні. */
+function docStatus(row: { status: string; syncStatus: string; syncError?: string | null }): { dot: string; label: string } {
+  if (row.syncStatus === "error" || row.status === "sync_error") {
+    return { dot: "bg-red-500", label: `Помилка Altegio${row.syncError ? `: ${row.syncError}` : ""}` };
+  }
+  if (row.syncStatus === "synced") return { dot: "bg-green-500", label: "Проведено в Kresco і Altegio" };
+  if (row.syncStatus === "local") return { dot: "bg-gray-400", label: "Лише Kresco (списання з каси запису)" };
+  return { dot: "bg-gray-400", label: row.status };
 }
 
-function docStatus(row: { status: string; syncStatus: string; syncError?: string | null }) {
-  if (row.syncStatus === "error" || row.status === "sync_error") {
-    return <StatusPill tone="error" title={row.syncError || undefined}>помилка Altegio</StatusPill>;
-  }
-  if (row.syncStatus === "synced") return <StatusPill tone="ok">проведено</StatusPill>;
-  if (row.syncStatus === "local") return <StatusPill tone="muted" title="Списання з каси запису — лише в Kresco">лише Kresco</StatusPill>;
-  return <StatusPill tone="muted">{row.status}</StatusPill>;
+function shortDate(ymd: string): string {
+  const m = /^(\d{4})-(\d{2})-(\d{2})/.exec(ymd);
+  return m ? `${m[3]}.${m[2]}.${m[1]}` : ymd;
 }
 
 export default function WarehouseDocumentsPage() {
@@ -122,6 +131,26 @@ export default function WarehouseDocumentsPage() {
   const [notice, setNotice] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
   const [loading, setLoading] = useState(true);
+  // Право «Склад: проводити списання» — без нього плитки й вкладки «Списання» немає
+  const [canWriteOff, setCanWriteOff] = useState(false);
+  const [soldOnly, setSoldOnly] = useState(false);
+  // Кошик — суперадмін або право «Склад: видаляти документи»
+  const [canDelete, setCanDelete] = useState(false);
+  const [deleteTarget, setDeleteTarget] = useState<DocRow | null>(null);
+  const [deleting, setDeleting] = useState(false);
+  // Остання вибрана прийомка — вкладка «Прийомка» відкриває її
+  const [intakeKind, setIntakeKind] = useState<"goods" | "hair">("goods");
+
+  useEffect(() => {
+    fetch("/api/auth/me", { credentials: "include" })
+      .then((r) => r.json())
+      .then((me) => {
+        const superadmin = me?.user?.type === "superadmin";
+        setCanDelete(superadmin || me?.permissions?.warehouseDeleteDocs === "edit");
+        setCanWriteOff(superadmin || me?.permissions?.warehouseWriteOff === "edit");
+      })
+      .catch(() => setCanWriteOff(false));
+  }, []);
 
   const loadMeta = useCallback(async () => {
     const [wh, cur, fx, list] = await Promise.all([
@@ -178,35 +207,71 @@ export default function WarehouseDocumentsPage() {
     }
   };
 
-  const byDay = useMemo(() => {
-    const days: Array<{ kyivDay: string; rows: DocRow[] }> = [];
-    for (const row of docs) {
-      const last = days[days.length - 1];
-      if (last && last.kyivDay === row.kyivDay) last.rows.push(row);
-      else days.push({ kyivDay: row.kyivDay, rows: [row] });
+  const deleteDocument = async (row: DocRow) => {
+    setDeleting(true);
+    setError(null);
+    setNotice(null);
+    try {
+      const res = await fetch(`/api/admin/warehouse/documents?id=${encodeURIComponent(row.id)}`, {
+        method: "DELETE",
+        credentials: "include",
+      });
+      const json = await res.json();
+      if (!res.ok || !json.ok) throw new Error(json.error || "Помилка видалення");
+      const altegioNote =
+        json.document?.altegio === "deleted"
+          ? " в Kresco і Altegio"
+          : json.document?.altegio === "already_gone"
+            ? " в Kresco (в Altegio його вже не було)"
+            : " (в Altegio його не було)";
+      setNotice(`Документ «${row.title}» видалено${altegioNote}. Залишки оновляться при наступній синхронізації з Altegio.`);
+      setDeleteTarget(null);
+      await loadMeta();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Помилка");
+      setDeleteTarget(null);
+    } finally {
+      setDeleting(false);
     }
-    return days;
-  }, [docs]);
+  };
 
-  const activeTab = DOC_TABS.find((tab) => tab.id === mode);
+  // Продажі не змішуємо з документами складу — вони лише за плиткою «Продано»
+  const visibleDocs = useMemo(() => docs.filter((row) => row.isSale === soldOnly), [docs, soldOnly]);
+  const soldCount = useMemo(() => docs.filter((row) => row.isSale).length, [docs]);
+
+  const tiles = TILES.filter((tile) => tile.id !== "write_off" || canWriteOff);
+  const activeTab = DOC_TABS.find((tab) => tab.id === mode && (tab.id !== "write_off" || canWriteOff));
+  // Вкладки вікна: дві прийомки — одна вкладка з перемикачем «Товар / Волосся»
+  const modalTabs = [
+    { id: "intake", label: "Прийомка" },
+    ...DOC_TABS.filter((tab) => tab.id !== "hair" && tab.id !== "goods" && (tab.id !== "write_off" || canWriteOff)).map(
+      (tab) => ({ id: tab.id, label: tab.label }),
+    ),
+  ];
+  const openTab = (id: string) => {
+    setError(null);
+    setMode(id === "intake" ? intakeKind : (id as WarehouseDocKind));
+  };
 
   return (
     <main className="px-2 pb-6 space-y-2">
       {/* Плитки типів документів — як «+ Рахунок» у Касі */}
       <div className={`${tileGridClass} py-2`}>
-        {DOC_TABS.map((tab) => (
+        {tiles.map((tile) => (
           <button
-            key={tab.id}
+            key={tile.id}
             type="button"
-            className={tileButtonClass}
-            style={{ background: DOC_TINT[tab.id] }}
-            onClick={() => {
-              setError(null);
-              setMode(tab.id);
-            }}
+            className={`${tileButtonClass} ${tile.id === "sold" && soldOnly ? "ring-2 ring-pink-400" : ""}`}
+            style={{ background: tile.tint }}
+            onClick={() => (tile.id === "sold" ? setSoldOnly((v) => !v) : openTab(tile.id))}
           >
-            <span className="text-sm font-semibold text-gray-800">+ {tab.label}</span>
-            <span className="text-[10px] text-gray-600">{tab.hint}</span>
+            <span className="text-sm font-semibold text-gray-800">
+              {tile.label}
+              {tile.id === "sold" ? <span className="ml-1 tabular-nums text-pink-700">{soldCount}</span> : null}
+            </span>
+            <span className="text-[10px] text-gray-600">
+              {tile.id === "sold" && soldOnly ? "показано продажі · натисніть, щоб повернутись" : tile.hint}
+            </span>
           </button>
         ))}
       </div>
@@ -214,84 +279,121 @@ export default function WarehouseDocumentsPage() {
       {notice && <Banner tone="success">{notice}</Banner>}
       {error && mode === "list" && <Banner tone="error">{error}</Banner>}
 
-      <div className={`${cardClass} overflow-hidden`}>
-        <table className={`${tableClass} table-fixed`}>
-          <colgroup>
-            <col className="w-10" />
-            <col className="w-28" />
-            <col />
-            <col className="w-32" />
-            <col className="w-36" />
-            <col className="w-32" />
-          </colgroup>
+      {/* Ширина таблиці — за вмістом, назва обрізається */}
+      <div className={`${cardClass} w-fit max-w-full overflow-x-auto`}>
+        <table className="w-auto text-left text-[10px] [&_td]:whitespace-nowrap [&_th]:whitespace-nowrap">
           <thead>
             <tr className={theadRowClass}>
-              <th className={thClass}>№</th>
+              <th className={`${thClass} text-right`}>№</th>
+              <th className={thClass}>Дата</th>
               <th className={thClass}>Тип</th>
               <th className={thClass}>Назва</th>
-              <th className={`${thClass} text-right`}>Сума накладної</th>
+              <th className={`${thClass} text-right`}>Сума</th>
               <th className={thClass}>Склад</th>
-              <th className={thClass}>Статус</th>
+              {canDelete && <th className={thClass} />}
             </tr>
           </thead>
-          {byDay.map((day) => (
-            <tbody key={day.kyivDay}>
-              <tr className={groupRowClass}>
-                <th colSpan={6} className="px-2 py-1 text-left font-bold uppercase tracking-wide">
-                  {dayLabel(day.kyivDay)}
-                  <span className="ml-2 font-medium normal-case tracking-normal text-gray-700">
-                    документів: {day.rows.length}
-                  </span>
-                </th>
-              </tr>
-              {day.rows.map((row, index) => (
+          <tbody>
+            {visibleDocs.map((row) => {
+              const status = docStatus(row);
+              const typeKey = row.isSale ? "sale" : row.type;
+              const href = `/admin/warehouse/documents/${row.id}`;
+              return (
                 <tr
                   key={row.id}
                   className={`${trClass} hover:bg-slate-50 ${row.kind === "hair" && row.weightMismatch ? "bg-pink-100" : ""}`}
                 >
-                  <td className={`${tdClass} tabular-nums text-gray-500`}>{index + 1}</td>
-                  <td className={`${tdClass} font-semibold ${TYPE_COLOR[row.type] || "text-gray-700"}`}>
-                    {TYPE_LABEL[row.type] || row.type}
-                    {row.kind === "hair" ? <span className="ml-1 font-normal text-amber-700">волосся</span> : null}
+                  <td className={`${tdClass} text-right tabular-nums text-gray-500`}>{row.number ?? "—"}</td>
+                  <td className={`${tdClass} tabular-nums text-gray-700`}>{shortDate(row.kyivDay)}</td>
+                  <td className={tdClass}>
+                    <Link href={href} className={`inline-flex items-center gap-1.5 font-semibold hover:underline ${TYPE_COLOR[typeKey] || "text-gray-700"}`}>
+                      <span className={`inline-block h-2 w-2 shrink-0 rounded-full ${status.dot}`} title={status.label} />
+                      {row.isSale ? "Продаж" : TYPE_LABEL[row.type] || row.type}
+                      {row.kind === "hair" ? <span className="font-normal text-amber-700">волосся</span> : null}
+                    </Link>
                   </td>
-                  <td className={`${tdClass} truncate`}>
-                    <Link href={`/admin/warehouse/documents/${row.id}`} className="text-blue-700 hover:underline">
+                  <td className={`${tdClass} max-w-[220px] truncate`}>
+                    <Link href={href} className="text-blue-700 hover:underline">
                       {row.title}
                     </Link>
                   </td>
-                  <td className={`${tdClass} whitespace-nowrap text-right font-semibold tabular-nums`}>
+                  <td className={`${tdClass} text-right font-semibold tabular-nums`}>
                     {row.invoiceAmount ? `${formatAmount(row.invoiceAmount)} ${row.currencyCode || ""}` : "—"}
                   </td>
-                  <td className={`${tdClass} truncate text-gray-700`}>{row.storageTitle}</td>
-                  <td className={tdClass}>{docStatus(row)}</td>
+                  <td className={`${tdClass} max-w-[160px] truncate text-gray-700`}>{row.storageTitle}</td>
+                  {canDelete && (
+                    <td className={`${tdClass} text-right`}>
+                      <button
+                        type="button"
+                        className="rounded px-1 text-gray-400 hover:bg-red-50 hover:text-red-600"
+                        title="Видалити документ"
+                        aria-label="Видалити документ"
+                        onClick={() => setDeleteTarget(row)}
+                      >
+                        🗑
+                      </button>
+                    </td>
+                  )}
                 </tr>
-              ))}
-            </tbody>
-          ))}
+              );
+            })}
+          </tbody>
         </table>
         {loading && <p className="px-3 py-6 text-center text-sm text-gray-500">Завантаження…</p>}
-        {!loading && !docs.length && (
-          <p className="px-3 py-6 text-center text-sm text-gray-500">Поки немає документів Kresco.</p>
+        {!loading && !visibleDocs.length && (
+          <p className="px-3 py-6 text-center text-sm text-gray-500">{soldOnly ? "Поки немає продажів." : "Поки немає документів Kresco."}</p>
         )}
       </div>
 
-      <p className="px-1 text-[10px] leading-snug text-gray-500">
+      <p className="max-w-2xl px-1 text-[10px] leading-snug text-gray-500">
         Документ проводиться в Kresco і одразу пишеться в склад Altegio. Каса й журнал запису лишаються там. Курс USD/UAH —
         денний робочий (Monobank sell → ceil+1); якщо недоступний — fallback на блок 4 фінзвіту. При продажі/списанні волосся
         собівартість береться з картки (costUsd + costPerUnit у грн на момент закупки), без перерахунку по новому курсу.
       </p>
 
+      {deleteTarget && (
+        <WarehouseModal
+          tint={DOC_TINT.write_off}
+          title="Видалити документ?"
+          onClose={() => (deleting ? undefined : setDeleteTarget(null))}
+          footer={
+            <>
+              <button type="button" className={ghostButtonClass} disabled={deleting} onClick={() => setDeleteTarget(null)}>
+                Скасувати
+              </button>
+              <button
+                type="button"
+                className="h-8 rounded-lg bg-red-600 px-4 text-xs font-medium text-white shadow-sm hover:bg-red-700 disabled:opacity-60"
+                disabled={deleting}
+                onClick={() => void deleteDocument(deleteTarget)}
+              >
+                {deleting ? "Видалення…" : "Видалити"}
+              </button>
+            </>
+          }
+        >
+          <p className="text-xs text-gray-900">
+            {deleteTarget.number ? `№ ${deleteTarget.number} · ` : ""}
+            {shortDate(deleteTarget.kyivDay)} ·{" "}
+            <span className="font-semibold">{deleteTarget.isSale ? "Продаж" : TYPE_LABEL[deleteTarget.type] || deleteTarget.type}</span> ·{" "}
+            {deleteTarget.title}
+          </p>
+          <p className="text-xs text-gray-600">
+            Документ буде видалено назавжди в Kresco і в Altegio (якщо він туди записаний) — залишок повернеться. Якщо
+            Altegio відмовить, нічого не видаляється.
+          </p>
+        </WarehouseModal>
+      )}
+
       {activeTab && (
         <WarehouseModal
           tint={DOC_TINT[activeTab.id]}
-          tabs={DOC_TABS.map((tab) => ({ id: tab.id, label: tab.label }))}
-          activeTab={activeTab.id}
-          onTab={(id) => {
-            setError(null);
-            setMode(id as WarehouseDocKind);
-          }}
+          tabs={modalTabs}
+          activeTab={mode === "hair" || mode === "goods" ? "intake" : activeTab.id}
+          onTab={openTab}
           onClose={() => setMode("list")}
           wide
+          fixedHeight
           footer={
             <>
               <button type="button" className={ghostButtonClass} onClick={() => setMode("list")}>
@@ -310,6 +412,31 @@ export default function WarehouseDocumentsPage() {
           }
         >
           {error && <Banner tone="error">{error}</Banner>}
+          {(mode === "hair" || mode === "goods") && (
+            <div className="flex w-fit gap-1 rounded-xl bg-slate-100 p-0.5">
+              {(
+                [
+                  { id: "goods", label: "Товар" },
+                  { id: "hair", label: "Волосся · кг партії → хвости в грамах" },
+                ] as const
+              ).map((kind) => (
+                <button
+                  key={kind.id}
+                  type="button"
+                  className={`rounded-lg px-3 py-1 text-xs font-semibold transition-colors ${
+                    mode === kind.id ? "bg-white text-gray-900 shadow-sm" : "text-gray-600 hover:text-gray-900"
+                  }`}
+                  onClick={() => {
+                    setError(null);
+                    setIntakeKind(kind.id);
+                    setMode(kind.id);
+                  }}
+                >
+                  {kind.label}
+                </button>
+              ))}
+            </div>
+          )}
           {mode === "hair" && (
             <HairForm
               storages={storages}

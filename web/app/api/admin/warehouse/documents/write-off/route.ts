@@ -1,12 +1,12 @@
 import { NextRequest, NextResponse } from "next/server";
-import { requireWarehouseSection } from "@/lib/warehouse/require-warehouse-auth";
+import { requireWarehouseWriteOff } from "@/lib/warehouse/require-warehouse-auth";
 import { createWriteOff } from "@/lib/warehouse/documents-kresco";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 60;
 
 export async function POST(req: NextRequest) {
-  const auth = await requireWarehouseSection(req, "edit");
+  const auth = await requireWarehouseWriteOff(req);
   if (auth instanceof NextResponse) return auth;
 
   try {
