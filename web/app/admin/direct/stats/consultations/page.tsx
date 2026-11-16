@@ -87,6 +87,21 @@ const COLOR_LEGEND: Array<{ key: ConsultationRowColorKey; label: string; classNa
 
 const COL_COUNT = 13;
 
+/** Ключ групи джерела ліда для лічильника і фільтра в шапці. */
+function sourceKeyOf(c: ConsultationClient): string {
+  const mark = (c.sourceMark || "").trim();
+  return c.leadAgency || mark || "__none__";
+}
+
+function headerPillClass(active: boolean, count: number): string {
+  const base =
+    "inline-flex items-center gap-1 whitespace-nowrap rounded-full border px-1.5 h-5 leading-none transition-colors";
+  if (count === 0) return `${base} border-gray-200 text-gray-400 cursor-not-allowed`;
+  return active
+    ? `${base} border-blue-500 bg-blue-100 ring-1 ring-blue-500 cursor-pointer`
+    : `${base} border-gray-300 bg-white hover:bg-gray-100 cursor-pointer`;
+}
+
 /** Нативний select/input — daisyUI select-xs обрізає текст при малій висоті. */
 const COMPACT_SELECT_BASE =
   "block w-full min-w-0 h-5 max-h-5 rounded-sm border border-neutral-300/50 px-1 pr-5 text-[11px] leading-5 text-neutral-900 appearance-auto cursor-pointer";
@@ -199,11 +214,6 @@ function ConsultationsPageContent() {
     return map;
   }, [clients]);
 
-  const tableRows = useMemo(
-    () => buildConsultationTableRows(clients, todayKyiv),
-    [clients, todayKyiv]
-  );
-
   const colorCounts = useMemo(() => {
     const counts: Record<ConsultationRowColorKey, number> = {
       lead: 0,
@@ -239,7 +249,7 @@ function ConsultationsPageContent() {
       const meta = c.leadAgency ? leadSourcesMap[c.leadAgency] : undefined;
       const mark = (c.sourceMark || "").trim() || meta?.mark || null;
       const name = (c.sourceName || "").trim() || meta?.name || c.leadAgency || "";
-      const key = c.leadAgency || mark || "__none__";
+      const key = sourceKeyOf(c);
       const group = groups.get(key) || {
         mark: key === "__none__" ? "❔" : mark,
         name: key === "__none__" ? "Без джерела" : name || "Невідоме джерело",
@@ -252,6 +262,35 @@ function ConsultationsPageContent() {
       .map(([key, g]) => ({ key, ...g }))
       .sort((a, b) => b.count - a.count);
   }, [clients, leadSourcesMap]);
+
+  // Фільтр за лічильником у шапці: статус або джерело. Повторний клік знімає фільтр.
+  const [headerFilter, setHeaderFilter] = useState<
+    { kind: "status"; key: ConsultationRowColorKey } | { kind: "source"; key: string } | null
+  >(null);
+  const toggleHeaderFilter = (next: NonNullable<typeof headerFilter>) =>
+    setHeaderFilter((cur) => (cur && cur.kind === next.kind && cur.key === next.key ? null : next));
+
+  // Ті самі умови, що й у лічильниках, — щоб кількість рядків відповідала числу в шапці.
+  const filteredClients = useMemo(() => {
+    if (!headerFilter) return clients;
+    if (headerFilter.kind === "status") {
+      if (headerFilter.key === "lead") return clients.filter((c) => c.isLeadOnly);
+      return clients.filter(
+        (c) =>
+          !c.isLeadOnly &&
+          c.countsTowardConsultationSummary !== false &&
+          c.rowColorKey === headerFilter.key
+      );
+    }
+    return clients.filter(
+      (c) => (c.isNewLead ?? c.isLeadOnly) && sourceKeyOf(c) === headerFilter.key
+    );
+  }, [clients, headerFilter]);
+
+  const tableRows = useMemo(
+    () => buildConsultationTableRows(filteredClients, todayKyiv),
+    [filteredClients, todayKyiv]
+  );
 
   useEffect(() => {
     if (/^\d{4}-\d{2}$/.test(monthFromUrl) && monthFromUrl !== selectedMonth) {
@@ -449,27 +488,53 @@ function ConsultationsPageContent() {
           Оновити
         </button>
         <div className="flex flex-wrap items-center gap-1 text-[11px]">
-          {COLOR_LEGEND.map((item) => (
-            <span key={item.key} className="inline-flex items-center gap-1 whitespace-nowrap">
-              <span className={`w-2.5 h-2.5 rounded-sm ${item.className}`} />
-              {item.label}
-              <span className="tabular-nums font-semibold">{colorCounts[item.key]}</span>
-            </span>
-          ))}
+          {COLOR_LEGEND.map((item) => {
+            const count = colorCounts[item.key];
+            const active = headerFilter?.kind === "status" && headerFilter.key === item.key;
+            return (
+              <button
+                key={item.key}
+                type="button"
+                disabled={count === 0}
+                className={headerPillClass(active, count)}
+                title={active ? "Зняти фільтр" : `Показати лише «${item.label}»`}
+                onClick={() => toggleHeaderFilter({ kind: "status", key: item.key })}
+              >
+                <span className={`w-2.5 h-2.5 rounded-sm ${item.className}`} />
+                {item.label}
+                <span className="tabular-nums font-semibold">{count}</span>
+              </button>
+            );
+          })}
         </div>
         {sourceCounts.length > 0 && (
-          <div className="flex flex-wrap items-center gap-1.5 text-[11px] pl-1 border-l border-gray-300">
-            {sourceCounts.map((s) => (
-              <span
-                key={s.key}
-                className="inline-flex items-center gap-0.5 whitespace-nowrap cursor-default"
-                title={`${s.name}: ${s.count}`}
-              >
-                {s.mark ? <span className="text-sm leading-none">{s.mark}</span> : <span>{s.name}</span>}
-                <span className="tabular-nums font-semibold">{s.count}</span>
-              </span>
-            ))}
+          <div className="flex flex-wrap items-center gap-1 text-[11px] pl-1 border-l border-gray-300">
+            {sourceCounts.map((s) => {
+              const active = headerFilter?.kind === "source" && headerFilter.key === s.key;
+              return (
+                <button
+                  key={s.key}
+                  type="button"
+                  disabled={s.count === 0}
+                  className={headerPillClass(active, s.count)}
+                  title={active ? "Зняти фільтр" : `${s.name}: ${s.count} — показати лише цих лідів`}
+                  onClick={() => toggleHeaderFilter({ kind: "source", key: s.key })}
+                >
+                  {s.mark ? <span className="text-sm leading-none">{s.mark}</span> : <span>{s.name}</span>}
+                  <span className="tabular-nums font-semibold">{s.count}</span>
+                </button>
+              );
+            })}
           </div>
+        )}
+        {headerFilter && (
+          <button
+            type="button"
+            className="btn btn-ghost btn-xs min-h-5 h-5 px-1 text-[10px]"
+            onClick={() => setHeaderFilter(null)}
+          >
+            ✕ Скинути фільтр
+          </button>
         )}
         {/* Статистика / Переписки / Журнал — у спільній панелі розділів (AdminTopNav) */}
         <Link
@@ -497,8 +562,10 @@ function ConsultationsPageContent() {
             <div className="flex justify-center py-8">
               <span className="loading loading-spinner loading-md" />
             </div>
-          ) : clients.length === 0 ? (
-            <p className="text-center text-gray-500 py-6">Записів за цей період немає.</p>
+          ) : filteredClients.length === 0 ? (
+            <p className="text-center text-gray-500 py-6">
+              {headerFilter ? "За цим фільтром лідів немає." : "Записів за цей період немає."}
+            </p>
           ) : (
             <table className="table table-xs table-fixed min-w-[1000px] [&_th]:!py-0.5 [&_th]:!px-1 [&_th]:text-[11px] [&_.consultation-data-row]:h-5 [&_.consultation-data-row_td]:!h-5 [&_.consultation-data-row_td]:!max-h-5 [&_.consultation-data-row_td]:!py-0 [&_.consultation-data-row_td]:!px-1 [&_.consultation-data-row_td]:text-[11px] [&_.consultation-data-row_td]:leading-5 [&_.consultation-data-row_td]:overflow-hidden [&_.lead-state-cell]:!overflow-visible">
               <colgroup>
