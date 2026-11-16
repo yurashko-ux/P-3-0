@@ -21,6 +21,8 @@ export async function POST(req: NextRequest) {
       deliveryAmountUsd: Number(body.deliveryAmountUsd) || 0,
       occurredAt: typeof body.occurredAt === "string" ? body.occurredAt : undefined,
       createdBy,
+      // Створюємо чернетку — залишки й Altegio міняє лише проведення
+      draft: true,
       lines: Array.isArray(body.lines) ? body.lines : [],
     });
     return NextResponse.json({ ok: true, document });

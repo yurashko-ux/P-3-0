@@ -1,12 +1,13 @@
 import { NextRequest, NextResponse } from "next/server";
-import { requireWarehouseWriteOff } from "@/lib/warehouse/require-warehouse-auth";
+import { requireWarehouseSection } from "@/lib/warehouse/require-warehouse-auth";
 import { createWriteOff } from "@/lib/warehouse/documents-kresco";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 60;
 
 export async function POST(req: NextRequest) {
-  const auth = await requireWarehouseWriteOff(req);
+  // Чернетку списання створює будь-хто з доступом до Складу; провести — лише з правом списання
+  const auth = await requireWarehouseSection(req, "edit");
   if (auth instanceof NextResponse) return auth;
 
   try {
@@ -17,6 +18,7 @@ export async function POST(req: NextRequest) {
       title: String(body.title || "Списання товару"),
       occurredAt: typeof body.occurredAt === "string" ? body.occurredAt : undefined,
       createdBy,
+      draft: true,
       lines: Array.isArray(body.lines) ? body.lines : [],
     });
     return NextResponse.json({ ok: true, document });

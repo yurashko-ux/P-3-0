@@ -71,10 +71,10 @@ const TYPE_COLOR: Record<string, string> = {
 
 /** Плитки й вкладки вікна — у порядку роботи складу. */
 const DOC_TABS: Array<{ id: WarehouseDocKind; label: string; hint: string; submit: string }> = [
-  { id: "hair", label: "Прийомка волосся", hint: "кг партії → хвости в грамах", submit: "Провести" },
-  { id: "goods", label: "Прийомка товару", hint: "накладна з рядками", submit: "Провести" },
+  { id: "hair", label: "Прийомка волосся", hint: "кг партії → хвости в грамах", submit: "Створити прийомку" },
+  { id: "goods", label: "Прийомка товару", hint: "накладна з рядками", submit: "Створити прийомку" },
   { id: "inventory", label: "Інвентаризація", hint: "надлишок і недостача", submit: "Зберегти інвентаризацію" },
-  { id: "write_off", label: "Списання", hint: "зі складу", submit: "Списати" },
+  { id: "write_off", label: "Списання", hint: "зі складу", submit: "Створити списання" },
   { id: "transfer", label: "Переміщення", hint: "між складами", submit: "Перемістити" },
 ];
 
@@ -89,13 +89,13 @@ const TILES: Array<{ id: TileId; label: string; hint: string; tint: string }> = 
 ];
 
 const DOC_ENDPOINT: Record<WarehouseDocKind, { url: string; notice: string }> = {
-  hair: { url: "/api/admin/warehouse/documents/hair", notice: "Прийомку волосся проведено в Kresco і відправлено в Altegio." },
-  goods: { url: "/api/admin/warehouse/documents/goods", notice: "Прийомку товару проведено і відправлено в Altegio." },
+  hair: { url: "/api/admin/warehouse/documents/hair", notice: "Прийомку волосся створено. Залишки зміняться після проведення." },
+  goods: { url: "/api/admin/warehouse/documents/goods", notice: "Прийомку товару створено. Залишки зміняться після проведення." },
   inventory: {
     url: "/api/admin/warehouse/documents/inventory",
     notice: "Інвентаризацію збережено. Автоприйомка/автосписання створені за різницями.",
   },
-  write_off: { url: "/api/admin/warehouse/documents/write-off", notice: "Списання проведено і відправлено в Altegio." },
+  write_off: { url: "/api/admin/warehouse/documents/write-off", notice: "Списання створено. Залишки зміняться після проведення." },
   transfer: { url: "/api/admin/warehouse/documents/transfer", notice: "Переміщення проведено в Kresco і Altegio." },
 };
 
@@ -112,6 +112,8 @@ function docStatus(row: { status: string; syncStatus: string; syncError?: string
   }
   if (row.syncStatus === "synced") return { dot: "bg-green-500", label: "Проведено в Kresco і Altegio" };
   if (row.syncStatus === "local") return { dot: "bg-gray-400", label: "Лише Kresco (списання з каси запису)" };
+  if (row.status === "draft") return { dot: "bg-amber-400", label: "Не проведено — залишки не змінено" };
+  if (row.status === "pending") return { dot: "bg-blue-400", label: "Проводиться…" };
   return { dot: "bg-gray-400", label: row.status };
 }
 
@@ -131,8 +133,9 @@ export default function WarehouseDocumentsPage() {
   const [notice, setNotice] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
   const [loading, setLoading] = useState(true);
-  // Право «Склад: проводити списання» — без нього плитки й вкладки «Списання» немає
+  // Право «Склад: проводити списання» — створити списання може кожен, провести — лише з цим правом
   const [canWriteOff, setCanWriteOff] = useState(false);
+  const [postingId, setPostingId] = useState<string | null>(null);
   const [soldOnly, setSoldOnly] = useState(false);
   // Кошик — суперадмін або право «Склад: видаляти документи»
   const [canDelete, setCanDelete] = useState(false);
@@ -239,12 +242,38 @@ export default function WarehouseDocumentsPage() {
   const visibleDocs = useMemo(() => docs.filter((row) => row.isSale === soldOnly), [docs, soldOnly]);
   const soldCount = useMemo(() => docs.filter((row) => row.isSale).length, [docs]);
 
-  const tiles = TILES.filter((tile) => tile.id !== "write_off" || canWriteOff);
-  const activeTab = DOC_TABS.find((tab) => tab.id === mode && (tab.id !== "write_off" || canWriteOff));
+  const postDocument = async (row: DocRow) => {
+    setPostingId(row.id);
+    setError(null);
+    setNotice(null);
+    try {
+      const res = await fetch(`/api/admin/warehouse/documents/${encodeURIComponent(row.id)}/post`, {
+        method: "POST",
+        credentials: "include",
+      });
+      const json = await res.json();
+      if (!res.ok || !json.ok) throw new Error(json.error || "Помилка проведення");
+      setNotice(`Документ «${row.title}» проведено: залишки змінено, записано в Altegio.`);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Помилка");
+    } finally {
+      setPostingId(null);
+      void loadMeta().catch(() => undefined);
+    }
+  };
+  // Провести можна чернетку або документ з помилкою Altegio; списання — лише з правом списання
+  const canPost = (row: DocRow) =>
+    !row.isSale &&
+    (row.status === "draft" || row.status === "sync_error") &&
+    (row.type === "intake" || row.type === "transfer" || (row.type === "write_off" && canWriteOff));
+  const showPostColumn = visibleDocs.some(canPost);
+
+  const tiles = TILES;
+  const activeTab = DOC_TABS.find((tab) => tab.id === mode);
   // Вкладки вікна: дві прийомки — одна вкладка з перемикачем «Товар / Волосся»
   const modalTabs = [
     { id: "intake", label: "Прийомка" },
-    ...DOC_TABS.filter((tab) => tab.id !== "hair" && tab.id !== "goods" && (tab.id !== "write_off" || canWriteOff)).map(
+    ...DOC_TABS.filter((tab) => tab.id !== "hair" && tab.id !== "goods").map(
       (tab) => ({ id: tab.id, label: tab.label }),
     ),
   ];
@@ -290,6 +319,7 @@ export default function WarehouseDocumentsPage() {
               <th className={thClass}>Назва</th>
               <th className={`${thClass} text-right`}>Сума</th>
               <th className={thClass}>Склад</th>
+              {showPostColumn && <th className={thClass} />}
               {canDelete && <th className={thClass} />}
             </tr>
           </thead>
@@ -321,6 +351,22 @@ export default function WarehouseDocumentsPage() {
                     {row.invoiceAmount ? `${formatAmount(row.invoiceAmount)} ${row.currencyCode || ""}` : "—"}
                   </td>
                   <td className={`${tdClass} max-w-[160px] truncate text-gray-700`}>{row.storageTitle}</td>
+                  {showPostColumn && (
+                    <td className={tdClass}>
+                      {canPost(row) && (
+                        <button
+                          type="button"
+                          className="rounded-md border border-slate-200 bg-white px-2 py-0.5 text-[10px] font-semibold text-gray-800 shadow-sm hover:bg-slate-50 disabled:opacity-60"
+                          style={{ background: row.type === "write_off" ? DOC_TINT.write_off : DOC_TINT.goods }}
+                          disabled={postingId !== null}
+                          title="Змінити залишки й записати документ в Altegio"
+                          onClick={() => void postDocument(row)}
+                        >
+                          {postingId === row.id ? "Проведення…" : row.status === "sync_error" ? "Провести ще раз" : "Провести"}
+                        </button>
+                      )}
+                    </td>
+                  )}
                   {canDelete && (
                     <td className={`${tdClass} text-right`}>
                       <button
@@ -346,7 +392,8 @@ export default function WarehouseDocumentsPage() {
       </div>
 
       <p className="max-w-2xl px-1 text-[10px] leading-snug text-gray-500">
-        Документ проводиться в Kresco і одразу пишеться в склад Altegio. Каса й журнал запису лишаються там. Курс USD/UAH —
+        Прийомка і списання створюються чернеткою й залишків не міняють. Кнопка «Провести» змінює залишки і записує документ у
+        склад Altegio; списання проводить лише той, хто має право «Склад: проводити списання». Каса й журнал запису лишаються там. Курс USD/UAH —
         денний робочий (Monobank sell → ceil+1); якщо недоступний — fallback на блок 4 фінзвіту. При продажі/списанні волосся
         собівартість береться з картки (costUsd + costPerUnit у грн на момент закупки), без перерахунку по новому курсу.
       </p>
@@ -406,7 +453,7 @@ export default function WarehouseDocumentsPage() {
                 style={{ background: DOC_TINT[activeTab.id] }}
                 disabled={saving}
               >
-                {saving ? "Проведення…" : activeTab.submit}
+                {saving ? "Збереження…" : activeTab.submit}
               </button>
             </>
           }

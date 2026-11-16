@@ -1,9 +1,7 @@
 "use client";
 
-import Link from "next/link";
 import { createContext, useContext, useMemo, useState, type ReactNode } from "react";
 import { usePathname } from "next/navigation";
-import { navTileClass } from "@/app/admin/_components/nav-tile";
 import { WarehouseNav } from "./WarehouseNav";
 
 type WarehouseSearchCtx = {
@@ -47,10 +45,6 @@ export function WarehouseChrome({ children }: { children: ReactNode }) {
               aria-label="Пошук залишків"
             />
           )}
-          <div className="flex-1" />
-          <Link href="/admin/finance-report" className={navTileClass(false)}>
-            Фінансовий звіт
-          </Link>
         </header>
         <div id="warehouse-filter-dropdown-root" />
         {children}

@@ -49,6 +49,15 @@ export default function WarehouseDocumentDetailPage({ params }: { params: { id: 
   const [data, setData] = useState<any>(null);
   const [error, setError] = useState<string | null>(null);
   const [retrying, setRetrying] = useState(false);
+  // Списання проводить лише суперадмін або посада з правом «Склад: проводити списання»
+  const [canWriteOff, setCanWriteOff] = useState(false);
+
+  useEffect(() => {
+    fetch("/api/auth/me", { credentials: "include" })
+      .then((r) => r.json())
+      .then((me) => setCanWriteOff(me?.user?.type === "superadmin" || me?.permissions?.warehouseWriteOff === "edit"))
+      .catch(() => setCanWriteOff(false));
+  }, []);
 
   const load = async () => {
     const res = await fetch(`/api/admin/warehouse/documents?id=${params.id}`, { credentials: "include" });
@@ -65,12 +74,12 @@ export default function WarehouseDocumentDetailPage({ params }: { params: { id: 
     setRetrying(true);
     setError(null);
     try {
-      const res = await fetch(`/api/admin/warehouse/documents/${params.id}/retry`, {
+      const res = await fetch(`/api/admin/warehouse/documents/${params.id}/post`, {
         method: "POST",
         credentials: "include",
       });
       const json = await res.json();
-      if (!res.ok || !json.ok) throw new Error(json.error || "Помилка retry");
+      if (!res.ok || !json.ok) throw new Error(json.error || "Помилка проведення");
       await load();
     } catch (err) {
       setError(err instanceof Error ? err.message : "Помилка");
@@ -94,6 +103,9 @@ export default function WarehouseDocumentDetailPage({ params }: { params: { id: 
   const mismatch = Boolean(data.weightMismatch);
   const tint = docTint(data);
   const syncFailed = data.syncStatus === "error" || data.status === "sync_error";
+  const isDraft = data.status === "draft";
+  const postable =
+    !data.salonCheckout && (isDraft || syncFailed) && data.type !== "inventory_count" && (data.type !== "write_off" || canWriteOff);
   const storageLabel =
     data.type === "transfer"
       ? `${data.fromStorage?.title || "?"} → ${data.toStorage?.title || "?"}`
@@ -121,7 +133,9 @@ export default function WarehouseDocumentDetailPage({ params }: { params: { id: 
             <h2 className="truncate text-sm font-bold text-gray-900">{data.title || data.comment || data.type}</h2>
           </div>
           <div className="flex items-center gap-2 text-xs">
-            {syncFailed ? (
+            {isDraft ? (
+              <StatusPill tone="muted">не проведено</StatusPill>
+            ) : syncFailed ? (
               <StatusPill tone="error">помилка Altegio</StatusPill>
             ) : data.syncStatus === "synced" ? (
               <StatusPill tone="ok">проведено</StatusPill>
@@ -156,18 +170,26 @@ export default function WarehouseDocumentDetailPage({ params }: { params: { id: 
             <span className="tabular-nums">{data.altegioTxId || "—"}</span>
             {data.syncError ? <span className="block text-[11px] text-red-700">{data.syncError}</span> : null}
           </InfoRow>
-          {syncFailed && (
+          {isDraft && (
+            <InfoRow label="Залишки">
+              <span className="text-amber-700">ще не змінено — зміняться після проведення</span>
+            </InfoRow>
+          )}
+          {postable && (
             <div className="pt-1">
               <button
                 type="button"
                 className={tintButtonClass()}
-                style={{ background: DOC_TINT.write_off }}
+                style={{ background: data.type === "write_off" ? DOC_TINT.write_off : tint }}
                 disabled={retrying}
                 onClick={() => void retry()}
               >
-                {retrying ? "Повтор…" : "Повторити запис у Altegio"}
+                {retrying ? "Проведення…" : isDraft ? "Провести" : "Провести ще раз"}
               </button>
             </div>
+          )}
+          {(isDraft || syncFailed) && data.type === "write_off" && !canWriteOff && (
+            <p className="pt-1 text-[11px] text-gray-500">Провести списання може лише працівник із правом «Склад: проводити списання».</p>
           )}
         </div>
       </div>
