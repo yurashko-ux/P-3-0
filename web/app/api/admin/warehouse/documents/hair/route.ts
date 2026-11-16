@@ -12,17 +12,16 @@ export async function POST(req: NextRequest) {
   try {
     const body = await req.json().catch(() => ({}));
     const createdBy = auth.type === "user" ? auth.login : "superadmin";
+    // Чернетка (можна неповна): склад — завжди склад волосся, коди хвостів генеруються, якщо порожні
     const document = await createHairIntake({
-      storageId: String(body.storageId || ""),
-      groupId: String(body.groupId || ""),
+      groupId: String(body.groupId || "") || undefined,
       title: String(body.title || ""),
-      weightKg: Number(body.weightKg),
-      invoiceAmountUsd: Number(body.invoiceAmountUsd),
+      weightKg: Number(body.weightKg) || 0,
+      invoiceAmountUsd: Number(body.invoiceAmountUsd) || 0,
       deliveryAmountUsd: Number(body.deliveryAmountUsd) || 0,
       occurredAt: typeof body.occurredAt === "string" ? body.occurredAt : undefined,
       createdBy,
-      // Створюємо чернетку — залишки й Altegio міняє лише проведення
-      draft: true,
+      replaceDocumentId: typeof body.replaceDocumentId === "string" && body.replaceDocumentId ? body.replaceDocumentId : undefined,
       lines: Array.isArray(body.lines) ? body.lines : [],
     });
     return NextResponse.json({ ok: true, document });

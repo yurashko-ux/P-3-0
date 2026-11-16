@@ -111,17 +111,33 @@ export async function GET(req: NextRequest) {
       listWarehouseMovementLog({ year: periodYear, month: periodMonth }),
     ]);
 
-    const groups: Array<{ id: string; title: string; quantity: number }> = rawGroups.map((g) => ({
+    // Склади, де лежать товари групи — з уже прочитаних залишків (для вибору групи в документах)
+    const stockStoragesByGroup = new Map<string, Set<string>>();
+    for (const row of view.stocks) {
+      if (!row.product.groupId || !(row.quantity > 0)) continue;
+      const set = stockStoragesByGroup.get(row.product.groupId) || new Set<string>();
+      set.add(row.storage.id);
+      stockStoragesByGroup.set(row.product.groupId, set);
+    }
+    type GroupRow = {
+      id: string;
+      title: string;
+      quantity: number;
+      isHair: boolean;
+      storageId: string | null;
+      stockStorageIds: string[];
+    };
+    const toGroupRow = (g: { id: string; title: string; isHair: boolean; storageId: string | null }): GroupRow => ({
       id: g.id,
       title: g.title,
       quantity: Number(view.groupQuantities[g.id]) || 0,
-    }));
+      isHair: g.isHair,
+      storageId: g.storageId,
+      stockStorageIds: [...(stockStoragesByGroup.get(g.id) || [])],
+    });
+    const groups: GroupRow[] = rawGroups.map(toGroupRow);
     if (khvostyGroup && !groups.some((g) => g.id === khvostyGroup.id || g.title === KHVOSTY_GROUP_TITLE)) {
-      groups.unshift({
-        id: khvostyGroup.id,
-        title: khvostyGroup.title,
-        quantity: Number(view.groupQuantities[khvostyGroup.id]) || 0,
-      });
+      groups.unshift(toGroupRow({ ...khvostyGroup, isHair: true, storageId: null }));
     }
 
     const totals = view.stocks.reduce(

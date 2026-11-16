@@ -1,7 +1,13 @@
 import { NextRequest, NextResponse } from "next/server";
 import { canEdit } from "@/lib/auth-rbac";
 import { requireWarehouseSection } from "@/lib/warehouse/require-warehouse-auth";
-import { deleteWarehouseDocument, listWarehouseDocuments, getWarehouseDocument, warehouseDocumentNumbers } from "@/lib/warehouse/documents-kresco";
+import {
+  deleteWarehouseDocument,
+  getWarehouseDocument,
+  listWarehouseDocuments,
+  missingIntakeFields,
+  warehouseDocumentNumbers,
+} from "@/lib/warehouse/documents-kresco";
 
 export const dynamic = "force-dynamic";
 
@@ -17,7 +23,13 @@ export async function GET(req: NextRequest) {
         return NextResponse.json({ ok: false, error: "Документ не знайдено" }, { status: 404 });
       }
       const numbers = await warehouseDocumentNumbers();
-      return NextResponse.json({ ok: true, document: { ...document, number: numbers.get(document.id) ?? null } });
+      // Для непроведеної прийомки — що ще треба заповнити, щоб провести
+      const missing =
+        document.type === "intake" && document.status !== "posted" ? await missingIntakeFields(document.id) : [];
+      return NextResponse.json({
+        ok: true,
+        document: { ...document, number: numbers.get(document.id) ?? null, missing },
+      });
     }
     const rows = await listWarehouseDocuments({
       q: String(req.nextUrl.searchParams.get("q") || ""),

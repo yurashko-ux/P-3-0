@@ -8,6 +8,7 @@ import {
   createAltegioStorageOperation,
   createAltegioStorageTransfer,
   deleteAltegioStorageDocument,
+  updateAltegioGoodSalePrice,
 } from "@/lib/altegio/warehouse-write";
 import { applyPostedWarehouseDocument } from "./stock";
 import { requireUsdUahRate } from "./fx";
@@ -138,7 +139,14 @@ async function prepareIntakeProductsForPosting(doc: {
     costUsd: number | null;
     costInDocumentCurrency: number | null;
     weightGrams: number | null;
-    product: { id: string; title: string; groupId: string | null; altegioGoodId: number | null; isActive: boolean };
+    product: {
+      id: string;
+      title: string;
+      groupId: string | null;
+      altegioGoodId: number | null;
+      isActive: boolean;
+      salePrice: number;
+    };
   }>;
 }) {
   for (const line of doc.lines) {
@@ -152,6 +160,8 @@ async function prepareIntakeProductsForPosting(doc: {
             ...(doc.currencyCode === "USD" && line.costUsd ? { costUsd: line.costUsd } : {}),
           },
         });
+        // Ціну продажу з чернетки переносимо в Altegio (якщо там інша)
+        if (product.salePrice > 0) await updateAltegioGoodSalePrice(product.altegioGoodId, product.salePrice);
       }
       continue;
     }
@@ -163,6 +173,8 @@ async function prepareIntakeProductsForPosting(doc: {
       categoryId,
       unit: "шт",
       costUah: line.costPerUnit,
+      salePriceUah: product.salePrice,
+      ...(doc.kind === "hair" ? { article: product.title } : {}),
       comment:
         doc.kind === "hair"
           ? hairGoodComment(doc.title || "", line.weightGrams || 0, line.costUsd || 0)
@@ -175,6 +187,46 @@ async function prepareIntakeProductsForPosting(doc: {
     product.altegioGoodId = altegio.id;
     console.log(`[warehouse/docs] Проведення ${doc.id}: картку «${product.title}» створено в Altegio id=${altegio.id}`);
   }
+}
+
+/**
+ * Що ще не заповнено в прийомці: вага (для волосся), ціна закупки, ціна продажу, кількість, група нової картки.
+ * Порожній список — можна проводити.
+ */
+export async function missingIntakeFields(documentId: string): Promise<string[]> {
+  const doc = await prisma.warehouseDocument.findUnique({
+    where: { id: documentId },
+    include: { lines: { include: { product: true } } },
+  });
+  if (!doc) return ["документ не знайдено"];
+  const missing: string[] = [];
+  if (!(Number(doc.invoiceAmount) > 0)) missing.push("сума накладної");
+  if (doc.kind === "hair" && !(Number(doc.invoiceWeightGrams) > 0)) missing.push("вага партії");
+  if (doc.lines.length === 0) missing.push(doc.kind === "hair" ? "хвости" : "товари");
+  doc.lines.forEach((line, idx) => {
+    const name = doc.kind === "hair" ? `хвіст ${line.product.title || idx + 1}` : `«${line.product.title || `рядок ${idx + 1}`}»`;
+    const gaps: string[] = [];
+    if (doc.kind === "hair") {
+      if (!(Number(line.weightGrams) > 0)) gaps.push("вага");
+      if (!(Number(line.product.lengthCm) > 0)) gaps.push("довжина");
+    } else if (!(Number(line.quantity) > 0)) gaps.push("кількість");
+    if (!(Number(line.costPerUnit) > 0)) gaps.push("ціна закупки");
+    if (!(Number(line.product.salePrice) > 0)) gaps.push("ціна продажу");
+    if (!line.product.altegioGoodId && !line.product.groupId) gaps.push("група");
+    if (gaps.length) missing.push(`${name}: ${gaps.join(", ")}`);
+  });
+  // Код хвоста — назва картки: не має збігатися з уже наявною карткою волосся
+  if (doc.kind === "hair") {
+    const codes = doc.lines.filter((line) => !line.product.altegioGoodId).map((line) => line.product.title);
+    const dupes = codes.length
+      ? await prisma.warehouseProduct.findMany({
+          where: { isHair: true, title: { in: codes }, altegioGoodId: { not: null } },
+          select: { title: true },
+        })
+      : [];
+    if (dupes.length) missing.push(`коди вже зайняті: ${[...new Set(dupes.map((row) => row.title))].join(", ")}`);
+  }
+  return missing;
 }
 
 /**
@@ -191,6 +243,12 @@ export async function postWarehouseDocument(documentId: string, postedBy?: strin
   if (current.status === "posted") throw new Error("Документ уже проведено");
   if (current.type === "inventory_count") {
     throw new Error("Інвентаризацію в Altegio не відправляємо — лише автоприйомку та автосписання");
+  }
+
+  // Прийомку проводимо лише повністю заповнену
+  if (current.type === "intake" && !current.altegioTxId) {
+    const missing = await missingIntakeFields(documentId);
+    if (missing.length) throw new Error(`Не заповнено: ${missing.join("; ")}`);
   }
 
   // Altegio документ уже прийняв (впало застосування залишку) — лише доводимо до кінця в Kresco
@@ -308,110 +366,122 @@ export async function postWarehouseDocument(documentId: string, postedBy?: strin
 /** Повтор запису в Altegio — те саме проведення. */
 export const retryWarehouseDocumentSync = postWarehouseDocument;
 
+/** Склад волосся: туди прив'язані групи волосся (Хвости, Треси…); запасний варіант — склад «Волосся». */
+export async function resolveHairStorageId(): Promise<string> {
+  const bound = await prisma.warehouseProductGroup.findFirst({
+    where: { isHair: true, storageId: { not: null } },
+    select: { storageId: true },
+  });
+  if (bound?.storageId) return bound.storageId;
+  const byTitle = await prisma.warehouseStorage.findFirst({ where: { title: "Волосся" }, select: { id: true } });
+  if (!byTitle) throw new Error("Не знайдено складу волосся");
+  return byTitle.id;
+}
+
+/** Наступні вільні коди хвостів: найбільший числовий код волосся + 1 (з тими ж провідними нулями). */
+async function nextHairCodes(count: number, taken: Set<string>): Promise<string[]> {
+  if (count <= 0) return [];
+  const rows = await prisma.warehouseProduct.findMany({ where: { isHair: true }, select: { title: true } });
+  let max = 0;
+  let width = 5;
+  for (const row of rows) {
+    const code = row.title.trim();
+    if (!/^\d{1,9}$/.test(code)) continue;
+    taken.add(code);
+    const n = Number(code);
+    if (n > max) {
+      max = n;
+      width = Math.max(width, code.length);
+    }
+  }
+  const codes: string[] = [];
+  let n = max;
+  while (codes.length < count) {
+    n += 1;
+    const code = String(n).padStart(width, "0");
+    if (taken.has(code)) continue;
+    taken.add(code);
+    codes.push(code);
+  }
+  return codes;
+}
+
+/**
+ * Прийомка волосся завжди створюється чернеткою: можна зберегти неповною, проводить кнопка «Провести».
+ * Склад — завжди склад волосся. Код хвоста = назва картки (як у наявних картках); порожній — генеруємо.
+ * replaceDocumentId — редагування чернетки: нова версія займає її місце (номер і дата створення ті самі).
+ */
 export async function createHairIntake(input: {
-  storageId: string;
-  groupId: string;
-  title: string;
-  weightKg: number;
-  invoiceAmountUsd: number;
+  groupId?: string;
+  title?: string;
+  weightKg?: number;
+  invoiceAmountUsd?: number;
   deliveryAmountUsd?: number;
   occurredAt?: string;
   createdBy?: string | null;
-  /** Чернетка: нічого не пишемо в Altegio і не міняємо залишків — це робить проведення. */
-  draft?: boolean;
-  lines: Array<{ lengthCm: number; weightGrams: number }>;
+  replaceDocumentId?: string;
+  lines: Array<{ code?: string; lengthCm?: number; weightGrams?: number; salePrice?: number }>;
 }) {
-  const storage = await requireStorage(input.storageId);
-  const draft = input.draft === true;
-  const group = draft
-    ? await prisma.warehouseProductGroup.findUnique({ where: { id: input.groupId } })
-    : await ensureGroupAltegioCategory(input.groupId);
-  if (!group) throw new Error("Групу не знайдено");
-  const altegioCategoryId = draft ? null : await altegioCategoryIdForKrescoWrite(group);
+  const replaced = input.replaceDocumentId ? await requireEditableDraft(input.replaceDocumentId, "intake") : null;
+  const storageId = await resolveHairStorageId();
+  const group =
+    (input.groupId ? await prisma.warehouseProductGroup.findUnique({ where: { id: input.groupId } }) : null) ||
+    (await prisma.warehouseProductGroup.findFirst({ where: { isHair: true, storageId }, orderBy: { sortOrder: "asc" } }));
+  if (!group) throw new Error("Немає групи волосся");
 
-  const title = twoWordTitle(input.title);
-  if (!title) throw new Error("Назва прийомки — два слова");
-
+  const title = twoWordTitle(input.title || "") || "Прийомка волосся";
   const kg = Number(input.weightKg) || 0;
   const invoiceUsd = Number(input.invoiceAmountUsd) || 0;
   const deliveryUsd = Number(input.deliveryAmountUsd) || 0;
-  if (!(kg > 0)) throw new Error("Вкажіть вагу накладної в кілограмах");
-  if (!(invoiceUsd > 0)) throw new Error("Вкажіть вартість накладної в доларах");
-
   const fx = await requireUsdUahRate();
   const invoiceGrams = round2(kg * 1000);
-  const costPerGramUsd = (invoiceUsd + deliveryUsd) / invoiceGrams;
+  const costPerGramUsd = invoiceGrams > 0 && invoiceUsd > 0 ? (invoiceUsd + deliveryUsd) / invoiceGrams : 0;
 
   const rawLines = (input.lines || [])
     .map((line) => ({
+      code: String(line.code || "").trim(),
       lengthCm: Math.round(Number(line.lengthCm) || 0),
       weightGrams: Number(line.weightGrams) || 0,
+      salePrice: Number(line.salePrice) || 0,
     }))
-    .filter((line) => line.weightGrams > 0);
-  if (rawLines.length === 0) throw new Error("Додайте хоча б один хвіст із вагою в грамах");
+    .filter((line) => line.code || line.lengthCm > 0 || line.weightGrams > 0 || line.salePrice > 0);
 
-  for (const line of rawLines) {
-    if (!(line.lengthCm > 0)) throw new Error("У кожного зрізу має бути довжина в см");
-  }
+  const taken = new Set(rawLines.map((line) => line.code).filter(Boolean));
+  const autoCodes = await nextHairCodes(rawLines.filter((line) => !line.code).length, taken);
+  for (const line of rawLines) if (!line.code) line.code = autoCodes.shift() as string;
 
   const sumGrams = round2(rawLines.reduce((acc, line) => acc + line.weightGrams, 0));
   const delta = round2(sumGrams - invoiceGrams);
-  const mismatch = Math.abs(delta) > HAIR_WEIGHT_TOLERANCE_G;
-
-  const occurredAt = input.occurredAt ? new Date(input.occurredAt) : new Date();
+  const occurredAt = input.occurredAt ? new Date(input.occurredAt) : replaced?.occurredAt || new Date();
   const kyivDay = kyivYmdFromDateTimeInput(occurredAt) || kyivCalendarTodayYmd();
 
-  const createdProducts: Array<{
-    productId: string;
-    altegioGoodId: number | null;
-    weightGrams: number;
-    costUsd: number;
-    costUah: number;
-  }> = [];
-
+  const created: Array<{ productId: string; weightGrams: number | null; costUsd: number; costUah: number }> = [];
   for (const line of rawLines) {
     const costUsd = round2(costPerGramUsd * line.weightGrams);
     const costUah = round2(costUsd * fx.rate);
-    const cardTitle = hairCardTitle(group.title, line.lengthCm, line.weightGrams);
-    // У чернетці картка лише в Kresco (неактивна) — в Altegio її створить проведення
-    const altegio = altegioCategoryId
-      ? await createAltegioGood({
-          title: cardTitle,
-          categoryId: altegioCategoryId,
-          unit: "шт",
-          costUah,
-          comment: hairGoodComment(title, line.weightGrams, costUsd),
-        })
-      : null;
+    // Картка лише в Kresco і неактивна — в Altegio її створить проведення
     const product = await prisma.warehouseProduct.create({
       data: {
-        sku: altegio?.id ?? null,
-        title: cardTitle,
+        title: line.code,
         category: group.title,
         groupId: group.id,
         unit: "шт",
         costPerUnit: costUah,
         costUsd,
+        salePrice: line.salePrice,
         isHair: true,
-        lengthCm: line.lengthCm,
-        weightGrams: line.weightGrams,
-        altegioGoodId: altegio?.id ?? null,
-        isActive: !draft,
+        lengthCm: line.lengthCm || null,
+        weightGrams: line.weightGrams || null,
+        isActive: false,
       },
     });
-    createdProducts.push({
-      productId: product.id,
-      altegioGoodId: altegio?.id ?? null,
-      weightGrams: line.weightGrams,
-      costUsd,
-      costUah,
-    });
+    created.push({ productId: product.id, weightGrams: line.weightGrams || null, costUsd, costUah });
   }
 
   const document = await prisma.warehouseDocument.create({
     data: {
       type: "intake",
-      status: draft ? "draft" : "pending",
+      status: "draft",
       kind: "hair",
       title,
       currencyCode: "USD",
@@ -420,16 +490,17 @@ export async function createHairIntake(input: {
       invoiceWeightGrams: invoiceGrams,
       weightDeltaGrams: delta,
       fxRateUsdUah: fx.rate,
-      weightMismatch: mismatch,
-      syncStatus: draft ? "draft" : "pending",
+      weightMismatch: invoiceGrams > 0 && Math.abs(delta) > HAIR_WEIGHT_TOLERANCE_G,
+      syncStatus: "draft",
       occurredAt,
       kyivDay,
-      toStorageId: storage.id,
+      toStorageId: storageId,
       comment: `Прийомка волосся ${kg} кг / ${invoiceUsd}$${deliveryUsd ? ` + доставка ${deliveryUsd}$` : ""}`,
       source: "kresco",
-      createdBy: input.createdBy || null,
+      createdBy: replaced?.createdBy ?? (input.createdBy || null),
+      ...(replaced ? { createdAt: replaced.createdAt } : {}),
       lines: {
-        create: createdProducts.map((line) => ({
+        create: created.map((line) => ({
           productId: line.productId,
           quantity: 1,
           costPerUnit: line.costUah,
@@ -440,29 +511,23 @@ export async function createHairIntake(input: {
       },
     },
   });
-
-  if (draft) {
-    console.log(`[warehouse/docs] Чернетка прийомки волосся ${document.id}: хвостів=${createdProducts.length}`);
-  } else await postOperationAndApply({
-    documentId: document.id,
-    typeId: ALTEGIO_STORAGE_OP.receipt,
-    storageAltegioId: storage.altegioStorageId as number,
-    comment: document.comment || title,
-    occurredAt,
-    lines: createdProducts.map((line) => ({
-      altegioGoodId: line.altegioGoodId as number,
-      amount: 1,
-      costUah: line.costUah,
-    })),
-  });
+  if (replaced) await deleteWarehouseDocument(replaced.id, `${input.createdBy || "?"} (редагування)`);
+  console.log(
+    `[warehouse/docs] ${replaced ? `Чернетку ${replaced.id} оновлено →` : "Чернетка прийомки волосся"} ${document.id}: хвостів=${created.length}`,
+  );
 
   return prisma.warehouseDocument.findUniqueOrThrow({
     where: { id: document.id },
-    include: {
-      lines: { include: { product: { include: { group: true } } } },
-      toStorage: true,
-    },
+    include: { lines: { include: { product: { include: { group: true } } } }, toStorage: true },
   });
+}
+
+/** Чернетка, яку можна редагувати: документ Kresco потрібного типу, ще не проведений. */
+async function requireEditableDraft(id: string, type: string) {
+  const doc = await prisma.warehouseDocument.findUnique({ where: { id } });
+  if (!doc || doc.source !== "kresco" || doc.type !== type) throw new Error("Чернетку не знайдено");
+  if (doc.status !== "draft") throw new Error("Редагувати можна лише непроведений документ");
+  return doc;
 }
 
 export async function createGoodsIntake(input: {
@@ -481,13 +546,21 @@ export async function createGoodsIntake(input: {
     price: number;
     /** Валюта рядка (собівартість); якщо немає — currencyCode документа */
     currencyCode?: string;
+    /** Ціна продажу, грн — у чернетці пишемо в картку Kresco, в Altegio — при проведенні */
+    salePrice?: number;
   }>;
-  /** Чернетка: нові картки лише в Kresco, собівартість товарів не міняємо, в Altegio не пишемо. */
+  /**
+   * Чернетка: можна зберегти неповною; нові картки лише в Kresco, собівартість товарів не міняємо,
+   * в Altegio не пишемо — усе це робить проведення.
+   */
   draft?: boolean;
+  /** Редагування чернетки: нова версія займає її місце (номер і дата створення ті самі). */
+  replaceDocumentId?: string;
 }) {
   const storage = await requireStorage(input.storageId);
-  const draft = input.draft === true;
-  const title = twoWordTitle(input.title);
+  const draft = input.draft === true || Boolean(input.replaceDocumentId);
+  const replaced = input.replaceDocumentId ? await requireEditableDraft(input.replaceDocumentId, "intake") : null;
+  const title = twoWordTitle(input.title) || (draft ? "Прийомка товару" : "");
   if (!title) throw new Error("Назва прийомки — два слова");
 
   const enabled = await getEnabledCurrencyCodes();
@@ -495,7 +568,7 @@ export async function createGoodsIntake(input: {
 
   const invoiceAmount = Number(input.invoiceAmount) || 0;
   const deliveryAmount = Number(input.deliveryAmount) || 0;
-  if (!(invoiceAmount > 0)) throw new Error("Вкажіть суму накладної (без доставки)");
+  if (!draft && !(invoiceAmount > 0)) throw new Error("Вкажіть суму накладної (без доставки)");
 
   const rawLines = (input.lines || [])
     .map((line) => {
@@ -507,10 +580,12 @@ export async function createGoodsIntake(input: {
         quantity: Number(line.quantity) || 0,
         price: Number(line.price) || 0,
         currencyCode: lineCur,
+        salePrice: Number(line.salePrice) || 0,
       };
     })
-    .filter((line) => line.quantity > 0 && line.price > 0 && (line.productId || line.title));
-  if (rawLines.length === 0) throw new Error("Додайте рядки: кількість і ціна закупки");
+    // Чернетка тримає й неповні рядки — аби був товар
+    .filter((line) => (line.productId || line.title) && (draft || (line.quantity > 0 && line.price > 0)));
+  if (!draft && rawLines.length === 0) throw new Error("Додайте рядки: кількість і ціна закупки");
 
   for (const line of rawLines) {
     if (!enabled.includes(line.currencyCode)) {
@@ -528,7 +603,7 @@ export async function createGoodsIntake(input: {
     sharedFx = (await requireUsdUahRate()).rate;
   }
 
-  const occurredAt = input.occurredAt ? new Date(input.occurredAt) : new Date();
+  const occurredAt = input.occurredAt ? new Date(input.occurredAt) : replaced?.occurredAt || new Date();
   const kyivDay = kyivYmdFromDateTimeInput(occurredAt) || kyivCalendarTodayYmd();
 
   const prepared: Array<{
@@ -552,18 +627,18 @@ export async function createGoodsIntake(input: {
       ? await prisma.warehouseProduct.findUnique({ where: { id: line.productId }, include: { group: true } })
       : null;
     if (!product && draft) {
-      if (!line.groupId) throw new Error(`Для нового товару «${line.title}» оберіть групу`);
-      const group = await prisma.warehouseProductGroup.findUnique({ where: { id: line.groupId } });
-      if (!group) throw new Error("Групу не знайдено");
+      // Групу можна обрати пізніше — без неї документ не проведеться
+      const group = line.groupId ? await prisma.warehouseProductGroup.findUnique({ where: { id: line.groupId } }) : null;
       product = await prisma.warehouseProduct.create({
         data: {
           title: line.title,
-          category: group.title,
-          groupId: group.id,
+          category: group?.title ?? null,
+          groupId: group?.id ?? null,
           unit: "шт",
           costPerUnit: converted.amountUah,
           costUsd: currency === "USD" ? unitDoc : 0,
-          isHair: group.isHair,
+          salePrice: line.salePrice,
+          isHair: group?.isHair ?? false,
           isActive: false,
         },
         include: { group: true },
@@ -593,9 +668,14 @@ export async function createGoodsIntake(input: {
         },
         include: { group: true },
       });
-    } else if (!product.altegioGoodId) {
+    } else if (!product.altegioGoodId && (product.isActive || !draft)) {
       throw new Error(`Товар «${product.title}» без id Altegio. Оновіть дзеркало складу.`);
-    } else if (!draft) {
+    } else if (draft) {
+      // Ціна продажу — властивість картки, не залишку: пишемо в Kresco одразу, в Altegio — при проведенні
+      if (line.salePrice > 0 && line.salePrice !== product.salePrice) {
+        await prisma.warehouseProduct.update({ where: { id: product.id }, data: { salePrice: line.salePrice } });
+      }
+    } else {
       await prisma.warehouseProduct.update({
         where: { id: product.id },
         data: {
@@ -644,7 +724,8 @@ export async function createGoodsIntake(input: {
       toStorageId: storage.id,
       comment: `Прийомка товару ${invoiceAmount} ${currency}${deliveryAmount ? ` + доставка ${deliveryAmount}` : ""}`,
       source: "kresco",
-      createdBy: input.createdBy || null,
+      createdBy: replaced?.createdBy ?? (input.createdBy || null),
+      ...(replaced ? { createdAt: replaced.createdAt } : {}),
       lines: {
         create: prepared.map((line) => ({
           productId: line.productId,
@@ -658,7 +739,10 @@ export async function createGoodsIntake(input: {
   });
 
   if (draft) {
-    console.log(`[warehouse/docs] Чернетка прийомки товару ${document.id}: рядків=${prepared.length}`);
+    if (replaced) await deleteWarehouseDocument(replaced.id, `${input.createdBy || "?"} (редагування)`);
+    console.log(
+      `[warehouse/docs] ${replaced ? `Чернетку ${replaced.id} оновлено →` : "Чернетка прийомки товару"} ${document.id}: рядків=${prepared.length}`,
+    );
   } else await postOperationAndApply({
     documentId: document.id,
     typeId: ALTEGIO_STORAGE_OP.receipt,

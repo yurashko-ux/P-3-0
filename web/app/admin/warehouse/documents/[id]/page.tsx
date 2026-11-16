@@ -106,6 +106,8 @@ export default function WarehouseDocumentDetailPage({ params }: { params: { id: 
   const isDraft = data.status === "draft";
   const postable =
     !data.salonCheckout && (isDraft || syncFailed) && data.type !== "inventory_count" && (data.type !== "write_off" || canWriteOff);
+  // Прийомку проводимо лише повністю заповнену — сервер повертає, чого бракує
+  const missing: string[] = data.missing || [];
   const storageLabel =
     data.type === "transfer"
       ? `${data.fromStorage?.title || "?"} → ${data.toStorage?.title || "?"}`
@@ -175,17 +177,36 @@ export default function WarehouseDocumentDetailPage({ params }: { params: { id: 
               <span className="text-amber-700">ще не змінено — зміняться після проведення</span>
             </InfoRow>
           )}
-          {postable && (
-            <div className="pt-1">
-              <button
-                type="button"
-                className={tintButtonClass()}
-                style={{ background: data.type === "write_off" ? DOC_TINT.write_off : tint }}
-                disabled={retrying}
-                onClick={() => void retry()}
-              >
-                {retrying ? "Проведення…" : isDraft ? "Провести" : "Провести ще раз"}
-              </button>
+          {isDraft && missing.length > 0 && (
+            <InfoRow label="Не заповнено">
+              <span className="block text-[11px] text-red-700">
+                {missing.map((item) => (
+                  <span key={item} className="block">
+                    {item}
+                  </span>
+                ))}
+              </span>
+            </InfoRow>
+          )}
+          {(postable || (isDraft && data.type === "intake")) && (
+            <div className="flex flex-wrap gap-2 pt-1">
+              {postable && (
+                <button
+                  type="button"
+                  className={tintButtonClass()}
+                  style={{ background: data.type === "write_off" ? DOC_TINT.write_off : tint }}
+                  disabled={retrying || missing.length > 0}
+                  title={missing.length > 0 ? "Спершу заповніть усі поля" : "Змінити залишки й записати документ в Altegio"}
+                  onClick={() => void retry()}
+                >
+                  {retrying ? "Проведення…" : isDraft ? "Провести" : "Провести ще раз"}
+                </button>
+              )}
+              {isDraft && data.type === "intake" && (
+                <Link href={`/admin/warehouse/documents?edit=${data.id}`} className={navTileClass(false)}>
+                  Редагувати
+                </Link>
+              )}
             </div>
           )}
           {(isDraft || syncFailed) && data.type === "write_off" && !canWriteOff && (

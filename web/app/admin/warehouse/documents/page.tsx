@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { WarehouseCreateButton } from "../_components/WarehouseCreateButton";
+import { ReconciledDot } from "@/app/admin/finance/cash/ReconciledDot";
 import {
   Banner,
   DOC_TINT,
@@ -28,7 +29,17 @@ import {
 
 type Mode = "list" | WarehouseDocKind;
 type Storage = { id: string; title: string };
-type Group = { id: string; title: string; isHair: boolean };
+type Group = {
+  id: string;
+  title: string;
+  isHair: boolean;
+  /** Склад, до якого прив'язана група (групи волосся → «Волосся») */
+  storageId?: string | null;
+  /** Склади, де зараз лежать товари групи */
+  stockStorageIds?: string[];
+};
+/** Чернетка прийомки, відкрита на редагування */
+type EditingDraft = { id: string; number: number | null; kind: "hair" | "goods"; doc: any };
 type DocRow = {
   id: string;
   number: number | null;
@@ -52,6 +63,7 @@ type ProductHit = {
   costPerUnit: number;
   groupId: string | null;
   isHair?: boolean;
+  salePrice?: number;
 };
 
 const TYPE_LABEL: Record<string, string> = {
@@ -61,36 +73,33 @@ const TYPE_LABEL: Record<string, string> = {
   transfer: "Переміщення",
 };
 
-const TYPE_COLOR: Record<string, string> = {
-  sale: "text-pink-700",
-  intake: "text-green-700",
-  write_off: "text-red-600",
-  inventory_count: "text-blue-700",
-  transfer: "text-violet-700",
+/** Таблетки типів: прийомка — зелена, списання — червона, переміщення — синя, переоблік — жовта. */
+const TYPE_PILL: Record<string, string> = {
+  sale: "bg-pink-100 text-pink-800",
+  intake: "bg-green-100 text-green-800",
+  write_off: "bg-red-100 text-red-700",
+  inventory_count: "bg-amber-100 text-amber-800",
+  transfer: "bg-blue-100 text-blue-800",
 };
 
 /** Плитки й вкладки вікна — у порядку роботи складу. */
 const DOC_TABS: Array<{ id: WarehouseDocKind; label: string; hint: string; submit: string }> = [
-  { id: "hair", label: "Прийомка волосся", hint: "кг партії → хвости в грамах", submit: "Створити прийомку" },
-  { id: "goods", label: "Прийомка товару", hint: "накладна з рядками", submit: "Створити прийомку" },
+  { id: "hair", label: "Прийомка волосся", hint: "кг партії → хвости в грамах", submit: "Зберегти" },
+  { id: "goods", label: "Прийомка товару", hint: "накладна з рядками", submit: "Зберегти" },
   { id: "inventory", label: "Інвентаризація", hint: "надлишок і недостача", submit: "Зберегти інвентаризацію" },
   { id: "write_off", label: "Списання", hint: "зі складу", submit: "Створити списання" },
   { id: "transfer", label: "Переміщення", hint: "між складами", submit: "Перемістити" },
 ];
 
-/** Плитки над списком: одна «Прийомка» (товар або волосся — перемикач у вікні) і фільтр «Продано». */
-type TileId = "intake" | "inventory" | "write_off" | "transfer" | "sold";
-const TILES: Array<{ id: TileId; label: string; hint: string; tint: string }> = [
-  { id: "intake", label: "+ Прийомка", hint: "товар або волосся", tint: DOC_TINT.goods },
-  { id: "inventory", label: "+ Інвентаризація", hint: "надлишок і недостача", tint: DOC_TINT.inventory },
-  { id: "write_off", label: "+ Списання", hint: "зі складу", tint: DOC_TINT.write_off },
-  { id: "transfer", label: "+ Переміщення", hint: "між складами", tint: DOC_TINT.transfer },
-  { id: "sold", label: "Продано", hint: "продажі в записах журналу", tint: "#fbe7f0" },
-];
-
 const DOC_ENDPOINT: Record<WarehouseDocKind, { url: string; notice: string }> = {
-  hair: { url: "/api/admin/warehouse/documents/hair", notice: "Прийомку волосся створено. Залишки зміняться після проведення." },
-  goods: { url: "/api/admin/warehouse/documents/goods", notice: "Прийомку товару створено. Залишки зміняться після проведення." },
+  hair: {
+    url: "/api/admin/warehouse/documents/hair",
+    notice: "Прийомку волосся збережено. Провести можна, коли заповнені всі поля.",
+  },
+  goods: {
+    url: "/api/admin/warehouse/documents/goods",
+    notice: "Прийомку товару збережено. Провести можна, коли заповнені всі поля.",
+  },
   inventory: {
     url: "/api/admin/warehouse/documents/inventory",
     notice: "Інвентаризацію збережено. Автоприйомка/автосписання створені за різницями.",
@@ -105,16 +114,39 @@ function formatAmount(value: number): string {
   return new Intl.NumberFormat("uk-UA", { maximumFractionDigits: 2 }).format(value);
 }
 
-/** Статус документа — кольорова крапка біля типу, назва в підказці при наведенні. */
-function docStatus(row: { status: string; syncStatus: string; syncError?: string | null }): { dot: string; label: string } {
+/** Стан документа — кружечок як у Касі: зелений — проведено, сірий — ні; подробиці в підказці. */
+function docStatus(row: { status: string; syncStatus: string; syncError?: string | null }): { posted: boolean; label: string } {
   if (row.syncStatus === "error" || row.status === "sync_error") {
-    return { dot: "bg-red-500", label: `Помилка Altegio${row.syncError ? `: ${row.syncError}` : ""}` };
+    return { posted: false, label: `Не проведено: помилка Altegio${row.syncError ? ` — ${row.syncError}` : ""}` };
   }
-  if (row.syncStatus === "synced") return { dot: "bg-green-500", label: "Проведено в Kresco і Altegio" };
-  if (row.syncStatus === "local") return { dot: "bg-gray-400", label: "Лише Kresco (списання з каси запису)" };
-  if (row.status === "draft") return { dot: "bg-amber-400", label: "Не проведено — залишки не змінено" };
-  if (row.status === "pending") return { dot: "bg-blue-400", label: "Проводиться…" };
-  return { dot: "bg-gray-400", label: row.status };
+  if (row.status === "draft") return { posted: false, label: "Не проведено — залишки не змінено" };
+  if (row.status === "pending") return { posted: false, label: "Проводиться…" };
+  if (row.syncStatus === "local") return { posted: true, label: "Проведено лише в Kresco (списання з каси запису)" };
+  return { posted: true, label: "Проведено в Kresco і Altegio" };
+}
+
+/** Склад волосся — до нього прив'язані групи волосся; запасний варіант — склад «Волосся». */
+function hairStorageIdOf(groups: Group[], storages: Storage[]): string {
+  return groups.find((g) => g.isHair && g.storageId)?.storageId || storages.find((s) => s.title === "Волосся")?.id || "";
+}
+
+/**
+ * Групи для складу: прив'язані до нього; неприв'язані — якщо їхні товари лежать на цьому складі;
+ * порожні групи — для будь-якого складу товарів. Групи волосся — лише для складу волосся.
+ */
+function groupsForStorage(groups: Group[], storageId: string, hairStorageId: string): Group[] {
+  if (storageId && storageId === hairStorageId) return groups.filter((g) => g.isHair || g.storageId === hairStorageId);
+  return groups.filter((g) => {
+    if (g.storageId) return g.storageId === storageId;
+    if (g.isHair) return false;
+    const where = g.stockStorageIds || [];
+    return where.length === 0 || where.includes(storageId);
+  });
+}
+
+function numText(value: unknown): string {
+  const n = Number(value);
+  return Number.isFinite(n) && n > 0 ? String(n) : "";
 }
 
 function shortDate(ymd: string): string {
@@ -143,6 +175,36 @@ export default function WarehouseDocumentsPage() {
   const [deleting, setDeleting] = useState(false);
   // Остання вибрана прийомка — вкладка «Прийомка» відкриває її
   const [intakeKind, setIntakeKind] = useState<"goods" | "hair">("goods");
+  const [editing, setEditing] = useState<EditingDraft | null>(null);
+  const hairStorageId = hairStorageIdOf(groups, storages);
+
+  // ?edit=<id> — відкрити чернетку прийомки на редагування (кнопка «Редагувати» в документі)
+  useEffect(() => {
+    const id = new URLSearchParams(window.location.search).get("edit");
+    if (!id) return;
+    fetch(`/api/admin/warehouse/documents?id=${encodeURIComponent(id)}`, { credentials: "include" })
+      .then((r) => r.json())
+      .then((json) => {
+        const doc = json.document;
+        if (!json.ok || !doc || doc.type !== "intake" || doc.status !== "draft") {
+          setError("Редагувати можна лише непроведену прийомку");
+          return;
+        }
+        const kind = doc.kind === "hair" ? "hair" : "goods";
+        setEditing({ id: doc.id, number: doc.number ?? null, kind, doc });
+        setIntakeKind(kind);
+        setMode(kind);
+      })
+      .catch(() => setError("Не вдалося відкрити чернетку"));
+  }, []);
+
+  const closeModal = () => {
+    setMode("list");
+    if (editing) {
+      setEditing(null);
+      window.history.replaceState(null, "", window.location.pathname);
+    }
+  };
 
   useEffect(() => {
     fetch("/api/auth/me", { credentials: "include" })
@@ -195,12 +257,12 @@ export default function WarehouseDocumentsPage() {
         method: "POST",
         credentials: "include",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(payload),
+        body: JSON.stringify(editing ? { ...payload, replaceDocumentId: editing.id } : payload),
       });
       const json = await res.json();
       if (!res.ok || !json.ok) throw new Error(json.error || "Помилка");
       setNotice(DOC_ENDPOINT[kind].notice);
-      setMode("list");
+      closeModal();
     } catch (err) {
       setError(err instanceof Error ? err.message : "Помилка");
     } finally {
@@ -268,7 +330,6 @@ export default function WarehouseDocumentsPage() {
     (row.type === "intake" || row.type === "transfer" || (row.type === "write_off" && canWriteOff));
   const showPostColumn = visibleDocs.some(canPost);
 
-  const tiles = TILES;
   const activeTab = DOC_TABS.find((tab) => tab.id === mode);
   // Вкладки вікна: дві прийомки — одна вкладка з перемикачем «Товар / Волосся»
   const modalTabs = [
@@ -284,25 +345,27 @@ export default function WarehouseDocumentsPage() {
 
   return (
     <main className="px-2 pb-6 space-y-2">
-      {/* Плитки типів документів — як «+ Рахунок» у Касі */}
-      <div className={`${tileGridClass} py-2`}>
-        {tiles.map((tile) => (
-          <button
-            key={tile.id}
-            type="button"
-            className={`${tileButtonClass} ${tile.id === "sold" && soldOnly ? "ring-2 ring-pink-400" : ""}`}
-            style={{ background: tile.tint }}
-            onClick={() => (tile.id === "sold" ? setSoldOnly((v) => !v) : openTab(tile.id))}
-          >
-            <span className="text-sm font-semibold text-gray-800">
-              {tile.label}
-              {tile.id === "sold" ? <span className="ml-1 tabular-nums text-pink-700">{soldCount}</span> : null}
-            </span>
-            <span className="text-[10px] text-gray-600">
-              {tile.id === "sold" && soldOnly ? "показано продажі · натисніть, щоб повернутись" : tile.hint}
-            </span>
-          </button>
-        ))}
+      {/* Одна кнопка — вікно документа з вкладками типів (як «+ Рахунок» у Касі); «Продано» — фільтр списку */}
+      <div className="flex flex-wrap items-center gap-2 py-2">
+        <button
+          type="button"
+          className={`${tileButtonClass} !w-auto min-w-[200px] px-6`}
+          style={{ background: DOC_TINT.goods }}
+          onClick={() => openTab("intake")}
+        >
+          <span className="text-sm font-semibold text-gray-800">+ Документ</span>
+          <span className="text-[10px] text-gray-600">прийомка, переоблік, списання, переміщення</span>
+        </button>
+        <button
+          type="button"
+          className={`h-7 rounded-full border px-3 text-[11px] font-semibold transition ${
+            soldOnly ? "border-pink-300 bg-pink-100 text-pink-800" : "border-slate-200 bg-white text-gray-600 hover:bg-slate-50"
+          }`}
+          title={soldOnly ? "Показано продажі — натисніть, щоб повернутись до документів" : "Показати продажі в записах журналу"}
+          onClick={() => setSoldOnly((v) => !v)}
+        >
+          Продано <span className="tabular-nums text-pink-700">{soldCount}</span>
+        </button>
       </div>
 
       {notice && <Banner tone="success">{notice}</Banner>}
@@ -315,10 +378,11 @@ export default function WarehouseDocumentsPage() {
             <tr className={theadRowClass}>
               <th className={`${thClass} text-right`}>№</th>
               <th className={thClass}>Дата</th>
+              <th className={thClass} title="Стан: зелений — проведено, сірий — ні">Стан</th>
               <th className={thClass}>Тип</th>
+              <th className={thClass}>Склад</th>
               <th className={thClass}>Назва</th>
               <th className={`${thClass} text-right`}>Сума</th>
-              <th className={thClass}>Склад</th>
               {showPostColumn && <th className={thClass} />}
               {canDelete && <th className={thClass} />}
             </tr>
@@ -335,13 +399,19 @@ export default function WarehouseDocumentsPage() {
                 >
                   <td className={`${tdClass} text-right tabular-nums text-gray-500`}>{row.number ?? "—"}</td>
                   <td className={`${tdClass} tabular-nums text-gray-700`}>{shortDate(row.kyivDay)}</td>
+                  <td className={`${tdClass} text-center`}>
+                    <ReconciledDot done={status.posted} doneTitle={status.label} openTitle={status.label} />
+                  </td>
                   <td className={tdClass}>
-                    <Link href={href} className={`inline-flex items-center gap-1.5 font-semibold hover:underline ${TYPE_COLOR[typeKey] || "text-gray-700"}`}>
-                      <span className={`inline-block h-2 w-2 shrink-0 rounded-full ${status.dot}`} title={status.label} />
+                    <Link
+                      href={href}
+                      className={`inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[10px] font-semibold hover:brightness-95 ${TYPE_PILL[typeKey] || "bg-slate-100 text-gray-700"}`}
+                    >
                       {row.isSale ? "Продаж" : TYPE_LABEL[row.type] || row.type}
-                      {row.kind === "hair" ? <span className="font-normal text-amber-700">волосся</span> : null}
+                      {row.kind === "hair" ? <span className="font-normal">· волосся</span> : null}
                     </Link>
                   </td>
+                  <td className={`${tdClass} max-w-[160px] truncate text-gray-700`}>{row.storageTitle}</td>
                   <td className={`${tdClass} max-w-[220px] truncate`}>
                     <Link href={href} className="text-blue-700 hover:underline">
                       {row.title}
@@ -350,7 +420,6 @@ export default function WarehouseDocumentsPage() {
                   <td className={`${tdClass} text-right font-semibold tabular-nums`}>
                     {row.invoiceAmount ? `${formatAmount(row.invoiceAmount)} ${row.currencyCode || ""}` : "—"}
                   </td>
-                  <td className={`${tdClass} max-w-[160px] truncate text-gray-700`}>{row.storageTitle}</td>
                   {showPostColumn && (
                     <td className={tdClass}>
                       {canPost(row) && (
@@ -435,15 +504,16 @@ export default function WarehouseDocumentsPage() {
       {activeTab && (
         <WarehouseModal
           tint={DOC_TINT[activeTab.id]}
-          tabs={modalTabs}
+          tabs={editing ? undefined : modalTabs}
+          title={editing ? `Чернетка${editing.number ? ` № ${editing.number}` : ""} · ${editing.kind === "hair" ? "прийомка волосся" : "прийомка товару"}` : undefined}
           activeTab={mode === "hair" || mode === "goods" ? "intake" : activeTab.id}
           onTab={openTab}
-          onClose={() => setMode("list")}
+          onClose={closeModal}
           wide
           fixedHeight
           footer={
             <>
-              <button type="button" className={ghostButtonClass} onClick={() => setMode("list")}>
+              <button type="button" className={ghostButtonClass} onClick={closeModal}>
                 Скасувати
               </button>
               <button
@@ -459,7 +529,7 @@ export default function WarehouseDocumentsPage() {
           }
         >
           {error && <Banner tone="error">{error}</Banner>}
-          {(mode === "hair" || mode === "goods") && (
+          {(mode === "hair" || mode === "goods") && !editing && (
             <div className="flex w-fit gap-1 rounded-xl bg-slate-100 p-0.5">
               {(
                 [
@@ -488,17 +558,20 @@ export default function WarehouseDocumentsPage() {
             <HairForm
               storages={storages}
               groups={groups}
+              hairStorageId={hairStorageId}
               fxRate={fxRate}
               currencies={currencies}
-              onAddStorage={addStorage}
+              initial={editing?.kind === "hair" ? editing.doc : undefined}
               onAddGroup={addGroup}
               onSubmit={(payload) => submitDocument("hair", payload)}
             />
           )}
           {mode === "goods" && (
             <GoodsForm
-              storages={storages}
+              storages={storages.filter((s) => s.id !== hairStorageId)}
               groups={groups}
+              hairStorageId={hairStorageId}
+              initial={editing?.kind === "goods" ? editing.doc : undefined}
               currencies={currencies}
               onAddStorage={addStorage}
               onAddGroup={addGroup}
@@ -581,53 +654,68 @@ function StorageSelect({
 function HairForm({
   storages,
   groups,
+  hairStorageId,
   fxRate,
   currencies,
+  initial,
   onSubmit,
-  onAddStorage,
   onAddGroup,
 }: {
   storages: Storage[];
   groups: Group[];
+  hairStorageId: string;
   fxRate: number | null;
   currencies: string[];
+  /** Чернетка на редагування */
+  initial?: any;
   onSubmit: (payload: Record<string, unknown>) => Promise<void>;
-  onAddStorage: (row: { id: string; title: string }) => void;
   onAddGroup: (row: { id: string; title: string; isHair?: boolean }) => void;
 }) {
   const tint = DOC_TINT.hair;
-  const hairOnly = groups.filter((g) => g.isHair);
-  // Якщо ознаки «волосся» в групах немає — показуємо всі, першими «Хвости».
-  const hairGroups = hairOnly.length
-    ? hairOnly
-    : [...groups].sort((a, b) => Number(b.title === "Хвости") - Number(a.title === "Хвости"));
+  // Волосся кладемо лише на склад волосся — склад не обираємо, групи — лише цього складу
+  const hairGroups = groupsForStorage(groups, hairStorageId, hairStorageId);
+  const storageTitle = storages.find((s) => s.id === hairStorageId)?.title || "Волосся";
   const hairCurrencies = currencies.includes("USD")
     ? ["USD", ...currencies.filter((c) => c !== "USD")]
     : currencies.length
       ? currencies
       : ["USD"];
-  const [storageId, setStorageId] = useState(storages[0]?.id || "");
-  const [groupId, setGroupId] = useState(hairGroups[0]?.id || "");
-  const [title, setTitle] = useState("");
-  const [kg, setKg] = useState("10");
+  const initialLines: Array<{ code: string; lengthCm: string; weightGrams: string; salePrice: string }> = (
+    initial?.lines || []
+  ).map((line: any) => ({
+    code: String(line.product?.title || ""),
+    lengthCm: numText(line.product?.lengthCm),
+    weightGrams: numText(line.weightGrams ?? line.product?.weightGrams),
+    salePrice: numText(line.product?.salePrice),
+  }));
+  const [groupId, setGroupId] = useState<string>(initial?.lines?.[0]?.product?.groupId || hairGroups[0]?.id || "");
+  const [title, setTitle] = useState<string>(initial?.title || "");
+  const [kg, setKg] = useState(initial?.invoiceWeightGrams ? String(Number(initial.invoiceWeightGrams) / 1000) : "");
   const [currencyCode, setCurrencyCode] = useState(hairCurrencies[0] || "USD");
-  const [invoice, setInvoice] = useState("26000");
-  const [delivery, setDelivery] = useState("0");
-  const [lines, setLines] = useState<Array<{ lengthCm: string; weightGrams: string }>>([{ lengthCm: "60", weightGrams: "" }]);
+  const [invoice, setInvoice] = useState(numText(initial?.invoiceAmount));
+  const [delivery, setDelivery] = useState(numText(initial?.deliveryAmount));
+  const [lines, setLines] = useState(
+    initialLines.length ? initialLines : [{ code: "", lengthCm: "60", weightGrams: "", salePrice: "" }],
+  );
 
-  useEffect(() => {
-    if (!storageId && storages[0]) setStorageId(storages[0].id);
-  }, [storages, storageId]);
   useEffect(() => {
     if (!groupId && hairGroups[0]) setGroupId(hairGroups[0].id);
   }, [hairGroups, groupId]);
 
+  const updateLine = (idx: number, patch: Partial<(typeof lines)[number]>) => {
+    const next = [...lines];
+    next[idx] = { ...next[idx], ...patch };
+    setLines(next);
+  };
+
   const invoiceG = (Number(kg) || 0) * 1000;
   const sumG = lines.reduce((acc, line) => acc + (Number(line.weightGrams) || 0), 0);
   const delta = Math.round((sumG - invoiceG) * 100) / 100;
-  const mismatch = Math.abs(delta) > 50;
-  const perG = invoiceG > 0 ? (Number(invoice) + Number(delivery || 0)) / invoiceG : 0;
+  const mismatch = invoiceG > 0 && Math.abs(delta) > 50;
+  const perG = invoiceG > 0 ? ((Number(invoice) || 0) + (Number(delivery) || 0)) / invoiceG : 0;
   const curLabel = currencyCode === "USD" ? "$" : currencyCode;
+  const toUsd = (value: string) =>
+    currencyCode === "UAH" && fxRate && fxRate > 0 ? (Number(value) || 0) / fxRate : Number(value) || 0;
 
   return (
     <form
@@ -636,28 +724,24 @@ function HairForm({
       onSubmit={(e) => {
         e.preventDefault();
         void onSubmit({
-          storageId,
           groupId,
           title,
-          weightKg: Number(kg),
+          weightKg: Number(kg) || 0,
           currencyCode,
-          invoiceAmountUsd:
-            currencyCode === "UAH" && fxRate && fxRate > 0
-              ? Number(invoice) / fxRate
-              : Number(invoice),
-          deliveryAmountUsd:
-            currencyCode === "UAH" && fxRate && fxRate > 0
-              ? (Number(delivery) || 0) / fxRate
-              : Number(delivery) || 0,
-          lines: lines
-            .map((line) => ({ lengthCm: Number(line.lengthCm), weightGrams: Number(line.weightGrams) }))
-            .filter((line) => line.weightGrams > 0),
+          invoiceAmountUsd: toUsd(invoice),
+          deliveryAmountUsd: toUsd(delivery),
+          lines: lines.map((line) => ({
+            code: line.code.trim(),
+            lengthCm: Number(line.lengthCm) || 0,
+            weightGrams: Number(line.weightGrams) || 0,
+            salePrice: Number(line.salePrice) || 0,
+          })),
         });
       }}
     >
       <FieldsCard>
         <FieldRow label="Склад">
-          <StorageSelect storages={storages} value={storageId} onChange={setStorageId} onAddStorage={onAddStorage} tint={tint} />
+          <span className="text-xs font-semibold text-gray-900">{storageTitle}</span>
         </FieldRow>
         <FieldRow label="Група">
           <div className="min-w-0 max-w-[260px] flex-1">
@@ -677,17 +761,16 @@ function HairForm({
           />
         </FieldRow>
         <FieldRow label="Назва (два слова)">
-          <input className={`${fieldClass} max-w-[260px]`} value={title} onChange={(e) => setTitle(e.target.value)} required />
+          <input className={`${fieldClass} max-w-[260px]`} value={title} onChange={(e) => setTitle(e.target.value)} />
         </FieldRow>
         <FieldRow label="Вага партії, кг">
-          <input className={`${fieldClass} max-w-[120px] tabular-nums`} value={kg} onChange={(e) => setKg(e.target.value)} required />
+          <input className={`${fieldClass} max-w-[120px] tabular-nums`} value={kg} onChange={(e) => setKg(e.target.value)} />
         </FieldRow>
         <FieldRow label={`Сума накладної, ${curLabel}`}>
           <input
             className={`${fieldClass} max-w-[140px] tabular-nums`}
             value={invoice}
             onChange={(e) => setInvoice(e.target.value)}
-            required
           />
           <div className="w-[90px]">
             <PrettySelect
@@ -711,8 +794,8 @@ function HairForm({
       <p className={`rounded-lg px-2.5 py-1.5 text-xs ${mismatch ? "bg-pink-100 font-semibold text-red-700" : "bg-slate-50 text-gray-600"}`}>
         У накладній {invoiceG} г, по хвостах {sumG} г, дельта {delta} г (допуск ±50). 1 г ≈ {perG ? perG.toFixed(4) : "—"} {curLabel}
         <span className="block text-[10px] font-normal text-gray-500">
-          Курс USD/UAH (денний): {fxRate ? fxRate : "відсутній — проведення буде зупинено"}. Собівартість 1 г = (накладна + доставка) /
-          (кг×1000).
+          Курс USD/UAH (денний): {fxRate ? fxRate : "відсутній — збереження буде зупинено"}. Собівартість 1 г = (накладна + доставка) /
+          (кг×1000). Зберегти можна неповну прийомку; провести — коли заповнені вага, ціна закупки й ціна продажу.
         </span>
       </p>
 
@@ -722,10 +805,12 @@ function HairForm({
           <table className={tableClass}>
             <thead>
               <tr className={theadRowClass}>
-                <th className={`${thClass} w-10`}>№</th>
+                <th className={`${thClass} w-8`}>№</th>
+                <th className={thClass} title="Порожній — створимо автоматично">Код</th>
                 <th className={thClass}>Довжина, см</th>
                 <th className={thClass}>Вага, г</th>
                 <th className={`${thClass} text-right`}>Собівартість</th>
+                <th className={thClass}>Ціна продажу, грн</th>
                 <th className={`${thClass} w-8`} />
               </tr>
             </thead>
@@ -735,29 +820,36 @@ function HairForm({
                   <td className={`${tdClass} tabular-nums text-gray-500`}>{idx + 1}</td>
                   <td className={tdClass}>
                     <input
-                      className={`${fieldClass} h-7 max-w-[100px] tabular-nums`}
-                      value={line.lengthCm}
-                      onChange={(e) => {
-                        const next = [...lines];
-                        next[idx] = { ...next[idx], lengthCm: e.target.value };
-                        setLines(next);
-                      }}
+                      className={`${fieldClass} h-7 max-w-[90px] tabular-nums`}
+                      placeholder="авто"
+                      value={line.code}
+                      onChange={(e) => updateLine(idx, { code: e.target.value })}
                     />
                   </td>
                   <td className={tdClass}>
                     <input
-                      className={`${fieldClass} h-7 max-w-[100px] tabular-nums`}
+                      className={`${fieldClass} h-7 max-w-[80px] tabular-nums`}
+                      value={line.lengthCm}
+                      onChange={(e) => updateLine(idx, { lengthCm: e.target.value })}
+                    />
+                  </td>
+                  <td className={tdClass}>
+                    <input
+                      className={`${fieldClass} h-7 max-w-[80px] tabular-nums`}
                       placeholder="грами"
                       value={line.weightGrams}
-                      onChange={(e) => {
-                        const next = [...lines];
-                        next[idx] = { ...next[idx], weightGrams: e.target.value };
-                        setLines(next);
-                      }}
+                      onChange={(e) => updateLine(idx, { weightGrams: e.target.value })}
                     />
                   </td>
                   <td className={`${tdClass} text-right font-semibold tabular-nums`}>
                     {Number(line.weightGrams) > 0 && perG > 0 ? `${(perG * Number(line.weightGrams)).toFixed(2)} ${curLabel}` : "—"}
+                  </td>
+                  <td className={tdClass}>
+                    <input
+                      className={`${fieldClass} h-7 max-w-[100px] tabular-nums`}
+                      value={line.salePrice}
+                      onChange={(e) => updateLine(idx, { salePrice: e.target.value })}
+                    />
                   </td>
                   <td className={tdClass}>
                     {lines.length > 1 && (
@@ -776,7 +868,11 @@ function HairForm({
             </tbody>
           </table>
         </div>
-        <button type="button" className={inlineAddClass} onClick={() => setLines([...lines, { lengthCm: "60", weightGrams: "" }])}>
+        <button
+          type="button"
+          className={inlineAddClass}
+          onClick={() => setLines([...lines, { code: "", lengthCm: "60", weightGrams: "", salePrice: "" }])}
+        >
           + хвіст
         </button>
       </div>
@@ -827,13 +923,19 @@ function ProductSearch({ onPick }: { onPick: (p: ProductHit) => void }) {
 function GoodsForm({
   storages,
   groups,
+  hairStorageId,
+  initial,
   currencies,
   onSubmit,
   onAddStorage,
   onAddGroup,
 }: {
+  /** Склади без складу волосся */
   storages: Storage[];
   groups: Group[];
+  hairStorageId: string;
+  /** Чернетка на редагування */
+  initial?: any;
   currencies: string[];
   onSubmit: (payload: Record<string, unknown>) => Promise<void>;
   onAddStorage: (row: { id: string; title: string }) => void;
@@ -841,13 +943,45 @@ function GoodsForm({
 }) {
   const tint = DOC_TINT.goods;
   const defaultCur = currencies.includes("UAH") ? "UAH" : currencies[0] || "UAH";
-  const [storageId, setStorageId] = useState(storages[0]?.id || "");
-  const [title, setTitle] = useState("");
-  const [invoice, setInvoice] = useState("");
-  const [delivery, setDelivery] = useState("0");
-  const [lines, setLines] = useState<
-    Array<{ productId: string; title: string; groupId: string; quantity: string; price: string; currencyCode: string }>
-  >([{ productId: "", title: "", groupId: "", quantity: "1", price: "", currencyCode: defaultCur }]);
+  type Line = {
+    productId: string;
+    title: string;
+    groupId: string;
+    quantity: string;
+    price: string;
+    currencyCode: string;
+    salePrice: string;
+  };
+  const emptyLine: Line = { productId: "", title: "", groupId: "", quantity: "1", price: "", currencyCode: defaultCur, salePrice: "" };
+  // У рядку збережено ціну з часткою доставки — повертаємо ціну закупки без неї
+  const initialDelivery = Number(initial?.deliveryAmount) || 0;
+  const initialDocTotal = (initial?.lines || []).reduce(
+    (acc: number, line: any) => acc + (Number(line.costInDocumentCurrency ?? line.costPerUnit) || 0) * (Number(line.quantity) || 0),
+    0,
+  );
+  const initialBase = initialDocTotal - initialDelivery;
+  const deliveryFactor = initialDelivery > 0 && initialBase > 0 ? (initialBase + initialDelivery) / initialBase : 1;
+  const initialLines: Line[] = (initial?.lines || []).map((line: any) => ({
+    // Картка, створена чернеткою (ще не в Altegio), редагується як нова
+    productId: line.product?.altegioGoodId ? line.product.id : "",
+    title: String(line.product?.title || ""),
+    groupId: String(line.product?.groupId || ""),
+    quantity: numText(line.quantity),
+    price: numText(Math.round(((Number(line.costInDocumentCurrency ?? line.costPerUnit) || 0) / deliveryFactor) * 10000) / 10000),
+    currencyCode: Number(line.costUsd) > 0 ? "USD" : defaultCur,
+    salePrice: numText(line.product?.salePrice),
+  }));
+  const [storageId, setStorageId] = useState<string>(initial?.toStorageId || storages[0]?.id || "");
+  const [title, setTitle] = useState<string>(initial?.title || "");
+  const [invoice, setInvoice] = useState(numText(initial?.invoiceAmount));
+  const [delivery, setDelivery] = useState(numText(initial?.deliveryAmount));
+  const [lines, setLines] = useState<Line[]>(initialLines.length ? initialLines : [emptyLine]);
+  // Групи лише цього складу (без хвостів, накладок тощо на складі товарів)
+  const storageGroups = groupsForStorage(groups, storageId, hairStorageId);
+
+  useEffect(() => {
+    if (!storageId && storages[0]) setStorageId(storages[0].id);
+  }, [storages, storageId]);
 
   const currencyForGroup = (groupId: string) => {
     const g = groups.find((x) => x.id === groupId);
@@ -873,15 +1007,16 @@ function GoodsForm({
           storageId,
           title,
           currencyCode: primaryCurrency,
-          invoiceAmount: Number(invoice),
+          invoiceAmount: Number(invoice) || 0,
           deliveryAmount: Number(delivery) || 0,
           lines: lines.map((line) => ({
             productId: line.productId || undefined,
             title: line.title || undefined,
             groupId: line.groupId || undefined,
-            quantity: Number(line.quantity),
-            price: Number(line.price),
+            quantity: Number(line.quantity) || 0,
+            price: Number(line.price) || 0,
             currencyCode: line.currencyCode || defaultCur,
+            salePrice: Number(line.salePrice) || 0,
           })),
         });
       }}
@@ -891,7 +1026,7 @@ function GoodsForm({
           <StorageSelect storages={storages} value={storageId} onChange={setStorageId} onAddStorage={onAddStorage} tint={tint} />
         </FieldRow>
         <FieldRow label="Назва (два слова)">
-          <input className={`${fieldClass} max-w-[260px]`} value={title} onChange={(e) => setTitle(e.target.value)} required />
+          <input className={`${fieldClass} max-w-[260px]`} value={title} onChange={(e) => setTitle(e.target.value)} />
         </FieldRow>
         <FieldRow label="Сума накладної">
           <input
@@ -899,7 +1034,6 @@ function GoodsForm({
             placeholder="без доставки"
             value={invoice}
             onChange={(e) => setInvoice(e.target.value)}
-            required
           />
         </FieldRow>
         <FieldRow label="Доставка">
@@ -941,6 +1075,7 @@ function GoodsForm({
                   title: p.title,
                   groupId: p.groupId || line.groupId,
                   price: String(p.costPerUnit || ""),
+                  salePrice: numText(p.salePrice),
                   currencyCode: hair && currencies.includes("USD") ? "USD" : line.currencyCode || defaultCur,
                 });
               }}
@@ -959,7 +1094,7 @@ function GoodsForm({
                     tint={tint}
                     options={[
                       { value: "", label: "Група (для нової картки)" },
-                      ...groups.map((g) => ({ value: g.id, label: g.title })),
+                      ...storageGroups.map((g) => ({ value: g.id, label: g.title })),
                     ]}
                     onChange={(gid) => updateLine(idx, { groupId: gid, currencyCode: currencyForGroup(gid) })}
                   />
@@ -1003,6 +1138,14 @@ function GoodsForm({
                   onChange={(code) => updateLine(idx, { currencyCode: code })}
                 />
               </div>
+              <label className="flex items-center gap-1.5">
+                <span className={`${labelClass} whitespace-nowrap`}>Ціна продажу, грн</span>
+                <input
+                  className={`${fieldBaseClass} w-28 tabular-nums`}
+                  value={line.salePrice}
+                  onChange={(e) => updateLine(idx, { salePrice: e.target.value })}
+                />
+              </label>
               {line.productId ? <span className="text-[10px] text-green-700">наявна картка</span> : null}
             </div>
           </div>
@@ -1011,10 +1154,7 @@ function GoodsForm({
           type="button"
           className={inlineAddClass}
           onClick={() =>
-            setLines([
-              ...lines,
-              { productId: "", title: "", groupId: "", quantity: "1", price: "", currencyCode: defaultCur },
-            ])
+            setLines([...lines, emptyLine])
           }
         >
           + рядок

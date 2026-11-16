@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { requireWarehouseSection } from "@/lib/warehouse/require-warehouse-auth";
-import { createGoodsIntake } from "@/lib/warehouse/documents-kresco";
+import { createGoodsIntake, resolveHairStorageId } from "@/lib/warehouse/documents-kresco";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 60;
@@ -12,6 +12,10 @@ export async function POST(req: NextRequest) {
   try {
     const body = await req.json().catch(() => ({}));
     const createdBy = auth.type === "user" ? auth.login : "superadmin";
+    // Волосся приймаємо лише прийомкою волосся
+    if (String(body.storageId || "") === (await resolveHairStorageId())) {
+      return NextResponse.json({ ok: false, error: "На склад волосся — через прийомку волосся" }, { status: 400 });
+    }
     const document = await createGoodsIntake({
       storageId: String(body.storageId || ""),
       title: String(body.title || ""),
@@ -22,6 +26,7 @@ export async function POST(req: NextRequest) {
       createdBy,
       // Створюємо чернетку — залишки й Altegio міняє лише проведення
       draft: true,
+      replaceDocumentId: typeof body.replaceDocumentId === "string" && body.replaceDocumentId ? body.replaceDocumentId : undefined,
       lines: Array.isArray(body.lines) ? body.lines : [],
     });
     return NextResponse.json({ ok: true, document });

@@ -17,6 +17,8 @@ export type AltegioGoodCreateInput = {
   categoryId: number;
   unit?: string;
   costUah: number;
+  /** Ціна продажу (поле cost в Altegio); без неї cost = собівартість, як було раніше */
+  salePriceUah?: number;
   comment?: string;
   article?: string;
 };
@@ -261,11 +263,29 @@ const DEFAULT_CORRECTION_RULES = [
 ];
 
 export async function updateAltegioGoodCategory(goodId: number, categoryId: number): Promise<void> {
-  const companyId = resolveCompanyId();
   if (!(goodId > 0) || !(categoryId > 0)) {
     throw new Error("Для зміни категорії потрібні id товару і категорії Altegio");
   }
+  await updateAltegioGoodFields(goodId, { categoryId });
+}
+
+/** Ціна продажу картки Altegio (поле cost; собівартість — actual_cost, її рахує сам Altegio з приходів). */
+export async function updateAltegioGoodSalePrice(goodId: number, salePriceUah: number): Promise<void> {
+  if (!(goodId > 0) || !(salePriceUah > 0)) throw new Error("Для зміни ціни потрібні id товару і ціна продажу");
+  await updateAltegioGoodFields(goodId, { salePriceUah });
+}
+
+/** PUT картки Altegio: беремо поточні поля і міняємо лише передані. */
+async function updateAltegioGoodFields(
+  goodId: number,
+  patch: { categoryId?: number; salePriceUah?: number },
+): Promise<void> {
+  const companyId = resolveCompanyId();
   const good = await getAltegioGood(goodId);
+  // Нічого не змінюється — PUT не робимо
+  const sameCategory = patch.categoryId == null || Number(good?.category_id) === patch.categoryId;
+  const samePrice = patch.salePriceUah == null || Number(good?.cost) === patch.salePriceUah;
+  if (sameCategory && samePrice) return;
   const title = String(good?.title || good?.name || "").trim();
   if (!title) throw new Error(`Товар Altegio ${goodId} без назви`);
 
@@ -273,14 +293,15 @@ export async function updateAltegioGoodCategory(goodId: number, categoryId: numb
   const serviceUnitId = Number(good?.service_unit_id ?? good?.unit_id ?? saleUnitId);
   const payload: Record<string, unknown> = {
     title,
-    category_id: categoryId,
+    category_id: patch.categoryId ?? (Number(good?.category_id) || 0),
     article: String(good?.article || ""),
     barcode: String(good?.barcode || ""),
     comment: String(good?.comment || ""),
-    cost: Number(good?.cost) || 0,
+    cost: patch.salePriceUah ?? (Number(good?.cost) || 0),
     actual_cost: Number(good?.actual_cost) || 0,
     unit_equals: Number(good?.unit_equals) || 1,
   };
+  const categoryId = payload.category_id;
   if (saleUnitId > 0) payload.sale_unit_id = saleUnitId;
   if (serviceUnitId > 0) payload.service_unit_id = serviceUnitId;
 
@@ -301,14 +322,17 @@ export async function updateAltegioGoodCategory(goodId: number, categoryId: numb
       await put({
         title,
         category_id: categoryId,
+        ...(patch.salePriceUah ? { cost: patch.salePriceUah } : {}),
         ...(saleUnitId > 0 ? { sale_unit_id: saleUnitId } : {}),
         ...(serviceUnitId > 0 ? { service_unit_id: serviceUnitId } : {}),
       });
     } else {
-      throw formatAltegioError(err, `зміна категорії товару ${goodId}`);
+      throw formatAltegioError(err, `зміна картки товару ${goodId}`);
     }
   }
-  console.log(`[altegio/warehouse-write] Товар ${goodId} «${title}» → category_id=${categoryId}`);
+  console.log(
+    `[altegio/warehouse-write] Товар ${goodId} «${title}» → category_id=${categoryId}${patch.salePriceUah ? `, ціна продажу=${patch.salePriceUah}` : ""}`,
+  );
 }
 
 export async function createAltegioGood(input: AltegioGoodCreateInput): Promise<{ id: number }> {
@@ -321,7 +345,7 @@ export async function createAltegioGood(input: AltegioGoodCreateInput): Promise<
     title: input.title.trim(),
     category_id: input.categoryId,
     unit: input.unit || "шт",
-    cost,
+    cost: input.salePriceUah && input.salePriceUah > 0 ? Math.round(input.salePriceUah * 100) / 100 : cost,
     actual_cost: cost,
     comment: input.comment || "",
     article: input.article || "",
