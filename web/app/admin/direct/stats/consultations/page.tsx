@@ -232,7 +232,7 @@ function ConsultationsPageContent() {
   const [chatStatuses, setChatStatuses] = useState<DirectChatStatus[]>([]);
   const loadChatStatuses = useCallback(async () => {
     try {
-      const res = await fetch("/api/admin/direct/chat-statuses", { credentials: "include" });
+      const res = await fetch("/api/admin/direct/chat-statuses?scope=lead", { credentials: "include" });
       const data = await res.json().catch(() => ({}));
       if (data?.ok && Array.isArray(data.statuses)) setChatStatuses(data.statuses);
     } catch (err) {

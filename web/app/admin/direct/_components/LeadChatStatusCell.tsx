@@ -222,7 +222,8 @@ export function LeadChatStatusCell({
       const res = await fetch(url, {
         method: form.id ? "PATCH" : "POST",
         headers: { "content-type": "application/json" },
-        body: JSON.stringify({ name, badgeKey: form.badgeKey }),
+        // Новий статус — у набір лідів; редагування набір не змінює.
+        body: JSON.stringify(form.id ? { name, badgeKey: form.badgeKey } : { name, badgeKey: form.badgeKey, scope: "lead" }),
         credentials: "include",
       });
       const data = await res.json().catch(() => ({}));

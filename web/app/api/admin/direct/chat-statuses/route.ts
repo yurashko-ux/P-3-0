@@ -16,6 +16,11 @@ const CRON_SECRET = process.env.CRON_SECRET || '';
 const ALLOWED_BADGE_KEYS = Array.from({ length: 10 }, (_, i) => `badge_${i + 1}`);
 const STATUS_NAME_MAX_LEN = 24;
 
+/** client — статуси клієнтів у Direct (за замовчуванням); lead — статуси розмов лідів (сторінка Ліди). */
+function parseScope(raw: unknown): 'client' | 'lead' {
+  return raw === 'lead' ? 'lead' : 'client';
+}
+
 function isAuthorized(req: NextRequest): boolean {
   if (isPreviewDeploymentHost(req.headers.get('host') || '')) return true;
   const adminToken = req.cookies.get('admin_token')?.value || '';
@@ -38,8 +43,9 @@ export async function GET(req: NextRequest) {
 
   try {
     const includeInactive = req.nextUrl.searchParams.get('includeInactive') === '1';
+    const scope = parseScope(req.nextUrl.searchParams.get('scope'));
     const statuses = await prisma.directChatStatus.findMany({
-      where: includeInactive ? undefined : { isActive: true },
+      where: includeInactive ? { scope } : { isActive: true, scope },
       orderBy: [{ order: 'asc' }, { createdAt: 'asc' }],
     });
     return NextResponse.json({ ok: true, statuses });
@@ -96,6 +102,7 @@ export async function POST(req: NextRequest) {
         badgeKey,
         order: Number.isFinite(order) ? order : 0,
         isActive: true,
+        scope: parseScope(body?.scope),
       },
     });
 
