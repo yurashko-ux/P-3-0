@@ -712,7 +712,7 @@ function ConsultationsPageContent() {
                 <col className="w-[2.75rem]" />
                 <col className="w-6" />
                 <col className="w-[5.5rem]" />
-                <col className="w-[7.5rem]" />
+                <col className="w-[7.25rem]" />
                 <col className="w-[24rem]" />
                 <col className="w-[6rem]" />
                 <col className="w-[4.5rem]" />

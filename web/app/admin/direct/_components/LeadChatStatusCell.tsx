@@ -45,6 +45,9 @@ export const BADGE_HEX: Record<string, string> = {
 };
 
 /** Таблетка в стилі Каси: пастельна заливка, тонка рамка, м'яка тінь. */
+/** Однакова ширина таблеток статусів незалежно від довжини назви (довгі — з «…», повна назва в title). */
+export const PILL_FIXED = "w-[6.75rem] justify-start";
+
 export const PILL_BASE =
   "inline-flex max-w-full items-center gap-1 whitespace-nowrap rounded-full px-2 h-5 text-[11px] leading-none text-gray-900 shadow-[0_1px_2px_rgba(15,23,42,0.05),0_3px_8px_-5px_rgba(15,23,42,0.3)] transition-[filter,transform] hover:brightness-[0.96] active:scale-[0.97] disabled:opacity-60";
 
@@ -245,13 +248,13 @@ export function LeadChatStatusCell({
       <button
         ref={btnRef}
         type="button"
-        className={`${PILL_BASE} ${className}`}
+        className={`${PILL_BASE} ${PILL_FIXED} ${className}`}
         style={pillStyle(current ? badgeKeyOf(current) : null)}
         title={current ? `${current.name} — змінити статус` : "Лід — обрати статус"}
         onClick={() => setOpen((v) => !v)}
       >
         {current ? <StatusDot badgeKey={badgeKeyOf(current)} /> : null}
-        <span className="truncate">{current ? current.name : "Лід"}</span>
+        <span className="truncate min-w-0 flex-1 text-left">{current ? current.name : "Лід"}</span>
       </button>
       {open && pos
         ? createPortal(
@@ -306,7 +309,7 @@ export function LeadChatStatusCell({
               <div className="flex flex-col items-start gap-1">
                 <button
                   type="button"
-                  className={`${PILL_BASE} ${!current ? "font-semibold" : ""}`}
+                  className={`${PILL_BASE} ${PILL_FIXED} ${!current ? "font-semibold" : ""}`}
                   style={pillStyle(null)}
                   disabled={busy}
                   onClick={() => void setClientStatus(null)}
@@ -317,14 +320,14 @@ export function LeadChatStatusCell({
                   <span key={s.id} className="group inline-flex items-center">
                     <button
                       type="button"
-                      className={`${PILL_BASE} ${current?.id === s.id ? "font-semibold" : ""}`}
+                      className={`${PILL_BASE} ${PILL_FIXED} ${current?.id === s.id ? "font-semibold" : ""}`}
                       style={pillStyle(badgeKeyOf(s))}
                       disabled={busy}
                       title={s.name}
                       onClick={() => void setClientStatus(s.id)}
                     >
                       <StatusDot badgeKey={badgeKeyOf(s)} />
-                      <span className="truncate max-w-[12rem]">{s.name}</span>
+                      <span className="truncate min-w-0 flex-1 text-left">{s.name}</span>
                       {current?.id === s.id ? <span aria-hidden>✓</span> : null}
                     </button>
                     <button

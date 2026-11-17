@@ -6,7 +6,7 @@
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { FilterIconButton } from "./FilterIconButton";
-import { PILL_BASE, StatusDot, pillStyle } from "./LeadChatStatusCell";
+import { PILL_BASE, PILL_FIXED, StatusDot, pillStyle } from "./LeadChatStatusCell";
 
 /** Ключ для лідів без статусу («Лід»). */
 export const LEAD_STATUS_NONE = "__none__";
@@ -87,9 +87,9 @@ export function LeadStatusFilterDropdown({ options, selected, onChange, total }:
                               </svg>
                             ) : null}
                           </span>
-                          <span className={`${PILL_BASE} pointer-events-none`} style={pillStyle(o.badgeKey)}>
+                          <span className={`${PILL_BASE} ${PILL_FIXED} pointer-events-none`} style={pillStyle(o.badgeKey)}>
                             {o.badgeKey ? <StatusDot badgeKey={o.badgeKey} /> : null}
-                            <span className="truncate">{o.label}</span>
+                            <span className="truncate min-w-0 flex-1 text-left">{o.label}</span>
                           </span>
                         </span>
                         <span className="text-gray-500 font-medium tabular-nums shrink-0">({o.count})</span>
