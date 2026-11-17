@@ -120,7 +120,7 @@ async function findIdsByLastInstagramMessage(
       c.id,
       GREATEST(c."lastMessageAt", ig."maxAt") AS "sortAt",
       CASE
-        WHEN c."callbackReminderKyivDay" ~ '^\d{4}-\d{2}-\d{2}$'
+        WHEN c."callbackReminderKyivDay" ~ '^[0-9]{4}-[0-9]{2}-[0-9]{2}$'
           AND c."callbackReminderKyivDay" <= to_char(now() AT TIME ZONE 'Europe/Kyiv', 'YYYY-MM-DD')
         THEN NOT EXISTS (
           SELECT 1 FROM "direct_messages" o

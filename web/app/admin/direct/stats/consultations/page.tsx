@@ -734,7 +734,8 @@ function ConsultationsPageContent() {
                     <span className="inline-flex items-center gap-1">
                       Статус ліда
                       <LeadStatusFilterDropdown
-                        options={leadStatusOptions}
+                        // Статуси з 0 за період не показуємо (крім уже обраних — щоб можна було зняти).
+                        options={leadStatusOptions.filter((o) => o.count > 0 || leadStatusFilter.includes(o.id))}
                         selected={leadStatusFilter}
                         onChange={setLeadStatusFilter}
                         total={leadStatusOptions.reduce((s, o) => s + o.count, 0)}
