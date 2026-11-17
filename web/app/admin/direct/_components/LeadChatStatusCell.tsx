@@ -5,10 +5,30 @@
 
 import React, { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
-import type { DirectChatStatus } from "@/lib/direct-types";
+import type { DirectChatStatus, DirectClient } from "@/lib/direct-types";
 import { ChatBadgeIcon, CHAT_BADGE_KEYS } from "./ChatBadgeIcon";
 
 const NAME_MAX_LEN = 24;
+
+/** Статуси, після яких пропонуємо одразу поставити нагадування (коли написати знову). */
+const REMIND_STATUS_NAMES = new Set(["За коротке", "Подумає", "Інше місто / Закордон", "Не з'явилась", "Скасувала"]);
+const REMIND_PRESETS: Array<{ label: string; days?: number; months?: number }> = [
+  { label: "2 тижні", days: 14 },
+  { label: "1 міс", months: 1 },
+  { label: "2 міс", months: 2 },
+  { label: "3 міс", months: 3 },
+  { label: "6 міс", months: 6 },
+];
+
+function kyivTodayYmd(): string {
+  return new Intl.DateTimeFormat("en-CA", { timeZone: "Europe/Kyiv", year: "numeric", month: "2-digit", day: "2-digit" }).format(new Date());
+}
+
+function addToYmd(ymd: string, days = 0, months = 0): string {
+  const [y, m, d] = ymd.split("-").map(Number);
+  const dt = new Date(Date.UTC(y, m - 1 + months, d + days));
+  return dt.toISOString().slice(0, 10);
+}
 
 // Кольори бейджів (як у ChatBadgeIcon) — для пастельного відтінку таблетки.
 const BADGE_HEX: Record<string, string> = {
@@ -48,6 +68,8 @@ type Props = {
   onStatusesChanged: () => void | Promise<void>;
   /** Статус клієнта збережено. */
   onChanged: (clientId: string, statusId: string | null) => void;
+  /** Нагадування збережено (швидкий вибір після статусу). */
+  onReminderSaved?: (client: DirectClient) => void;
   className?: string;
 };
 
@@ -61,6 +83,7 @@ export function LeadChatStatusCell({
   statuses,
   onStatusesChanged,
   onChanged,
+  onReminderSaved,
   className = "",
 }: Props) {
   const [open, setOpen] = useState(false);
@@ -68,6 +91,9 @@ export function LeadChatStatusCell({
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   // Форма конструктора: id=null — новий статус, інакше редагування.
+  // Після вибору статусу з REMIND_STATUS_NAMES — крок «Нагадати через…».
+  const [remindFor, setRemindFor] = useState<string | null>(null);
+  const [customDay, setCustomDay] = useState("");
   const [form, setForm] = useState<{ id: string | null; name: string; badgeKey: string } | null>(null);
   const btnRef = useRef<HTMLButtonElement>(null);
   const popRef = useRef<HTMLDivElement>(null);
@@ -110,6 +136,8 @@ export function LeadChatStatusCell({
   useEffect(() => {
     if (!open) {
       setForm(null);
+      setRemindFor(null);
+      setCustomDay("");
       setError(null);
     }
   }, [open]);
@@ -130,6 +158,35 @@ export function LeadChatStatusCell({
         return;
       }
       onChanged(clientId, next);
+      const picked = next ? statuses.find((s) => s.id === next) : null;
+      if (picked && REMIND_STATUS_NAMES.has(picked.name.trim()) && onReminderSaved) {
+        setRemindFor(picked.name.trim());
+      } else {
+        setOpen(false);
+      }
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err));
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function saveReminder(day: string) {
+    setBusy(true);
+    setError(null);
+    try {
+      const res = await fetch(`/api/admin/direct/clients/${encodeURIComponent(clientId)}/callback-reminder`, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ scheduledKyivDay: day, note: remindFor ? `Статус: ${remindFor}` : null }),
+        credentials: "include",
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!data?.ok) {
+        setError(data?.error || "Не вдалося зберегти нагадування");
+        return;
+      }
+      if (data.client) onReminderSaved?.(data.client as DirectClient);
       setOpen(false);
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
@@ -191,6 +248,47 @@ export function LeadChatStatusCell({
               className="fixed z-[1000] w-[260px] max-h-[360px] overflow-y-auto rounded-xl border border-slate-200/80 bg-white p-2 text-xs shadow-[0_1px_2px_rgba(15,23,42,0.05),0_14px_28px_-10px_rgba(15,23,42,0.35)]"
               style={{ top: pos.top, left: pos.left }}
             >
+              {remindFor ? (
+                <div className="mb-2 rounded-xl border border-slate-200 bg-[#e3edf9] p-2">
+                  <div className="mb-1 text-[9px] font-medium uppercase text-gray-600">
+                    «{remindFor}» — нагадати написати через
+                  </div>
+                  <div className="mb-1.5 flex flex-wrap gap-1">
+                    {REMIND_PRESETS.map((p) => (
+                      <button
+                        key={p.label}
+                        type="button"
+                        className={PILL_BASE}
+                        style={pillStyle(null)}
+                        disabled={busy}
+                        onClick={() => void saveReminder(addToYmd(kyivTodayYmd(), p.days ?? 0, p.months ?? 0))}
+                      >
+                        {p.label}
+                      </button>
+                    ))}
+                  </div>
+                  <div className="flex items-center gap-1">
+                    <input
+                      type="date"
+                      className={`${FIELD_CLASS} h-7 flex-1`}
+                      value={customDay}
+                      min={kyivTodayYmd()}
+                      onChange={(e) => setCustomDay(e.target.value)}
+                    />
+                    <button
+                      type="button"
+                      className={TINT_BUTTON_CLASS}
+                      disabled={busy || !customDay}
+                      onClick={() => void saveReminder(customDay)}
+                    >
+                      OK
+                    </button>
+                  </div>
+                  <button type="button" className={`${GHOST_BUTTON_CLASS} mt-1 w-full`} onClick={() => setOpen(false)}>
+                    Без нагадування
+                  </button>
+                </div>
+              ) : null}
               <div className="mb-1 px-1 text-[9px] font-medium uppercase text-gray-500">Статус ліда</div>
               <div className="flex flex-wrap gap-1">
                 <button

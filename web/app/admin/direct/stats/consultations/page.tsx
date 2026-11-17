@@ -500,6 +500,27 @@ function ConsultationsPageContent() {
     [clients, markSaving, updateClientLocal]
   );
 
+  // Вікно редагування коментаря (без обмежень вузького поля в таблиці).
+  const [commentEdit, setCommentEdit] = useState<{ clientId: string; name: string; text: string } | null>(null);
+  const [commentSaving, setCommentSaving] = useState(false);
+  const saveCommentEdit = useCallback(async () => {
+    if (!commentEdit) return;
+    const { clientId } = commentEdit;
+    const comment = commentEdit.text.trim();
+    setCommentSaving(true);
+    const res = await patchConsultationClient(clientId, { consultationListComment: comment });
+    setCommentSaving(false);
+    if (!res.ok) {
+      setError(res.error || "Не вдалося зберегти коментар");
+      return;
+    }
+    // Той самий коментар на всіх рядках клієнта (лід + копія консультації).
+    setClients((prev) =>
+      prev.map((row) => (row.id === clientId ? { ...row, consultationListComment: comment || null } : row))
+    );
+    setCommentEdit(null);
+  }, [commentEdit]);
+
   function handleMonthChange(next: string) {
     setSelectedMonth(next);
     const params = new URLSearchParams(searchParams?.toString() ?? "");
@@ -660,9 +681,9 @@ function ConsultationsPageContent() {
                 <col className="w-6" />
                 <col className="w-[5.5rem]" />
                 <col className="w-[7.5rem]" />
+                <col className="w-[24rem]" />
                 <col className="w-[6rem]" />
-                <col className="w-[8rem]" />
-                <col className="w-[3rem]" />
+                <col className="w-[4.5rem]" />
                 <col className="w-5" />
               </colgroup>
               <thead>
@@ -678,9 +699,9 @@ function ConsultationsPageContent() {
                   </th>
                   <th>Дата консультації</th>
                   <th>Статус ліда</th>
+                  <th>Коментар</th>
                   <th>Нагадати</th>
                   <th>Майстер</th>
-                  <th>Онлайн</th>
                   <th />
                 </tr>
               </thead>
@@ -842,6 +863,20 @@ function ConsultationsPageContent() {
                                 prev.map((row) => (row.id === id ? { ...row, chatStatusId: statusId } : row))
                               )
                             }
+                            onReminderSaved={(fresh) =>
+                              setClients((prev) =>
+                                prev.map((row) =>
+                                  row.id === fresh.id
+                                    ? {
+                                        ...row,
+                                        callbackReminderKyivDay: fresh.callbackReminderKyivDay ?? null,
+                                        callbackReminderNote: fresh.callbackReminderNote ?? null,
+                                        callbackReminderHistory: fresh.callbackReminderHistory ?? [],
+                                      }
+                                    : row
+                                )
+                              )
+                            }
                           />
                         ) : (
                           <select
@@ -868,6 +903,24 @@ function ConsultationsPageContent() {
                             ))}
                           </select>
                         )}
+                      </td>
+                      <td className="!px-0.5 align-middle">
+                        {/* Коментар до статусу: коротко суть розмови і результат. */}
+                        {/* Текст на всю колонку (до 2 рядків), редагування — у вікні по ✎. */}
+                        <div className="flex h-5 items-center gap-1 overflow-hidden" title={c.consultationListComment || undefined}>
+                          <button
+                            type="button"
+                            className="shrink-0 rounded px-0.5 text-[12px] leading-none text-gray-400 hover:bg-slate-100 hover:text-gray-700"
+                            title="Редагувати коментар"
+                            disabled={isSaving}
+                            onClick={() => setCommentEdit({ clientId: c.id, name: getClientName(c), text: c.consultationListComment || "" })}
+                          >
+                            ✎
+                          </button>
+                          <span className="line-clamp-2 min-w-0 flex-1 whitespace-normal break-words text-[10px] leading-[10px] text-gray-800">
+                            {c.consultationListComment || <span className="text-gray-400">—</span>}
+                          </span>
+                        </div>
                       </td>
                       <td className="p-0.5 align-middle">
                         <CallbackReminderCell
@@ -907,7 +960,6 @@ function ConsultationsPageContent() {
                           ))}
                         </select>
                       </td>
-                      <td>{c.isOnlineConsultation ? "так" : "—"}</td>
                       <td className="text-center">
                         {isSaving ? <span className="loading loading-spinner loading-xs" /> : null}
                       </td>
@@ -932,6 +984,46 @@ function ConsultationsPageContent() {
             className="max-w-[90vw] max-h-[90vh] object-contain"
             onClick={(e) => e.stopPropagation()}
           />
+        </div>
+      ) : null}
+      {commentEdit ? (
+        <div
+          className="fixed inset-0 z-[1000] flex items-center justify-center bg-black/30 p-4"
+          onMouseDown={(e) => e.target === e.currentTarget && !commentSaving && setCommentEdit(null)}
+        >
+          <div className="w-full max-w-lg rounded-xl border border-slate-200/80 bg-white p-4 shadow-[0_1px_2px_rgba(15,23,42,0.05),0_14px_28px_-10px_rgba(15,23,42,0.35)]">
+            <div className="mb-2 text-sm font-semibold text-gray-900">Коментар — {commentEdit.name}</div>
+            <textarea
+              autoFocus
+              rows={6}
+              className="w-full resize-y rounded-lg border border-slate-200 bg-white px-2.5 py-2 text-sm text-gray-900 shadow-[0_1px_2px_rgba(15,23,42,0.05)] focus:border-blue-300 focus:outline-none"
+              placeholder="Суть розмови, результат…"
+              value={commentEdit.text}
+              onChange={(e) => setCommentEdit({ ...commentEdit, text: e.target.value })}
+              onKeyDown={(e) => {
+                if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) void saveCommentEdit();
+                if (e.key === "Escape") setCommentEdit(null);
+              }}
+            />
+            <div className="mt-3 flex justify-end gap-2">
+              <button
+                type="button"
+                className="h-8 rounded-lg px-3 text-xs text-gray-600 hover:bg-slate-100"
+                disabled={commentSaving}
+                onClick={() => setCommentEdit(null)}
+              >
+                Скасувати
+              </button>
+              <button
+                type="button"
+                className="h-8 rounded-lg border border-slate-200/80 bg-[#e3edf9] px-4 text-xs font-medium text-gray-900 shadow-[0_1px_2px_rgba(15,23,42,0.05),0_4px_10px_-6px_rgba(15,23,42,0.28)] hover:brightness-[0.96] disabled:opacity-60"
+                disabled={commentSaving}
+                onClick={() => void saveCommentEdit()}
+              >
+                {commentSaving ? "Зберігаю…" : "Зберегти"}
+              </button>
+            </div>
+          </div>
         </div>
       ) : null}
       <CallbackReminderModal
