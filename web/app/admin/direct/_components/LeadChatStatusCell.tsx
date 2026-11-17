@@ -6,7 +6,7 @@
 import React, { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import type { DirectChatStatus, DirectClient } from "@/lib/direct-types";
-import { ChatBadgeIcon, CHAT_BADGE_KEYS } from "./ChatBadgeIcon";
+import { CHAT_BADGE_KEYS } from "./ChatBadgeIcon";
 
 const NAME_MAX_LEN = 24;
 
@@ -45,10 +45,21 @@ const BADGE_HEX: Record<string, string> = {
 };
 
 /** Таблетка в стилі Каси: пастельна заливка, тонка рамка, м'яка тінь. */
-const PILL_BASE =
+export const PILL_BASE =
   "inline-flex max-w-full items-center gap-1 whitespace-nowrap rounded-full border px-2 h-5 text-[11px] leading-none text-gray-900 shadow-[0_1px_2px_rgba(15,23,42,0.05),0_3px_8px_-5px_rgba(15,23,42,0.3)] transition-[filter,transform] hover:brightness-[0.96] active:scale-[0.97] disabled:opacity-60";
 
-function pillStyle(badgeKey: string | null): React.CSSProperties {
+/** Кольорова крапка статусу — без номера бейджа. */
+export function StatusDot({ badgeKey, size = 8 }: { badgeKey: string; size?: number }) {
+  return (
+    <span
+      className="inline-block shrink-0 rounded-full"
+      style={{ width: size, height: size, backgroundColor: BADGE_HEX[badgeKey] || BADGE_HEX.badge_1 }}
+      aria-hidden
+    />
+  );
+}
+
+export function pillStyle(badgeKey: string | null): React.CSSProperties {
   if (!badgeKey) return { backgroundColor: "#f1f5f9", borderColor: "#e2e8f0" };
   const hex = BADGE_HEX[badgeKey] || BADGE_HEX.badge_1;
   return { backgroundColor: `${hex}1f`, borderColor: `${hex}55` };
@@ -238,7 +249,7 @@ export function LeadChatStatusCell({
         title={current ? `${current.name} — змінити статус` : "Лід — обрати статус"}
         onClick={() => setOpen((v) => !v)}
       >
-        {current ? <ChatBadgeIcon badgeKey={badgeKeyOf(current)} size={14} /> : null}
+        {current ? <StatusDot badgeKey={badgeKeyOf(current)} /> : null}
         <span className="truncate">{current ? current.name : "Лід"}</span>
       </button>
       {open && pos
@@ -310,7 +321,7 @@ export function LeadChatStatusCell({
                       title={s.name}
                       onClick={() => void setClientStatus(s.id)}
                     >
-                      <ChatBadgeIcon badgeKey={badgeKeyOf(s)} size={12} />
+                      <StatusDot badgeKey={badgeKeyOf(s)} />
                       <span className="truncate max-w-[9rem]">{s.name}</span>
                     </button>
                     <button
@@ -347,7 +358,7 @@ export function LeadChatStatusCell({
                         className={`inline-flex h-6 w-6 items-center justify-center rounded-full border border-slate-200 bg-white ${form.badgeKey === k ? "ring-2 ring-slate-400" : "hover:bg-slate-100"}`}
                         onClick={() => setForm({ ...form, badgeKey: k })}
                       >
-                        <ChatBadgeIcon badgeKey={k} size={14} />
+                        <StatusDot badgeKey={k} size={12} />
                       </button>
                     ))}
                   </div>

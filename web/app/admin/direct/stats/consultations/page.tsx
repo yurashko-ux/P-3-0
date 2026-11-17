@@ -32,6 +32,7 @@ import { MessagesHistoryModal } from "../../_components/MessagesHistoryModal";
 import { CallbackReminderCell } from "../../_components/CallbackReminderCell";
 import { CallbackReminderModal } from "../../_components/CallbackReminderModal";
 import { LeadChatStatusCell } from "../../_components/LeadChatStatusCell";
+import { LeadStatusFilterDropdown, LEAD_STATUS_NONE } from "../../_components/LeadStatusFilterDropdown";
 import type { DirectChatStatus } from "@/lib/direct-types";
 import { useLeadSourcesMap } from "../../_components/useLeadSourcesMap";
 
@@ -313,8 +314,39 @@ function ConsultationsPageContent() {
   const toggleHeaderFilter = (next: NonNullable<typeof headerFilter>) =>
     setHeaderFilter((cur) => (cur && cur.kind === next.kind && cur.key === next.key ? null : next));
 
+  // Фільтр колонки «Статус ліда» (як у Direct): обрані статуси, LEAD_STATUS_NONE = «Лід» без статусу.
+  const [leadStatusFilter, setLeadStatusFilter] = useState<string[]>([]);
+  const leadStatusOptions = useMemo(() => {
+    const counts = new Map<string, number>();
+    const seen = new Set<string>();
+    for (const c of clients) {
+      if (!c.isLeadOnly || seen.has(c.id)) continue;
+      seen.add(c.id);
+      const key = (c.chatStatusId || "").trim() || LEAD_STATUS_NONE;
+      counts.set(key, (counts.get(key) ?? 0) + 1);
+    }
+    return [
+      { id: LEAD_STATUS_NONE, label: "Лід", count: counts.get(LEAD_STATUS_NONE) ?? 0, badgeKey: null },
+      ...chatStatuses.map((st) => ({
+        id: st.id,
+        label: st.name,
+        count: counts.get(st.id) ?? 0,
+        badgeKey: ((st as { badgeKey?: string }).badgeKey || "badge_1").toString(),
+      })),
+    ];
+  }, [clients, chatStatuses]);
+
   // Ті самі умови, що й у лічильниках, — щоб кількість рядків відповідала числу в шапці.
   const filteredClients = useMemo(() => {
+    const base = leadStatusFilter.length
+      ? clients.filter(
+          (c) => c.isLeadOnly && leadStatusFilter.includes((c.chatStatusId || "").trim() || LEAD_STATUS_NONE)
+        )
+      : clients;
+    return applyHeaderFilter(base);
+  }, [clients, headerFilter, leadStatusFilter]);
+
+  function applyHeaderFilter(clients: ConsultationClient[]): ConsultationClient[] {
     if (!headerFilter) return clients;
     if (headerFilter.kind === "consultations") {
       return clients.filter((c) => !c.isLeadOnly && c.countsTowardConsultationSummary !== false);
@@ -331,7 +363,7 @@ function ConsultationsPageContent() {
     return clients.filter(
       (c) => (c.isNewLead ?? c.isLeadOnly) && sourceKeyOf(c) === headerFilter.key
     );
-  }, [clients, headerFilter]);
+  }
 
   const allTableRows = useMemo(
     () => buildConsultationTableRows(filteredClients, todayKyiv),
@@ -698,7 +730,17 @@ function ConsultationsPageContent() {
                     Тел.
                   </th>
                   <th>Дата консультації</th>
-                  <th>Статус ліда</th>
+                  <th>
+                    <span className="inline-flex items-center gap-1">
+                      Статус ліда
+                      <LeadStatusFilterDropdown
+                        options={leadStatusOptions}
+                        selected={leadStatusFilter}
+                        onChange={setLeadStatusFilter}
+                        total={leadStatusOptions.reduce((s, o) => s + o.count, 0)}
+                      />
+                    </span>
+                  </th>
                   <th>Коментар</th>
                   <th>Нагадати</th>
                   <th>Майстер</th>
