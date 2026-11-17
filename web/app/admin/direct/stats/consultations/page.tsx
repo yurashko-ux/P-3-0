@@ -833,14 +833,10 @@ function ConsultationsPageContent() {
                       <td className="text-center">
                         {(() => {
                           const total = typeof c.messagesTotal === "number" ? c.messagesTotal : 0;
-                          const needs = Boolean(c.chatNeedsAttention);
-                          const hasStatus = Boolean((c.chatStatusId || "").trim());
                           const countClass =
                             total === 0
                               ? "bg-gray-200 text-gray-900"
-                              : needs || !hasStatus
-                                ? "bg-[#2AABEE] text-white"
-                                : "bg-gray-200 text-gray-900";
+                              : "bg-[#2AABEE] text-white";
                           const lastAt = formatDateDDMMYY(c.lastMessageAt);
                           const incoming = c.instagramIncomingCount ?? 0;
                           const outgoing = c.instagramOutgoingCount ?? 0;

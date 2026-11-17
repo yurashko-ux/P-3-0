@@ -31,7 +31,7 @@ function addToYmd(ymd: string, days = 0, months = 0): string {
 }
 
 // Кольори бейджів (як у ChatBadgeIcon) — для пастельного відтінку таблетки.
-const BADGE_HEX: Record<string, string> = {
+export const BADGE_HEX: Record<string, string> = {
   badge_1: "#0ea5e9",
   badge_2: "#22c55e",
   badge_3: "#f97316",
