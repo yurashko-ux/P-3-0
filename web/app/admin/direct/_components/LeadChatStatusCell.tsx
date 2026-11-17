@@ -46,7 +46,7 @@ const BADGE_HEX: Record<string, string> = {
 
 /** Таблетка в стилі Каси: пастельна заливка, тонка рамка, м'яка тінь. */
 export const PILL_BASE =
-  "inline-flex max-w-full items-center gap-1 whitespace-nowrap rounded-full border px-2 h-5 text-[11px] leading-none text-gray-900 shadow-[0_1px_2px_rgba(15,23,42,0.05),0_3px_8px_-5px_rgba(15,23,42,0.3)] transition-[filter,transform] hover:brightness-[0.96] active:scale-[0.97] disabled:opacity-60";
+  "inline-flex max-w-full items-center gap-1 whitespace-nowrap rounded-full px-2 h-5 text-[11px] leading-none text-gray-900 shadow-[0_1px_2px_rgba(15,23,42,0.05),0_3px_8px_-5px_rgba(15,23,42,0.3)] transition-[filter,transform] hover:brightness-[0.96] active:scale-[0.97] disabled:opacity-60";
 
 /** Кольорова крапка статусу — без номера бейджа. */
 export function StatusDot({ badgeKey, size = 8 }: { badgeKey: string; size?: number }) {
@@ -60,9 +60,9 @@ export function StatusDot({ badgeKey, size = 8 }: { badgeKey: string; size?: num
 }
 
 export function pillStyle(badgeKey: string | null): React.CSSProperties {
-  if (!badgeKey) return { backgroundColor: "#f1f5f9", borderColor: "#e2e8f0" };
+  if (!badgeKey) return { backgroundColor: "#f1f5f9" };
   const hex = BADGE_HEX[badgeKey] || BADGE_HEX.badge_1;
-  return { backgroundColor: `${hex}1f`, borderColor: `${hex}55` };
+  return { backgroundColor: `${hex}26` };
 }
 
 const FIELD_CLASS =
@@ -301,28 +301,30 @@ export function LeadChatStatusCell({
                 </div>
               ) : null}
               <div className="mb-1 px-1 text-[9px] font-medium uppercase text-gray-500">Статус ліда</div>
-              <div className="flex flex-wrap gap-1">
+              {/* Статуси списком, один під одним. */}
+              <div className="flex flex-col items-start gap-1">
                 <button
                   type="button"
-                  className={`${PILL_BASE} ${!current ? "ring-2 ring-slate-400" : ""}`}
+                  className={`${PILL_BASE} ${!current ? "font-semibold" : ""}`}
                   style={pillStyle(null)}
                   disabled={busy}
                   onClick={() => void setClientStatus(null)}
                 >
-                  Лід
+                  Лід{!current ? " ✓" : ""}
                 </button>
                 {statuses.map((s) => (
                   <span key={s.id} className="group inline-flex items-center">
                     <button
                       type="button"
-                      className={`${PILL_BASE} ${current?.id === s.id ? "ring-2 ring-slate-400" : ""}`}
+                      className={`${PILL_BASE} ${current?.id === s.id ? "font-semibold" : ""}`}
                       style={pillStyle(badgeKeyOf(s))}
                       disabled={busy}
                       title={s.name}
                       onClick={() => void setClientStatus(s.id)}
                     >
                       <StatusDot badgeKey={badgeKeyOf(s)} />
-                      <span className="truncate max-w-[9rem]">{s.name}</span>
+                      <span className="truncate max-w-[12rem]">{s.name}</span>
+                      {current?.id === s.id ? <span aria-hidden>✓</span> : null}
                     </button>
                     <button
                       type="button"
