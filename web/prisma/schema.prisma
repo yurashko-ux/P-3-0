@@ -1249,6 +1249,34 @@ model FinanceWarehouseBalanceSnapshot {
   @@map("finance_warehouse_balance_snapshots")
 }
 
+// Щоденний знімок обігових коштів для графіка дашборду (cron увечері, один рядок на день Europe/Kyiv).
+// Суми — у рідних валютах, курс — робочий курс дня; підсумок у доларах рахується при записі.
+model WorkingCapitalSnapshot {
+  id          String   @id @default(uuid())
+  kyivDay     String   @unique
+  usdRate     Float
+  eurRate     Float
+  /// Волосся: доларова собівартість + гривнева (переведена в $ за курсом дня)
+  hairUsd     Float    @default(0)
+  /// Товари на продаж (без витратних матеріалів), грн
+  goodsUah    Float    @default(0)
+  cashUah     Float    @default(0)
+  cashUsd     Float    @default(0)
+  cashEur     Float    @default(0)
+  /// Рахунки ФОП (monobank), разом з еквайрингом
+  bankUah     Float    @default(0)
+  bankUsd     Float    @default(0)
+  bankEur     Float    @default(0)
+  /// Завдатки клієнтів — чужі гроші
+  depositsUah Float    @default(0)
+  totalUsd    Float
+  ownUsd      Float
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@map("working_capital_snapshots")
+}
+
 // ===== Розділ Банк (monobank та інші провайдери) =====
 
 // Підключення до банку (один токен monobank = одне підключення)

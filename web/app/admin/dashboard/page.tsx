@@ -4,9 +4,17 @@
 import { Suspense, useCallback, useEffect, useMemo, useState } from "react";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { formatDayShort, formatPeriod, isYmd, kyivToday } from "@/lib/dashboard/period";
-import type { DashboardCash, DashboardCashAccount, DashboardData, DashboardVisitRow, VisitStatus } from "@/lib/dashboard/types";
+import type {
+  DashboardCash,
+  DashboardCashAccount,
+  DashboardData,
+  DashboardVisitRow,
+  DashboardWorkingCapital,
+  VisitStatus,
+} from "@/lib/dashboard/types";
 import { Block, formatInt, formatPercent, formatUah, formatUsd, ListBlock, SectionTitle } from "./_components/blocks";
 import { PeriodCalendar } from "./_components/PeriodCalendar";
+import { WorkingCapitalSection, type WorkingCapitalState } from "./_components/WorkingCapital";
 
 const STATUS_LABEL: Record<VisitStatus, string> = {
   paid: "Оплачено",
@@ -102,6 +110,28 @@ function DashboardInner() {
     };
   }, [reloadTick]);
 
+  // Обігові кошти теж від періоду не залежать.
+  const [capital, setCapital] = useState<WorkingCapitalState>({ status: "loading" });
+  useEffect(() => {
+    let cancelled = false;
+    setCapital({ status: "loading" });
+    fetch("/api/admin/dashboard/working-capital", { credentials: "include", cache: "no-store" })
+      .then(async (res) => {
+        const json = await res.json().catch(() => null);
+        if (!res.ok || !json?.ok) throw new Error(json?.error || `Помилка ${res.status}`);
+        return json as DashboardWorkingCapital;
+      })
+      .then((json) => {
+        if (!cancelled) setCapital({ status: "ready", data: json });
+      })
+      .catch((err) => {
+        if (!cancelled) setCapital({ status: "error", error: err instanceof Error ? err.message : "помилка" });
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [reloadTick]);
+
   const changePeriod = useCallback(
     (nextFrom: string, nextTo: string) => {
       router.replace(`${pathname}?from=${nextFrom}&to=${nextTo}`, { scroll: false });
@@ -145,7 +175,7 @@ function DashboardInner() {
           {!fresh && loading && <Skeleton />}
           {fresh && (
             <div className={loading ? "opacity-60" : undefined}>
-              <DashboardBody data={fresh} cash={cash} />
+              <DashboardBody data={fresh} cash={cash} capital={capital} />
             </div>
           )}
         </main>
@@ -218,7 +248,7 @@ function CashBlock({ cash }: { cash: CashState }) {
   );
 }
 
-function DashboardBody({ data, cash }: { data: DashboardData; cash: CashState }) {
+function DashboardBody({ data, cash, capital }: { data: DashboardData; cash: CashState; capital: WorkingCapitalState }) {
   const { period, revenue, paid, income, visits, planned } = data;
   const future = period.isFuture;
   const cashAccounts = data.accounts.filter((a) => a.kind === "cash");
@@ -485,6 +515,12 @@ function DashboardBody({ data, cash }: { data: DashboardData; cash: CashState })
           </div>
         </>
       )}
+
+      <SectionTitle
+        title="Обігові кошти"
+        sub="Гроші, що крутяться в салоні: товар, каси, рахунки. Від обраного періоду не залежать."
+      />
+      <WorkingCapitalSection state={capital} />
 
       <SectionTitle title="Зараз" sub="Ці блоки не залежать від обраного періоду." />
       <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">

@@ -112,3 +112,32 @@ export type DashboardCash = {
   accounts: DashboardCashAccount[];
   deposits: { balance: number; clients: number };
 };
+
+/** Обігові кошти зараз у рідних валютах. Матеріали (склади поза фінзвітом) не входять — це розхід. */
+export type WorkingCapitalParts = {
+  hairUsd: number;
+  goodsUah: number;
+  cashUah: number;
+  cashUsd: number;
+  cashEur: number;
+  /** Рахунки ФОП разом з еквайрингом: він зараховується щоночі. */
+  bankUah: number;
+  bankUsd: number;
+  bankEur: number;
+  depositsUah: number;
+};
+
+export type WorkingCapitalPoint = {
+  kyivDay: string;
+  totalUsd: number;
+  ownUsd: number;
+  usdRate: number;
+};
+
+export type DashboardWorkingCapital = {
+  ok: true;
+  /** Розрахунок на зараз; null — немає робочого курсу долара. */
+  now: (WorkingCapitalPoint & { eurRate: number; parts: WorkingCapitalParts }) | null;
+  /** Щоденні знімки від першого запуску (старіші дні не відновлюємо). */
+  history: WorkingCapitalPoint[];
+};
