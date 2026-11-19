@@ -318,7 +318,7 @@ function bankCounterpartyLabel(item: BankIncomingItem): string {
   return item.counterName || item.description || item.comment || "—";
 }
 
-function bankRowLooksLikeAcquiring(row: Pick<BankIncomingItem, "description" | "comment" | "counterName">): boolean {
+export function bankRowLooksLikeAcquiring(row: Pick<BankIncomingItem, "description" | "comment" | "counterName">): boolean {
   const text = `${row.description || ""} ${row.comment || ""} ${row.counterName || ""}`.toLowerCase();
   const normalized = text.replace(/\s+/g, " ").trim();
   return (

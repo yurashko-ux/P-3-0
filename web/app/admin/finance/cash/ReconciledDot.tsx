@@ -6,13 +6,14 @@ const STATUS_CLASS: Record<ReconcileStatus, string> = {
   none: "bg-gray-300",
 };
 
-/** Кружечок стану: зелений — зведено, жовтий — частково, сірий — ні (у касі — чи була касовка). */
+/** Кружечок стану: зелений — зведено, жовтий — частково, сірий — ні (у касі — чи була касовка); червоний — не зведено вчасно. */
 export function ReconciledDot({
   done,
   status,
   doneTitle,
   openTitle,
   partialTitle = "Зведено частково",
+  overdue,
   onClick,
   expanded,
 }: {
@@ -21,13 +22,16 @@ export function ReconciledDot({
   doneTitle: string;
   openTitle: string;
   partialTitle?: string;
+  /** Не зведено до ранку наступного дня — червоне коло */
+  overdue?: boolean;
   /** Кружечок-кнопка: розгортає документи платежу */
   onClick?: () => void;
   expanded?: boolean;
 }) {
   const state: ReconcileStatus = status ?? (done ? "full" : "none");
-  const title = state === "full" ? doneTitle : state === "partial" ? partialTitle : openTitle;
-  const dot = <span className={`inline-block h-2.5 w-2.5 rounded-full ${STATUS_CLASS[state]}`} />;
+  const red = overdue && state !== "full";
+  const title = `${state === "full" ? doneTitle : state === "partial" ? partialTitle : openTitle}${red ? " — прострочено" : ""}`;
+  const dot = <span className={`inline-block h-2.5 w-2.5 rounded-full ${red ? "bg-red-500" : STATUS_CLASS[state]}`} />;
   if (!onClick) {
     return (
       <span className="inline-flex" title={title} aria-label={title}>

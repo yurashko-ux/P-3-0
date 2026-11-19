@@ -36,6 +36,8 @@ export type StatementRow = {
   recordId?: number | null;
   appointmentId?: string | null;
   status: ReconcileStatus;
+  /** День показу в Касі (еквайринг — день оплат, тобто попередній); якщо немає — день платежу */
+  displayDay?: string;
   /** Скільки не вистачає документів до суми платежу (часткове зведення) */
   missing: number;
   documents: LinkedDocument[];

@@ -203,7 +203,18 @@ function dayFlows(items: DayItem[]): Array<{ currency: string; incoming: number;
     else flow.outgoing += signed;
     byCurrency.set(currency, flow);
   }
-  return [...byCurrency.entries()].map(([currency, flow]) => ({ currency, ...flow }));
+  return [...byCurrency.entries()]
+    .map(([currency, flow]) => ({ currency, ...flow }))
+    .sort((a, b) => CASH_CURRENCIES.indexOf(a.currency as CashCountCurrency) - CASH_CURRENCIES.indexOf(b.currency as CashCountCurrency));
+}
+
+/** Суми дня по валютах в один рядок: «92 581 грн / 2 802 $ / 496 €»; нульові валюти пропускаємо */
+type DayFlow = ReturnType<typeof dayFlows>[number];
+
+function flowAmounts(flows: DayFlow[], pick: (flow: DayFlow) => number): string {
+  const parts = flows.filter((flow) => Math.abs(pick(flow)) >= 0.005);
+  if (parts.length === 0) return `0 ${unitOf(flows[0]?.currency ?? "UAH")}`;
+  return parts.map((flow) => `${moneyInt(pick(flow))} ${unitOf(flow.currency)}`).join(" / ");
 }
 
 function timeLabel(iso: string): string {
@@ -371,7 +382,7 @@ export function CashLedgerPanel({
       ),
     ]);
     const itemDay = (item: DayItem) =>
-      item.kind === "cash" ? item.row.kyivDay : item.kind === "bank" ? kyivDayOf(item.row.time) : item.doc.kyivDay;
+      item.kind === "cash" ? item.row.kyivDay : item.kind === "bank" ? item.row.displayDay || kyivDayOf(item.row.time) : item.doc.kyivDay;
     const allDays = new Set([...visibleRows.map((row) => row.kyivDay), ...bankItems.map(itemDay)]);
     const cashByDay = new Map<string, LedgerRow[]>();
     for (const day of allDays) {
@@ -456,6 +467,9 @@ export function CashLedgerPanel({
   }, [rows, activeTitles, currencies, bankStatements, bankBalanceAt]);
 
   /** Час останньої касовки по кожній касі: платіж до неї — «зведений» */
+  /** Сьогодні (Київ): незведені платежі минулих днів підсвічуємо червоним */
+  const today = kyivDayOf(new Date().toISOString());
+
   const lastCountAt = useMemo(() => {
     const map = new Map<string, number>();
     for (const count of counts) {
@@ -537,31 +551,30 @@ export function CashLedgerPanel({
               </colgroup>
               <thead>
                 <tr className="bg-slate-300 text-[10px] text-gray-900">
-                  <th colSpan={6} className="px-2 py-1 text-left font-bold uppercase tracking-wide">
-                    {dayLabel(day.kyivDay)}
-                    {day.unlinkedCount > 0 ? (
-                      <span className="ml-3 font-medium normal-case tracking-normal text-amber-800">
-                        ⚠ {day.unlinkedCount} {day.unlinkedCount === 1 ? "документ" : "документи"} без платежу ·{" "}
-                        {money(Math.abs(day.unlinkedSum))} грн
-                      </span>
-                    ) : null}
-                  </th>
-                  {/* Рух дня над колонками Призначення…Сума: вхідні, вихідні, баланс */}
-                  <th
-                    colSpan={3}
-                    className="whitespace-nowrap px-2 py-1 text-right font-medium normal-case tracking-normal tabular-nums"
-                  >
-                    {dayFlows(day.items).map((flow) => (
-                      <div key={flow.currency}>
-                        <span className="text-green-800">Вхідні {moneyInt(flow.incoming)}</span>
-                        <span className="mx-1.5 text-gray-500">·</span>
-                        <span className="text-red-700">Вихідні {moneyInt(flow.outgoing)}</span>
-                        <span className="mx-1.5 text-gray-500">·</span>
-                        <span className="font-bold">
-                          Баланс {moneyInt(flow.incoming + flow.outgoing)} {unitOf(flow.currency)}
-                        </span>
-                      </div>
-                    ))}
+                  {/* Дата (і попередження про документи без платежу) зліва, рух дня справа одним рядком:
+                      вхідні, вихідні, баланс — валюти через «/». Переносимо лише блоками, коли рядок не вміщається */}
+                  <th colSpan={9} className="px-2 py-1 text-left">
+                    <div className="flex items-baseline gap-3">
+                      <div className="shrink-0 font-bold uppercase tracking-wide">{dayLabel(day.kyivDay)}</div>
+                      {day.unlinkedCount > 0 ? (
+                        <div className="min-w-0 font-medium text-amber-800">
+                          ⚠ {day.unlinkedCount} {day.unlinkedCount === 1 ? "документ" : "документи"} без платежу ·{" "}
+                          {money(Math.abs(day.unlinkedSum))} грн
+                        </div>
+                      ) : null}
+                      {(() => {
+                        const flows = dayFlows(day.items);
+                        return (
+                          <div className="ml-auto flex flex-wrap justify-end gap-x-1.5 text-right font-medium tabular-nums">
+                            <span className="whitespace-nowrap text-green-800">Вхідні: {flowAmounts(flows, (f) => f.incoming)},</span>
+                            <span className="whitespace-nowrap text-red-700">Вихідні: {flowAmounts(flows, (f) => f.outgoing)},</span>
+                            <span className="whitespace-nowrap font-bold">
+                              Баланс: {flowAmounts(flows, (f) => f.incoming + f.outgoing)}
+                            </span>
+                          </div>
+                        );
+                      })()}
+                    </div>
                   </th>
                   {/* Над колонкою «Залишок» — залишок усіх показаних рахунків на кінець дня */}
                   <th
@@ -593,19 +606,19 @@ export function CashLedgerPanel({
                     // Документ ФОП без платежу: не гроші на рахунку — порожнє коло й сіра сума
                     const doc = item.doc;
                     // З минулих днів платіж уже мав надійти — рожевий рядок і червоне коло
-                    const overdue = doc.kyivDay < kyivDayOf(new Date().toISOString());
+                    const overdue = doc.kyivDay < today;
                     return (
                       <tr
                         key={item.key}
                         className={`border-t border-dashed border-gray-200 text-gray-500 ${overdue ? "bg-pink-100" : ""}`}
                       >
                         <td className="px-2 py-1 tabular-nums">{index + 1}</td>
-                        <td />
+                        <td className="px-2 py-1 text-center" title="Документ, а не платіж">📄</td>
                         <td className="whitespace-nowrap px-2 py-1 tabular-nums">{timeLabel(doc.time)}</td>
                         <td className="px-1 py-1 text-center">
                           {overdue ? (
                             <span
-                              className="inline-block h-2.5 w-2.5 rounded-full bg-red-500"
+                              className="inline-block h-2.5 w-2.5 rounded-full border-2 border-red-500"
                               title="Платіж не надійшов"
                             />
                           ) : (
@@ -631,9 +644,12 @@ export function CashLedgerPanel({
                     const incoming = row.amount >= 0;
                     const open = expanded.has(item.key);
                     const canExpand = row.documents.length > 0 || Boolean(row.groupNote) || row.status !== "none";
+                    // Безготівка, не зведена до ранку наступного дня (еквайринг уже на дні оплат):
+                    // світло-червоний рядок із червоною смугою зліва і червоне коло
+                    const overdue = row.status !== "full" && day.kyivDay < today;
                     return (
                       <Fragment key={item.key}>
-                        <tr className="border-t border-gray-100">
+                        <tr className={`border-t border-gray-100 ${overdue ? "bg-red-50 shadow-[inset_3px_0_0_#ef4444]" : ""}`}>
                           <td className="px-2 py-1 tabular-nums text-gray-500">{index + 1}</td>
                           <td className={`px-2 py-1 font-semibold ${incoming ? "text-green-700" : "text-red-600"}`}>
                             {incoming ? "↓" : "↑"}
@@ -642,6 +658,7 @@ export function CashLedgerPanel({
                           <td className="px-1 py-1 text-center">
                             <ReconciledDot
                               status={row.status}
+                              overdue={overdue}
                               doneTitle="Зведено повністю"
                               partialTitle="Зведено частково"
                               openTitle="Не зведено"
@@ -740,6 +757,7 @@ export function CashLedgerPanel({
                   const unit = cashCountUnit(row.currency);
                   const incoming = row.direction === "in";
                   const signed = incoming ? row.amount : -row.amount;
+                  const counted = new Date(row.occurredAt).getTime() <= (lastCountAt.get(row.accountTitle) ?? 0);
                   return (
                     <tr key={item.key} className="border-t border-gray-100">
                       <td className="px-2 py-1 tabular-nums text-gray-500">{index + 1}</td>
@@ -751,9 +769,7 @@ export function CashLedgerPanel({
                       </td>
                       <td className="px-1 py-1 text-center">
                         <ReconciledDot
-                          status={
-                            new Date(row.occurredAt).getTime() <= (lastCountAt.get(row.accountTitle) ?? 0) ? "full" : "partial"
-                          }
+                          status={counted ? "full" : "partial"}
                           doneTitle="Після платежу була касовка"
                           partialTitle="Після платежу касовки ще не було"
                           openTitle="Після платежу касовки ще не було"

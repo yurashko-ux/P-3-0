@@ -9,6 +9,7 @@ import {
   isLinkedIncomingMatchStatus,
   resolveIncomingBankExpenseArticle,
 } from "@/lib/bank/reconciliation-number";
+import { bankRowLooksLikeAcquiring } from "@/lib/bank/incoming-reconcile-matching";
 
 export const dynamic = "force-dynamic";
 // Без кешу fetch: запити Prisma (Accelerate, HTTP) з тими самими параметрами інакше віддавали застарілі дані
@@ -22,6 +23,13 @@ const FULL_TOLERANCE_UAH = 1;
 
 function kopToUah(kop: bigint): number {
   return Number(kop) / 100;
+}
+
+function addDaysYmd(ymd: string, days: number): string {
+  const [year, month, day] = ymd.split("-").map(Number);
+  const date = new Date(Date.UTC(year, month - 1, day));
+  date.setUTCDate(date.getUTCDate() + days);
+  return date.toISOString().slice(0, 10);
 }
 
 function kyivDayOf(date: Date): string {
@@ -216,6 +224,13 @@ export async function GET(req: NextRequest) {
           !item.altegioDepositMatch && item.altegioIncomingMatch && isLinkedIncomingMatchStatus(item.altegioIncomingMatch.status)
             ? item.altegioIncomingMatch.kyivDay
             : null,
+        /** День показу в Касі: день оплат зведеного вхідного; незведений еквайринг (зараховується вночі) — попередній день */
+        displayDay:
+          !item.altegioDepositMatch && item.altegioIncomingMatch && isLinkedIncomingMatchStatus(item.altegioIncomingMatch.status)
+            ? item.altegioIncomingMatch.kyivDay
+            : bankAmount > 0 && bankRowLooksLikeAcquiring(item)
+              ? addDaysYmd(kyivDayOf(item.time), -1)
+              : kyivDayOf(item.time),
         groupNote: "",
         /** Сума оплат клієнта, з якими збігся цей платіж, — лише довідково під приміткою (у суму дня не входить) */
         groupNoteAmount: null as number | null,
