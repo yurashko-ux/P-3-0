@@ -644,9 +644,10 @@ export function CashLedgerPanel({
                     const incoming = row.amount >= 0;
                     const open = expanded.has(item.key);
                     const canExpand = row.documents.length > 0 || Boolean(row.groupNote) || row.status !== "none";
-                    // Безготівка, не зведена до ранку наступного дня (еквайринг уже на дні оплат):
-                    // світло-червоний рядок із червоною смугою зліва і червоне коло
-                    const overdue = row.status !== "full" && day.kyivDay < today;
+                    // Безготівка, не зведена в розділі Банк до ранку наступного дня (еквайринг уже на дні оплат):
+                    // світло-червоний рядок із червоною смугою зліва і червоне коло.
+                    // Жовте коло (документів на суму бракує) при зведенні в Банку — не прострочення
+                    const overdue = !(row.reconciledInBank ?? row.status === "full") && day.kyivDay < today;
                     return (
                       <Fragment key={item.key}>
                         <tr className={`border-t border-gray-100 ${overdue ? "bg-red-50 shadow-[inset_3px_0_0_#ef4444]" : ""}`}>

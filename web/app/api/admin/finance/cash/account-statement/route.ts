@@ -217,6 +217,8 @@ export async function GET(req: NextRequest) {
         recordId: null as number | null,
         appointmentId: null as string | null,
         status,
+        /** Зведено в розділі Банк (як у Банку й Платежах) — за цим Каса вирішує, чи підсвічувати платіж червоним */
+        reconciledInBank,
         missing: status === "partial" ? missing : 0,
         documents,
         /** День оплат, з яким зведено вхідний (еквайринг — попередній день) */
