@@ -27,6 +27,8 @@ export async function POST(req: NextRequest) {
       // Створюємо чернетку — залишки й Altegio міняє лише проведення
       draft: true,
       replaceDocumentId: typeof body.replaceDocumentId === "string" && body.replaceDocumentId ? body.replaceDocumentId : undefined,
+      supplierName: typeof body.supplierName === "string" ? body.supplierName : undefined,
+      payment: body.payment,
       lines: Array.isArray(body.lines) ? body.lines : [],
     });
     return NextResponse.json({ ok: true, document });

@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { PrettySelect } from "./PrettySelect";
+import { isSupplierPaymentPurpose } from "@/lib/finance/supplier-settlement-shared";
 
 export type CashDocumentType = "income" | "expense" | "transfer";
 
@@ -187,6 +188,8 @@ export function CashDocumentModal({
   const [newGroup, setNewGroup] = useState<string | null>(null);
   const [occurredAt, setOccurredAt] = useState(todayLocalInput);
   const [comment, setComment] = useState("");
+  /** Для розходу «Закупівля товарів» — кому заплатили (розрахунки з постачальниками) */
+  const [supplierName, setSupplierName] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -318,7 +321,14 @@ export function CashDocumentModal({
     }
   }
 
+  const supplierPayment =
+    type === "expense" && isSupplierPaymentPurpose(purposes.find((purpose) => purpose.id === purposeId)?.title);
+
   async function save() {
+    if (supplierPayment && !supplierName.trim()) {
+      setError("Вкажіть постачальника — оплата піде в розрахунки з ним");
+      return;
+    }
     setBusy(true);
     setError(null);
     try {
@@ -334,6 +344,7 @@ export function CashDocumentModal({
         if (exchange) payload.counterAmount = Number(counterAmount.replace(",", "."));
       } else {
         payload.purposeId = purposeId || null;
+        if (supplierPayment) payload.supplierName = supplierName.trim();
       }
       const res = await fetch("/api/admin/finance/documents", {
         method: "POST",
@@ -576,6 +587,17 @@ export function CashDocumentModal({
                   </div>
                 </div>
               )}
+            </div>
+          ) : null}
+          {supplierPayment ? (
+            <div className={rowClass}>
+              <span className={labelClass}>Постачальник</span>
+              <input
+                className={purposeInputClass}
+                placeholder="кому заплатили"
+                value={supplierName}
+                onChange={(e) => setSupplierName(e.target.value)}
+              />
             </div>
           ) : null}
           <div className={rowClass}>

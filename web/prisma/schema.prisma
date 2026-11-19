@@ -908,6 +908,10 @@ model FinanceDocument {
   altegioCounterTransactionId Int?
   localAltegioTxId            String?
   localAltegioCounterTxId     String?
+  /// Розхід «Закупівля товарів»: кому заплатили (розрахунки з постачальниками)
+  supplierName                String?
+  /// Прийомка складу, за яку ця оплата (створена проведенням або прив'язана як передоплата)
+  warehouseDocumentId         String?
   createdAt                   DateTime @default(now())
   updatedAt                   DateTime @updatedAt
 
@@ -921,6 +925,7 @@ model FinanceDocument {
   @@index([occurredAt])
   @@index([accountId])
   @@index([source])
+  @@index([warehouseDocumentId])
   @@map("finance_documents")
 }
 
@@ -1269,12 +1274,37 @@ model WorkingCapitalSnapshot {
   bankEur     Float    @default(0)
   /// Завдатки клієнтів — чужі гроші
   depositsUah Float    @default(0)
+  /// Борг постачальникам за прийомки в борг, $
+  supplierDebtUsd Float  @default(0)
   totalUsd    Float
   ownUsd      Float
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
 
   @@map("working_capital_snapshots")
+}
+
+/// Оплата боргу постачальнику за прийомки в борг. Гроші з каси рухає інкасація (як і раніше),
+/// а цей запис лише зменшує борг.
+model SupplierPayment {
+  id           String    @id @default(uuid())
+  supplierName String
+  /// UAH | USD | EUR
+  currency     String    @default("USD")
+  amount       Float
+  /// Сума в доларах за робочим курсом дня оплати — у ній ведемо борг
+  amountUsd    Float
+  kyivDay      String
+  comment      String?
+  createdBy    String?
+  /// Скасована оплата в борг не йде
+  voidedAt     DateTime?
+  createdAt    DateTime  @default(now())
+  updatedAt    DateTime  @updatedAt
+
+  @@index([supplierName])
+  @@index([kyivDay])
+  @@map("supplier_payments")
 }
 
 // ===== Розділ Банк (monobank та інші провайдери) =====
@@ -2023,6 +2053,11 @@ model WarehouseDocument {
   source             String   @default("kresco")
   altegioTxId        Int?     @unique
   parentDocumentId   String?
+  /// Від кого прийшов товар (прийомка), напр. «Власниця»
+  supplierName       String?
+  /// Оплата прийомки: { mode: now|prepaid|credit, accountId?, amount?, financeDocumentIds?, createdFinanceDocumentId?, error? }.
+  /// now — проведення створює розхід «Закупівля товарів»; prepaid — прив'язує вже зроблені; credit — борг.
+  paymentPlan        Json?
   createdBy          String?
   createdAt          DateTime @default(now())
   updatedAt          DateTime @updatedAt

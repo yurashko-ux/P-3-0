@@ -125,6 +125,10 @@ export type WorkingCapitalParts = {
   bankUsd: number;
   bankEur: number;
   depositsUah: number;
+  /** Борг постачальникам, $ — чужі гроші. */
+  supplierDebtUsd: number;
+  /** Аванси постачальникам, $ — наші гроші, товар ще їде. */
+  supplierAdvanceUsd: number;
 };
 
 export type WorkingCapitalPoint = {

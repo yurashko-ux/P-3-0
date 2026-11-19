@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { WarehouseCreateButton } from "../_components/WarehouseCreateButton";
+import { IntakePaymentFields, type IntakePaymentValue } from "./IntakePaymentFields";
 import { ReconciledDot } from "@/app/admin/finance/cash/ReconciledDot";
 import {
   Banner,
@@ -349,12 +350,11 @@ export default function WarehouseDocumentsPage() {
       <div className="flex flex-wrap items-center gap-2 py-2">
         <button
           type="button"
-          className={`${tileButtonClass} !w-auto min-w-[200px] px-6`}
+          className={`${tileButtonClass} !w-[150px]`}
           style={{ background: DOC_TINT.goods }}
           onClick={() => openTab("intake")}
         >
           <span className="text-sm font-semibold text-gray-800">+ Документ</span>
-          <span className="text-[10px] text-gray-600">прийомка, переоблік, списання, переміщення</span>
         </button>
         <button
           type="button"
@@ -613,6 +613,16 @@ function FieldRow({ label, children }: { label: string; children: React.ReactNod
   );
 }
 
+/** Постачальник і план оплати з чернетки; нова прийомка — значення за замовчуванням. */
+function initialPayment(initial: any, fallback: IntakePaymentValue): IntakePaymentValue {
+  if (!initial) return fallback;
+  const plan = initial.paymentPlan && typeof initial.paymentPlan === "object" ? initial.paymentPlan : null;
+  return {
+    supplierName: initial.supplierName || "",
+    plan: plan?.mode ? { ...plan } : fallback.plan,
+  };
+}
+
 function SectionTitle({ children }: { children: React.ReactNode }) {
   return <div className="text-[10px] font-semibold uppercase tracking-wide text-gray-500">{children}</div>;
 }
@@ -694,6 +704,10 @@ function HairForm({
   const [currencyCode, setCurrencyCode] = useState(hairCurrencies[0] || "USD");
   const [invoice, setInvoice] = useState(numText(initial?.invoiceAmount));
   const [delivery, setDelivery] = useState(numText(initial?.deliveryAmount));
+  // Волосся закуповує власниця — за замовчуванням прийомка в борг перед нею
+  const [payment, setPayment] = useState<IntakePaymentValue>(() =>
+    initialPayment(initial, { supplierName: "Власниця", plan: { mode: "credit" } }),
+  );
   const [lines, setLines] = useState(
     initialLines.length ? initialLines : [{ code: "", lengthCm: "60", weightGrams: "", salePrice: "" }],
   );
@@ -730,6 +744,8 @@ function HairForm({
           currencyCode,
           invoiceAmountUsd: toUsd(invoice),
           deliveryAmountUsd: toUsd(delivery),
+          supplierName: payment.supplierName,
+          payment: payment.plan,
           lines: lines.map((line) => ({
             code: line.code.trim(),
             lengthCm: Number(line.lengthCm) || 0,
@@ -789,6 +805,14 @@ function HairForm({
             onChange={(e) => setDelivery(e.target.value)}
           />
         </FieldRow>
+        <IntakePaymentFields
+          value={payment}
+          onChange={setPayment}
+          total={(Number(invoice) || 0) + (Number(delivery) || 0)}
+          totalCurrency={currencyCode}
+          FieldRow={FieldRow}
+          fieldClass={fieldClass}
+        />
       </FieldsCard>
 
       <p className={`rounded-lg px-2.5 py-1.5 text-xs ${mismatch ? "bg-pink-100 font-semibold text-red-700" : "bg-slate-50 text-gray-600"}`}>
@@ -975,6 +999,9 @@ function GoodsForm({
   const [title, setTitle] = useState<string>(initial?.title || "");
   const [invoice, setInvoice] = useState(numText(initial?.invoiceAmount));
   const [delivery, setDelivery] = useState(numText(initial?.deliveryAmount));
+  const [payment, setPayment] = useState<IntakePaymentValue>(() =>
+    initialPayment(initial, { supplierName: "", plan: { mode: "now" } }),
+  );
   const [lines, setLines] = useState<Line[]>(initialLines.length ? initialLines : [emptyLine]);
   // Групи лише цього складу (без хвостів, накладок тощо на складі товарів)
   const storageGroups = groupsForStorage(groups, storageId, hairStorageId);
@@ -1009,6 +1036,8 @@ function GoodsForm({
           currencyCode: primaryCurrency,
           invoiceAmount: Number(invoice) || 0,
           deliveryAmount: Number(delivery) || 0,
+          supplierName: payment.supplierName,
+          payment: payment.plan,
           lines: lines.map((line) => ({
             productId: line.productId || undefined,
             title: line.title || undefined,
@@ -1044,6 +1073,14 @@ function GoodsForm({
             onChange={(e) => setDelivery(e.target.value)}
           />
         </FieldRow>
+        <IntakePaymentFields
+          value={payment}
+          onChange={setPayment}
+          total={(Number(invoice) || 0) + (Number(delivery) || 0)}
+          totalCurrency={lines.find((l) => l.currencyCode)?.currencyCode || defaultCur}
+          FieldRow={FieldRow}
+          fieldClass={fieldClass}
+        />
       </FieldsCard>
 
       <div className="space-y-1.5">

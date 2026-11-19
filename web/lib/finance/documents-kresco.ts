@@ -69,6 +69,8 @@ export type CreateFinanceDocumentInput = {
   occurredAt?: string | Date | null;
   comment?: string | null;
   createdBy?: string | null;
+  /** Розхід «Закупівля товарів»: кому заплатили */
+  supplierName?: string | null;
 };
 
 export async function listFinanceDocuments(params?: { limit?: number; type?: string }) {
@@ -211,6 +213,7 @@ export async function createFinanceDocument(input: CreateFinanceDocumentInput) {
       purposeExternalId,
       comment: input.comment ? String(input.comment).slice(0, 1000) : null,
       createdBy: input.createdBy || null,
+      supplierName: type === "expense" ? String(input.supplierName || "").trim().replace(/\s+/g, " ") || null : null,
     },
   });
 

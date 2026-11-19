@@ -1,9 +1,10 @@
 // Обігові кошти салону: де лежать гроші зараз і щоденні знімки для графіка.
 // База — долар за робочим курсом дня (monobank). Матеріали не рахуємо: це розхід, а не обіг.
-// Запитів до БД: залишки кас (як у блоці «Залишки в касах») + 1 склад + 1 курс; знімок — ще 1 upsert.
+// Запитів до БД: залишки кас (як у блоці «Залишки в касах») + 1 склад + 1 курс + 2 борг; знімок — ще 1 upsert.
 
 import { prisma } from "@/lib/prisma";
 import { getOrFixDailyFxRates } from "@/lib/fx/daily-rates";
+import { loadSupplierDebts } from "@/lib/finance/supplier-debt";
 import { loadDashboardCash } from "./cash";
 import { kyivToday } from "./period";
 import type { DashboardWorkingCapital, WorkingCapitalParts, WorkingCapitalPoint } from "./types";
@@ -16,8 +17,9 @@ const round2 = (value: number) => Math.round(value * 100) / 100;
 export function workingCapitalUsd(parts: WorkingCapitalParts, usdRate: number, eurRate: number) {
   const uah = parts.goodsUah + parts.cashUah + parts.bankUah;
   const eur = parts.cashEur + parts.bankEur;
-  const totalUsd = parts.hairUsd + parts.cashUsd + parts.bankUsd + (uah + eur * eurRate) / usdRate;
-  return { totalUsd: round2(totalUsd), ownUsd: round2(totalUsd - parts.depositsUah / usdRate) };
+  const totalUsd = parts.hairUsd + parts.cashUsd + parts.bankUsd + parts.supplierAdvanceUsd + (uah + eur * eurRate) / usdRate;
+  const foreignUsd = parts.depositsUah / usdRate + parts.supplierDebtUsd;
+  return { totalUsd: round2(totalUsd), ownUsd: round2(totalUsd - foreignUsd) };
 }
 
 async function loadRates(today: string): Promise<{ kyivDay: string; usd: number; eur: number } | null> {
@@ -39,7 +41,7 @@ export async function computeWorkingCapital(): Promise<
 > {
   const startedAt = Date.now();
   const today = kyivToday();
-  const [cash, stock, rates] = await Promise.all([
+  const [cash, stock, rates, debt] = await Promise.all([
     loadDashboardCash(),
     // Лише склади фінзвіту: «Витратні матеріали» туди не входять.
     prisma.$queryRaw<StockSqlRow[]>`
@@ -56,6 +58,7 @@ export async function computeWorkingCapital(): Promise<
       WHERE s."isActive" AND s."includeInFinanceReport" AND st.quantity > 0
     `,
     loadRates(today),
+    loadSupplierDebts(),
   ]);
 
   if (!rates || !(rates.usd > 0)) {
@@ -76,6 +79,8 @@ export async function computeWorkingCapital(): Promise<
     bankUsd: 0,
     bankEur: 0,
     depositsUah: cash.deposits.balance,
+    supplierDebtUsd: debt.debtUsd,
+    supplierAdvanceUsd: debt.advanceUsd,
   };
   for (const account of cash.accounts) {
     if (account.balance == null) continue;
@@ -113,10 +118,12 @@ export async function loadDashboardWorkingCapital(): Promise<DashboardWorkingCap
 export async function captureWorkingCapitalSnapshot() {
   const now = await computeWorkingCapital();
   if (!now) return { ok: false as const, reason: "no_fx_rate" };
+  // Аванси окремої колонки не мають: вони вже в totalUsd
+  const { supplierAdvanceUsd: _advance, ...snapshotParts } = now.parts;
   const data = {
     usdRate: now.usdRate,
     eurRate: now.eurRate,
-    ...now.parts,
+    ...snapshotParts,
     totalUsd: now.totalUsd,
     ownUsd: now.ownUsd,
   };

@@ -14,18 +14,21 @@ export type WorkingCapitalState =
 
 type Unit = "USD" | "UAH";
 
-// Порядок кольорів перевірено на розрізнення (у т.ч. для дальтоніків) для сусідніх сегментів кільця.
+// Кольори перевірено на розрізнення (у т.ч. для дальтоніків) для сусідніх сегментів кільця,
+// включно з останнім і першим; порядок кільця — порядок масиву segments.
 const SEGMENT_COLOR = {
   hair: "#eb6834",
   goods: "#6250d6",
   cashUah: "#1baf7a",
-  cashUsd: "#2a78d6",
+  cashUsd: "#008300",
   cashEur: "#eda100",
-  bank: "#008300",
+  advance: "#e87ba4",
+  bank: "#2a78d6",
 } as const;
 
 const OWN_COLOR = "#2a78d6";
 const FOREIGN_COLOR = "#eb6834";
+const DEBT_COLOR = "#6250d6";
 
 type Segment = { key: keyof typeof SEGMENT_COLOR; label: string; group: string; usd: number };
 
@@ -65,6 +68,7 @@ export function WorkingCapitalSection({ state }: { state: WorkingCapitalState })
     { key: "cashUah", label: "Каса ₴", group: "Каси", usd: parts.cashUah / usdRate },
     { key: "cashUsd", label: "Каса $", group: "Каси", usd: parts.cashUsd },
     { key: "cashEur", label: "Каса €", group: "Каси", usd: (parts.cashEur * eurRate) / usdRate },
+    { key: "advance", label: "Аванси постачальникам", group: "Аванси", usd: parts.supplierAdvanceUsd },
     {
       key: "bank",
       label: "Рахунки ФОП",
@@ -103,7 +107,13 @@ export function WorkingCapitalSection({ state }: { state: WorkingCapitalState })
 
       <div className="grid gap-3 lg:grid-cols-[minmax(0,3fr)_minmax(0,2fr)]">
         <WhereBlock segments={segments} totalUsd={now.totalUsd} unit={unit} usdRate={usdRate} />
-        <WhoseBlock totalUsd={now.totalUsd} depositsUsd={depositsUsd} unit={unit} usdRate={usdRate} />
+        <WhoseBlock
+          totalUsd={now.totalUsd}
+          depositsUsd={depositsUsd}
+          debtUsd={parts.supplierDebtUsd}
+          unit={unit}
+          usdRate={usdRate}
+        />
       </div>
 
       <TrendBlock history={history} now={now} unit={unit} />
@@ -127,7 +137,9 @@ function WhereBlock({ segments, totalUsd, unit, usdRate }: { segments: Segment[]
     return arc;
   });
   const active = hover ? segments.find((s) => s.key === hover) : null;
-  const groups = ["Товар", "Каси", "Рахунки"];
+  const groups = ["Товар", "Каси", "Рахунки", "Аванси"];
+  // Порожню групу авансів не показуємо, щоб не захаращувати легенду
+  const visibleGroups = groups.filter((group) => group !== "Аванси" || segments.some((s) => s.group === group && s.usd > 0));
 
   return (
     <section className="rounded-2xl border border-slate-200 bg-white p-4">
@@ -160,7 +172,7 @@ function WhereBlock({ segments, totalUsd, unit, usdRate }: { segments: Segment[]
           </text>
         </svg>
         <div className="min-w-0 flex-1 space-y-2.5 text-sm">
-          {groups.map((group) => {
+          {visibleGroups.map((group) => {
             const rows = segments.filter((s) => s.group === group);
             const sum = rows.reduce((acc, s) => acc + s.usd, 0);
             return (
@@ -204,19 +216,29 @@ function WhereBlock({ segments, totalUsd, unit, usdRate }: { segments: Segment[]
   );
 }
 
-function WhoseBlock({ totalUsd, depositsUsd, unit, usdRate }: { totalUsd: number; depositsUsd: number; unit: Unit; usdRate: number }) {
-  const ownUsd = totalUsd - depositsUsd;
-  const ownShare = totalUsd > 0 ? Math.max(0, Math.min(1, ownUsd / totalUsd)) : 0;
-  const pending = [
-    { label: "Зарплата до виплати", note: "з переходом на Kresco" },
-    { label: "Борги постачальникам", note: "уточнюємо" },
-  ];
+function WhoseBlock({
+  totalUsd,
+  depositsUsd,
+  debtUsd,
+  unit,
+  usdRate,
+}: {
+  totalUsd: number;
+  depositsUsd: number;
+  debtUsd: number;
+  unit: Unit;
+  usdRate: number;
+}) {
+  const ownUsd = totalUsd - depositsUsd - debtUsd;
+  const shareOf = (value: number) => (totalUsd > 0 ? Math.max(0, Math.min(1, value / totalUsd)) : 0);
+  const pending = [{ label: "Зарплата до виплати", note: "з переходом на Kresco" }];
   return (
     <section className="rounded-2xl border border-slate-200 bg-white p-4">
       <div className="text-xs font-medium uppercase tracking-wide text-slate-500">Чиї гроші</div>
       <div className="mt-4 flex h-6 w-full gap-0.5 overflow-hidden rounded-md" role="img" aria-label="Власні та чужі гроші">
-        <div style={{ width: `${ownShare * 100}%`, background: OWN_COLOR }} title={`Власні: ${money(ownUsd, unit, usdRate)}`} />
-        <div className="flex-1" style={{ background: FOREIGN_COLOR }} title={`Завдатки: ${money(depositsUsd, unit, usdRate)}`} />
+        <div style={{ width: `${shareOf(ownUsd) * 100}%`, background: OWN_COLOR }} title={`Власні: ${money(ownUsd, unit, usdRate)}`} />
+        <div style={{ width: `${shareOf(depositsUsd) * 100}%`, background: FOREIGN_COLOR }} title={`Завдатки: ${money(depositsUsd, unit, usdRate)}`} />
+        <div className="flex-1" style={{ background: DEBT_COLOR }} title={`Борг постачальникам: ${money(debtUsd, unit, usdRate)}`} />
       </div>
       <dl className="mt-4 space-y-1.5 text-sm">
         <div className="flex items-center justify-between gap-3">
@@ -237,6 +259,15 @@ function WhoseBlock({ totalUsd, depositsUsd, unit, usdRate }: { totalUsd: number
             {money(depositsUsd, unit, usdRate)} <span className="text-slate-400">{share(depositsUsd, totalUsd)}</span>
           </dd>
         </div>
+        <div className="flex items-center justify-between gap-3">
+          <dt className="flex items-center gap-2 text-slate-700">
+            <span className="h-2.5 w-2.5 rounded-sm" style={{ background: DEBT_COLOR }} />
+            Борг постачальникам
+          </dt>
+          <dd className="tabular-nums text-slate-900">
+            {money(debtUsd, unit, usdRate)} <span className="text-slate-400">{share(debtUsd, totalUsd)}</span>
+          </dd>
+        </div>
         {pending.map((p) => (
           <div key={p.label} className="flex items-baseline justify-between gap-3">
             <dt className="pl-[18px] text-slate-500">{p.label}</dt>
@@ -245,7 +276,8 @@ function WhoseBlock({ totalUsd, depositsUsd, unit, usdRate }: { totalUsd: number
         ))}
       </dl>
       <p className="mt-3 text-[11px] leading-snug text-slate-400">
-        Завдатки — гроші клієнтів, які ще треба відпрацювати. Власні = усі обігові мінус чужі.
+        Завдатки — гроші клієнтів, які треба відпрацювати послугами; борг — гроші, які треба віддати за прийомки в борг.
+        Власні = усі обігові мінус чужі.
       </p>
     </section>
   );

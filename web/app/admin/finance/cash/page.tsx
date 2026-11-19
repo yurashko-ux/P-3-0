@@ -9,6 +9,8 @@ import { CashLedgerPanel } from "./CashLedgerPanel";
 import { BankAccountPanel } from "./BankAccountPanel";
 import { CashDocumentModal, type CashDocumentType } from "./CashDocumentModal";
 import { CashAccountsModal } from "./CashAccountsModal";
+import SupplierDebtModal from "./SupplierDebtModal";
+import type { SupplierDebtSummary } from "@/lib/finance/supplier-debt";
 
 type CashTile = {
   id: number;
@@ -142,6 +144,28 @@ export default function CashBalancesPage() {
       })
       .catch((err) => console.error("[cash] Завдатки не завантажено:", err));
   }, []);
+  // Плитка «Борг»: що маємо віддати грошима (поруч із завдатками — що маємо віддати послугами)
+  const [supplierDebt, setSupplierDebt] = useState<SupplierDebtSummary | null>(null);
+  const [debtOpen, setDebtOpen] = useState(false);
+  const loadSupplierDebt = useCallback(() => {
+    fetch("/api/admin/finance/cash/supplier-debt", { cache: "no-store" })
+      .then((res) => res.json())
+      .then((data) => {
+        if (data?.ok) {
+          setSupplierDebt({
+            debtUsd: data.debtUsd,
+            advanceUsd: data.advanceUsd,
+            suppliers: data.suppliers,
+            openPayments: data.openPayments,
+            unassignedPayments: data.unassignedPayments,
+          });
+        }
+      })
+      .catch((err) => console.error("[cash] Борг не завантажено:", err));
+  }, []);
+  useEffect(() => {
+    loadSupplierDebt();
+  }, [loadSupplierDebt]);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [countTile, setCountTile] = useState<CashTile | null>(null);
@@ -339,6 +363,25 @@ export default function CashBalancesPage() {
             </span>
           ) : null}
         </a>
+        {/* Плитка «Постачальники»: борг (маємо віддати гроші) і аванси (гроші пішли, товар ще їде) */}
+        <button
+          type="button"
+          className={tileButtonClass}
+          style={{ background: "#fecaca" }}
+          title="Розрахунки з постачальниками — історія, оплати, аванси"
+          onClick={() => setDebtOpen(true)}
+        >
+          <span className="text-[10px] font-medium text-red-950 leading-tight">Постачальники</span>
+          <span className="mt-0.5 text-sm font-semibold tabular-nums text-gray-900">
+            {supplierDebt ? `борг ${money(supplierDebt.debtUsd)} $` : "…"}
+          </span>
+          {supplierDebt ? (
+            <span className="text-[10px] text-gray-700">аванси {money(supplierDebt.advanceUsd)} $</span>
+          ) : null}
+          {supplierDebt && supplierDebt.unassignedPayments.length > 0 ? (
+            <span className="text-[10px] font-medium text-red-700">без постачальника: {supplierDebt.unassignedPayments.length}</span>
+          ) : null}
+        </button>
         {/* Плитка «+ Рахунок»: картка доходу, розходу чи переміщення */}
         <button
           type="button"
@@ -369,6 +412,9 @@ export default function CashBalancesPage() {
           reloadToken={ledgerReload}
         />
       ))}
+      {debtOpen && supplierDebt && (
+        <SupplierDebtModal debt={supplierDebt} onClose={() => setDebtOpen(false)} onChanged={loadSupplierDebt} />
+      )}
       {documentType && (
         <CashDocumentModal
           type={documentType}

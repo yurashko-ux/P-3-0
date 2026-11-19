@@ -10,6 +10,8 @@ import {
   deleteAltegioStorageDocument,
   updateAltegioGoodSalePrice,
 } from "@/lib/altegio/warehouse-write";
+import { Prisma } from "@prisma/client";
+import { missingPaymentFields, normalizeSupplierName, parsePaymentPlan, settleIntakePayment } from "@/lib/finance/supplier-debt";
 import { applyPostedWarehouseDocument } from "./stock";
 import { requireUsdUahRate } from "./fx";
 import { ensureGroupAltegioCategory } from "./catalog";
@@ -203,6 +205,8 @@ export async function missingIntakeFields(documentId: string): Promise<string[]>
   if (!(Number(doc.invoiceAmount) > 0)) missing.push("сума накладної");
   if (doc.kind === "hair" && !(Number(doc.invoiceWeightGrams) > 0)) missing.push("вага партії");
   if (doc.lines.length === 0) missing.push(doc.kind === "hair" ? "хвости" : "товари");
+  // Оплата прийомки: постачальник, рахунок / передоплата
+  missing.push(...missingPaymentFields(doc));
   doc.lines.forEach((line, idx) => {
     const name = doc.kind === "hair" ? `хвіст ${line.product.title || idx + 1}` : `«${line.product.title || `рядок ${idx + 1}`}»`;
     const gaps: string[] = [];
@@ -258,6 +262,7 @@ export async function postWarehouseDocument(documentId: string, postedBy?: strin
       data: { status: "posted", syncStatus: "synced", syncError: null },
     });
     await applyPostedWarehouseDocument(documentId);
+    if (current.type === "intake") await settleIntakePayment(documentId, postedBy);
     console.log(`[warehouse/docs] Проведення ${documentId}: в Altegio вже є id=${current.altegioTxId}, застосовано залишок`);
     return getWarehouseDocument(documentId);
   }
@@ -357,6 +362,7 @@ export async function postWarehouseDocument(documentId: string, postedBy?: strin
     occurredAt: doc.occurredAt,
     lines,
   });
+  if (doc.type === "intake") await settleIntakePayment(doc.id, postedBy);
   return prisma.warehouseDocument.findUnique({
     where: { id: documentId },
     include: { lines: { include: { product: true } }, toStorage: true, fromStorage: true, children: true },
@@ -420,6 +426,9 @@ export async function createHairIntake(input: {
   occurredAt?: string;
   createdBy?: string | null;
   replaceDocumentId?: string;
+  /** Від кого прийшло волосся і як оплачено (див. IntakePaymentPlan) */
+  supplierName?: string;
+  payment?: unknown;
   lines: Array<{ code?: string; lengthCm?: number; weightGrams?: number; salePrice?: number }>;
 }) {
   const replaced = input.replaceDocumentId ? await requireEditableDraft(input.replaceDocumentId, "intake") : null;
@@ -496,6 +505,8 @@ export async function createHairIntake(input: {
       kyivDay,
       toStorageId: storageId,
       comment: `Прийомка волосся ${kg} кг / ${invoiceUsd}$${deliveryUsd ? ` + доставка ${deliveryUsd}$` : ""}`,
+      supplierName: normalizeSupplierName(input.supplierName) || null,
+      paymentPlan: (parsePaymentPlan(input.payment) as Prisma.InputJsonValue | null) ?? Prisma.JsonNull,
       source: "kresco",
       createdBy: replaced?.createdBy ?? (input.createdBy || null),
       ...(replaced ? { createdAt: replaced.createdAt } : {}),
@@ -556,6 +567,9 @@ export async function createGoodsIntake(input: {
   draft?: boolean;
   /** Редагування чернетки: нова версія займає її місце (номер і дата створення ті самі). */
   replaceDocumentId?: string;
+  /** Від кого прийшов товар і як оплачено (див. IntakePaymentPlan) */
+  supplierName?: string;
+  payment?: unknown;
 }) {
   const storage = await requireStorage(input.storageId);
   const draft = input.draft === true || Boolean(input.replaceDocumentId);
@@ -723,6 +737,8 @@ export async function createGoodsIntake(input: {
       kyivDay,
       toStorageId: storage.id,
       comment: `Прийомка товару ${invoiceAmount} ${currency}${deliveryAmount ? ` + доставка ${deliveryAmount}` : ""}`,
+      supplierName: normalizeSupplierName(input.supplierName) || null,
+      paymentPlan: (parsePaymentPlan(input.payment) as Prisma.InputJsonValue | null) ?? Prisma.JsonNull,
       source: "kresco",
       createdBy: replaced?.createdBy ?? (input.createdBy || null),
       ...(replaced ? { createdAt: replaced.createdAt } : {}),
