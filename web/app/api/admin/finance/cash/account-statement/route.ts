@@ -32,6 +32,22 @@ function addDaysYmd(ymd: string, days: number): string {
   return date.toISOString().slice(0, 10);
 }
 
+/**
+ * День операції Altegio для оплат журналу (один запит лише на ті, яких немає в known).
+ * Оплату візиту часто вносять пізніше — гроші належать дню оплати, а не дню візиту.
+ */
+async function loadTransactionDays(ids: Array<number | null>, known = new Map<number, string>()): Promise<Map<number, string>> {
+  const missing = [...new Set(ids.filter((id): id is number => Boolean(id) && !known.has(id as number)))];
+  if (missing.length === 0) return known;
+  const found = await prisma.altegioFinanceTransaction.findMany({
+    where: { altegioId: { in: missing } },
+    select: { altegioId: true, kyivDay: true },
+  });
+  const days = new Map(known);
+  for (const tx of found) days.set(tx.altegioId, tx.kyivDay);
+  return days;
+}
+
 function kyivDayOf(date: Date): string {
   return new Intl.DateTimeFormat("en-CA", {
     timeZone: "Europe/Kyiv",
@@ -242,41 +258,60 @@ export async function GET(req: NextRequest) {
     // Вхідні зводяться днем: усі зарахування одного дня оплат разом з оплатами візитів цього дня на рахунку.
     // Документи — оплати візитів із журналу Креско; сума зарахувань + утримана комісія = сума оплат.
     const incomingDays = [...new Set(rows.map((row) => row.incomingDay).filter((day): day is string => Boolean(day)))];
+    // Вхідний без збереженої пари, що прийшов у день, який зводиться днем, — розділ Платежі зводить такий день
+    // цілком, коли сума зарахувань дня збігається з оплатами. Пробуємо додати його до групи дня (нижче).
+    const tentativeIds = new Set<string>();
+    for (const row of rows) {
+      if (row.reconciledInBank || row.amount <= 0 || row.incomingDay || row.documents.length > 0) continue;
+      if (!incomingDays.includes(row.displayDay)) continue;
+      row.incomingDay = row.displayDay;
+      tentativeIds.add(row.id);
+    }
     if (incomingDays.length > 0) {
       // Джерело оплат: журнал Креско, коли в ньому є рахунок (імпорт з 08.11.2026);
       // інакше — фінансові операції Altegio, збережені в Креско (за ними й зводиться зараз)
-      const [journalPayments, altegioPayments] = await Promise.all([
-        prisma.salonCheckoutPayment.findMany({
-          where: {
-            accountId: Number(altegioAccountId),
-            checkout: { kyivDay: { in: incomingDays }, status: { not: "void" } },
+      const altegioPayments = await prisma.altegioFinanceTransaction.findMany({
+        where: {
+          accountId: altegioAccountId,
+          kyivDay: { in: incomingDays },
+          deletedInAltegio: false,
+          amountKopiykas: { gt: BigInt(0) },
+          direction: { not: "transfer" },
+        },
+        select: {
+          altegioId: true,
+          amountKopiykas: true,
+          kyivDay: true,
+          counterpartyName: true,
+          paymentPurpose: true,
+          rawData: true,
+        },
+      });
+      // День оплати — день операції Altegio, а не день візиту: візит 13.11 могли оплатити 18.11
+      const journalPayments = await prisma.salonCheckoutPayment.findMany({
+        where: {
+          accountId: Number(altegioAccountId),
+          checkout: { status: { not: "void" } },
+          OR: [
+            { checkout: { kyivDay: { in: incomingDays } } },
+            { altegioTransactionId: { in: altegioPayments.map((payment) => payment.altegioId) } },
+          ],
+        },
+        select: {
+          id: true,
+          amount: true,
+          altegioTransactionId: true,
+          checkout: {
+            select: { kyivDay: true, appointment: { select: { clientName: true, altegioRecordId: true } } },
           },
-          select: {
-            id: true,
-            amount: true,
-            checkout: {
-              select: { kyivDay: true, appointment: { select: { clientName: true, altegioRecordId: true } } },
-            },
-          },
-        }),
-        prisma.altegioFinanceTransaction.findMany({
-          where: {
-            accountId: altegioAccountId,
-            kyivDay: { in: incomingDays },
-            deletedInAltegio: false,
-            amountKopiykas: { gt: BigInt(0) },
-            direction: { not: "transfer" },
-          },
-          select: {
-            altegioId: true,
-            amountKopiykas: true,
-            kyivDay: true,
-            counterpartyName: true,
-            paymentPurpose: true,
-            rawData: true,
-          },
-        }),
-      ]);
+        },
+      });
+      const txDays = await loadTransactionDays(
+        journalPayments.map((payment) => payment.altegioTransactionId),
+        new Map(altegioPayments.map((payment) => [payment.altegioId, payment.kyivDay])),
+      );
+      const journalDay = (payment: (typeof journalPayments)[number]) =>
+        (payment.altegioTransactionId && txDays.get(payment.altegioTransactionId)) || payment.checkout.kyivDay;
       // Завдатки (поповнення рахунку клієнта) — теж гроші на цьому рахунку: розділ Платежі зводить їх з банком
       // Завдаток, уже зведений окремою парою (завдаток ↔ банк), сюди не додаємо — інакше рахувався б двічі
       const pairedDepositIds = new Set(
@@ -310,7 +345,7 @@ export async function GET(req: NextRequest) {
           });
       const paymentsByDay = (day: string): LinkedDocument[] => [...visitPaymentsByDay(day), ...depositsByDay(day)];
       const visitPaymentsByDay = (day: string): LinkedDocument[] => {
-        const journal = journalPayments.filter((payment) => payment.checkout.kyivDay === day);
+        const journal = journalPayments.filter((payment) => journalDay(payment) === day);
         if (journal.length > 0) {
           return journal.map((payment) => ({
             id: `visit-${payment.id}`,
@@ -350,7 +385,7 @@ export async function GET(req: NextRequest) {
           });
       };
       for (const day of incomingDays) {
-        const groupRows = rows.filter((row) => row.incomingDay === day);
+        let groupRows = rows.filter((row) => row.incomingDay === day);
         // Оплати одного клієнта за день — один документ (у Altegio оплату часто розбито на кілька операцій)
         const merged = new Map<string, LinkedDocument>();
         const unnamed: LinkedDocument[] = [];
@@ -367,15 +402,31 @@ export async function GET(req: NextRequest) {
           }
         }
         const visits = [...merged.values(), ...unnamed].sort((a, b) => b.amount - a.amount);
-        const bankSum = groupRows.reduce((sum, row) => sum + row.amount, 0);
-        const feeSum = groupRows.reduce(
-          (sum, row) => sum + row.documents.filter((doc) => doc.kind === "fee").reduce((acc, doc) => acc + Math.abs(doc.amount), 0),
-          0,
-        );
         const visitsSum = visits.reduce((sum, doc) => sum + doc.amount, 0);
-        const missing = Math.round((bankSum + feeSum - visitsSum) * 100) / 100;
+        const missingOf = (list: typeof groupRows) => {
+          const bankSum = list.reduce((sum, row) => sum + row.amount, 0);
+          const feeSum = list.reduce(
+            (sum, row) => sum + row.documents.filter((doc) => doc.kind === "fee").reduce((acc, doc) => acc + Math.abs(doc.amount), 0),
+            0,
+          );
+          return Math.round((bankSum + feeSum - visitsSum) * 100) / 100;
+        };
+        let missing = missingOf(groupRows);
+        // Незведений вхідний лишаємо в групі, лише якщо без нього день не сходиться, а з ним — сходиться
+        if (Math.abs(missing) >= FULL_TOLERANCE_UAH && groupRows.some((row) => tentativeIds.has(row.id))) {
+          const confirmed = groupRows.filter((row) => !tentativeIds.has(row.id));
+          const confirmedMissing = missingOf(confirmed);
+          if (Math.abs(confirmedMissing) < FULL_TOLERANCE_UAH || confirmed.length === 0) {
+            for (const row of groupRows) if (tentativeIds.has(row.id)) row.incomingDay = null;
+            groupRows = confirmed;
+            missing = confirmedMissing;
+          }
+        }
+        if (groupRows.length === 0) continue;
         const status: "full" | "partial" | "none" =
           visits.length === 0 ? "none" : Math.abs(missing) < FULL_TOLERANCE_UAH ? "full" : "partial";
+        // День зійшовся — усі його зарахування зведені, як у розділі Платежі
+        if (status === "full") for (const row of groupRows) row.reconciledInBank = true;
         // Оплати показуємо під першим зарахуванням дня, інші рядки посилаються на нього точно:
         // назва + дата й час банку (еквайринг часто зараховано наступного дня)
         const rowRef = (row: (typeof groupRows)[number]) => {
@@ -473,18 +524,22 @@ export async function GET(req: NextRequest) {
       },
       select: {
         amount: true,
+        altegioTransactionId: true,
         checkout: {
           select: { id: true, altegioVisitId: true, kyivDay: true, createdAt: true, appointment: { select: { clientName: true } } },
         },
       },
       take: 500,
     });
+    // Оплачено пізніше за візит — чек належить дню оплати (операції Altegio)
+    const checkTxDays = await loadTransactionDays(checkPayments.map((payment) => payment.altegioTransactionId));
     const checksById = new Map<string, (typeof unlinkedDocuments)[number] & { check: true }>();
     for (const payment of checkPayments) {
       const checkout = payment.checkout;
-      if (linkedDays.has(checkout.kyivDay)) continue;
+      const paidDay = (payment.altegioTransactionId && checkTxDays.get(payment.altegioTransactionId)) || checkout.kyivDay;
+      if (linkedDays.has(paidDay)) continue;
       // Візит з кількома майстрами — кілька чеків у Altegio, але один рядок
-      const key = checkout.altegioVisitId ? `v${checkout.altegioVisitId}` : checkout.id;
+      const key = `${checkout.altegioVisitId ? `v${checkout.altegioVisitId}` : checkout.id}-${paidDay}`;
       const current = checksById.get(key);
       if (current) {
         current.amount = Math.round((current.amount + payment.amount) * 100) / 100;
@@ -493,7 +548,7 @@ export async function GET(req: NextRequest) {
       checksById.set(key, {
         id: `check-${key}`,
         time: checkout.createdAt.toISOString(),
-        kyivDay: checkout.kyivDay,
+        kyivDay: paidDay,
         amount: payment.amount,
         title: checkout.appointment?.clientName?.trim() || "Чек",
         comment: "",
