@@ -211,6 +211,26 @@ function dayFlows(items: DayItem[]): Array<{ currency: string; incoming: number;
 /** Суми дня по валютах в один рядок: «92 581 грн / 2 802 $ / 496 €»; нульові валюти пропускаємо */
 type DayFlow = ReturnType<typeof dayFlows>[number];
 
+/** «1 чек», «2 рахунки», «1 чек і 1 рахунок» — що саме в дні без платежу */
+function unlinkedLabel(items: DayItem[]): string {
+  const docs = items.flatMap((item) => (item.kind === "unlinked" ? [item.doc] : []));
+  const checks = docs.filter((doc) => doc.check).length;
+  const invoices = docs.length - checks;
+  const plural = (n: number, one: string, few: string, many: string) => {
+    const mod10 = n % 10;
+    const mod100 = n % 100;
+    if (mod10 === 1 && mod100 !== 11) return `${n} ${one}`;
+    if (mod10 >= 2 && mod10 <= 4 && (mod100 < 12 || mod100 > 14)) return `${n} ${few}`;
+    return `${n} ${many}`;
+  };
+  return [
+    checks > 0 ? plural(checks, "чек", "чеки", "чеків") : "",
+    invoices > 0 ? plural(invoices, "рахунок", "рахунки", "рахунків") : "",
+  ]
+    .filter(Boolean)
+    .join(" і ");
+}
+
 function flowAmounts(flows: DayFlow[], pick: (flow: DayFlow) => number): string {
   const parts = flows.filter((flow) => Math.abs(pick(flow)) >= 0.005);
   if (parts.length === 0) return `0 ${unitOf(flows[0]?.currency ?? "UAH")}`;
@@ -558,7 +578,7 @@ export function CashLedgerPanel({
                       <div className="shrink-0 font-bold uppercase tracking-wide">{dayLabel(day.kyivDay)}</div>
                       {day.unlinkedCount > 0 ? (
                         <div className="min-w-0 font-medium text-amber-800">
-                          ⚠ {day.unlinkedCount} {day.unlinkedCount === 1 ? "документ" : "документи"} без платежу ·{" "}
+                          ⚠ {unlinkedLabel(day.items)} без платежу ·{" "}
                           {money(Math.abs(day.unlinkedSum))} грн
                         </div>
                       ) : null}
@@ -613,7 +633,7 @@ export function CashLedgerPanel({
                         className={`border-t border-dashed border-gray-200 text-gray-500 ${overdue ? "bg-pink-100" : ""}`}
                       >
                         <td className="px-2 py-1 tabular-nums">{index + 1}</td>
-                        <td className="px-2 py-1 text-center" title="Документ, а не платіж">📄</td>
+                        <td className="px-2 py-1 text-center" title={doc.check ? "Чек, а не платіж" : "Рахунок, а не платіж"}>📄</td>
                         <td className="whitespace-nowrap px-2 py-1 tabular-nums">{timeLabel(doc.time)}</td>
                         <td className="px-1 py-1 text-center">
                           {overdue ? (
@@ -624,14 +644,17 @@ export function CashLedgerPanel({
                           ) : (
                             <span
                               className="inline-block h-2.5 w-2.5 rounded-full border border-gray-400"
-                              title="Документ без банківського платежу"
+                              title={doc.check ? "Чек без банківського платежу" : "Рахунок без банківського платежу"}
                             />
                           )}
                         </td>
-                        <td className="truncate px-2 py-1 italic">Документ Креско</td>
+                        {/* Чек журналу — клієнт у своїй колонці; рахунок (документ Креско) — назва в призначенні */}
+                        <td className="truncate px-2 py-1" title={doc.check ? doc.title : undefined}>
+                          {doc.check ? doc.title : "—"}
+                        </td>
                         <td className="px-2 py-1">—</td>
                         <td className="truncate px-2 py-1" title={doc.comment ? `${doc.title}\n${doc.comment}` : doc.title}>
-                          {doc.title} · <span className="italic">без платежу</span>
+                          {doc.check ? "Чек" : `Рахунок: ${doc.title}`} · <span className="italic">без платежу</span>
                         </td>
                         <td className="truncate px-2 py-1" title={item.accountTitle}>{item.accountTitle}</td>
                         <td className="whitespace-nowrap px-2 py-1 text-right italic tabular-nums">{moneyInt(doc.amount)} грн</td>

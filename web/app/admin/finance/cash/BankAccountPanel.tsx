@@ -49,7 +49,7 @@ export type StatementRow = {
   groupNoteAmount?: number | null;
 };
 
-/** Документ Креско на рахунку без банківського платежу */
+/** Рахунок (документ Креско) або чек журналу на рахунку без банківського платежу */
 export type UnlinkedDocument = {
   id: string;
   time: string;
@@ -62,7 +62,7 @@ export type UnlinkedDocument = {
 };
 
 export const DOCUMENT_KIND_LABEL: Record<LinkedDocument["kind"], string> = {
-  kresco: "Документ Креско",
+  kresco: "Рахунок",
   altegio: "Операція Altegio",
   fee: "Документ комісії",
   visit: "Оплата візиту",
@@ -367,7 +367,7 @@ export function BankAccountPanel({
                           />
                         )}
                       </td>
-                      <td className="truncate px-2 py-1 italic">{doc.check ? "Чек" : "Документ Креско"}</td>
+                      <td className="truncate px-2 py-1 italic">{doc.check ? "Чек" : "Рахунок"}</td>
                       <td className="truncate px-2 py-1" title={doc.comment ? `${doc.title}\n${doc.comment}` : doc.title}>
                         {doc.title} · <span className="italic">без платежу</span>
                       </td>
