@@ -401,7 +401,10 @@ export async function upsertSalonAppointmentFromAltegio(
       },
     });
   }
-  if (catalogDuration > seanceLength) {
+  // Тривалість з Altegio — істина (адміністратор міг скоротити запис вручну).
+  // Каталог Kresco — лише запасний варіант, коли Altegio тривалості не передав.
+  const altegioGaveLength = Number(seanceHint) > 0;
+  if (!altegioGaveLength && catalogDuration > seanceLength) {
     seanceLength = catalogDuration;
     await prisma.salonAppointment.update({
       where: { id: appointment.id },
